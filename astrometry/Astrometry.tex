@@ -1,0 +1,173 @@
+% $Id: Astrometry.tex,v 1.1 2011/04/13 03:36:23 garyb Exp $
+\documentclass[11pt,preprint,flushrt]{aastex}
+\def\eqq#1{Equation~(\ref{#1})}
+\newcommand{\bfx}{\mbox{\bf x}}
+\newcommand{\bfu}{\mbox{\bf u}}
+\newcommand{\bfa}{\mbox{\boldmath $\alpha$}}
+\begin{document}
+
+\slugcomment{CVS \$Revision: 1.1 $ $ \$Date: 2011/04/13 03:36:23 $ $}
+
+\title{Documentation for Astrometry Classes}
+
+\author{G. M. Bernstein}
+\affil{Dept. of Physics \& Astronomy, University of Pennsylvania}
+\email{garyb@physics.upenn.edu}
+
+\section{Dependences}
+All routines described here are placed in the {\tt astrometry} namespace.  All exceptions are thrown as the {\tt AstrometryError} class, which is derived from {\tt std::runtime\_error}.
+
+The coordinate routines involve frequent manipulation of 2- and 3-dimensional vectors and matrices.  These are implemented by use of the ``{\tt Small}'' feature of Mike Jarvis's {\it TMV} linear algebra package, which uses templates to hard-wire the dimensionality and avoid a lot of overhead.  {\it Astrometry.h} starts with {\tt typedef}'s to give local type names {\tt Vector2, Vector3, Matrix22, Matrix23,} etc., to vectors and matrices of the given types.  Moving to another vector/matrix package should just involve changing these typedefs, as long as the package has properly implemented multiplication operators and element access with the same syntax as {\it TMV}.  Also the {\it TMV} routine {\tt setToIdentity()} is used a lot.
+
+[{\bf Note:} There is one gotcha in the {\tt TMV::SmallMatrix} class, which is that there is no checking for aliasing, so expressions like {\tt v = m * v} can fail.
+
+The utility file {\tt AstronomicalConstants.h} is included by {\tt Astrometry.h} to define many constants used in astrometry and ephemeris programs.  Of particular interest:
+\begin{itemize}
+\item {\tt PI} and {\tt TPI}$=2\pi$ are defined and angular units {\tt DEGREE, ARCMIN, ARCSEC} are defined.  They give the size of each unit in radians.  The constant {\tt RadToArcsec} is the number of arcseconds in a radian.
+\item Time units {\tt YEAR, DAY, MINUTE, SECOND} are defined in the units of orbital mechanics, giving each in units of a year.  A {\tt DAY} is defined as exactly 86,400 {\tt SECOND}s and exactly $1/365.25$ {\tt YEAR}s.  {\tt MJD0} is the offset between Julian dates and modified Julian dates (MJD).
+\item The orientations of the ecliptic and invariable planes with respect to J2000 coordinates are defined.
+\item Other constants used by ephemeris programs include {\tt GM, SolarSystemMass, EarthMass}.
+\item And a bunch of other astronomical constants, such as {\tt AU} and {\tt Parsec}, usually given in mks units.
+\end{itemize}
+
+\section{Time}
+The class {\tt UT} represents a time.  There are many different kinds of time, and the time in the class is assumed to represent UTC.  It can be initialized or set from different forms: JD, MJD, year/month/date/hr/min/sec, etc.
+
+The {\tt -} operator is overloaded to yield the interval between two times.  The {\tt +=} and {\tt -=} operators are overloaded to allow time to be advanced/set back by a specified intervals.  Time intervals are in units of {\tt YEAR}s. 
+Subtracting/adding times is done in such a way as to account for leap
+seconds, though I do not gaurantee success if one of the times is within
+a minute or so of the leap second itself.  
+
+\subsection{Time systems}
+The time used in the JPL ephemeris is TDB (barycentric dynamical), which
+is within 0.002s of TT (Terrestrial time), which is a coordinate time at
+Earth's geoid.  TT is a constant ($\sim34$~s) off from TAI$=$atomic time.
+UTC has leap seconds to keep it close to the Earth rotation time, so
+TT-UTC is a function of time. The list of leap seconds is maintained
+in the file {\it LeapSeconds.h} as the function {\tt UT::TAIminusUTC()}.
+
+
+\subsection{Internal representation and accuracy}
+Times are represented internally by a double-valued UTC JD.  Doubles
+ have 52 bits mantissa, so JD should be accurate to 0.1 ms or better, which is $<$(TDB-TT).
+
+\subsection{I/O}
+The {\tt read()} method will recognize any of the following formats.  Any field can be represented by any number of digits.  Fields are separated by any whitespace.
+\begin{itemize}
+\item {\it jd.dddd} ---Julian date.  Any number $>$10,000 or having a decimal point in its first argument is interpreted as a JD.  No characters are read from the stream beyond the first field.
+\item{\it yr mo dd.dddd} ---if the third field has a decimal point, it is interpreted as a fractional date and no further fields are read.  Three fields must be present else the input stream is marked with {\tt failbit}.
+\item{\it yr mo dd hh:mm:ss.ssss} ---if the third field is an integer, a fourth field is expected in hours/minutes/seconds format, which is read using the conventions of the {\tt hmsdeg()} subroutine.
+\end{itemize}
+Writing can be requested into either of the last two string formats, using the current {\tt precision()} of the output stream for the number of chars past the decimal point in the last argument.  The overloading stream operator {\tt <<} uses the YMD format.  Note that 1 second is $\approx10^{-5}$ days.
+
+\section{String manipulations}
+The functions {\tt dmsdeg} and {\tt hmsdeg} return double-value numbers of degrees from input strings with the formats {\it dd:mm:ss.sss} or {\it hh:mm:ss.sss} respectively.  
+Colons or spaces can separate the 3 fields.  Leading whitespace is skipped.  Any fields can be an integer or have fractional parts after a decimal point.  Number of digits per field is not constrained.  Seconds can be omitted, or minutes and seconds can be omitted.  A leading minus sign will negate the entire value, no signs are allowed beyond the first field.  There is no range checking on any of the values.
+
+The functions {\tt degdms} and {\tt deghms} return formatted string representation of input degree-valued double-precision numbers.  The output format of {\tt degdms}  is {\it $[+-]$ddd:mm:ss.sss} or {\it $[+-]$dd:mm:ss.sss} depending on whether there are $\ge100$ degrees on input. The output format of {\tt deghms}  is {\it $[-]$hh:mm:ss.sss} or {\it $[+-]$dd:mm:ss.sss} depending on whether there are $\ge100$ degrees on input.  The function call includes a specification of the number of decimal places in the seconds argument.
+
+\section{Spherical coordinate systems}
+{\tt SphericalCoords} is an abstract base class for representing a location on the celestial sphere.  Every instance of the base class represents a well-defined position on the sky independent of coordinate systems.
+
+There are many derived classes, each tied to a specific 2-dimensional coordinate system on the sky, {\it e.g.} {\tt SphericalICRS} for RA/dec coordinates in the ICRS system, {\tt SphericalEcliptic} for ecliptic lon/lat coordinates.  Every derived class instance can be initialized or set using a pair of (longitude, latitude) values (or a {\tt Vector2} containing the 2 coordinates).  {\bf Coordinates are always assumed to be in radians, and the $x$ or longitude coordinate comes first.  However the conversions to/from strings and the overloaded stream operators will use units that depend on the coordinate system.}  For example the lon (lat) will be printed out in sexagesimal hours(degrees) by the base-class implementation, to follow tradition in representing RA and declination.
+
+The {\tt distance} method gives the great-circle distance between any two {\tt SphericalCoords} instances.  This is well defined regardless of the coordinate systems of the two operands, since every {\tt SphericalCoords} represents a definitive position on the celestial sphere.
+
+\subsection{Coordinate transformations}
+Coordinate transformations never have to be done explicitly! One merely has to construct an instance of a derived class in the new coordinate system from a {\tt SphericalCoords} in the old system.  For example, to convert ecliptic coordinates into :
+\begin{verbatim}
+double eclipticLon=0.33;
+double eclipticLat=-0.55;
+double icrsLon;
+double icrsLat;
+
+SphericalEcliptic ecl(eclipticLon,eclipticLat);
+SphericalICRS icrs(ecl);
+icrs.getLonLat(icrsLon, icrsLat);
+\end{verbatim}
+The constructors know how to do all the conversions!  Or you can reset an existing instance using the {\tt convertFrom} methods:
+\begin{verbatim}
+double eclipticLon=0.33;
+double eclipticLat=-0.55;
+SphericalEcliptic ecl(eclipticLon,eclipticLat);
+
+SphericalICRS icrs;   /* initialized with some other value*/
+
+icrs.convertFrom(ecl);
+icrs.getLonLat(icrsLon, icrsLat);
+
+Matrix22 partials;
+icrs.convertFrom(ecl, partials);
+\end{verbatim}
+In the last two lines, we use another generic feature of {\tt convertFrom}: it can give you the partial derivative matrix of the conversion that you just did.  This is used for many things, such as propagating positional uncertainties into a new coordinate system.
+
+\subsection{Unit-vector representations}
+{\tt SphericalCoords} do not store the longitude/latitude representation, they store the position in the selected coordinate system as a unit-length 3-dimensional {\tt Vector3} object.  Coordinate conversions are much faster and singularity-free when coordinates are stored this way.  The {\tt getUnitVector()} and {\tt setUnitVector()} methods allow you access this representation of the coordinates.  The meaning of the three-vector depends on the type of the derived class, just as the lon/lat values do, {\it i.e.} are they ecliptic, Galactic, ICRS, etc.?
+
+You can also obtain the partial derivatives of the 3-dimensional representation with respect to the 2d ones, or vice-versa, with the {\tt derivsTo2d()} and {\tt derivsFrom2d} methods, respectively.  The partial derivatives of a transformation between coordinate systems that are obtained from the {\tt convertFrom()} method can be between the 2d or 3d representations of both systems.  The dimension of the matrix that you give the method will signal the kind of derivatives that you want.  For example if you hand the routine a reference to a {\tt Matrix23}, you will get the partial derivatives of the new lon/lat coordinates with respect to the 3d direction cosines in the old coordinate system.
+
+Note that a request for partial derivatives to/from a lon/lat system can generate an {\tt AstrometryErrror} exception if the coordinates are at the pole, since there is a singularity.  Other coordinate systems might throw exceptions if venturing to singular points or undefined regions.
+
+\subsection{Implementing a new coordinate system}
+The automated coordinate conversions are possible because the author of a new derived class must implement four protected methods.  {\tt convertToICRS} must give the unit vectors in the ICRS system (and also be capable of giving the partial derivatives of the ICRS 3-vector with respect to the native 3-vector).   The {\tt convertFromICRS} method must be able to set the native 3-vector given an ICRS {\tt Vector3}.  Hence the ICRS system serves as a {\it lingua franca} for all implemented coordinate systems.
+
+Two other protected methods both called {\tt projectIt} specify the maps in both directions between the 3d direction cosines and the 2d lon/lat coordinates for the implemented coordinate system.  These methods are implemented in the base class using the common definition that the 2d coords are indeed the latitude and longitude in a system with pole along the $\hat z$ direction and coordinate origin on the $\hat x$ unit vector.  However this can be overridden to allow the 2d coordinates to have any desired meaning.
+
+Hence to define a new coordinate system, one derives a class from {\tt SphericalCoords} and implements, at the least, the two ICRS conversion methods.  The {\tt projectIt} methods can optionally be implemented to have 2d coordinates that are not simply the lon/lat values with respect to the 3d system.
+
+\subsection{Implemented coordinate systems}
+\subsubsection{{\tt SphericalICRS}}
+Coordinates are in the ICRS system.  The {\tt convertToICRS} and {\tt convertFromICRS} are simply identity functions and the partial-derivative matrices are identity matrices.  Latitudes and longitudes have their standard meanings, with longitude increasing westward.  The implementation contains the {\tt getRADec} and {\tt setRADec} methods that simply alias the {\tt LonLat} functions, so the user does not have to remember that RA is the longitude and declination is the latitude in this system.
+
+\subsubsection{\tt SphericalEcliptic, SphericalInvariable}
+These are longitude/latitude systems with fixed rotations relative to the ICRS system, defined in the usual way with respect to the Earth's orbital plane and the invariable plane of the Solar System.  The inclinations and ascending nodes of these planes relative to ICRS are taken from the {\it AstronomicalConstants.h} file.
+
+Because rotation to a new pole is a very common coordinate transformation, there are {\tt Vector3}-valued functions {\tt rotateToPole()} and {\tt rotateFromPole()} defined in the implementation file {\it Astrometry.cpp}.  These will provide the new unit vector (and the partial derivatives matrix) for a coordinate system with its pole having the specified inclination and ascending node with respect to the ICRS system.  
+
+\subsubsection{\tt SphericalCustom}
+This is a latitude/longitude system with an orientation on the celestial sphere that is specified at the time of construction of the object.  The constructor for {\tt SphericalCustom} requires a reference to an instance of the {\tt Orientation} class.  This class is described in more detail below: it specifies the location of the system's coordinate origin on the sky, and the rotation angle of its axes.  
+
+{\bf Each {\tt SphericalCustom} coordinate saves only a {\tt const} pointer to its {\tt Orientation}.  This means that the {\tt Orientation} used during construction should not be altered or destroyed during the lifetime of all {\tt SphericalCustom} coordinates that refer to it.}
+
+\subsubsection{\tt TangentPlane}
+The coordinate system is a tangent-plane (gnomonic) projection of the sphere about a reference point specified at the construction of each instance.  As with {\tt SphericalCustom}, the coordinate origin and the orientation of the tangent plane axes are specified by reference to an {\tt Orientation} object.   The difference is that the 2d coordinates are not actually longitude and latitude, but rather the Cartesian coordinates $(\xi,\eta)$ of the projection of the point onto the tangent plane.  In terms of the direction cosines $\{x,y,z\}$ of the point on the celestial sphere, the 2d coordinates are $\xi=x/z$, $\eta=y/z$.  Note that the tangent plane 2d coordinates make sense only within 90\arcdeg\ of the tangent point.
+
+Like the {\tt SphericalCustom}, 
+{\bf each {\tt TangentPlane} coordinate saves only a {\tt const} pointer to its {\tt Orientation}.  This means that the {\tt Orientation} used during construction should not be altered or destroyed during the lifetime of all {\tt TangentPlane} coordinates that refer to it.}
+
+The {\tt read} and {\tt write} methods of {\tt TangentPlane} override the base class such that both coordinates are input or output in degrees.
+
+\subsection{{\tt Orientation} class}
+{\tt Orientation} defines a new point of view of the celestial sphere, {\it i.e.} a rotation of the sphere.  On construction one must specify a {\tt SphericalCoords} that will be the $z$ axis of the new viewpoint (the pole), and a double-valued position angle that will give the rotation angle of the $(x,y)$ coordinate system with respect to the local ICRS meridian at the pole.  ``Position angle'' or ``PA'' arguments are always in radians and give the angle of the y axis measured from north through east.  Since east corresponds to increasing RA, this convention means that PA is the negative of the usual mathematical convention of a rotation as being positive as the $x$ axis is rotated toward $y$.  The {\tt zrot} quantity stored by the class and accessible via {\tt getZRot} and {\tt setZRot} is the negation of the PA.
+
+The methods {\tt alignToEcliptic(), alignToICRS(),} and [\tt alignToInvariable()} are provided to set the $y$ axis to have the specified position angle (in radians, default$=0$) with respect to the local north directions in the respective coordinate systems.  {\tt alignToICRS()}.
+
+\subsubsection{Coordinate transformation}
+Each instance of {\tt Orientation} defines a new 3d coordinate system with new axes.  The method {\tt m()} returns a reference to a {\tt Matrix33} that converts a {\tt Vector3} in the ICRS system to a {\tt Vector3} in the newly oriented coordinate system (a rotation matrix).  This works, in particular, for unit vectors that represent directions on the celestial sphere.  In other words, if {\tt xICRS} is a {\tt Vector3} giving the ICRS direction cosines of a point on the celestial sphere, then {\tt orient.m()*xICRS} will be a {\tt Vector3} giving the direction cosines in the coordinate system described by {\tt orient}.
+
+The methods {\tt fromICRS(), toICRS()} will map 3-vectors from/to ICRS coordinates to/from their equivalents in the system defined by the instance of the {\tt Orientation} class.
+
+\subsubsection{Example of projection}
+Suppose you have an image that is a tangent-plane projection of the sky about some known location {\tt (projRA, projDec)} on the sky, and the projection axes are aligned to local ICRS E and N.  You measure the position of a star to be {\tt (xStar, yStar)} (in degrees) in this image and you want to know the ICRS RA and Dec.  Here is the code:
+\begin{verbatim}
+SphericalICRS pole(projRA, projDec);  // Projection pole: coordinates in radians
+Orientation orient(pole);             // Specify orientation: default PA is zero
+
+// Create a TangentPlane instance representing star's location on the sky,
+// with constructor including the Orientation of the coordinate system
+TangentPlane tp(xStar*DEGREE, yStar*DEGREE, orient);
+
+SphericalICRS icrs(tp);               // Create ICRS coordinates for same location
+
+// Read ICRS RA and Dec into new variables (in radians):
+double raStar, decStar;
+icrs.getLonLat(raStar, decStar);
+\end{verbatim}
+If you wanted to transform coordinate in the other direction, you create the {\tt icrs} object first, then create {\tt TangentPlane tp(icrs,orient)} to effect the conversion.  {\tt tp.getLonLat(xi,eta)} would put the tangent-plane coordinates (in radians) into variables {\tt xi} and {\tt eta}.
+
+\section{Cartesian coordinates}
+Locations in 3d space are represented as instances of the abstract base class {\tt CartesianCoords}. Every instance of the base class represents a definitive point in space, but the coordinate system used depends upon the type of derived class for the instance, in the same way the {\tt SphericalCoords} works for locations on the celestial sphere.  The method {\tt getVector()} returns a 3-vector giving the position in the system specified by the derived class.  The distance units for {\tt CartesianCoords} are not specified in the code, so the user needs to maintain consistency.  All of the orbital-mechanics code will assume units of AU.
+
+???? continue this....
+
+\end{document}
