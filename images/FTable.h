@@ -144,6 +144,8 @@ namespace img {
 
     // Get repeat count of a column: 1 (or 0) for scalar, -1 for variable-length, >=0 for fixed.
     long repeat(string columnName) const {return (*D)[columnName]->repeat();}
+    // If the column holds strings, return the defined max length of strings, or -1 for variable.
+    long stringLength(string columnName) const {return (*D)[columnName]->stringLength();}
     // Get the type of data stored in the C arrays (using the FITStypes.h class)
     FITS::DataType elementType(string columnName) const {return (*D)[columnName]->elementType();}
 
@@ -151,10 +153,13 @@ namespace img {
     // value if it is too short.
     // The repeat argument has meaning for string or array columns: <0 for variable length,
     // >=0 gives fixed length (which is really max length for strings).
+    // Given stringLength>= means all strings must be at this length or shorter (and
+    // they will be stored as fixed-length in FITS files).
     // Exception thrown input arrays/strings are too long for fixed-length fields
     template<class T>
-    void addColumn(const vector<T>& values, string columnName, int repeat=-1) {
-      D->addColumn(values, columnName, repeat);
+      void addColumn(const vector<T>& values, string columnName, long repeat=-1,
+		     long stringLength=-1 ) {
+      D->addColumn(values, columnName, repeat, stringLength);
     }
 
     // ??? get/set the column attributes: units, TDIM, format, null values?

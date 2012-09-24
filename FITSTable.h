@@ -49,9 +49,9 @@ namespace img {
     // Close on destruction
     ~FITSTable();
     // Extract all columns and range of rows (rowEnd=1-past-end, zero-indexed, -1=go to end)
-    FTable extract(long rowStart=0; long rowEnd=-1) const;
+    FTable extract(long rowStart=0, long rowEnd=-1) const;
     // Extract columns matching any of the input strings (FITSIO wildcards OK)
-    FTable extract(const vector<string>& templates, Start=0; long rowEnd=-1) const;
+    FTable extract(const vector<string>& templates, long rowStart=0, long rowEnd=-1) const;
   };
 
 } // end namespace img

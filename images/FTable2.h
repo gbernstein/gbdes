@@ -32,6 +32,8 @@ namespace img {
 
     // Return 1 (or 0) for scalar cells, >1 for fixed-length array cell, <0 for var-length
     virtual long repeat() const=0;
+    // Return max allowed length of string-valued elements of column, or -1 to be free
+    virtual long stringLength() const=0;
     virtual FITS::DataType elementType() const =0;  // FITS DataType for scalar or array element
 
     virtual void eraseRows(long rowStart, long rowEnd) =0;
@@ -47,18 +49,26 @@ namespace img {
   class ScalarColumn: public ColumnBase {
   protected:
     vector<DT> v;  // Holds the column's data
+    // Protected function to check length of input strings
+    void checkLength(const string& input) {
+      if (input.size() > length) 
+	throw FTableError("Input string <" + input + "> too long at column " + name());
+    }
   private:
     const FITS::DataType dType;
+    long length;   // max length of string, if this is holding strings
   public:
-    ScalarColumn(string name): ColumnBase(name), dType(FITS::FITSTypeOf<DT>()) {}
-    ScalarColumn(const vector<DT>& in, string name, long repeat_=1):
-      ColumnBase(name), dType(FITS::FITSTypeOf<DT>()), v(in) {}
+    ScalarColumn(string name, long length_=-1): 
+      ColumnBase(name), dType(FITS::FITSTypeOf<DT>()), length(length_) {}
+    ScalarColumn(const vector<DT>& in, string name, long length_=-1):
+      ColumnBase(name), dType(FITS::FITSTypeOf<DT>()), v(in), length(length_) {}
     virtual ~ScalarColumn() {}
     virtual ColumnBase* duplicate() const {return new ScalarColumn(*this);}
     virtual long size() const {return v.size();}
     virtual void reserve(long rowsReserved) {v.reserve(rowsReserved);}
     virtual void resize(long newSize) {v.resize(newSize);}
     virtual long repeat() const {return 1;}  // scalar default
+    virtual long stringLength() const {return length;} 
     virtual FITS::DataType elementType() const {return dType;}
 
     // Range checking will be done at TableData level, so none here
@@ -104,52 +114,49 @@ namespace img {
     }
   };
 
-  // Give string its own derived class since we may want to limit
-  // length of strings for use in fixed-length array FITS columns
-  class StringColumn: public ScalarColumn<string> {
-  private:
-    typedef ScalarColumn<string> Base;
-    const long width;
-    void checkWidth(const string& input) {
-      if (input.size() > width) 
-	throw FTableError("Input string <" + input + "> too large at column " + name());
-    }
-  public:
-    StringColumn(string name, long repeat=-1): Base(name), width(repeat) {}
-    StringColumn(const vector<string>& in, string name, int repeat=-1): 
-      Base(name), width(repeat) {
-      if (repeat>=0) 
-	for (int i=0; i<in.size(); i++)
-	  checkWidth(in[i]);
-      v = in;
-    }
-    virtual ~StringColumn() {}
-    virtual ColumnBase* duplicate() const {return new StringColumn(*this);}
-    virtual long repeat() const {return width;}
-    // Writes return the length of column after writing.
+  // Specialization for string-valued scalar arrays, check length as needed
+  template<>
+  ScalarColumn<string>::StringColumn(const vector<string>& in, string name, 
+				     long length_=-1): 
+    Base(name, length_), dType(FITS::FITSTypeOf<string>()) {
+    if (stringLength()>=0) 
+      for (int i=0; i<in.size(); i++)
+	checkLength(in[i]);
+    v = in;
+  }
 
-    virtual long writeCell(const string& value, long row) {
-      if (width>=0) checkWidth(value);
-      return Base::writeCell(value, row);
-    }
+  template<>
+  virtual long
+  ScalarColumn<string>::writeCell(const string& value, long row) {
+    if (stringLength()>=0) checkLength(value);
+    // extend column to hold data
+    if (row >= v.size()) v.resize(row+1);
+    v[row] = value;
+    return v.size();
+  }
 
-    virtual long writeCells(const vector<string>& values, long rowStart=0) {
-      if (width>=0) 
-	for (int i=0; i<values.size(); i++)
-	  checkWidth(values[i]);
-      return Base::writeCells(values, rowStart);
-    }
-  };
-
+  template<>
+  virtual long
+  ScalarColumn<string>::writeCells(const vector<string>& values, long rowStart=0) {
+    if (stringLength()>=0) 
+      for (int i=0; i<values.size(); i++)
+	checkLength(values[i]);
+    long requiredSize = rowStart + values.size();
+    if (requiredSize > v.size()) v.resize(requiredSize);
+    for (int i=0; i<values.size(); i++)
+      v[i+rowStart] = values[i];
+    return v.size();
+  }
+  
   template <class DT>
   class ArrayColumn: public ScalarColumn<vector<DT> > {
   private:
     typedef ScalarColumn<vector<DT> > Base;
     const FITS::DataType dType;
   public:
-    ArrayColumn(string name): Base(name), dType(FITS::FITSTypeOf<DT>()) {}
-    ArrayColumn(const vector<vector<DT> >& in, string name): 
-    Base(in, name), dType(FITS::FITSTypeOf<DT>()) {}
+    ArrayColumn(string name, long length_=-1): Base(name, length_), dType(FITS::FITSTypeOf<DT>()) {}
+    ArrayColumn(const vector<vector<DT> >& in, string name, long length=-1): 
+      Base(in, name, length_), dType(FITS::FITSTypeOf<DT>()) {}
     virtual ColumnBase* duplicate() const {return new ArrayColumn(*this);}
     virtual ~ArrayColumn() {}
     // For variable-length array, the only thing we need to override is 
@@ -157,6 +164,42 @@ namespace img {
     virtual long repeat() const {return -1;}
     virtual FITS::DataType elementType() const {return dType;}
   };
+
+  // Override the constructor & writing routines for Array column to check length
+  // of strings in arrays of strings
+  template<>
+  ArrayColumn<string>::ArrayColumn(const vector<vector<string> >& in, string name,
+				   long length_=-1):
+    Base(name, length_), dType(FITS::FITSTypeOf<string>()) {
+    if (stringLength()>=0)
+      for (int i=0; i<in.size(); i++)
+	for (int j=0; j<in[i].size(); j++)
+	  checkLength(in[i][j]);
+    v = in;
+  }
+
+  template<>
+  ArrayColumn<string>::WriteCell(const vector<string>& value, long row) {
+    if (stringLength()>=0) 
+      for (int i=0; i<value.size(); i++)
+	checkLength(value[i]);
+    // extend column to hold data
+    if (row >= v.size()) v.resize(row+1);
+    v[row] = value;
+  }
+
+  template <>
+  ArrayColumn<string>::writeCells(const vector<vector<string> >& values, long rowStart=0) {
+    if (stringLength()>=0) {
+      for (int i=0; i<values.size(); i++) 
+	for (int j=0; j<values[i].size(); j++) 
+	  checkLength(values[i][j]);
+    long requiredSize = rowStart + values.size();
+    if (requiredSize > v.size()) v.resize(requiredSize);
+    for (int i=0; i<values.size(); i++)
+      v[i+rowStart] = values[i];
+    return v.size();
+  }
 
   template <class DT>
   class FixedArrayColumn: public ArrayColumn<DT> {
@@ -166,49 +209,44 @@ namespace img {
     const int width;
     virtual ColumnBase* duplicate() const {return new FixedArrayColumn(*this);}
     // Function to pad input array to required width; exception if input too long
-    void setToWidth(long row, const vector<DT>& in) {
+    void checkWidth(const vector<DT>& in) {
       if (in.size() > width)
 	FormatAndThrow<FTableError>() 
 	  << "Input of fixed-length array cell is too long for column "
 	  << ColumnBase::name()
-	  << " row " << row
 	  << " width " << width
 	  << " input size " << in.size();
-      else if (in.size()==width)
-	v[row] = in;
-      else {
-	v[row].resize(width);
-	int j=0;
-	typename vector<DT>::iterator k=v[row].begin();
-	for ( ; j<in.size(); j++)
-	  *(k++) = in[j];
-	for ( ; j<width; j++)
-	  *(k++) = DT();
-      }
     }
   public:
-    FixedArrayColumn(string name, long repeat): Base(name), width(repeat) {}
+    FixedArrayColumn(string name, long repeat, long length_=-1): 
+      Base(name, length_), width(repeat) {}
     // Initialize with data assumes that all elements have size()<=repeat
-    FixedArrayColumn(const vector<vector<DT> >& in, string name, int repeat): 
-      Base(name), width(repeat) {
+    FixedArrayColumn(const vector<vector<DT> >& in, string name, long repeat, long length_=-1): 
+      Base(name, length_), width(repeat) {
       v.resize(in.size());
-      for (int i=0; i<in.size(); i++)
-	setToWidth(i,in[i]);
+      for (long i=0; i<in.size(); i++)
+	WriteCell(in[i], i);
     }
     virtual long repeat() const {return width;}
 
-    // Override the setters to check and pad input vectors
-    virtual long writeCell(const vector<DT>& value, long row) {
-      // extend column to hold data
-      if (row >= v.size()) v.resize(row+1, vector<DT>(width));
-      setToWidth(row, value);
-      return v.size();
+    virtual writeCell(const vector<string>& value, long row) {
+      checkWidth(value);
+      v[row].reserve(width);
+      // Use normal variable-length array writer
+      long out = Base::writeCell(value, row);
+      // Fill out cell with null values as needed to meet fixed array length
+      v[row].resize(width);
+      return out;
     }
-    virtual long writeCells(const vector<vector<DT> >& values, long rowStart=0) {
+
+    // Override variable-array version with this one to make sure each row
+    // is not too long, and is padded out
+    virtual writeCells(const vector<vector<string> >& values, long rowStart=0) {
+      // extend column to hold data
       if (rowStart + values.size() > v.size()) 
 	v.resize(rowStart+values.size(), vector<DT>(width));
       for (int i=0; i<values.size(); i++)
-	setToWidth(i+rowStart,values[i]);
+	writeCell(values[i], i+rowStart);
       return v.size();
     }
 
