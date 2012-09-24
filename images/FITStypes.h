@@ -98,29 +98,29 @@ namespace FITS {
     return Tnull;
   }
   template <>
-  DataType FITSTypeOf<bool>() {return Tlogical;}
+  inline DataType FITSTypeOf<bool>() {return Tlogical;}
   template <>
-  DataType FITSTypeOf<signed char>() {return Tsbyte;}
+  inline DataType FITSTypeOf<signed char>() {return Tsbyte;}
   template <>
-  DataType FITSTypeOf<unsigned char>() {return Tbyte;}
+  inline DataType FITSTypeOf<unsigned char>() {return Tbyte;}
   template <>
-  DataType FITSTypeOf<short>() {return Tshort;}
+  inline DataType FITSTypeOf<short>() {return Tshort;}
   template <>
-  DataType FITSTypeOf<unsigned short>() {return Tushort;}
+  inline DataType FITSTypeOf<unsigned short>() {return Tushort;}
   template <>
-  DataType FITSTypeOf<int>() {return Tint;}
+  inline DataType FITSTypeOf<int>() {return Tint;}
   template <>
-  DataType FITSTypeOf<unsigned int>() {return Tuint;}
+  inline DataType FITSTypeOf<unsigned int>() {return Tuint;}
   template <>
-  DataType FITSTypeOf<float>() {return Tfloat;}
+  inline DataType FITSTypeOf<float>() {return Tfloat;}
   template <>
-  DataType FITSTypeOf<double>() {return Tdouble;}
+  inline DataType FITSTypeOf<double>() {return Tdouble;}
   template <>
-  DataType FITSTypeOf<complex<float> >() {return Tcomplex;}
+  inline DataType FITSTypeOf<complex<float> >() {return Tcomplex;}
   template <>
-  DataType FITSTypeOf<complex<double> >() {return Tdblcomplex;}
+  inline DataType FITSTypeOf<complex<double> >() {return Tdblcomplex;}
   template <>
-  DataType FITSTypeOf<string>() {return Tstring;}
+  inline DataType FITSTypeOf<string>() {return Tstring;}
 
   // Convert to/from BITPIX keywords to code for intrinsic data type that can hold it
   inline DataType

@@ -7,12 +7,13 @@ CXX = g++-4 -fopenmp
 OPTFLAGS = -O3 -DASSERT
 
 # ABS_INCLUDES are absolute paths that will be exported to subdirectories
-ABS_INCLUDES = -I /sw/include
+ABS_INCLUDES = -I /sw/include -I /usr/local/cfitsio/include -I /usr/local/tmv/include \
+	-I /usr/local/fftw/include
 
 # LIB_DIRS 
-LIB_DIRS = -L/sw/lib
+LIB_DIRS = -L /sw/lib -L /usr/local/cfitsio/lib -L /usr/local/tmv/lib -L /usr/local/fftw/lib
 
-TMV_LINK := $(shell cat /sw/share/tmv-link)
+TMV_LINK := $(shell cat /usr/local/tmv/share/tmv/tmv-link)
 
 ##### Below here should be site-independent
 SUBDIRS = utilities images astrometry
@@ -28,6 +29,7 @@ LIBS = -lm $(LIB_DIRS) -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
 	images/FITS.o images/Image.o images/FITSImage.o images/HeaderFromStream.o \
+	images/FITSTable.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/PixelMapCollection.o 
 

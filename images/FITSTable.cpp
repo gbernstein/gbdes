@@ -1,4 +1,4 @@
-// Read/Write FTables from FITS extensions
+// Read/Writewrite FTables from FITS extensions
 
 #include "FITSTable.h"
 
@@ -12,8 +12,8 @@ FITSTable::FITSTable(string filename, int hduNumber_): fptr(0),
   int hdutype;
   fits_open_file(&fptr, fname.c_str(), READONLY, &status);
   fits_movabs_hdu(fptr, hduNumber, &hdutype, &status);
-  if ( (HDUType(hdutype) != HDUBinTable) ||
-       (HDUType(hdutype) != HDUAsciiTable) )
+  if ( !(HDUType(hdutype) == HDUBinTable  ||
+       HDUType(hdutype) == HDUAsciiTable) )
     throw FITSError("Not a FITS table extension");
 
   fits_get_num_cols(fptr, &ncols, &status);
@@ -21,18 +21,21 @@ FITSTable::FITSTable(string filename, int hduNumber_): fptr(0),
   if (status) throw_CFITSIO("Opening FITSTable in file " + fname);
 }
 
-void
+int
 FITSTable::moveTo() const {
   int status=0;
   int hdutype;
   fits_movabs_hdu(fptr, hduNumber, &hdutype, &status);
-  if (status) throw_CFITSIO();
+  return status;
 }
 
-~FITSTable() {
+FITSTable::~FITSTable() {
   if (!fptr) return;
   int status=0;
-  fits_close_file(fptr, &status);
+#pragma openmp critical (fitsio)
+  {
+    fits_close_file(fptr, &status);
+  }
   // Don't throw if unwinding another exception:
   if (status && !std::uncaught_exception()) 
     throw_CFITSIO("closeFile() on " + getFilename());
@@ -53,8 +56,8 @@ FITSTable::extract(long rowStart, long rowEnd) const {
   img::FTable ft(outRows);
   vector<string> colNames;
   vector<int> colNums;
-  moveTo();
-  findColumns(ft, "*", colNames, colNums);
+  const string matchAll("*");
+  findColumns(ft, matchAll, colNames, colNums);
   createColumns(ft, colNames, colNums);
   readData(ft, colNames, colNums, rowStart, rowEnd);
   return ft;
@@ -69,7 +72,6 @@ FITSTable::extract(const vector<string>& templates,
   img::FTable ft(outRows);
   vector<string> colNames;
   vector<int> colNums;
-  moveTo();
   for (int i=0; i<templates.size(); i++)
     findColumns(ft, templates[i], colNames, colNums);
   createColumns(ft, colNames, colNums);
@@ -78,40 +80,53 @@ FITSTable::extract(const vector<string>& templates,
 }
 
 void
-FITSTable::findColumns(FITSTable& ft,
-		       string template,
-		       vector<string>& names,
-		       vector<int>& numbers) const {
+FITSTable::findColumns(FTable& ft,
+		       string matchMe,
+		       vector<string>& colNames,
+		       vector<int>& colNumbers) const {
   char colName[FITS::MAX_COLUMN_NAME_LENGTH];
-  do {
-    int colNum;
-    fits_get_colname(fptr, CASEINSEN, template.c_str(), colName, &colNum, &status);
-    if (status==0 || status==COL_NOT_UNIQUE) {
-      // duplicate?
-      for (int i=0; i<numbers.size(); i++)
-	if (colNum==numbers[i]) continue;
-      // No; add to the lists
-      colNames.push_back(colName);
-      colNums.push_back(colNum);
+
+  int status = 0;
+#pragma omp critical (fitsio) 
+  {  
+    status = moveTo();
+    do {
+      int colNum;
+      // Note const_cast to match non-const template for CFITSIO
+      fits_get_colname(fptr, CASEINSEN, 
+		       const_cast<char*> (matchMe.c_str()), colName, &colNum, &status);
+      if (status==0 || status==COL_NOT_UNIQUE) {
+	// duplicate?
+	for (int i=0; i<colNumbers.size(); i++)
+	  if (colNum==colNumbers[i]) continue;
+	// No; add to the lists
+	colNames.push_back(colName);
+	colNumbers.push_back(colNum);
+      }
+    } while (status==COL_NOT_UNIQUE);
+    if (status==COL_NOT_FOUND) {
+      status=0;
+      fits_clear_errmsg();
     }
-  } while (status==COL_NOT_UNIQUE);
-  if (status==COL_NOT_FOUND) {
-    status=0;
-    fits_clear_errmsg();
-  }
+  } // end omp critical region
   if (status) throw_CFITSIO();
 }
 
 void
-FITSTable::createColumns(FITSTable& ft, 
-			 const vector<string>& names,
-			 const vector<int>& numbers) const {
+FITSTable::createColumns(FTable& ft, 
+			 const vector<string>& colNames,
+			 const vector<int>& colNumbers) const {
   int status=0;
   int datatype;
   long repeat, width;
   for (int i=0; i<colNames.size(); i++) {
-    if (fits_get_eqcoltype(fptr, colNums[i], &datatype, &repeat, &width, &status))
-      throw_CFITSIO("Getting info for column " + colName[i]);
+#pragma omp critical (fitsio) 
+    {  
+      status = moveTo();
+      fits_get_eqcoltype(fptr, colNumbers[i], &datatype, &repeat, &width, &status);
+    }
+    if (status) throw_CFITSIO("Getting info for column " + colNames[i]);
+
     // width will give length of strings if this is string type
     bool isVariable = false;
     if (datatype < 0) {
@@ -201,7 +216,7 @@ FITSTable::createColumns(FITSTable& ft,
 }
 
 void 
-FITSTable::readData(FITSTable& ft, 
+FITSTable::readData(FTable& ft, 
 		    const vector<string>& names,
 		    const vector<int>& numbers,
 		    long rowStart,
@@ -211,8 +226,12 @@ FITSTable::readData(FITSTable& ft,
   // recommended row increments for buffering
   int status = 0;
   long bufferRows;
-  if (fits_get_rowsize(fitsptr, &bufferRows, &status))
-    throw_CFITSIO();
+#pragma omp critical (fitsio)
+  {
+    status = moveTo();
+    fits_get_rowsize(fptr, &bufferRows, &status);
+  }
+  if (status) throw_CFITSIO();
   
   for (long firstRow = rowStart; firstRow < rowEnd; firstRow+=bufferRows) {
     long rowCount = std::min(rowEnd, firstRow+bufferRows) - firstRow;
@@ -222,49 +241,49 @@ FITSTable::readData(FITSTable& ft,
 
       switch (ft.elementType(name)) {
       case FITS::Tstring:
-	GetFitsColumnData<string>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<string>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tlogical:
-	GetFitsColumnData<bool>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<bool>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tbyte:
-	GetFitsColumnData<unsigned char>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<unsigned char>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tsbyte:
-	GetFitsColumnData<signed char>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<signed char>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tshort:
-	GetFitsColumnData<short>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<short>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tushort:
-	GetFitsColumnData<unsigned short>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<unsigned short>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tint:
-	GetFitsColumnData<int>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<int>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tuint:
-	GetFitsColumnData<unsigned int>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<unsigned int>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tlong:
-	GetFitsColumnData<long>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<long>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tulong:
-	GetFitsColumnData<unsigned long>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<unsigned long>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tlonglong:
-	GetFitsColumnData<LONGLONG>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<LONGLONG>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tfloat:
-	GetFitsColumnData<float>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<float>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tdouble:
-	GetFitsColumnData<double>(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<double>(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tcomplex:
-	GetFitsColumnData<complex<float> >(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<complex<float> >(ft, name, num, rowStart, rowCount);
 	break;
       case FITS::Tdblcomplex:
-	GetFitsColumnData<complex<double> >(fitsptr, ft, name, num, rowStart, rowCount);
+	getFitsColumnData<complex<double> >(ft, name, num, rowStart, rowCount);
 	break;
       default:
 	FormatAndThrow<FITSError>() << "Cannot convert data type " 
@@ -283,43 +302,41 @@ FITSTable::readData(FITSTable& ft,
 template <class T>
 void 
 FITSTable::getFitsColumnData(FTable ft, string colName, int icol, 
-			     long rowStart, long nRows) {
+			     long rowStart, long nRows) const {
   if (nRows < 1) return;
   FITS::DataType dtype = FITS::FITSTypeOf<T>();
   int status=0;
-  T* nullptr = 0;
+  T* nullPtr = 0;
   int anyNulls;
   long repeat = ft.repeat(colName);
   if (repeat < 0) {
-    // Branch for variable-length array
-    // Get the vector that says how long each entry is
-    long repeats[nRows];
-    long offsets[nRows];
-    // Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-    fits_read_descripts(fptr, icol, rowStart+1, nRows, repeats, offsets, &status);
-    long totalElements = 0;
-    for (int i=0; i<nRows; i++)
-      totalElements += repeats[i];
-    vector<T> data(totalElements);
-    // Read all of the elements
-    fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, 
-		  (LONGLONG) totalElements, nullPtr, &data[0], &anyNulls, &status);
-    if (status) throw_CFITSIO("Reading table column " + colName);
-    // Repackage into vectors of variable size
-    vector<vector<T> > vv(nRows);
-    typename vector<T>::const_iterator inptr = data.begin();
+    // Branch for variable-length array: read row by row
+    long nElements;
+    long offset;
+    vector<T> data;
     for (int i=0; i<nRows; i++) {
-      long length = repeats[i];
-      vv[i] = vector<T>(inptr, inptr + length);
-      inptr += length;
-    }
-    ft.writeCells(vv, colName, rowStart);
+#pragma omp critical (fitsio)
+      {
+	status = moveTo();
+	// Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
+	fits_read_descript(fptr, icol, rowStart+1+i, &nElements, &offset, &status);
+	data.resize(nElements);
+	fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+		      (LONGLONG) nElements, nullPtr, &data[0], &anyNulls, &status);
+      }
+      if (status) throw_CFITSIO("Reading table column " + colName);
+      ft.writeCell(data, colName, rowStart+i);
+    } // end row loop
   } else if (repeat>1) {
-    // Branch for fixed-length array
-    long length=repeat * nRows;
-    vector<T> data(length);
-    fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) length,
-		  nullPtr, &data[0], &anyNulls, &status);
+    // Branch for fixed-length array - can read all rows at one time
+    long nElements = repeat * nRows;
+    vector<T> data(nElements);
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
+		    nullPtr, &data[0], &anyNulls, &status);
+    }
     if (status) throw_CFITSIO("Reading table column " + colName);
     typename vector<T>::const_iterator inptr = data.begin();
     for (int i=0; i<nRows; i++) {
@@ -329,8 +346,12 @@ FITSTable::getFitsColumnData(FTable ft, string colName, int icol,
   } else {
     // branch for scalar column
     vector<T> data(nRows);
-    fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
-		  nullPtr, &data[0], &anyNulls, &status);
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
+		    nullPtr, &data[0], &anyNulls, &status);
+    }
     if (status) throw_CFITSIO("Reading table column " + colName);
     ft.writeCells(data, colName, rowStart);
   }
@@ -342,43 +363,42 @@ FITSTable::getFitsColumnData(FTable ft, string colName, int icol,
 template <>
 void 
 FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol, 
-				   long rowStart, long rowEnd) const {
+				   long rowStart, long nRows) const {
   if (nRows < 1) return;
   FITS::DataType dtype = FITS::Tlogical;
   int status=0;
   char* nullPtr = 0;
+  int anyNulls;
   long repeat = ft.repeat(colName);
   if (repeat < 0) {
-    // Branch for variable-length array
-    // Get the vector that says how long each entry is
-    long repeats[nRows];
-    long offsets[nRows];
-    // Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-    fits_read_descripts(fptr, icol, rowStart+1, nRows, repeats, offsets, &status);
-    long totalElements = 0;
-    for (int i=0; i<nRows; i++)
-      totalElements += repeats[i];
-    vector<char> data(totalElements);
-    // Read all of the elements
-    fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, 
-		  (LONGLONG) totalElements, nullPtr, &data[0], &anyNulls, &status);
-    if (status) throw_CFITSIO("Reading table column " + colName);
-    // Repackage into vectors of variable size
-    vector<vector<bool> > vv(nRows);
-    // Convert char to bool as we transfer:
-    typename vector<char>::const_iterator inptr = data.begin();
+    // Branch for variable-length array: read row by row
+    long nElements;
+    long offset;
+    vector<char> data;
     for (int i=0; i<nRows; i++) {
-      long length = repeats[i];
-      vv[i] = vector<bool>(inptr, inptr + length);
-      inptr += length;
-    }
-    ft.writeCells(vv, colName, rowStart);
+#pragma omp critical (fitsio)
+      {
+	status = moveTo();
+	// Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
+	fits_read_descript(fptr, icol, rowStart+1+i, &nElements, &offset, &status);
+	data.resize(nElements);
+	fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+		      (LONGLONG) nElements, nullPtr, &data[0], &anyNulls, &status);
+      }
+      if (status) throw_CFITSIO("Reading table column " + colName);
+      // Rewrite as bool
+      ft.writeCell(vector<bool>(data.begin(), data.end()), colName, rowStart+i);
+    } // end row loop
   } else if (repeat>1) {
     // Branch for fixed-length array
-    long length=repeat * nRows;
-    vector<char> data(length);
-    fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) length,
-		  nullPtr, &data[0], &anyNulls, &status);
+    long nElements=repeat * nRows;
+    vector<char> data(nElements);
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
+		    nullPtr, &data[0], &anyNulls, &status);
+    }
     if (status) throw_CFITSIO("Reading table column " + colName);
     typename vector<char>::const_iterator inptr = data.begin();
     for (int i=0; i<nRows; i++) {
@@ -388,8 +408,12 @@ FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol,
   } else {
     // branch for scalar column
     vector<char> data(nRows);
-    fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
-		  nullPtr, &data[0], &anyNulls, &status);
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
+		    nullPtr, &data[0], &anyNulls, &status);
+    }
     if (status) throw_CFITSIO("Reading table column " + colName);
     // Convert to a bool vector
     vector<bool> booldata(data.begin(), data.end());
@@ -398,12 +422,89 @@ FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol,
 }
 
 // Specialize for string
-// Complications because bintables store strings as char, so the "repeat" is total number
-// of chars, not number of strings.  There is a hack (use TDIM) to store an array of fixed
+// Complications because bintables store strings as char arrays.  So for FITSIO, "repeat" is
+// of chars, not number of strings, but FTable will instead use "stringLength()".  
+// There is a hack (use TDIM) to store an array of fixed
 // number of strings of fixed length (can fill with nulls to use smaller strings.
 // Not sure whether variable-length char arrays are ever used.
 template <>
 void 
 FITSTable::getFitsColumnData<string>(FTable ft, string colName, int icol, 
-				     long rowStart, long rowEnd) const {
+				     long rowStart, long nRows) const {
+  if (nRows < 1) return;
+  FITS::DataType dtype = Tstring;
+  int status=0;
+  char* nullPtr = 0;
+  int anyNulls;
+  long repeat = ft.repeat(colName);
+  // First consider variable-length strings:
+  long length = ft.stringLength(colName);
+  if (length < 0) {
+    if (repeat == 1) {
+      // Read a single variable-length string for each row
+      long nElements;
+      long offset;
+      char *data;
+      for (int i=0; i<nRows; i++) {
+#pragma omp critical (fitsio)
+	{
+	  status = moveTo();
+	  // Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
+	  fits_read_descript(fptr, icol, rowStart+1+i, &nElements, &offset, &status);
+	  data = new char[nElements+1];
+	  // Read as a byte (char) array ???
+	  fits_read_col(fptr, Tbyte, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+			(LONGLONG) nElements, nullPtr, data, &anyNulls, &status);
+	}
+	if (status) throw_CFITSIO("Reading table column " + colName);
+	// Rewrite as string: make sure it's null-terminated
+	data[nElements] = 0;
+	string s(data);
+	ft.writeCell(s, colName, rowStart+i);
+	delete[] data;
+      } // end row loop
+    } else {
+    // Don't know how FITS would store arrays of variable-length strings!
+    FormatAndThrow<FITSError>() << "FITS table retrieval of arrays of variable-length strings"
+				<< " not implemented.  Column " << colName;
+    }
+  } else {
+    // Branch for fixed-length string per cell
+    long nStrings= repeat * nRows;
+    vector<char*> data(nStrings);
+    for (int i=0; i<nStrings; i++)
+      data[i] = new char[length+1];
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      // ??? nStrings or # characters here ???
+      fits_read_col(fptr, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nStrings,
+		    nullPtr, &data[0], &anyNulls, &status);
+    }
+    if (status) throw_CFITSIO("Reading table column " + colName);
+
+    if (repeat==1) {
+      // One string per cell; make an array of them all
+      vector<string> vs(nRows);
+      for (int i=0; i<nRows; i++) {
+	// Make sure it's null terminated:
+	data[i][length]=0;
+	vs[i] = data[i];
+	delete[] data[i];
+      }
+      ft.writeCells(vs, colName, rowStart);
+    } else {
+      // Multiple strings per cell: write cells one at a time
+      vector<string> vs(repeat);
+      int iString = 0;
+      for (int j=0; j<nRows; j++) {
+	for (int i=0; i<repeat; i++, iString++) {
+	  data[iString][length] = 0; // insure null termination
+	  vs[i] = data[iString];
+	  delete[] data[iString];
+	}
+	ft.writeCell(vs, colName, rowStart+j);
+      }
+    }
+  } // end if/then/else for array configuration
 }

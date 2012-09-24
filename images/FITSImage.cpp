@@ -477,7 +477,7 @@ FITSImage<T>::resize(const Bounds<int> newBounds) {
   int status(0);
   int naxis(2);
   long naxes[MAX_IMAGE_DIMENSIONS];
-  int bitpix = DataType_to_Bitpix(MatchType<T>());
+  int bitpix = DataType_to_Bitpix(FITSTypeOf<T>());
   if (newBounds) {
     // Image is defined, make 2d
     if (newBounds.getXMin()!=1 ||
@@ -661,7 +661,7 @@ FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
     firstRowOffset = 0;
     firstpix[1]=ymin;
     nelements = (ymax-ymin+1)*xsize;
-    fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+    fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		  firstpix, nelements, NULL,
 		  buffer, NULL, &status);
     bufferBounds=Bounds<int>(diskBounds.getXMin(), diskBounds.getXMax(), 
@@ -681,7 +681,7 @@ FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
 	// First get the part at bottom of buffer
 	firstpix[1]=firstBuffRow;
 	nelements = (readmax-firstBuffRow+1)*xsize;
-	if (nelements>0) fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+	if (nelements>0) fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 				       firstpix, nelements, NULL,
 				       buffer, NULL, &status);
 	// Now get the lower row range, to store at top of buffer
@@ -689,7 +689,7 @@ FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
 	nelements = (firstBuffRow - readmin)*xsize;
 	firstRowOffset = readmin + bufferRows - firstBuffRow;
 	T* target = buffer + xsize *  firstRowOffset;
-	fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+	fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		      firstpix, nelements, NULL,
 		      target , NULL, &status);
       } else {
@@ -699,7 +699,7 @@ FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
 					     -diskBounds.getXMin() + 1);
 	firstRowOffset = readmin - firstBuffRow;
 	T* target = buffer + xsize*firstRowOffset;
-	fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+	fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		      firstpix, nelements, NULL,
 		      target , NULL, &status);
       }
@@ -727,13 +727,13 @@ FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
 	nelements = (lastBuffRow-readmin+1)*xsize;
 	T* target = buffer + xsize*
 	  (bufferRows - 1 - lastBuffRow + readmin);
-	fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+	fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		      firstpix, nelements, NULL,
 		      target, NULL, &status);
 	// Now get the last row range, which will wrap around
 	firstpix[1] = lastBuffRow+1;
 	nelements = (readmax - lastBuffRow)*xsize;
-	fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+	fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		      firstpix, nelements, NULL,
 		      buffer , NULL, &status);
       } else {
@@ -743,7 +743,7 @@ FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
 	T* target;
 	target = buffer + xsize*
 	  (bufferRows - 1 - lastBuffRow + readmin);
-	fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+	fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		      firstpix, nelements, NULL,
 		      target , NULL, &status);
       }
@@ -799,7 +799,7 @@ FITSImage<T>::writeRows(const int ymin, const int ymax) const {
     // Need to do the writing in 2 sections.  First the lower rows:
     firstpix[1]=ymin;
     nelements = (lastBuffRow-ymin+1)*xsize;
-    fits_write_pix(parent.getFitsptr(), MatchType<T>(),
+    fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		   firstpix, nelements, 
 		   bufferLocation(diskBounds.getXMin(), ymin), 
 		   &status);
@@ -807,7 +807,7 @@ FITSImage<T>::writeRows(const int ymin, const int ymax) const {
     // Now the upper range, which wraps around to beginning of buffer
     firstpix[1] = lastBuffRow+1;
     nelements = (ymax - lastBuffRow)*xsize;
-    fits_write_pix(parent.getFitsptr(), MatchType<T>(),
+    fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		   firstpix, nelements,
 		   bufferLocation(diskBounds.getXMin(), lastBuffRow+1),
 		   &status);
@@ -815,7 +815,7 @@ FITSImage<T>::writeRows(const int ymin, const int ymax) const {
     // Region to write is contiguous
     firstpix[1]=ymin;
     nelements = (ymax-ymin+1)*xsize;
-    fits_write_pix(parent.getFitsptr(), MatchType<T>(),
+    fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		   firstpix, nelements, 
 		   bufferLocation(diskBounds.getXMin(),ymin), 
 		   &status);
@@ -994,7 +994,7 @@ FITSImage<T>::extract(Bounds<int> b) const {
     long firstpix[2]={diskBounds.getXMin(),diskBounds.getYMin()};
     int status(0);
     // Assuming new ImageData stores data contiguously!!! ***
-    fits_read_pix(parent.getFitsptr(), MatchType<T>(),
+    fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		  firstpix, nelements, NULL,
 		  idata->location(get.getXMin(), get.getYMin()),
 		  NULL, &status);
@@ -1110,7 +1110,7 @@ FITSImage<T>::write(const Image<T> I, const Bounds<int> b) {
 	long nelements=(b.getXMax()-b.getXMin()+1);
 	nelements *= b.getYMax() - b.getYMin() + 1;
 	long firstpix[2]={b.getXMin(), b.getYMin()};
-	fits_write_pix(parent.getFitsptr(), MatchType<T>(),
+	fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 		       firstpix, nelements, 
 		       I.data()->location(b.getXMin(),b.getYMin()), 
 		       &status);
@@ -1122,7 +1122,7 @@ FITSImage<T>::write(const Image<T> I, const Bounds<int> b) {
 	for (int y=b.getYMin(); y<=b.getYMax(); y++) {
 	  // write row to disk
 	  firstpix[1] = y;
-	  fits_write_pix(parent.getFitsptr(), MatchType<T>(),
+	  fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 			 firstpix, nelements, 
 			 I.data()->location(b.getXMin(),y), 
 			 &status);
@@ -1146,7 +1146,7 @@ FITSImage<T>::write(const Image<T> I, const Bounds<int> b) {
 	} else {
 	  // write row to disk
 	  firstpix[1] = y;
-	  fits_write_pix(parent.getFitsptr(), MatchType<T>(),
+	  fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
 			 firstpix, nelements, 
 			 I.data()->location(b.getXMin(),y), 
 			 &status);
