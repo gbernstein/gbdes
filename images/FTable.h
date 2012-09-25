@@ -152,8 +152,8 @@ namespace img {
     // Add column from vector of values.  Grow table if needed, pad input array with default
     // value if it is too short.
     // The repeat argument has meaning for string or array columns: <0 for variable length,
-    // >=0 gives fixed length (which is really max length for strings).
-    // Given stringLength>= means all strings must be at this length or shorter (and
+    // >=0 gives fixed length.
+    // Given stringLength>=0 means all strings must be at this length or shorter (and
     // they will be stored as fixed-length in FITS files).
     // Exception thrown input arrays/strings are too long for fixed-length fields
     template<class T>

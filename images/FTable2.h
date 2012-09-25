@@ -152,17 +152,20 @@ namespace img {
   class ArrayColumn: public ScalarColumn<vector<DT> > {
   private:
     typedef ScalarColumn<vector<DT> > Base;
-    const FITS::DataType dType;
+    const FITS::DataType dType2;
+  protected:
+    using ScalarColumn<vector<DT> >::v;
   public:
-    ArrayColumn(string name, long length_=-1): Base(name, length_), dType(FITS::FITSTypeOf<DT>()) {}
+    ArrayColumn(string name, long length_=-1): 
+      Base(name, length_), dType2(FITS::FITSTypeOf<DT>()) {}
     ArrayColumn(const vector<vector<DT> >& in, string name, long length_=-1): 
-      Base(in, name, length_), dType(FITS::FITSTypeOf<DT>()) {}
+      Base(in, name, length_), dType2(FITS::FITSTypeOf<DT>()) {}
     virtual ColumnBase* duplicate() const {return new ArrayColumn(*this);}
     virtual ~ArrayColumn() {}
     // For variable-length array, the only thing we need to override is 
     // the repeat() count and the elementType should be DT, not the vector<DT>:
     virtual long repeat() const {return -1;}
-    virtual FITS::DataType elementType() const {return dType;}
+    virtual FITS::DataType elementType() const {return dType2;}
     // Need to declare these so they can be specialized for string:
     long writeCell(const vector<DT>& value, long row) {
       return Base::writeCell(value,row);}
@@ -176,7 +179,7 @@ namespace img {
   template<>
   inline ArrayColumn<string>::ArrayColumn(const vector<vector<string> >& in, string name,
 				   long length_):
-    Base(name, length_), dType(FITS::FITSTypeOf<string>()) {
+    Base(name, length_), dType2(FITS::FITSTypeOf<string>()) {
     if (stringLength()>=0)
       for (int i=0; i<in.size(); i++)
 	for (int j=0; j<in[i].size(); j++)
@@ -229,7 +232,8 @@ namespace img {
       v.resize(in.size());
       for (long i=0; i<in.size(); i++)
 	writeCell(in[i], i);
-    }
+      }
+
     virtual long repeat() const {return width;}
   
     virtual long writeCell(const vector<DT>& value, long row) {
