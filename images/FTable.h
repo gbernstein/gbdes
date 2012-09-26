@@ -144,10 +144,15 @@ namespace img {
 
     // Get repeat count of a column: 1 (or 0) for scalar, -1 for variable-length, >=0 for fixed.
     long repeat(string columnName) const {return (*D)[columnName]->repeat();}
+   
     // If the column holds strings, return the defined max length of strings, or -1 for variable.
     long stringLength(string columnName) const {return (*D)[columnName]->stringLength();}
+
     // Get the type of data stored in the C arrays (using the FITStypes.h class)
     FITS::DataType elementType(string columnName) const {return (*D)[columnName]->elementType();}
+
+    // Get the character that FITSIO uses to code appropriate storage type for a column
+    char columnCode(string columnName) const {return (*D)[columnName]->columnCode();}
 
     // Add column from vector of values.  Grow table if needed, pad input array with default
     // value if it is too short.

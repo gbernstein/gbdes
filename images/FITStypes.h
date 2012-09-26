@@ -53,6 +53,8 @@ namespace FITS {
 
   const Flags ReadOnly(0);
   const Flags ReadWrite(1);
+  const Flags OverwriteHDU(2);
+  const Flags Create(4);
   const Flags Overwrite(2);
   const Flags CreateImage(4);
 
@@ -151,6 +153,41 @@ namespace FITS {
     if (dt==Tulong)	return CLongIsFITSLongLong? LONGLONG_IMG : ULONG_IMG;
     throw FITSError("Datatype cannot be converted to BITPIX");
   }
+
+  // Return the letter used in FITS TFORM strings to represent storage of this data type
+  template <typename T>
+  inline char ColumnCode() { return '?';}  // If not specialized, don't know the answer
+  template <>
+  inline char ColumnCode<string>() { return 'A';}
+  template <>
+  inline char ColumnCode<bool>() { return 'L';}
+  template <>
+  inline char ColumnCode<unsigned char>() { return 'B';}
+  template <>
+  inline char ColumnCode<signed char>() { return 'S';}
+  template <>
+  inline char ColumnCode<short>() { return 'I';}
+  template <>
+  inline char ColumnCode<unsigned short>() { return 'U';}
+  // Decide whether int and long are 4-byte or 8-byte.  No provision for unsigned 8-byte.
+  template <>
+  inline char ColumnCode<int>() { return CIntIsFITSLong ? 'J' : 'K';}
+  template <>
+  inline char ColumnCode<unsigned int>() { return CIntIsFITSLong ? 'V' : 'K';}
+  template <>
+  inline char ColumnCode<long>() { return CLongIsFITSLongLong ? 'K' : 'J';}
+  template <>
+  inline char ColumnCode<unsigned long>() { return CLongIsFITSLongLong ? 'K' : 'V';}
+  template <>
+  inline char ColumnCode<LONGLONG>() { return 'K';}
+  template <>
+  inline char ColumnCode<float>() { return 'E';}
+  template <>
+  inline char ColumnCode<double>() { return 'D';}
+  template <>
+  inline char ColumnCode<complex<float> >() { return 'C';}
+  template <>
+  inline char ColumnCode<complex<double> >() { return 'M';}
 
 }  //namespace FITS
 

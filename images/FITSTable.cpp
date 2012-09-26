@@ -5,16 +5,105 @@
 using namespace img;
 using namespace FITS;
 
-FITSTable::FITSTable(string filename, int hduNumber_): fptr(0), 
-						       fname(filename),
-						       hduNumber(hduNumber_) {
+FITSTable::FITSTable(string filename, 
+		     FITS::Flags f,
+		     int hduNumber_): fptr(0), 
+				      fname(filename),
+				      hduNumber(hduNumber_),
+				      flags(f) 
+{
+  if (hduNumber==0) 
+    throw FITSError("Cannot open a FITS table at HDU number 0; file " + fname);
   int status=0;
   int hdutype;
-  fits_open_file(&fptr, fname.c_str(), READONLY, &status);
-  fits_movabs_hdu(fptr, hduNumber, &hdutype, &status);
+  int fitsOpenMode = (flags==FITS::ReadOnly) ? READONLY : READWRITE;
+  fits_open_file(&fptr, fname.c_str(), fitsOpenMode, &status);
+  if (status == FILE_NOT_OPENED && (flags & FITS::Create)) {
+    // Presumably file is not there, try creating one
+    status = 0;
+    fits_open_file(&fptr, fname.c_str(), fitsOpenMode, &status);
+  }
+  if (status) throw_CFITSIO("Error opening FITS file " + fname);
+
+  // Move to the requested HDU (request of -1 means to append new HDU)
+  bool foundHDU = false;
+  if (hduNumber>=0) {
+    // Try to find requested HDU, if one is requested
+    // NOTE THAT CFITSIO HDU's are 1-indexed, I'm doing 0-indexed
+    fits_movabs_hdu(fptr, hduNumber+1, &hdutype, &status);
+    if (status==BAD_HDU_NUM) {
+      foundHDU = -1;
+      status = 0;
+    } else {
+      foundHDU = true;
+    }
+  }
+  if ( !foundHDU && (flags & FITS::Create)) {
+    // Try to make a new extension at the end of all of them or in requested spot
+    int nHDUs=0;
+    fits_get_num_hdus(fptr, &nHDUs, &status);
+    if (status) throw_CFITSIO();
+
+    // If we've asked for appending a new extension with hduNumber=-1,
+    // then target an HDU number one past end
+    if (hduNumber < 1) hduNumber = std::max(1,nHDUs);
+
+    // Fill in 0-dimensional dummy to place our HDU in desired place.
+    for (int emptyHDU=nHDUs; emptyHDU<hduNumber; emptyHDU++) {
+      long naxes[2];
+      fits_create_img(fptr, BYTE_IMG, 0, naxes, &status);
+    }
+
+    // Now create new BINTABLE extension, empty initially
+    {
+      char* tDummy[1];
+      tDummy[0] = 0;
+      string hduName = "Change???";
+      fits_create_tbl(fptr, BINARY_TBL, (LONGLONG) 0, 0, 
+		      tDummy, tDummy, tDummy,
+		      const_cast<char*> (hduName.c_str()),
+		      &status);
+      // Make sure we can move to this
+      fits_movabs_hdu(fptr, hduNumber+1, &hdutype, &status);
+      if (!status) foundHDU = true;
+    }
+  } else if (!foundHDU) {
+    // Did not find HDU and not allowed to create it:
+    FormatAndThrow<FITSError>() << "Did not find HDU " << hduNumber
+				<< " in FITS file " << fname;
+  } else if (flags & FITS::OverwriteHDU) {
+    // We did find our HDU number but are instructed to overwrite it,
+    // so clean it out and put in a new empty bintable
+    int dummy;
+    fits_delete_hdu(fptr, &dummy, &status);
+    // ??? Note complications if we just deleted the primary header
+
+    // Now insert new BINTABLE extension, empty initially, in desired spot
+    // Need to move to the place *before* we want ours:
+    fits_movabs_hdu(fptr, hduNumber, &hdutype, &status);
+    {
+      char* tDummy[1];
+      tDummy[0] = 0;
+      string hduName = "Change???";
+      fits_insert_btbl(fptr, (LONGLONG) 0, 0, 
+		       tDummy, tDummy, tDummy,
+		       const_cast<char*> (hduName.c_str()),
+		       (long) 0,	// pcount: not reserving any space for heap.
+		       &status);
+      // Make sure we can move to this
+      fits_movabs_hdu(fptr, hduNumber+1, &hdutype, &status);
+    }
+  }
+  // Report any errors getting here
+  if (status) throw_CFITSIO("Error opening proper HDU for FITSTable file " +fname);
+  // We should now have an opened HDU at desired number. See if it's a table as desired:
   if ( !(HDUType(hdutype) == HDUBinTable  ||
-       HDUType(hdutype) == HDUAsciiTable) )
-    throw FITSError("Not a FITS table extension");
+	 HDUType(hdutype) == HDUAsciiTable) )
+    FormatAndThrow<FITSError>() << "HDU " << hduNumber
+				<< " of file " << fname
+				<< " is not a FITS table extension";
+
+  // Get the info that we want about this table:
 
   fits_get_num_cols(fptr, &ncols, &status);
   fits_get_num_rows(fptr, &nrows, &status);
@@ -25,7 +114,7 @@ int
 FITSTable::moveTo() const {
   int status=0;
   int hdutype;
-  fits_movabs_hdu(fptr, hduNumber, &hdutype, &status);
+  fits_movabs_hdu(fptr, hduNumber+1, &hdutype, &status);
   return status;
 }
 
@@ -137,8 +226,10 @@ FITSTable::createColumns(FTable& ft,
     // Add column to our table: big switch to decide which C type we will use
     // given what datatype says the FITS column data is
     DataType dt = static_cast<DataType> (datatype);
-    /**cerr << "createColumn for <" << colNames[i] << "> with dtype " << dt 
-      << " repeat " << repeat << " width " << width << endl; /***/
+    /**/cerr << "createColumn for <" << colNames[i] 
+	     << "> column number " << colNumbers[i]
+	     << " with dtype " << dt 
+	     << " repeat " << repeat << " width " << width << endl; /***/
     switch (dt) {
     case FITS::Tbit:
       // I will convert bit to boolean on input
@@ -455,9 +546,9 @@ FITSTable::getFitsColumnData<string>(FTable ft, string colName, int icol,
 	  // Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
 	  fits_read_descript(fptr, icol, rowStart+1+i, &nElements, &offset, &status);
 	  data = new char[nElements+1];
-	  // Read as a byte (char) array ???
+	  // Read as a c-string; wants char** for destination
 	  fits_read_col(fptr, Tbyte, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
-			(LONGLONG) nElements, nullPtr, data, &anyNulls, &status);
+			(LONGLONG) nElements, nullPtr, &data, &anyNulls, &status);
 	}
 	if (status) throw_CFITSIO("Reading table column " + colName);
 	// Rewrite as string: make sure it's null-terminated
@@ -511,3 +602,272 @@ FITSTable::getFitsColumnData<string>(FTable ft, string colName, int icol,
     }
   } // end if/then/else for array configuration
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////// Writing routines
+////////////////////////////////////////////////////////////////////////////////
+
+// Write contents of FTable into the FITSTable
+void
+FITSTable::replaceWith(FTable ft) {
+  clear();
+  long rowStart = 0;
+  long rowEnd = ft.nrows();
+  vector<string> colNames;
+  vector<int> colNums;
+  addFitsColumns(ft, colNames, colNums);
+
+  // Now going to write out the contents to FITS, using recommended buffering row intervals.
+  int status = 0;
+  long bufferRows;
+#pragma omp critical (fitsio)
+  {
+    status = moveTo();
+    fits_get_rowsize(fptr, &bufferRows, &status);
+  }
+  if (status) throw_CFITSIO();
+  
+  for (long firstRow = rowStart; firstRow < rowEnd; firstRow+=bufferRows) {
+    long rowCount = std::min(rowEnd, firstRow+bufferRows) - firstRow;
+    // Loop over columns, writing interval of each to output
+    for (int iCol = 0; iCol < colNames.size(); iCol++) {
+      FITS::DataType dt = ft.elementType(colNames[iCol]);
+      // Dispatch the data according to the datatype:
+      switch (dt) {
+	/**      case Tlogical:
+	writeFitsColumn<bool>(ft, colNames[iCol], colNums[iCol], 
+			      firstRow, firstRow+rowCount);
+			      break;**/
+      case Tbyte:
+	writeFitsColumn<unsigned char>(ft, colNames[iCol], colNums[iCol], 
+				       firstRow, firstRow+rowCount);
+	break;
+      case Tsbyte:
+	writeFitsColumn<signed char>(ft, colNames[iCol], colNums[iCol], 
+				     firstRow, firstRow+rowCount);
+	break;
+      case Tshort:
+	writeFitsColumn<short>(ft, colNames[iCol], colNums[iCol], 
+			       firstRow, firstRow+rowCount);
+	break;
+      case Tushort:
+	writeFitsColumn<unsigned short>(ft, colNames[iCol], colNums[iCol], 
+					firstRow, firstRow+rowCount);
+	break;
+      case Tint:
+	writeFitsColumn<int>(ft, colNames[iCol], colNums[iCol], 
+			     firstRow, firstRow+rowCount);
+	break;
+      case Tuint:
+	writeFitsColumn<unsigned int>(ft, colNames[iCol], colNums[iCol], 
+				      firstRow, firstRow+rowCount);
+	break;
+      case Tlong:
+	writeFitsColumn<long>(ft, colNames[iCol], colNums[iCol], 
+			     firstRow, firstRow+rowCount);
+	break;
+      case Tulong:
+	writeFitsColumn<unsigned long>(ft, colNames[iCol], colNums[iCol], 
+				      firstRow, firstRow+rowCount);
+	break;
+      case Tlonglong:
+	writeFitsColumn<LONGLONG>(ft, colNames[iCol], colNums[iCol], firstRow, firstRow+rowCount);
+	break;
+      case Tfloat:
+	writeFitsColumn<float>(ft, colNames[iCol], colNums[iCol], firstRow, firstRow+rowCount);
+	break;
+      case Tdouble:
+	writeFitsColumn<double>(ft, colNames[iCol], colNums[iCol], firstRow, firstRow+rowCount);
+	break;
+      case Tcomplex:
+	writeFitsColumn<complex<float> >(ft, colNames[iCol], colNums[iCol], 
+					 firstRow, firstRow+rowCount);
+	break;
+      case Tdblcomplex:
+	writeFitsColumn<complex<double> >(ft, colNames[iCol], colNums[iCol], 
+					  firstRow, firstRow+rowCount);
+	break;
+      default:
+	FormatAndThrow<FITSError>() << "Unknown DataType " << dt
+				    << " for writing data to FITS column";
+      } // end DataType switch
+    } // end column loop
+  } // end row chunk loop
+}
+
+void
+FITSTable::addFitsColumns(FTable ft, vector<string>& colNames, vector<int>& colNums) {
+  if (flags==FITS::ReadOnly)
+    throw FITSError("Attempt to add columns to read-only HDU in FITS file " + fname);
+  int status=0;
+  int colNum;
+  // Add these columns to end of any there:
+#pragma omp critical (fitsio)
+  {
+    status = moveTo();
+    fits_get_num_cols(fptr, &colNum, &status);
+  }
+  if (status) throw_CFITSIO();
+  colNum++;	// columns are 1-indexed, and this arg gives desired posn of insertion
+
+  // Get all column names
+  colNames = ft.columnNames();
+  for (int i=0; i<colNames.size(); i++, colNum++) {
+    // loop over ft's columns:
+    // First make the TFORM string
+    long repeat = ft.repeat(colNames[i]);
+    ostringstream oss;
+    if (ft.elementType(colNames[i]) == FITS::Tstring) {
+      long length = ft.stringLength(colNames[i]);
+      if (length < 0) {
+	// single variable-length string per cell:
+	if (repeat==1) oss << "1PA";
+	// otherwise: we will punt right now
+	throw FITSError("Cannot format variable-length string array for bintable "
+			"at column " + colNames[i]);
+      } else {
+	// Fixed-length strings
+	if (repeat < 0) {
+	  throw FITSError("Cannot format variable-length arrays of strings "
+			  " for bintable at column " + colNames[i]);
+	} else if (repeat==1) {
+	  // Single string
+	  oss << length << "A";
+	} else {
+	  // fixed-length array.  Use CFITSIO convention
+	  oss << length*repeat << "A" << length;
+	}
+      }
+    } else {
+      // For all non-string types:
+      if (repeat<0) oss << "1P";
+      else oss << repeat;
+      oss << ft.columnCode(colNames[i]);
+    }
+
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      fits_insert_col(fptr, colNum, const_cast<char*> (colNames[i].c_str()), 
+		      const_cast<char*> (oss.str().c_str()),
+		      &status);
+    }
+    if (status) throw_CFITSIO("creating column " + colNames[i]);
+  }
+}
+
+void
+FITSTable::clear() {
+  // Remove all data from a FITSTable (no flush)
+  // ??? clear header too ???
+  if (flags==FITS::ReadOnly)
+    throw FITSError("Attempt to clear read-only HDU in FITS file " + fname);
+  int status;
+#pragma omp critical (fitsio)
+  {
+    status = moveTo();
+    int ncols;
+    // Delete all columns:
+    fits_get_num_cols(fptr, &ncols, &status);
+    for (int i=0; i<ncols; i++)
+      fits_delete_col(fptr, i, &status);
+    // compress (=empty) the heap:
+    fits_compress_heap(fptr, &status);
+  }
+  if (status) throw_CFITSIO("In FITSTable::clear(): ");
+}
+
+template <class DT> 
+void
+FITSTable::writeFitsColumn(FTable ft, string colName, int colNum,
+			   long rowStart, long rowEnd) {
+  if (flags==FITS::ReadOnly)
+    throw FITSError("Attempt to write to read-only HDU in FITS file " + fname);
+  int status=0;
+  long repeat = ft.repeat(colName);
+  vector<DT> data;
+  if (repeat==1) {
+    // Scalar column, can write whole group at once
+    ft.readCells(data, colName, rowStart, rowEnd);
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      fits_write_col(fptr, FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) rowStart,
+		     (LONGLONG) 1, (LONGLONG) (rowEnd-rowStart), &data[0], &status);
+    }
+    if (status) throw_CFITSIO("Writing to FITS column " + colName);
+  } else {
+    // Array cells, write 1 row at a time
+    for (int iRow = rowStart; iRow < rowEnd; iRow++) {
+      ft.readCell(data, colName, iRow);
+      if (repeat >=0) Assert(data.size()==repeat);
+#pragma omp critical (fitsio)
+      {
+	status = moveTo();
+	fits_write_col(fptr, FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) iRow,
+		       (LONGLONG) 1, (LONGLONG) data.size(), &data[0], &status);
+      }
+      if (status) throw_CFITSIO("Writing to FITS column " + colName);
+    } // end row loop
+  } // End if/else for array/scalar cells
+}
+
+// Specialize for strings
+template<>
+void
+FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
+					long rowStart, long rowEnd) {
+  if (flags==FITS::ReadOnly)
+    throw FITSError("Attempt to write to read-only HDU in FITS file " + fname);
+  int status=0;
+  long repeat = ft.repeat(colName);
+  long length = ft.stringLength(colName);
+  if (repeat==1) {
+    // One string per cell.  Read individually, whether or not fixed-length: FITSIO will deal
+    string data;
+    for (int iRow = rowStart; iRow < rowEnd; iRow++) {
+      ft.readCell(data, colName, iRow);
+      char cdata[data.size()+1];
+      strncpy(const_cast<char*> (data.c_str()), cdata, data.size()+1);
+#pragma omp critical (fitsio)
+      {
+	status = moveTo();
+	// fits_write_col wants char** input for source of data
+	fits_write_col(fptr, Tstring, colNum, (LONGLONG) rowStart,
+		       (LONGLONG) 1, (LONGLONG) 1, 
+		       &cdata, &status);
+      }
+      if (status) throw_CFITSIO("Writing to FITS column " + colName);
+    }
+  } else {
+      if (length < 0 || repeat < 0)
+	throw FITSError("Cannot write column <" + colName + "> to FITS because"
+			" it has variable-length string arrays.");
+      // Array cells, write 1 row at a time
+      vector<string> data;
+      char** cdata = new char*[repeat];
+      for (int iRow = rowStart; iRow < rowEnd; iRow++) {
+	ft.readCell(data, colName, iRow);
+	data.resize(repeat);
+	for (int j=0; j<repeat; j++)
+	  cdata[j] = const_cast<char*> (data[j].c_str());
+#pragma omp critical (fitsio)
+      {
+	status = moveTo();
+	fits_write_col(fptr, Tstring, colNum, (LONGLONG) iRow,
+		       (LONGLONG) 1, (LONGLONG) repeat, cdata, &status);
+      }
+      if (status) throw_CFITSIO("Writing to FITS column " + colName);
+      delete[] cdata;
+    } // end row loop
+  } // End if/else for array/scalar cells
+}
+
+
+// writeFITSData(FTable ft)
+// break into row chunk loop
+// loop over col numbers / names
+//   writeFITSColumn... need special for bool, string...
+
+

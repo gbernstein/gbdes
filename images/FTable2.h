@@ -35,6 +35,7 @@ namespace img {
     // Return max allowed length of string-valued elements of column, or -1 to be free
     virtual long stringLength() const=0;
     virtual FITS::DataType elementType() const =0;  // FITS DataType for scalar or array element
+    virtual char columnCode() const =0;  // FITSIO code for appropriate column data storage
 
     virtual void eraseRows(long rowStart, long rowEnd) =0;
     // insertBeforeRow = -1 will add row(s) to the end.
@@ -56,12 +57,15 @@ namespace img {
     }
   private:
     const FITS::DataType dType;
+    const char colCode;
     long length;   // max length of string, if this is holding strings
   public:
     ScalarColumn(string name, long length_=-1): 
-      ColumnBase(name), dType(FITS::FITSTypeOf<DT>()), length(length_) {}
+      ColumnBase(name), dType(FITS::FITSTypeOf<DT>()), 
+      colCode(FITS::ColumnCode<DT>()), length(length_) {}
     ScalarColumn(const vector<DT>& in, string name, long length_=-1):
-      ColumnBase(name), dType(FITS::FITSTypeOf<DT>()), v(in), length(length_) {}
+      ColumnBase(name), dType(FITS::FITSTypeOf<DT>()), 
+      colCode(FITS::ColumnCode<DT>()), v(in), length(length_) {}
     virtual ~ScalarColumn() {}
     virtual ColumnBase* duplicate() const {return new ScalarColumn(*this);}
     virtual long size() const {return v.size();}
@@ -70,6 +74,7 @@ namespace img {
     virtual long repeat() const {return 1;}  // scalar default
     virtual long stringLength() const {return length;} 
     virtual FITS::DataType elementType() const {return dType;}
+    virtual char columnCode() const {return colCode;}
 
     // Range checking will be done at TableData level, so none here
     virtual void readCell(DT& value, long row) const {value = v[row];}
@@ -118,7 +123,8 @@ namespace img {
   template<>
   inline ScalarColumn<string>::ScalarColumn(const vector<string>& in, string name, 
 				     long length_): 
-    ColumnBase(name), dType(FITS::FITSTypeOf<string>()), length(length_) {
+    ColumnBase(name), dType(FITS::FITSTypeOf<string>()), 
+    colCode(FITS::ColumnCode<string>()), length(length_) {
     if (stringLength()>=0) 
       for (int i=0; i<in.size(); i++)
 	checkLength(in[i]);
@@ -153,19 +159,25 @@ namespace img {
   private:
     typedef ScalarColumn<vector<DT> > Base;
     const FITS::DataType dType2;
+    const char colCode2;
   protected:
     using ScalarColumn<vector<DT> >::v;
   public:
     ArrayColumn(string name, long length_=-1): 
-      Base(name, length_), dType2(FITS::FITSTypeOf<DT>()) {}
+      Base(name, length_), dType2(FITS::FITSTypeOf<DT>()),
+      colCode2(FITS::ColumnCode<DT>()) {}
     ArrayColumn(const vector<vector<DT> >& in, string name, long length_=-1): 
-      Base(in, name, length_), dType2(FITS::FITSTypeOf<DT>()) {}
+      Base(in, name, length_), dType2(FITS::FITSTypeOf<DT>()),
+      colCode2(FITS::ColumnCode<DT>()) {}
     virtual ColumnBase* duplicate() const {return new ArrayColumn(*this);}
     virtual ~ArrayColumn() {}
+
     // For variable-length array, the only thing we need to override is 
     // the repeat() count and the elementType should be DT, not the vector<DT>:
     virtual long repeat() const {return -1;}
     virtual FITS::DataType elementType() const {return dType2;}
+    virtual char columnCode() const {return colCode2;}
+
     // Need to declare these so they can be specialized for string:
     long writeCell(const vector<DT>& value, long row) {
       return Base::writeCell(value,row);}
@@ -179,7 +191,8 @@ namespace img {
   template<>
   inline ArrayColumn<string>::ArrayColumn(const vector<vector<string> >& in, string name,
 				   long length_):
-    Base(name, length_), dType2(FITS::FITSTypeOf<string>()) {
+    Base(name, length_), dType2(FITS::FITSTypeOf<string>()),
+    colCode2(FITS::ColumnCode<string>()) {
     if (stringLength()>=0)
       for (int i=0; i<in.size(); i++)
 	for (int j=0; j<in[i].size(); j++)
