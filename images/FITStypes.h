@@ -51,12 +51,20 @@ namespace FITS {
     int getInt() const {return f;}
   };
 
+  // Flags for opening images / HDU's:
+  // Create and Overwrite will imply writable.
+  // Create creates file or HDU if it's missing.
+  // OverwriteFile will kill entire file if it finds one present, but not an HDU.
+  // OverwriteHDU will kill an extension if it's present, but not file.
   const Flags ReadOnly(0);
   const Flags ReadWrite(1);
-  const Flags OverwriteHDU(2);
-  const Flags Create(4);
-  const Flags Overwrite(2);
-  const Flags CreateImage(4);
+  const Flags Create(2);
+  const Flags OverwriteHDU(4);
+  const Flags OverwriteFile(8);
+
+  // Back-compatible:
+  const Flags CreateImage(2);
+  const Flags Overwrite(4);
 
   enum HDUType {HDUImage=IMAGE_HDU, 
 		HDUAsciiTable=ASCII_TBL,

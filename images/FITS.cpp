@@ -4,19 +4,12 @@
 #include <algorithm>
 using namespace FITS;
 
-int
-FITS_fitsiofile::filesOpen=0;
+// Static bookkeeping structures:
+list<const FitsioHandle*>
+FitsioHandle::openFiles;
 
-list<FITS_fitsiofile*>
-FITS_fitsiofile::fileQ;
-
-list<FITSFile*>
-FITSFile::ffList;
-
-// Predicate for filename hunting:
-bool FilenameMatch(const FITSFile* f1, const FITSFile* f2) {
-  return f1->getFilename()==f2->getFilename();
-}
+FitsFile::HMap FitsFile::readFiles;
+FitsFile::HMap FitsFile::writeFiles;
 
 // Function to unroll the CFITSIO error stack into exception string
 void
@@ -34,52 +27,56 @@ FITS::throw_CFITSIO(const string m1) {
 }
 
 void
-FITS::flushFITSErrors() {
+FITS::flushFitsErrors() {
   fits_clear_errmsg();
 }
 
-// FITSFile constructor:  open the file to test for existence
-FITSFile::FITSFile(const string& fname, Flags f) {
+// FitsFile constructor:  open the file to test for existence
+FitsFile::FitsFile(const string& fname, Flags f) {
+  typedef std::pair<string,HCount> Entry;
+
+  // First: be careful not to overwrite a file that is already in use,
+  // either R/W or RO:
+  if (f & OverwriteFile) {
+    if ( readFiles.find(fname)!=readFiles.end()
+	 || writeFiles.find(fname)!=writeFiles.end())
+      throw FITSError("OverwriteFile specified on FITS file "
+		      + fname + " that is already open.");
+  }
   // Is this a duplicate filename?
-  lptr twin;
-  for (twin = ffList.begin(); 
-       twin!=ffList.end() && (*twin)->getFilename()!=fname; ++twin);
-  if (twin==ffList.end()) {
-    // Unique filename:  open new CFITSIO handle
-    ffile = new FITS_fitsiofile(fname, f);
-    pcount = new int(1);
-    ffList.push_front(this);
+  HMap* usemap = (f==FITS::ReadOnly) ? &readFiles : &writeFiles;
+  HMap::iterator j = usemap->find(fname);
+
+  if (j == usemap->end()) {
+    // New file, get new handle
+    ffile = new FitsioHandle(fname, f);
+    usemap->insert(Entry(fname,HCount(ffile,1)));
   } else {
-    // Duplicate filename:
-    if (f & Overwrite) throw FITSError("Overwrite specified on FITS file "
-				       + fname + " that is already open.");
-    else if (f != (*twin)->ffile->getFlags()) {
-      // differing flags, we should just open a new copy and let
-      // CFITSIO do the confusing stuff
-      ffile = new FITS_fitsiofile(fname, f);
-      pcount = new int(1);
-      ffList.push_front(this);
-    } else {
-      // true duplicate, just add new reference to same handle
-      ffile = (*twin)->ffile;
-      pcount = (*twin)->pcount;
-      (*pcount)++;
-      ffList.push_front(this);
-    }
+    // it's a duplicate, use it and increment link count:
+    ffile = j->second.first;
+    ++(j->second.second);
   }
 }
 
-FITSFile::~FITSFile() {
-  // Find and remove ourself from the fflist:
-  lptr me = find(ffList.begin(), ffList.end(), this);
-  // Don't throw another exception if already unwinding one.
-  if (me==ffList.end() && !std::uncaught_exception()) 
-    throw FITSError("Did not find open object in ffList!");
-  ffList.erase(me);
-  (*pcount)--;
-  if (*pcount==0) {
+FitsFile::~FitsFile() {
+  // Find ourselves in the appropriate set of FitsHandles
+  HMap* usemap = isWriteable() ? &writeFiles : &readFiles;
+  HMap::iterator j = usemap->find(getFilename());
+  if (j==usemap->end()) {
+    ostringstream oss;
+    oss << "Could not find file <" << getFilename()
+	<< "> on FitsHandle lists in ~FitsFile()";
+    if (std::uncaught_exception())
+      cerr << oss.str() << endl;
+    else
+      throw FITSError(oss.str());
+  }
+  // Decrement link count
+  --(j->second.second);
+  // If links down to zero, delete the FitsHandle
+  if (j->second.second <= 0) {
     delete ffile;
-    delete pcount;
+    usemap->erase(j);
   }
 }
 
@@ -88,116 +85,108 @@ FITSFile::~FITSFile() {
 // keep number of open files under some limit.
 //////////////////////////////////////////////////////////////////
 
-// FITS_fitsiofile constructor:  open the file to test for existence
-FITS_fitsiofile::FITS_fitsiofile(const string& fname, Flags f): 
-  filename(fname), flags(f), fitsptr(0) {useThis();}
-
-FITS_fitsiofile::~FITS_fitsiofile() {
-  // Find and remove ourself from the fileQ:
-  lptr me = find(fileQ.begin(), fileQ.end(), this);
-  if (me==fileQ.end() && !std::uncaught_exception()) 
-    throw FITSError("Did not find open file in fileQ!");
-  fileQ.erase(me);
-  // close file with CFITSIO
-  closeFile();
-}
-
-// Open a file if it's not already open.  Close the open file used longest
-// ago if there will be too many files open.
-// Note that CFITSIO is prepared to deal with multiple calls to open
-// the same actual file, so we don't have to worry about that case.
-void
-FITS_fitsiofile::useThis() {
-  static int hashReportInterval=1000;	//issue warning for file hashing.
-  // set to zero to disable this reporting.
-  static int hashCount=0;	//count # times need to close a file
-  if (fitsptr) {
-    // already open; push to front of Q for recent usage
-    if (*fileQ.begin() != this) {
-      lptr me = find(fileQ.begin(), fileQ.end(), this);
-      fileQ.erase(me); fileQ.push_front(this);
-    }
+// FitsioHandle constructor:  open the file to test for existence
+FitsioHandle::FitsioHandle(const string& fname, Flags f): 
+  filename(fname), fitsptr(0) {
+  int status = 0;
+  writeable = !(f == FITS::ReadOnly);
+  // Try to open the file - prepend "!" to filename to instruct CFITSIO to overwrite
+  if (f & OverwriteFile) {
+    // Stomp any existing file:
+    string openName = "!" + filename;
+    fits_create_file(&fitsptr, openName.c_str(), 
+		     &status);
   } else {
-    // Desired file is not open.  Do we need to close another first?
-    if (filesOpen >= MAX_FITS_FILES_OPEN) {
-      // ??? wait for an open to fail to do this???
-      // ??? or a while loop looking for the CFITSIO status code???
-      // choose the one to close - last in queue that's open
-      rptr oldest;
-      for (oldest=fileQ.rbegin(); 
-	   oldest!=fileQ.rend() && (*oldest)->fitsptr==0;
-	   oldest++) ;
-      if (oldest==fileQ.rend())
-	throw FITSError("Screwup in finding stale file to close");
-      (*oldest)->closeFile();
-      hashCount++;
-      if (hashReportInterval!=0 && (hashCount%hashReportInterval)==0)
-	cerr << "WARNING: possible FITS_fitsiofile hashing, "
-	     << hashCount
-	     << " files closed so far"
-	     << endl;
-    }
-    openFile();
-    // If successfully opened, put at front of usage queue.
-    lptr me = find(fileQ.begin(), fileQ.end(), this);
-    if (me!=fileQ.end()) fileQ.erase(me);
-    fileQ.push_front(this);
+    fits_open_file(&fitsptr, filename.c_str(), 
+		   isWriteable() ? READWRITE : READONLY, 
+		   &status);
   }
-}
 
-void
-FITS_fitsiofile::openFile() {
-  int status=0;
-  string openname;
-
-  if (flags & ReadWrite) {
-    // Open for writing - if not overwriting, try opening existing
-    // image first.
-    if (!(flags &  Overwrite)) {
-#ifdef FITSDEBUG
-      cerr << "fits_open_file " << filename << " R/W" << endl;
-#endif
-      fits_open_file(&fitsptr, filename.c_str(), READWRITE, &status);
-      if (status==0) { filesOpen++; return;}
+  if (status == FILE_NOT_OPENED) {
+    if (f & FITS::Create) {
+      // Presumably file is not there, try creating one
       status = 0;
-      fits_clear_errmsg();
-    }
-    // Try creating new file; overwrite if desired
-    if (flags &  Overwrite) {
-      openname = "!" + filename;
+      flushFitsErrors();
+      /**/cerr << "...trying to create file" << endl;
+      fits_create_file(&fitsptr, filename.c_str(), &status);
+      /**/cerr << "    returns status " << status << endl;
     } else {
-      openname = filename;
-    }
-#ifdef FITSDEBUG
-    cerr << "fits_create_file " << filename << endl;
-#endif
-    fits_create_file(&fitsptr, openname.c_str(), &status);
-    if (status!=0) {
-      char ebuff[256];
-      fits_read_errmsg(ebuff);
-      string m(ebuff);
-      throw FITSCantOpen(openname, m);
-    }
-    // On success, clear the Overwrite flag
-    flags = Flags(flags & ~Overwrite);
-  } else {
-    // Open for reading, error if file does not exist
-#ifdef FITSDEBUG
-    cerr << "fits_open_file " << filename << " RO " << endl;
-#endif
-    fits_open_file(&fitsptr, filename.c_str(), READONLY, &status);
-    if (status!=0) {
+      // Throw special exception for failure to open
       char ebuff[256];
       fits_read_errmsg(ebuff);
       string m(ebuff);
       throw FITSCantOpen(filename, m);
     }
   }
-  filesOpen++;
+  if (status) throw_CFITSIO("Error opening FITS file " + fname);
+
+  // Add this freshly opened file to front of the queue:
+  openFiles.push_front(this);
+}
+
+FitsioHandle::~FitsioHandle() {
+  // If file is currently open:
+  if (fitsptr) {
+    // close file with CFITSIO
+    closeFile();
+    // Find and remove ourself from the list of open files
+    lptr me = find(openFiles.begin(), openFiles.end(), this);
+    if (me==openFiles.end() && !std::uncaught_exception()) 
+      throw FITSError("Did not find open file <" + filename 
+		      + "> in FitsioHandle::openFiles!");
+    openFiles.erase(me);
+  }
+}
+
+// Open a file if it's not already open.  Close others if needed.
+void
+FitsioHandle::useThis() const {
+  if (fitsptr) {
+    // already open; push to front of Q for recent usage
+    if (*openFiles.begin() != this) {
+      lptr me = find(openFiles.begin(), openFiles.end(), this);
+      openFiles.erase(me); openFiles.push_front(this);
+    }
+  } else {
+    makeRoom();
+    reopenFile();
+    openFiles.push_front(this);
+  }
 }
 
 void
-FITS_fitsiofile::closeFile() {
+FitsioHandle::makeRoom() const {
+  static int hashReportInterval=1000;	//issue warning for file hashing.
+  // set to zero to disable this reporting.
+  static int hashCount=0;	//count # times need to close a file
+  while (openFiles.size() >= MAX_FITS_FILES_OPEN) {
+    // choose the one to close - last in queue that's open
+    openFiles.back()->closeFile();
+    openFiles.pop_back();
+    hashCount++;
+    if (hashReportInterval!=0 && (hashCount%hashReportInterval)==0)
+      cerr << "WARNING: possible FitsioHandle hashing, "
+	   << hashCount
+	   << " files closed so far"
+	   << endl;
+  }
+}
+
+void
+FitsioHandle::reopenFile() const {
+  int status=0;
+  fits_open_file(&fitsptr, filename.c_str(), 
+		 isWriteable() ? READWRITE : READONLY, &status);
+  if (status!=0) {
+    char ebuff[256];
+    fits_read_errmsg(ebuff);
+    string m(ebuff);
+    throw FITSCantOpen(filename, m);
+  }
+}
+
+void
+FitsioHandle::closeFile() const {
   if (fitsptr==0) return;
   int status=0;
 #ifdef FITSDEBUG
@@ -208,11 +197,10 @@ FITS_fitsiofile::closeFile() {
   if (status) throw_CFITSIO("closeFile() on " 
 			    + getFilename());
   fitsptr = 0;
-  filesOpen--;
 }
 
 void
-FITS_fitsiofile::flush() {
+FitsioHandle::flush() {
   if (fitsptr==0) return;	//No need to flush if no CFITSIO buffer
   int status=0;
   fits_flush_file(fitsptr, &status);
@@ -220,19 +208,20 @@ FITS_fitsiofile::flush() {
 }
 
 /////////////////////////////////////////////////////////////////////////
-// Access FITSFile information
+// Access FitsFile information
 /////////////////////////////////////////////////////////////////////////
 
 int
-FITSFile::HDUCount() {
+FitsFile::HDUCount() const {
   int status=0, count;
   fits_get_num_hdus(getFitsptr(), &count, &status);
+  // ??? trap for empty file?
   if (status) throw_CFITSIO("HDUCount() on " + getFilename());
   return count;
 }
 
 HDUType
-FITSFile::getHDUType(const int HDUnumber) {
+FitsFile::getHDUType(const int HDUnumber) const {
   int status=0, retval;
   fits_movabs_hdu(getFitsptr(), HDUnumber, &retval, &status);
   if (status) throw_CFITSIO("getHDUType() on " + getFilename());
@@ -240,7 +229,7 @@ FITSFile::getHDUType(const int HDUnumber) {
 }
 
 HDUType
-FITSFile::getHDUType(const string HDUname, int &HDUnum) {
+FitsFile::getHDUType(const string HDUname, int &HDUnum) const {
   int status=0, retval;
   char ff[80];
   strncpy(ff, HDUname.c_str(), sizeof(ff)); ff[sizeof(ff)-1]=0;
@@ -257,8 +246,7 @@ FITSFile::getHDUType(const string HDUname, int &HDUnum) {
   return HDUType(retval);
 }
 HDUType
-FITSFile::getHDUType(const string HDUname) {
+FitsFile::getHDUType(const string HDUname) const {
   int junk;
   return getHDUType(HDUname, junk);
 }
-

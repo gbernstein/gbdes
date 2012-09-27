@@ -9,12 +9,11 @@
 namespace img {
   class FITSTable {
   private:
-    FITS::fitsfile* fptr;
-    string fname;
+    FITS::FitsFile parent;
     int hduNumber;
     long nrows;
     int ncols;
-    const FITS::Flags flags;
+    const bool writeable;
 
     // Make this the current HDU, return status:
     int moveTo() const;
@@ -48,14 +47,16 @@ namespace img {
 			 long rowStart=0, long rowEnd=-1);
 
   public:
-    // Open table at given extn, filename (read only right now***)
+    // Open table at given extn, filename
     FITSTable(string filename,
 	      FITS::Flags f=FITS::ReadOnly,
 	      int hduNumber_=1);
     // Close on destruction
     ~FITSTable();
-    string getFilename() const {return fname;}
+    string getFilename() const {return parent.getFilename();}
     // Extract all columns and range of rows (rowEnd=1-past-end, zero-indexed, -1=go to end)
+    bool isWriteable() const {return writeable;}
+
     FTable extract(long rowStart=0, long rowEnd=-1) const;
     // Extract columns matching any of the input strings (FITSIO wildcards OK)
     FTable extract(const vector<string>& templates, long rowStart=0, long rowEnd=-1) const;
@@ -66,7 +67,7 @@ namespace img {
     // Change an FTable to be able to store as FITS bintable.  Namely, 
     // change any string cells with variable-length arrays into fixed-length at 
     // the maximum size:
-    static void makeFitsWritable(FTable ft);
+    static void makeFitsCompatible(FTable ft);
 
     // Write contents of FTable into this FITSTable:
     void replaceWith(FTable ft);

@@ -1,96 +1,98 @@
-// 	$Id: FITS.h,v 1.15 2011/07/20 17:38:51 dgru Exp $	
-// FITS.h:  manipulations of FITS files, particularly the image
-// extensions.  Buffering of data and file handles intended to allow 
-// efficient use of a large number of image files/extensions
-// simultaneously.
+// FITS.h:  manipulations of FITS files
 
 // The FITStypes.h file contains various enumerators and flags to
 // be used with FITS files.
 
-// The user will only need the class FITSFile (and the enumerators here).
-// The class FITS_fitsiofile represents an opened cfitsio file.  
-// FITSFile is basically a handle for FITS_fitsiofile, and
-// several FITSFile's may correspond to the same FITS_fitsiofile.
-// FITSFile's that refer to the same filename with the same permissions
-// are automatically referred to the same FITS_fitsiofile.
+// The user-facing class is FitsFile.
+// The class FitsioHandle represents a CFITSIO fptr and is not seen by user.
+// When user creates a FitsFile, it will create a FitsioHandle or make use of
+// any existing handle to the same file (although we create 2 fptr's if some
+// are requesting write access and others ReadOnly).
+// FitsHandle will open the file with CFITSIO, but will only keep a max number
+// of CFITSIO files open at one time.  If number of FitsHandles exceeds this max,
+// then only the most recently used ones are kept open.
 
-// These routines automatically keep track of which and how many
-// files are open, and will close the last-used one when access to
-// an unopened file is needed and the quota of open files has already
-// been reached.  The idea is that the user just opens all of them
+//  The idea is that the user just opens all of them he/she might want
 // and doesn't worry about it.  If there is frequent access to a large 
-// number of files, then there could be hashing.  A FITS_fitsiofile
+// number of files, then there could be hashing.  A FitsioHandle
 // has fitsptr=0 if it is not currently opened.
 
 #ifndef GBFITS_H
 #define GBFITS_H
 
 #include <list>
+#include <map>
 #include <cstring>
 #include "Std.h"
-using std::list;
 
 #include "FITStypes.h"
 
 namespace FITS {
 
   // Utility function to throw FITSError and dump CFITSIO message stack.
+  // Note that function will not throw while already processing an exception.
   void throw_CFITSIO(const string m="");
 
   // And one to flush the error message stack
-  void flushFITSErrors();
+  void flushFitsErrors();
 
-  // Class representing an opened CFITSIO file.
-  class FITS_fitsiofile {
+  // Class representing a CFITSIO fptr:
+  class FitsioHandle {
   public:
-    FITS_fitsiofile(const string& fname, Flags f=ReadOnly);
-    ~FITS_fitsiofile();
+    FitsioHandle(const string& fname, Flags f=ReadOnly);
+    ~FitsioHandle();
     // Asking for its CFITSIO pointer reopens the file
-    fitsfile* getFitsptr() {useThis(); return fitsptr;}
-    string getFilename() {return filename;}
-    Flags getFlags() {return flags;}
+    fitsfile* getFitsptr() const {useThis(); return fitsptr;}
+    string getFilename() const {return filename;}
+    bool isWriteable() const {return writeable;}
     void flush();
   private:
-    string filename;
-    Flags  flags;
-    fitsfile *fitsptr;
+    const string filename;
+    bool writeable;
+    mutable fitsfile *fitsptr;
 
     // A list is kept of all open fitsio files.  Most recently
     // accessed is head of list.
-    static int filesOpen;
-    static list<FITS_fitsiofile*> fileQ;
-    typedef list<FITS_fitsiofile*>::iterator lptr;
-    typedef list<FITS_fitsiofile*>::reverse_iterator rptr;
+    static std::list<const FitsioHandle*> openFiles;
+    typedef std::list<const FitsioHandle*>::iterator lptr;
 
-    void useThis();	//Make sure file is open, close others if needed
-    void openFile();	//Execute the CFITSIO operations to open/close
-    void closeFile();
+    void useThis() const;	//Make sure file is open, close others if needed
+    void reopenFile() const;	//Execute the CFITSIO operations to open/close
+    void closeFile() const;
+    void makeRoom() const;	// Close files until we have room for a new one to open.
   };
 
-  class FITSFile {
+  // User's interface:
+  class FitsFile {
   public:
-    FITSFile(const string& fname, Flags f=ReadOnly);
-    ~FITSFile();
-    fitsfile* getFitsptr() {return ffile->getFitsptr();}
-    int HDUCount() ;
-    HDUType getHDUType(const int HDUnumber) ;
-    HDUType getHDUType(const string HDUname);
-    HDUType getHDUType(const string HDUname, int &HDUnum); //return number too
+    FitsFile(const string& fname, Flags f=ReadOnly);
+    ~FitsFile();
+    fitsfile* getFitsptr() const {return ffile->getFitsptr();}
+    // Implicit conversion operator to allow simple use in cfitsio calls:
+    operator fitsfile*() const {return ffile->getFitsptr();}
+    int HDUCount() const;
+    HDUType getHDUType(const int HDUnumber) const;
+    HDUType getHDUType(const string HDUname) const;
+    HDUType getHDUType(const string HDUname, int &HDUnum) const; //return number too
     string getFilename() const {return ffile->getFilename();}
     void flush() {ffile->flush();}
-    Flags getFlags() const {return ffile->getFlags();}
+    bool isWriteable() const {return ffile->isWriteable();}
   private:
-    FITS_fitsiofile* ffile;
+    FitsioHandle* ffile;
     int  *pcount;
 
-    // Keep a list of all opened FITSFile's.  This is so we can check when
-    // a new FITSFile is asking for same physical file as an existing one.
-    static list<FITSFile*> ffList;
-    typedef list<FITSFile*>::iterator lptr;
-    typedef list<FITSFile*>::reverse_iterator rptr;
+    // Keep two static maps of all opened opened fitsiofile's, one for
+    // writeable and one for read-only, so we can use same FITSIO handle
+    // for multiple files.
+    // Will keep a link count for each FitsioHandle also
+    typedef std::pair<FitsioHandle*,int> HCount;
+    typedef std::map<string, HCount> HMap;
+    static HMap readFiles;
+    static HMap writeFiles;
   };
 
+
 } // end namespace FITS
-using FITS::FITSFile;
+using FITS::FitsFile;
 
 #endif

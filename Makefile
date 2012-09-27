@@ -28,12 +28,14 @@ LIBS = -lm $(LIB_DIRS) -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 
 SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
-	images/FITS.o images/Image.o images/FITSImage.o images/HeaderFromStream.o \
-	images/FITSTable.o \
+	images/FITS.o images/FITSTable.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/PixelMapCollection.o 
 
-OBJ =  SCAMPMap.o $(SUBOBJ)
+#images/Image.o images/FITSImage.o images/HeaderFromStream.o \
+
+#OBJ =  SCAMPMap.o $(SUBOBJ)
+OBJ =  $(SUBOBJ)
 
 all: depend subs
 
