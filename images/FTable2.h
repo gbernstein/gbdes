@@ -10,9 +10,6 @@
 #include <map>
 #include <typeinfo>
 
-#include "Image.h"
-
-
 // ??? TODO:
 // Case-insensitive column names
 // sorts & filters

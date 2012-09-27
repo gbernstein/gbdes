@@ -15,7 +15,7 @@
 #include <vector>
 #include <set>
 
-#include "Image.h"
+#include "Header.h"
 
 
 namespace img {
@@ -49,14 +49,14 @@ namespace img {
   private:
     TableData* D;	//pixel data
     mutable int* dcount;  // link count for the data structure
-    ImageHeader* H;	//the "header"
+    Header* H;	//the "header"
     mutable int* hcount;
 
   public:
     // Constructor for new table that has no data, reserve nrow spaces in all new columns
     FTable(long rowsReserved=0):
       D(new TableData(rowsReserved)),
-      H(new ImageHeader()),
+      H(new Header()),
       dcount(new int(1)),
       hcount(new int(1)) {}
     // Copy constructor is really a data share:
@@ -88,7 +88,7 @@ namespace img {
       return dup;
     }
     // Or adopt another table's header only:
-    void copyHeader(const ImageHeader& rhs) {*H=rhs;}
+    void copyHeader(const Header& rhs) {*H=rhs;}
 
     ~FTable() {
       if (--(*dcount)==0) {delete D; delete dcount;}
@@ -96,8 +96,8 @@ namespace img {
     }
 
     // Access elements directly:
-    ImageHeader* header() {return H;}
-    const ImageHeader* header() const {return H;}
+    Header* header() {return H;}
+    const Header* header() const {return H;}
     TableData* data() {return D;}
     const TableData* data() const {return D;}
 

@@ -28,7 +28,7 @@ LIBS = -lm $(LIB_DIRS) -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 
 SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
-	images/FITS.o images/FITSTable.o \
+	images/FITS.o images/FITSTable.o images/Header.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/PixelMapCollection.o 
 

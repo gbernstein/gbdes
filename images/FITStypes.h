@@ -3,6 +3,11 @@
 #ifndef FITSTYPES_H
 #define FITSTYPES_H
 #include <typeinfo>
+#include <stdexcept>
+#include <complex>
+
+#include <string>
+using std::string;
 
 //namespace, but then std libraries get stuck in there too...
 namespace FITS {
@@ -27,6 +32,7 @@ namespace FITS {
   public: 
     FITSError(const string &m=""): std::runtime_error("FITS Error: " + m) {}
   };
+
   class FITSCantOpen: public FITSError {
   public:
     FITSCantOpen(const string& fname, const string& m=""): 
@@ -126,9 +132,9 @@ namespace FITS {
   template <>
   inline DataType FITSTypeOf<double>() {return Tdouble;}
   template <>
-  inline DataType FITSTypeOf<complex<float> >() {return Tcomplex;}
+  inline DataType FITSTypeOf<std::complex<float> >() {return Tcomplex;}
   template <>
-  inline DataType FITSTypeOf<complex<double> >() {return Tdblcomplex;}
+  inline DataType FITSTypeOf<std::complex<double> >() {return Tdblcomplex;}
   template <>
   inline DataType FITSTypeOf<string>() {return Tstring;}
 
@@ -193,9 +199,9 @@ namespace FITS {
   template <>
   inline char ColumnCode<double>() { return 'D';}
   template <>
-  inline char ColumnCode<complex<float> >() { return 'C';}
+  inline char ColumnCode<std::complex<float> >() { return 'C';}
   template <>
-  inline char ColumnCode<complex<double> >() { return 'M';}
+  inline char ColumnCode<std::complex<double> >() { return 'M';}
 
 }  //namespace FITS
 
