@@ -18,9 +18,7 @@ FITSTable::FITSTable(string filename,
   int hdutype;
   int fitsOpenMode = (flags==FITS::ReadOnly) ? READONLY : READWRITE;
   int nHDUs=0;
-  /**/cerr << "First open attempt: ";
   fits_open_file(&fptr, fname.c_str(), fitsOpenMode, &status);
-  /**/cerr << " returns status " << status << endl;
   if (status == FILE_NOT_OPENED && (flags & FITS::Create)) {
     // Presumably file is not there, try creating one
     status = 0;
@@ -39,9 +37,7 @@ FITSTable::FITSTable(string filename,
     // Try to find requested HDU, if one is requested
     // NOTE THAT CFITSIO HDU's are 1-indexed, I'm doing 0-indexed
     fits_movabs_hdu(fptr, hduNumber+1, &hdutype, &status);
-    /**/cerr << "1st movabs returns " << status << endl;
     if (status==BAD_HDU_NUM) {
-      /**/cerr << "did not find HDU 1st time" << endl;
       status = 0;
       fits_clear_errmsg();
     } else {
@@ -57,7 +53,6 @@ FITSTable::FITSTable(string filename,
 
     // Fill in 0-dimensional dummy to place our HDU in desired place.
     for (int emptyHDU=nHDUs; emptyHDU<hduNumber; emptyHDU++) {
-      /**/cerr << "Adding empty extension " << emptyHDU << endl;
       long naxes[2];
       fits_create_img(fptr, BYTE_IMG, 0, naxes, &status);
     }
@@ -67,12 +62,10 @@ FITSTable::FITSTable(string filename,
       char* tDummy[1];
       tDummy[0] = 0;
       string hduName = "Change???";
-      /**/cerr << "Making new bintable...";
       fits_create_tbl(fptr, BINARY_TBL, (LONGLONG) 0, 0, 
 		      tDummy, tDummy, tDummy,
 		      const_cast<char*> (hduName.c_str()),
 		      &status);
-      /**/cerr << " returns " << status << endl;
       // Make sure we can move to this
       fits_movabs_hdu(fptr, hduNumber+1, &hdutype, &status);
       if (!status) foundHDU = true;
@@ -118,7 +111,6 @@ FITSTable::FITSTable(string filename,
   fits_get_num_cols(fptr, &ncols, &status);
   fits_get_num_rows(fptr, &nrows, &status);
   if (status) throw_CFITSIO("Opening FITSTable in file " + fname);
-  /**/cerr << "Done opening FITSTable" << endl;
 }
 
 int
@@ -237,7 +229,7 @@ FITSTable::createColumns(FTable& ft,
     // Add column to our table: big switch to decide which C type we will use
     // given what datatype says the FITS column data is
     DataType dt = static_cast<DataType> (datatype);
-    /**/cerr << "createColumn for <" << colNames[i] 
+    /**cerr << "createColumn for <" << colNames[i] 
 	     << "> column number " << colNumbers[i]
 	     << " with dtype " << dt 
 	     << " repeat " << repeat << " width " << width << endl; /***/
@@ -627,9 +619,7 @@ FITSTable::replaceWith(FTable ft) {
   long rowEnd = ft.nrows();
   vector<string> colNames;
   vector<int> colNums;
-  /**/cerr << "Adding columns" << endl;
   addFitsColumns(ft, colNames, colNums);
-  /**/cerr << "Writing rows" << endl;
   // Now going to write out the contents to FITS, using recommended buffering row intervals.
   int status = 0;
   long bufferRows;
@@ -644,16 +634,13 @@ FITSTable::replaceWith(FTable ft) {
     long rowCount = std::min(rowEnd, firstRow+bufferRows) - firstRow;
     // Loop over columns, writing interval of each to output
     for (int iCol = 0; iCol < colNames.size(); iCol++) {
-      /**/cerr << "Writing rows" << firstRow << " + " << rowCount
-	       << " for col " << iCol << endl;
       FITS::DataType dt = ft.elementType(colNames[iCol]);
-      /**/cerr << "Datatype " << dt << endl;
       // Dispatch the data according to the datatype:
       switch (dt) {
-	/**      case Tlogical:
+      case Tlogical:
 	writeFitsColumn<bool>(ft, colNames[iCol], colNums[iCol], 
 			      firstRow, firstRow+rowCount);
-			      break;**/
+	break;
       case Tstring:
 	writeFitsColumn<string>(ft, colNames[iCol], colNums[iCol], 
 				firstRow, firstRow+rowCount);
@@ -789,9 +776,9 @@ FITSTable::clear() {
   {
     status = moveTo();
     int ncols;
-    // Delete all columns:
+    // Delete all columns, from back to front:
     fits_get_num_cols(fptr, &ncols, &status);
-    for (int i=0; i<ncols; i++)
+    for (int i=ncols; i>0; i--)
       fits_delete_col(fptr, i, &status);
     // compress (=empty) the heap:
     fits_compress_heap(fptr, &status);
@@ -806,22 +793,16 @@ FITSTable::writeFitsColumn(FTable ft, string colName, int colNum,
   if (flags==FITS::ReadOnly)
     throw FITSError("Attempt to write to read-only HDU in FITS file " + fname);
   int status=0;
-  /**/cerr << "...in writeFITSColumn with name " << colName
-	   << " and datatype " << FITS::FITSTypeOf<DT>() << endl;
   long repeat = ft.repeat(colName);
   vector<DT> data;
   if (repeat==1) {
     // Scalar column, can write whole group at once
-    /**/cerr << "Reading scalar cells...";
     ft.readCells(data, colName, rowStart, rowEnd);
-    /**/cerr << "done, first element: " << data[0] << endl;
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      /**/cerr << "Ready to write to FITS... ";
       fits_write_col(fptr, FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) rowStart+1,
 		     (LONGLONG) 1, (LONGLONG) (rowEnd-rowStart), &data[0], &status);
-      /**/cerr << "done" << endl;
     }
     if (status) throw_CFITSIO("Writing to FITS column " + colName);
   } else {
@@ -834,6 +815,48 @@ FITSTable::writeFitsColumn(FTable ft, string colName, int colNum,
 	status = moveTo();
 	fits_write_col(fptr, FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) iRow+1,
 		       (LONGLONG) 1, (LONGLONG) data.size(), &data[0], &status);
+      }
+      if (status) throw_CFITSIO("Writing to FITS column " + colName);
+    } // end row loop
+  } // End if/else for array/scalar cells
+}
+
+// Specialize for logical, need to pass data in/out as char
+template <> 
+void
+FITSTable::writeFitsColumn<bool>(FTable ft, string colName, int colNum,
+				 long rowStart, long rowEnd) {
+  if (flags==FITS::ReadOnly)
+    throw FITSError("Attempt to write to read-only HDU in FITS file " + fname);
+  int status=0;
+  long repeat = ft.repeat(colName);
+  vector<bool> data;
+  if (repeat==1) {
+    // Scalar column, can write whole group at once
+    ft.readCells(data, colName, rowStart, rowEnd);
+    char cdata[data.size()];
+    for (int i=0; i<data.size(); i++)
+      cdata[i] = data[i] ? 1 : 0;
+#pragma omp critical (fitsio)
+    {
+      status = moveTo();
+      fits_write_col(fptr, FITS::Tlogical, colNum, (LONGLONG) rowStart+1,
+		     (LONGLONG) 1, (LONGLONG) (rowEnd-rowStart), cdata, &status);
+    }
+    if (status) throw_CFITSIO("Writing to FITS column " + colName);
+  } else {
+    // Array cells, write 1 row at a time
+    for (int iRow = rowStart; iRow < rowEnd; iRow++) {
+      ft.readCell(data, colName, iRow);
+      char cdata[data.size()];
+      for (int i=0; i<data.size(); i++)
+	cdata[i] = data[i] ? 1 : 0;
+      if (repeat >=0) Assert(data.size()==repeat);
+#pragma omp critical (fitsio)
+      {
+	status = moveTo();
+	fits_write_col(fptr, FITS::Tlogical, colNum, (LONGLONG) iRow+1,
+		       (LONGLONG) 1, (LONGLONG) data.size(), cdata, &status);
       }
       if (status) throw_CFITSIO("Writing to FITS column " + colName);
     } // end row loop
@@ -855,15 +878,15 @@ FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
     string data;
     for (int iRow = rowStart; iRow < rowEnd; iRow++) {
       ft.readCell(data, colName, iRow);
-      char cdata[data.size()+1];
-      strncpy(const_cast<char*> (data.c_str()), cdata, data.size()+1);
+      char* cdata[1];
+      cdata[0] = const_cast<char*> (data.c_str());
 #pragma omp critical (fitsio)
       {
 	status = moveTo();
 	// fits_write_col wants char** input for source of data
-	fits_write_col(fptr, Tstring, colNum, (LONGLONG) rowStart+1,
-		       (LONGLONG) 1, (LONGLONG) 1, 
-		       &cdata, &status);
+	fits_write_col(fptr, Tstring, colNum, (LONGLONG) iRow+1,
+		       (LONGLONG) 1, (LONGLONG) 1,
+		       cdata, &status);
       }
       if (status) throw_CFITSIO("Writing to FITS column " + colName);
     }
@@ -873,7 +896,7 @@ FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
 			" it has variable-length string arrays.");
       // Array cells, write 1 row at a time
       vector<string> data;
-      char** cdata = new char*[repeat];
+      char* cdata[repeat];
       for (int iRow = rowStart; iRow < rowEnd; iRow++) {
 	ft.readCell(data, colName, iRow);
 	data.resize(repeat);
@@ -886,15 +909,9 @@ FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
 		       (LONGLONG) 1, (LONGLONG) repeat, cdata, &status);
       }
       if (status) throw_CFITSIO("Writing to FITS column " + colName);
-      delete[] cdata;
     } // end row loop
   } // End if/else for array/scalar cells
 }
 
-
-// writeFITSData(FTable ft)
-// break into row chunk loop
-// loop over col numbers / names
-//   writeFITSColumn... need special for bool, string...
 
 

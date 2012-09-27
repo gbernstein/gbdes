@@ -83,6 +83,9 @@ namespace img {
     template<>
     void FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
 					    long rowStart, long rowEnd);
+    template<>
+    void FITSTable::writeFitsColumn<bool>(FTable ft, string colName, int colNum,
+					  long rowStart, long rowEnd);
 
 } // end namespace img
 #endif
