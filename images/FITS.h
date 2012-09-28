@@ -93,6 +93,5 @@ namespace FITS {
 
 
 } // end namespace FITS
-using FITS::FitsFile;
 
 #endif

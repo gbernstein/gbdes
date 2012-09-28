@@ -107,9 +107,7 @@ FitsioHandle::FitsioHandle(const string& fname, Flags f):
       // Presumably file is not there, try creating one
       status = 0;
       flushFitsErrors();
-      /**/cerr << "...trying to create file" << endl;
       fits_create_file(&fitsptr, filename.c_str(), &status);
-      /**/cerr << "    returns status " << status << endl;
     } else {
       // Throw special exception for failure to open
       char ebuff[256];
@@ -213,9 +211,8 @@ FitsioHandle::flush() {
 
 int
 FitsFile::HDUCount() const {
-  int status=0, count;
+  int status=0, count=0;
   fits_get_num_hdus(getFitsptr(), &count, &status);
-  // ??? trap for empty file?
   if (status) throw_CFITSIO("HDUCount() on " + getFilename());
   return count;
 }
@@ -223,7 +220,10 @@ FitsFile::HDUCount() const {
 HDUType
 FitsFile::getHDUType(const int HDUnumber) const {
   int status=0, retval;
-  fits_movabs_hdu(getFitsptr(), HDUnumber, &retval, &status);
+  if (HDUnumber < 0 || HDUnumber >= HDUCount()) 
+    return HDUNull;
+  // CFITSIO is 1-index numbers, I am 0-indexe:
+  fits_movabs_hdu(getFitsptr(), HDUnumber+1, &retval, &status);
   if (status) throw_CFITSIO("getHDUType() on " + getFilename());
   return HDUType(retval);
 }
@@ -231,20 +231,27 @@ FitsFile::getHDUType(const int HDUnumber) const {
 HDUType
 FitsFile::getHDUType(const string HDUname, int &HDUnum) const {
   int status=0, retval;
-  char ff[80];
-  strncpy(ff, HDUname.c_str(), sizeof(ff)); ff[sizeof(ff)-1]=0;
-  fits_movnam_hdu(getFitsptr(), ANY_HDU, ff, 0, &status);
+  if (HDUCount()==0) {
+    HDUnum = -1;
+    return HDUNull;  // empty file
+  }
+  fits_movnam_hdu(getFitsptr(), ANY_HDU, 
+		  const_cast<char*> (HDUname.c_str()),
+		  0, &status);
   if (status==BAD_HDU_NUM) {
-    //name does not exist, return 0
-    HDUnum = 0;
+    //name does not exist, return HDUAny
+    status = 0;
     fits_clear_errmsg();
-    return FITS::HDUAny;
+    HDUnum = -1;
+    return HDUNull;
   }
   fits_get_hdu_num(getFitsptr(), &HDUnum);
+  HDUnum -= 1;	//Make zero-indexed
   fits_get_hdu_type(getFitsptr(), &retval, &status);
   if (status) throw_CFITSIO("getHDUType() by name on " + getFilename());
   return HDUType(retval);
 }
+
 HDUType
 FitsFile::getHDUType(const string HDUname) const {
   int junk;

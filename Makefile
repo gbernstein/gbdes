@@ -28,11 +28,11 @@ LIBS = -lm $(LIB_DIRS) -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 
 SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
-	images/FITS.o images/FITSTable.o images/Header.o \
+	images/FITS.o images/Header.o images/Hdu.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/PixelMapCollection.o 
 
-#images/Image.o images/FITSImage.o images/HeaderFromStream.o \
+#images/FITSTable.o images/Image.o images/FITSImage.o images/HeaderFromStream.o \
 
 #OBJ =  SCAMPMap.o $(SUBOBJ)
 OBJ =  $(SUBOBJ)
@@ -44,6 +44,8 @@ testFT2: testFT2.o $(OBJ)
 testFT3: testFT3.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT4: testFT4.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+testFT5: testFT5.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ###############################################################
 ## Standard stuff:

@@ -107,12 +107,6 @@ FITSTable::FITSTable(string filename,
 }
 
 int
-FITSTable::moveTo() const {
-  int status=0;
-  int hdutype;
-  fits_movabs_hdu(parent, hduNumber+1, &hdutype, &status);
-  return status;
-}
 
 FITSTable::~FITSTable() {
   // Flush this HDU if writeable, altered?

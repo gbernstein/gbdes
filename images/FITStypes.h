@@ -72,10 +72,13 @@ namespace FITS {
   const Flags CreateImage(2);
   const Flags Overwrite(4);
 
+  // Note that HDUAny and HDUNull are same value: former is *input* to CFITSIO, 
+  // our code uses latter to report absence of HDU's or request NAXES=0 extensions.
   enum HDUType {HDUImage=IMAGE_HDU, 
 		HDUAsciiTable=ASCII_TBL,
 		HDUBinTable=BINARY_TBL,
-		HDUAny = ANY_HDU };
+		HDUAny = ANY_HDU,
+		HDUNull = ANY_HDU };
   // CFITSIO data types: note that these sometimes are used to describe which C intrinsic
   // type is in use (in which case names have obvious relation to intrinsics) and sometimes they
   // describe a storage format within FITS files (in which case they need some machine-dependent
