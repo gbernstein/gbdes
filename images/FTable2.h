@@ -284,8 +284,10 @@ namespace img {
     Index columns;	// This is where the columns are stored.
     long rowReserve;	// New columns reserve at least this much space
     long rowCount;	// Keep this number and all column lengths in synch 
+    bool isAltered;
   public:
-    TableData(long rowReserve_=0): rowReserve(rowReserve_), rowCount(0) {}
+    TableData(long rowReserve_=0): rowReserve(rowReserve_), rowCount(0),
+				   isAltered(false)  {}
     ~TableData() {
       for (iterator i=begin(); i!=end(); ++i) delete *i;
     }
@@ -296,6 +298,10 @@ namespace img {
     }
     long nrows() const {return rowCount;}
     int ncols() const {return columns.size();}
+
+    bool isChanged() const {return isAltered;}
+    void clearChanged() {isAltered = false;}
+    void touch() {isAltered = true;}
 
     // **** Make iterator classes to run over columns ***
     class iterator {
@@ -326,6 +332,7 @@ namespace img {
 
     const_iterator begin() const {return const_iterator(columns.begin());}
     const_iterator end() const {return const_iterator(columns.end());}
+    /// ??? touch for issuing non-const column iterator ??
     iterator begin() {return iterator(columns.begin());}
     iterator end() {return iterator(columns.end());}
 
@@ -348,17 +355,20 @@ namespace img {
     template<class T>
     void addColumn(const vector<T>& values, string columnName, 
 		   long repeat=-1, long stringLength=-1 ) {
+      touch();
       add(new ScalarColumn<T>(values, columnName, stringLength));
     }
     // Specialization to recognize vector<vector> as array column
     template<class T>
     void addColumn(const vector<vector<T> >& values, string columnName, 
 		   long repeat=-1, long stringLength=-1) {
+      touch();
       if (repeat<0) add(new ArrayColumn<T>(values, columnName, stringLength));
       else add(new FixedArrayColumn<T>(values, columnName, repeat, stringLength));
     }
         
     void erase(string columnName) {
+      touch();
       Index::iterator i=columns.find(columnName);
       if (i==columns.end())
 	throw FTableNonExistentColumn(columnName);
@@ -367,11 +377,13 @@ namespace img {
       columns.erase(i);
     }
     void erase(iterator i) {
+      touch();
       delete *i;
       columns.erase(i.i);
     }
 
     void clear() {
+      touch();
       for (Index::iterator i=columns.begin();
 	   i != columns.end();
 	   ++i)
@@ -383,6 +395,7 @@ namespace img {
 
     // ***** Row erase / insert:
     void eraseRows(long rowStart, long rowEnd=-1) {
+      touch();
       Assert(rowStart>=0);
       if (rowStart>=nrows()) return; // don't erase past end
       if (columns.empty()) return;
@@ -393,6 +406,7 @@ namespace img {
       rowCount = (*begin())->size();
     }
     void insertRows(long insertBeforeRow, long insertNumber) {
+      touch();
       if (insertBeforeRow > nrows()) throw FTableError("insertRows beyond end of table");
       for (iterator i=begin(); i!=end(); ++i) (*i)->insertRows(insertBeforeRow, insertNumber);
       rowCount += insertNumber;
@@ -434,6 +448,7 @@ namespace img {
 #endif
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
+      touch();
       int doneRows = col->writeCell(value, row);
       growRows(doneRows);
     }
@@ -444,8 +459,10 @@ namespace img {
       if (rowStart<0)
 	  FormatAndThrow<FTableRangeError>() << row << " for rowCount= " << rowCount;
 #endif
+      touch();
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
+      touch();
       int doneRows = col->writeCells(values, rowStart);
       growRows(doneRows);
     }
@@ -459,6 +476,7 @@ namespace img {
 #endif
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
+      touch();
       int doneRows = col->writeCell(value, row);
       growRows(doneRows);
     }
@@ -471,6 +489,7 @@ namespace img {
 #endif
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
+      touch();
       int doneRows = col->writeCells(values, rowStart);
       growRows(doneRows);
     }

@@ -7,27 +7,54 @@
 #include "FITS.h"
 
 namespace fits {
-  class FITSTable {
+  class FitsTable: public Hdu {
+  public:
+    // Open table at given extn, filename
+    FitsTable(string filename,
+	      FITS::Flags f=FITS::ReadOnly,
+	      int hduNumber_=1);
+    FitsTable(string filename,
+	      FITS::Flags f=FITS::ReadOnly,
+	      string hduName);
+    // Close on destruction
+    virtual ~FitsTable();
+
+    img::FTable extract(long rowStart=0, long rowEnd=-1) const;
+    // Extract columns matching any of the input strings (FITSIO wildcards OK)
+    img::FTable extract(const vector<string>& templates, long rowStart=0, long rowEnd=-1) const;
+
+    // Issue FTable that is mirrored to FITS file data
+    img::FTable use();
+
+    // Write any changes in memory version (mirror) back to FITS file
+    // [happens automatically on object destruction]
+    virtual void flush() const;
+
+    // Empty the FITS table and header:
+    virtual void clear();
+
+    // Replace current header & data with that in external file.
+    void copy(FTable ft);
+
+    // Change an FTable to be able to store as FITS bintable.  Namely, 
+    // change any string cells with variable-length arrays into fixed-length at 
+    // the maximum size:
+    static void makeFitsCompatible(img::FTable ft);
+
   private:
-    FITS::FitsFile parent;
-    int hduNumber;
-    long nrows;
-    int ncols;
-    const bool writeable;
+    // Have a copy of the whole table here if we have anyone using it.
+    mutable img::FTable* mirror;
 
-    // Make this the current HDU, return status:
-    int moveTo() const;
-
-    // Find columns matching template and add them to vector (no duplicates)
-    void findColumns(img::FTable& ft,
-		     string matchMe,
-		     vector<string>& names,
-		     vector<int>& numbers) const;
-    // Create new column(s) in img::FTable to hold data in FITSTable's column with given names and no's
+    // Find columns in FITS table matching template and add them to vector (no duplicates)
+    void findFitsColumns(string matchMe,
+			 vector<string>& names,
+			 vector<int>& numbers) const;
+    // Create new column(s) in img::FTable to hold data in 
+    // FitsTable's column with given names and no's
     void createColumns(img::FTable& ft, 
 		       const vector<string>& names,
 		       const vector<int>& numbers) const;
-    // Read data from FITS table file into the FTable, colunns with specified names/numbers.
+    // Read data from FITS table file into the FTable, columns with specified names/numbers.
     void readData(img::FTable& ft, 
 		  const vector<string>& names,
 		  const vector<int>& numbers,
@@ -36,7 +63,7 @@ namespace fits {
     // Template function used in above to read data for a single column
     template <class T>
     void getFitsColumnData(img::FTable ft, string colName, int icol, 
-			 long rowStart, long rowEnd) const;
+			   long rowStart, long rowEnd) const;
 
     // For writing FTable to FITS
     // Add all of ft's columns to end of table, and accumulate name/number pairs
@@ -46,47 +73,24 @@ namespace fits {
     void writeFitsColumn(img::FTable ft, string colName, int colNums,
 			 long rowStart=0, long rowEnd=-1);
 
-  public:
-    // Open table at given extn, filename
-    FITSTable(string filename,
-	      FITS::Flags f=FITS::ReadOnly,
-	      int hduNumber_=1);
-    // Close on destruction
-    ~FITSTable();
-    string getFilename() const {return parent.getFilename();}
-    // Extract all columns and range of rows (rowEnd=1-past-end, zero-indexed, -1=go to end)
-    bool isWriteable() const {return writeable;}
-
-    img::FTable extract(long rowStart=0, long rowEnd=-1) const;
-    // Extract columns matching any of the input strings (FITSIO wildcards OK)
-    img::FTable extract(const vector<string>& templates, long rowStart=0, long rowEnd=-1) const;
-
-    // Empty the FITS table:
-    void clear();
-
-    // Change an FTable to be able to store as FITS bintable.  Namely, 
-    // change any string cells with variable-length arrays into fixed-length at 
-    // the maximum size:
-    static void makeFitsCompatible(img::FTable ft);
-
-    // Write contents of FTable into this FITSTable:
-    void replaceWith(img::FTable ft);
+    void writeFitsTableData(img::FTable ft);
+    void clearFitsTableData(img::FTable ft);
   };
 
 
-    // Specialize FITS-reading for string and for logical
-    template <>
-    void FITSTable::getFitsColumnData<string>(img::FTable ft, string colName, int icol, 
-				   long rowStart, long rowEnd) const;
-    template <>
-    void FITSTable::getFitsColumnData<bool>(img::FTable ft, string colName, int icol, 
-				 long rowStart, long rowEnd) const;
-    template<>
-    void FITSTable::writeFitsColumn<string>(img::FTable ft, string colName, int colNum,
-					    long rowStart, long rowEnd);
-    template<>
-    void FITSTable::writeFitsColumn<bool>(img::FTable ft, string colName, int colNum,
+  // Specialize FITS-reading for string and for logical
+  template <>
+  void FitsTable::getFitsColumnData<string>(img::FTable ft, string colName, int icol, 
+					    long rowStart, long rowEnd) const;
+  template <>
+  void FitsTable::getFitsColumnData<bool>(img::FTable ft, string colName, int icol, 
+					  long rowStart, long rowEnd) const;
+  template<>
+  void FitsTable::writeFitsColumn<string>(img::FTable ft, string colName, int colNum,
 					  long rowStart, long rowEnd);
+  template<>
+  void FitsTable::writeFitsColumn<bool>(img::FTable ft, string colName, int colNum,
+					long rowStart, long rowEnd);
 
-} // end namespace img
+} // end namespace FITS
 #endif

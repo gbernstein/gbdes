@@ -67,15 +67,17 @@ namespace img {
       hcount(rhs.hcount) {(*dcount)++; (*hcount)++;}
     // So is assignment:
     FTable& operator=(const FTable& rhs) {
-      // Note no assignment of const image to non-const image. ???
+      // Note no assignment of image to const image. ???
       if (&rhs == this) return *this;
       if (D!=rhs.D) {
 	if (--(*dcount)==0) {delete D; delete dcount;}
 	D = rhs.D; dcount=rhs.dcount; (*dcount)++;
+	D->touch();
       }
       if (H!=rhs.H) {
 	if (--(*hcount)==0) {delete H; delete hcount;}
 	H = rhs.H; hcount=rhs.hcount; (*hcount)++;
+	H->touch();
       }
       return *this;
     }
@@ -87,19 +89,31 @@ namespace img {
       dup.D = D->duplicate(); // and replace with duplicate of this->D.
       return dup;
     }
-    // Or adopt another table's header only:
-    void copyHeader(const Header& rhs) {*H=rhs;}
 
     ~FTable() {
       if (--(*dcount)==0) {delete D; delete dcount;}
       if (--(*hcount)==0) {delete H; delete hcount;}
     }
 
-    // Access elements directly:
+    // Access header:
     Header* header() {return H;}
     const Header* header() const {return H;}
-    TableData* data() {return D;}
-    const TableData* data() const {return D;}
+
+    // Adopt a header from elsewhere (and its link counter:)
+    void adoptHeader(Header* hptr_, int* hcount_) {
+      if (--(*hcount)==0) {delete H; delete hcount;}
+      hcount = hcount_;
+      H = hptr_;
+      (*hcount)++;
+      H->touch();
+    }
+
+    // Users should not need these, they're for FitsTable:
+    int dataLinkCount() const {return *dcount;}
+    bool dataIsChanged() const {return D->isChanged();}
+    void clearChanged() {H->clearChanged(); D->clearChanged();}
+
+    void clear() {H->clear(); D->clear(); H->touch(); D->touch();}
 
     // Access single element (copy created)
     template <class T>

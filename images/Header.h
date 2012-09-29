@@ -247,7 +247,7 @@ namespace img {
     void addHistory(const string s) {lhistory.push_back(s); touch();}
 
     bool isChanged() const {return isAltered;}  //changed since creation?
-    void notChanged() {isAltered=false;}	//reset altered flag
+    void clearChanged() {isAltered=false;}	//reset altered flag
     void touch() {isAltered=true;}
 
     // Manipulate the pointer to current header record:

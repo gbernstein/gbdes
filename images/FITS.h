@@ -33,6 +33,9 @@ namespace FITS {
   // Note that function will not throw while already processing an exception.
   void throw_CFITSIO(const string m="");
 
+  // This with throw a FITSError, but just print err to cerr if already processing exception
+  void throwFitsOrDump(const string err);
+
   // And one to flush the error message stack
   void flushFitsErrors();
 

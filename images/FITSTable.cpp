@@ -5,122 +5,52 @@
 using namespace img;
 using namespace FITS;
 
-FITSTable::FITSTable(string filename, 
+FitsTable::FitsTable(string filename, 
 		     FITS::Flags f,
-		     int hduNumber_): parent(filename, f), 
-				      hduNumber(hduNumber_),
-				      writeable( !(f==ReadOnly)) 
-{
-  if (hduNumber==0) 
-    throw FITSError("Cannot open a FITS table at HDU number 0; file " + getFilename());
-  int status=0;
-  int hdutype;
-  int nHDUs=0;
-  // Count existing HDUs in this file
-  // OK for empty file ???
-  fits_get_num_hdus(parent, &nHDUs, &status);
-  if (status) throw_CFITSIO();
+		     int hduNumber_): Hdu(filename, HDUBinTable, hduNumber_, f),
+				      mirror(0) {}
 
-  // Move to the requested HDU (request of -1 means to append new HDU)
-  bool foundHDU = false;
-  if (hduNumber>=0 && hduNumber < nHDUs) {
-    // Try to find requested HDU, if one is requested
-    // NOTE THAT CFITSIO HDU's are 1-indexed, I'm doing 0-indexed
-    fits_movabs_hdu(parent, hduNumber+1, &hdutype, &status);
-    if (status==BAD_HDU_NUM) {
-      status = 0;
-      fits_clear_errmsg();
-    } else {
-      foundHDU = true;
-    }
+FitsTable::FitsTable(string filename, 
+		     FITS::Flags f,
+		     string hduName_): Hdu(filename, HDUBinTable, hduName_, f),
+				       mirror(0) {}
+
+FitsTable::~FitsTable() {
+  if (mirror) {
+    // Make nothing else is using the mirrored data still:
+    if (mirror->dataLinkCount() != 1)
+      throwFitsOrDump("Closing FitsTable with its data still linked, file " + getFilename());
+    if ( mirror->dataIsAltered()) flush();
+    delete mirror;
+    mirror = 0;
   }
-  if ( !foundHDU && (f & FITS::Create)) {
-    // Try to make a new extension at the end of all of them or in requested spot
-
-    // If we've asked for appending a new extension with hduNumber=-1,
-    // then target an HDU number one past end
-    if (hduNumber < 1) hduNumber = std::max(1,nHDUs);
-
-    // Fill in 0-dimensional dummy to place our HDU in desired place.
-    for (int emptyHDU=nHDUs; emptyHDU<hduNumber; emptyHDU++) {
-      long naxes[2];
-      fits_create_img(parent, BYTE_IMG, 0, naxes, &status);
-    }
-
-    // Now create new BINTABLE extension, empty initially
-    {
-      char* tDummy[1];
-      tDummy[0] = 0;
-      string hduName = "Change???";
-      fits_create_tbl(parent, BINARY_TBL, (LONGLONG) 0, 0, 
-		      tDummy, tDummy, tDummy,
-		      const_cast<char*> (hduName.c_str()),
-		      &status);
-      // Make sure we can move to this
-      fits_movabs_hdu(parent, hduNumber+1, &hdutype, &status);
-      if (!status) foundHDU = true;
-    }
-  } else if (!foundHDU) {
-    // Did not find HDU and not allowed to create it:
-    FormatAndThrow<FITSError>() << "Did not find HDU " << hduNumber
-				<< " in FITS file " << getFilename();
-  } else if (f & FITS::OverwriteHDU) {
-    // We did find our HDU number but are instructed to overwrite it,
-    // so clean it out and put in a new empty bintable
-    int dummy;
-    fits_delete_hdu(parent, &dummy, &status);
-    fits_flush_file(parent, &status);
-    // ??? Note complications if we just deleted the primary header
-
-    // Now insert new BINTABLE extension, empty initially, in desired spot
-    // Need to move to the place *before* we want ours:
-    // ???? Have some kind of bug (CFITSIO?) with deleting and replacing in the
-    // middle of file; leaves something that has extra stuff at end of FITS file ????
-    fits_movabs_hdu(parent, hduNumber, &hdutype, &status);
-    {
-      char* tDummy[1];
-      tDummy[0] = 0;
-      string hduName = "Change???";
-      fits_insert_btbl(parent, (LONGLONG) 0, 0, 
-		       tDummy, tDummy, tDummy,
-		       const_cast<char*> (hduName.c_str()),
-		       (long) 0,	// pcount: not reserving any space for heap.
-		       &status);
-      // Make sure we can move to this
-      fits_movabs_hdu(parent, hduNumber+1, &hdutype, &status);
-    }
-  }
-  // Report any errors getting here
-  if (status) throw_CFITSIO("Error opening proper HDU for FITSTable file " +getFilename());
-  // We should now have an opened HDU at desired number. See if it's a table as desired:
-  if ( !(HDUType(hdutype) == HDUBinTable  ||
-	 HDUType(hdutype) == HDUAsciiTable) )
-    FormatAndThrow<FITSError>() << "HDU " << hduNumber
-				<< " of file " << getFilename()
-				<< " is not a FITS table extension";
-
-  // Get the info that we want about this table:
-
-  fits_get_num_cols(parent, &ncols, &status);
-  fits_get_num_rows(parent, &nrows, &status);
-  if (status) throw_CFITSIO("Opening FITSTable in file " + getFilename());
+  // Destructor for Hdu will flush header if still needed.
 }
 
-int
-
-FITSTable::~FITSTable() {
-  // Flush this HDU if writeable, altered?
-}
-
-template <class T>
-void addEmptyColumn(FTable ft, string name, long repeat, long stringLength=-1) {
-  if (repeat<0 || repeat>1) ft.addColumn(vector<vector<T> >(), name, repeat, stringLength);
-  else ft.addColumn(vector<T>(), name, repeat, stringLength);
+img::FTable
+FitsTable::use() {
+  if (!isWriteable()) 
+    throw FITSError("Attempt to use() read-only FitsTable from file " + getFilename());
+  if (mirror) 
+    throw FITSError("Attempt to use() FitsTable already in use, from file " + getFilename());
+  // Read the whole thing from file
+  FTable ft = extract();
+  ft.adoptHeader(hptr, hcount);
+  // Link to the FTable data via internal mirror
+  mirror = new FTable(ft);
+  mirror->clearChanged();
+  return ft;
 }
 
 
-FTable 
-FITSTable::extract(long rowStart, long rowEnd) const {
+img::FTable 
+FitsTable::extract(long rowStart, long rowEnd) const {
+  // ??? Change this....
+  if (mirror) flush();
+  long nrows;
+  fits_get_num_rows(fptr(), &nrows, &status);
+  // ???
+
   if (rowEnd < 0 ) rowEnd = nrows;
   if (rowEnd < rowStart) rowEnd = rowStart;  // Makes an empty table
   int outRows = rowEnd - rowStart;
@@ -128,15 +58,21 @@ FITSTable::extract(long rowStart, long rowEnd) const {
   vector<string> colNames;
   vector<int> colNums;
   const string matchAll("*");
-  findColumns(ft, matchAll, colNames, colNums);
+  findFitsColumns(matchAll, colNames, colNums);
   createColumns(ft, colNames, colNums);
-  readData(ft, colNames, colNums, rowStart, rowEnd);
+  readFitsData(ft, colNames, colNums, rowStart, rowEnd);
   return ft;
 }
 
-FTable 
-FITSTable::extract(const vector<string>& templates,
+img::FTable 
+FitsTable::extract(const vector<string>& templates,
 		   long rowStart, long rowEnd) const {
+  // ??? Change this....
+  if (mirror) flush();
+  long nrows;
+  fits_get_num_rows(fptr(), &nrows, &status);
+  // ???
+
   if (rowEnd < 0 ) rowEnd = nrows;
   if (rowEnd < rowStart) rowEnd = rowStart;  // Makes an empty table
   int outRows = rowEnd - rowStart;
@@ -144,17 +80,69 @@ FITSTable::extract(const vector<string>& templates,
   vector<string> colNames;
   vector<int> colNums;
   for (int i=0; i<templates.size(); i++)
-    findColumns(ft, templates[i], colNames, colNums);
+    findFitsColumns(templates[i], colNames, colNums);
   createColumns(ft, colNames, colNums);
-  readData(ft, colNames, colNums, rowStart, rowEnd);
+  readFitsData(ft, colNames, colNums, rowStart, rowEnd);
   return ft;
 }
 
 void
-FITSTable::findColumns(FTable& ft,
-		       string matchMe,
-		       vector<string>& colNames,
-		       vector<int>& colNumbers) const {
+FitsTable::flush() const {
+  // Flush both data and header, as needed
+  if (!isWriteable()) return;
+  if (mirror && mirror->isChanged())
+    writeFitsTableData(*mirror);
+  // Take care of header with base class call:
+  Hdu::flush();
+  mirror->clearChanged();
+}
+
+void
+FitsTable::copy(FTable ft) {
+  if (!isWriteable)
+    throw FITSError("Attempt to copy into read-only FitsTable in file " + getFilename());
+  // First copy header into Hdu base class:
+  hptr->copyFrom(*ft.header());
+  hptr->touch();
+  if (mirror) {
+    // If we have a mirror, make it a duplicate of input table
+    *mirror = ft.duplicate();
+    // Re-link header of mirror to FT:
+    mirror->adoptHeader(hptr, hcount);
+  } else {
+    // Otherwise write FTable's data directly to disk file
+    writeFitsTableData(ft);
+  }
+}
+
+void
+FitsTable::clear() {
+  if (!isWriteable())
+    throw FITSError("clear() on read-only FitsTable in file " + getFilename());
+  if (mirror) {
+    mirror->clear();
+  } else {
+    // Clear FITS file version
+    clearFitsTableData();
+    // Clear header
+    Hdu::clear();
+  }
+}
+
+////////////////////////////////////////////////////////
+// Routines to help read FITS tables into FTables
+////////////////////////////////////////////////////////
+
+template <class T>
+void addEmptyColumn(img::FTable ft, string name, long repeat, long stringLength=-1) {
+  if (repeat<0 || repeat>1) ft.addColumn(vector<vector<T> >(), name, repeat, stringLength);
+  else ft.addColumn(vector<T>(), name, repeat, stringLength);
+}
+
+void
+FitsTable::findFitsColumns(string matchMe,
+			   vector<string>& colNames,
+			   vector<int>& colNumbers) const {
   char colName[FITS::MAX_COLUMN_NAME_LENGTH];
 
   int status = 0;
@@ -164,7 +152,7 @@ FITSTable::findColumns(FTable& ft,
     do {
       int colNum;
       // Note const_cast to match non-const template for CFITSIO
-      fits_get_colname(parent, CASEINSEN, 
+      fits_get_colname(fptr(), CASEINSEN, 
 		       const_cast<char*> (matchMe.c_str()), colName, &colNum, &status);
       if (status==0 || status==COL_NOT_UNIQUE) {
 	// duplicate?
@@ -184,7 +172,7 @@ FITSTable::findColumns(FTable& ft,
 }
 
 void
-FITSTable::createColumns(FTable& ft, 
+FitsTable::createColumns(img::FTable& ft, 
 			 const vector<string>& colNames,
 			 const vector<int>& colNumbers) const {
   int status=0;
@@ -194,7 +182,7 @@ FITSTable::createColumns(FTable& ft,
 #pragma omp critical (fitsio) 
     {  
       status = moveTo();
-      fits_get_eqcoltype(parent, colNumbers[i], &datatype, &repeat, &width, &status);
+      fits_get_eqcoltype(fptr(), colNumbers[i], &datatype, &repeat, &width, &status);
     }
     if (status) throw_CFITSIO("Getting info for column " + colNames[i]);
 
@@ -291,11 +279,11 @@ FITSTable::createColumns(FTable& ft,
 }
 
 void 
-FITSTable::readData(FTable& ft, 
-		    const vector<string>& names,
-		    const vector<int>& numbers,
-		    long rowStart,
-		    long rowEnd) const {
+FitsTable::readFitsData(img::FTable& ft, 
+			const vector<string>& names,
+			const vector<int>& numbers,
+			long rowStart,
+			long rowEnd) const {
 
   // Now read in the data from FITS file into our columns, using the
   // recommended row increments for buffering
@@ -304,7 +292,7 @@ FITSTable::readData(FTable& ft,
 #pragma omp critical (fitsio)
   {
     status = moveTo();
-    fits_get_rowsize(parent, &bufferRows, &status);
+    fits_get_rowsize(fptr(), &bufferRows, &status);
   }
   if (status) throw_CFITSIO();
   
@@ -370,14 +358,14 @@ FITSTable::readData(FTable& ft,
 
   } // End row loop
 
-} // end readData()
+} // end readFitsData()
 
 // Now a template for routine that gets our column data from file via CFITSIO routines
 // Note that this is being called with template being the type of the data in the
 // C++ FTable.
 template <class T>
 void 
-FITSTable::getFitsColumnData(FTable ft, string colName, int icol, 
+FitsTable::getFitsColumnData(img::FTable ft, string colName, int icol, 
 			     long rowStart, long nRows) const {
   if (nRows < 1) return;
   FITS::DataType dtype = FITS::FITSTypeOf<T>();
@@ -395,9 +383,9 @@ FITSTable::getFitsColumnData(FTable ft, string colName, int icol,
       {
 	status = moveTo();
 	// Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-	fits_read_descript(parent, icol, rowStart+1+i, &nElements, &offset, &status);
+	fits_read_descript(fptr(), icol, rowStart+1+i, &nElements, &offset, &status);
 	data.resize(nElements);
-	fits_read_col(parent, dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+	fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
 		      (LONGLONG) nElements, nullPtr, &data[0], &anyNulls, &status);
       }
       if (status) throw_CFITSIO("Reading table column " + colName);
@@ -410,7 +398,7 @@ FITSTable::getFitsColumnData(FTable ft, string colName, int icol,
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      fits_read_col(parent, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
+      fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
 		    nullPtr, &data[0], &anyNulls, &status);
     }
     if (status) throw_CFITSIO("Reading table column " + colName);
@@ -425,7 +413,7 @@ FITSTable::getFitsColumnData(FTable ft, string colName, int icol,
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      fits_read_col(parent, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
+      fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
 		    nullPtr, &data[0], &anyNulls, &status);
     }
     if (status) throw_CFITSIO("Reading table column " + colName);
@@ -438,7 +426,7 @@ FITSTable::getFitsColumnData(FTable ft, string colName, int icol,
 // just do this explicitly instead of assuming that bool = char on this system.
 template <>
 void 
-FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol, 
+FitsTable::getFitsColumnData<bool>(img::FTable ft, string colName, int icol, 
 				   long rowStart, long nRows) const {
   if (nRows < 1) return;
   FITS::DataType dtype = FITS::Tlogical;
@@ -456,9 +444,9 @@ FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol,
       {
 	status = moveTo();
 	// Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-	fits_read_descript(parent, icol, rowStart+1+i, &nElements, &offset, &status);
+	fits_read_descript(fptr(), icol, rowStart+1+i, &nElements, &offset, &status);
 	data.resize(nElements);
-	fits_read_col(parent, dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+	fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
 		      (LONGLONG) nElements, nullPtr, &data[0], &anyNulls, &status);
       }
       if (status) throw_CFITSIO("Reading table column " + colName);
@@ -472,7 +460,7 @@ FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol,
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      fits_read_col(parent, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
+      fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
 		    nullPtr, &data[0], &anyNulls, &status);
     }
     if (status) throw_CFITSIO("Reading table column " + colName);
@@ -487,7 +475,7 @@ FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol,
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      fits_read_col(parent, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
+      fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
 		    nullPtr, &data[0], &anyNulls, &status);
     }
     if (status) throw_CFITSIO("Reading table column " + colName);
@@ -505,7 +493,7 @@ FITSTable::getFitsColumnData<bool>(FTable ft, string colName, int icol,
 // Not sure whether variable-length char arrays are ever used.
 template <>
 void 
-FITSTable::getFitsColumnData<string>(FTable ft, string colName, int icol, 
+FitsTable::getFitsColumnData<string>(img::FTable ft, string colName, int icol, 
 				     long rowStart, long nRows) const {
   if (nRows < 1) return;
   FITS::DataType dtype = Tstring;
@@ -526,10 +514,10 @@ FITSTable::getFitsColumnData<string>(FTable ft, string colName, int icol,
 	{
 	  status = moveTo();
 	  // Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-	  fits_read_descript(parent, icol, rowStart+1+i, &nElements, &offset, &status);
+	  fits_read_descript(fptr(), icol, rowStart+1+i, &nElements, &offset, &status);
 	  data = new char[nElements+1];
 	  // Read as a c-string; wants char** for destination
-	  fits_read_col(parent, Tbyte, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+	  fits_read_col(fptr(), Tbyte, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
 			(LONGLONG) nElements, nullPtr, &data, &anyNulls, &status);
 	}
 	if (status) throw_CFITSIO("Reading table column " + colName);
@@ -554,7 +542,7 @@ FITSTable::getFitsColumnData<string>(FTable ft, string colName, int icol,
     {
       status = moveTo();
       // ??? nStrings or # characters here ???
-      fits_read_col(parent, dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nStrings,
+      fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nStrings,
 		    nullPtr, &data[0], &anyNulls, &status);
     }
     if (status) throw_CFITSIO("Reading table column " + colName);
@@ -590,10 +578,10 @@ FITSTable::getFitsColumnData<string>(FTable ft, string colName, int icol,
 ////////// Writing routines
 ////////////////////////////////////////////////////////////////////////////////
 
-// Write contents of FTable into the FITSTable
+// Write contents of FTable into the FitsTable (not header)
 void
-FITSTable::replaceWith(FTable ft) {
-  clear();
+FitsTable::writeFitsTableData(img::FTable ft) {
+  clearFitsTableData();
   long rowStart = 0;
   long rowEnd = ft.nrows();
   vector<string> colNames;
@@ -605,9 +593,9 @@ FITSTable::replaceWith(FTable ft) {
 #pragma omp critical (fitsio)
   {
     status = moveTo();
-    fits_get_rowsize(parent, &bufferRows, &status);
+    fits_get_rowsize(fptr(), &bufferRows, &status);
   }
-  if (status) throw_CFITSIO();
+  if (status) throw_CFITSIO(); 
   
   for (long firstRow = rowStart; firstRow < rowEnd; firstRow+=bufferRows) {
     long rowCount = std::min(rowEnd, firstRow+bufferRows) - firstRow;
@@ -674,24 +662,26 @@ FITSTable::replaceWith(FTable ft) {
 					  firstRow, firstRow+rowCount);
 	break;
       default:
-	FormatAndThrow<FITSError>() << "Unknown DataType " << dt
-				    << " for writing data to FITS column";
+	ostringstream oss;
+	oss << "Unknown DataType " << dt
+	    << " for writing data to FITS column";
+	throwFitsOrDump(oss.str());
       } // end DataType switch
     } // end column loop
   } // end row chunk loop
 }
 
 void
-FITSTable::addFitsColumns(FTable ft, vector<string>& colNames, vector<int>& colNums) {
+FitsTable::addFitsColumns(img::FTable ft, vector<string>& colNames, vector<int>& colNums) {
   if (!isWriteable())
-    throw FITSError("Attempt to add columns to read-only HDU in FITS file " + getFilename());
+    throwFitsOrDump("Attempt to add columns to read-only HDU in FITS file " + getFilename());
   int status=0;
   int colNum;
   // Add these columns to end of any there:
 #pragma omp critical (fitsio)
   {
     status = moveTo();
-    fits_get_num_cols(parent, &colNum, &status);
+    fits_get_num_cols(fptr(), &colNum, &status);
   }
   if (status) throw_CFITSIO();
   colNum++;	// columns are 1-indexed, and this arg gives desired posn of insertion
@@ -710,12 +700,12 @@ FITSTable::addFitsColumns(FTable ft, vector<string>& colNames, vector<int>& colN
 	// single variable-length string per cell:
 	if (repeat==1) oss << "1PA";
 	// otherwise: we will punt right now
-	throw FITSError("Cannot format variable-length string array for bintable "
+	throwFitsOrDump("Cannot format variable-length string array for bintable "
 			"at column " + colNames[i]);
       } else {
 	// Fixed-length strings
 	if (repeat < 0) {
-	  throw FITSError("Cannot format variable-length arrays of strings "
+	  throwFitsOrDump("Cannot format variable-length arrays of strings "
 			  " for bintable at column " + colNames[i]);
 	} else if (repeat==1) {
 	  // Single string
@@ -735,42 +725,41 @@ FITSTable::addFitsColumns(FTable ft, vector<string>& colNames, vector<int>& colN
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      fits_insert_col(parent, colNum, const_cast<char*> (colNames[i].c_str()), 
+      fits_insert_col(fptr(), colNum, const_cast<char*> (colNames[i].c_str()), 
 		      const_cast<char*> (oss.str().c_str()),
 		      &status);
     }
     colNums.push_back(colNum);
-    if (status) throw_CFITSIO("creating column " + colNames[i]);
+    if (status) throw_CFITSIO("creating column " + colNames[i]); 
   }
 }
 
 void
-FITSTable::clear() {
-  // Remove all data from a FITSTable (no flush)
-  // ??? clear header too ???
+FitsTable::clearFitsTableData() {
+  // Remove all data from Fits Table extension
   if (!isWriteable())
-    throw FITSError("Attempt to clear read-only HDU in FITS file " + getFilename());
+    throwFitsOrDump("Attempt to clear read-only Table in FITS file " + getFilename());
   int status;
 #pragma omp critical (fitsio)
   {
     status = moveTo();
     int ncols;
     // Delete all columns, from back to front:
-    fits_get_num_cols(parent, &ncols, &status);
+    fits_get_num_cols(fptr(), &ncols, &status);
     for (int i=ncols; i>0; i--)
-      fits_delete_col(parent, i, &status);
+      fits_delete_col(fptr(), i, &status);
     // compress (=empty) the heap:
-    fits_compress_heap(parent, &status);
+    fits_compress_heap(fptr(), &status);
   }
-  if (status) throw_CFITSIO("In FITSTable::clear(): ");
+  if (status) throw_CFITSIO("In FitsTable::clear(): ");
 }
 
 template <class DT> 
 void
-FITSTable::writeFitsColumn(FTable ft, string colName, int colNum,
+FitsTable::writeFitsColumn(img::FTable ft, string colName, int colNum,
 			   long rowStart, long rowEnd) {
   if (!isWriteable())
-    throw FITSError("Attempt to write to read-only HDU in FITS file " + getFilename());
+    throwFitsOrDump("Attempt to write to read-only HDU in FITS file " + getFilename());
   int status=0;
   long repeat = ft.repeat(colName);
   vector<DT> data;
@@ -780,7 +769,7 @@ FITSTable::writeFitsColumn(FTable ft, string colName, int colNum,
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      fits_write_col(parent, FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) rowStart+1,
+      fits_write_col(fptr(), FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) rowStart+1,
 		     (LONGLONG) 1, (LONGLONG) (rowEnd-rowStart), &data[0], &status);
     }
     if (status) throw_CFITSIO("Writing to FITS column " + colName);
@@ -792,7 +781,7 @@ FITSTable::writeFitsColumn(FTable ft, string colName, int colNum,
 #pragma omp critical (fitsio)
       {
 	status = moveTo();
-	fits_write_col(parent, FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) iRow+1,
+	fits_write_col(fptr(), FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) iRow+1,
 		       (LONGLONG) 1, (LONGLONG) data.size(), &data[0], &status);
       }
       if (status) throw_CFITSIO("Writing to FITS column " + colName);
@@ -803,10 +792,10 @@ FITSTable::writeFitsColumn(FTable ft, string colName, int colNum,
 // Specialize for logical, need to pass data in/out as char
 template <> 
 void
-FITSTable::writeFitsColumn<bool>(FTable ft, string colName, int colNum,
+FitsTable::writeFitsColumn<bool>(img::FTable ft, string colName, int colNum,
 				 long rowStart, long rowEnd) {
   if (!isWriteable())
-    throw FITSError("Attempt to write to read-only HDU in FITS file " + getFilename());
+    throwFitsOrDump("Attempt to write to read-only HDU in FITS file " + getFilename());
   int status=0;
   long repeat = ft.repeat(colName);
   vector<bool> data;
@@ -819,7 +808,7 @@ FITSTable::writeFitsColumn<bool>(FTable ft, string colName, int colNum,
 #pragma omp critical (fitsio)
     {
       status = moveTo();
-      fits_write_col(parent, FITS::Tlogical, colNum, (LONGLONG) rowStart+1,
+      fits_write_col(fptr(), FITS::Tlogical, colNum, (LONGLONG) rowStart+1,
 		     (LONGLONG) 1, (LONGLONG) (rowEnd-rowStart), cdata, &status);
     }
     if (status) throw_CFITSIO("Writing to FITS column " + colName);
@@ -834,7 +823,7 @@ FITSTable::writeFitsColumn<bool>(FTable ft, string colName, int colNum,
 #pragma omp critical (fitsio)
       {
 	status = moveTo();
-	fits_write_col(parent, FITS::Tlogical, colNum, (LONGLONG) iRow+1,
+	fits_write_col(fptr(), FITS::Tlogical, colNum, (LONGLONG) iRow+1,
 		       (LONGLONG) 1, (LONGLONG) data.size(), cdata, &status);
       }
       if (status) throw_CFITSIO("Writing to FITS column " + colName);
@@ -845,10 +834,10 @@ FITSTable::writeFitsColumn<bool>(FTable ft, string colName, int colNum,
 // Specialize for strings
 template<>
 void
-FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
-					long rowStart, long rowEnd) {
+FitsTable::writeFitsColumn<string>(img::FTable ft, string colName, int colNum,
+				   long rowStart, long rowEnd) {
   if (!isWriteable())
-    throw FITSError("Attempt to write to read-only HDU in FITS file " + getFilename());
+    throwFitsOrDump("Attempt to write to read-only HDU in FITS file " + getFilename());
   int status=0;
   long repeat = ft.repeat(colName);
   long length = ft.stringLength(colName);
@@ -863,7 +852,7 @@ FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
       {
 	status = moveTo();
 	// fits_write_col wants char** input for source of data
-	fits_write_col(parent, Tstring, colNum, (LONGLONG) iRow+1,
+	fits_write_col(fptr(), Tstring, colNum, (LONGLONG) iRow+1,
 		       (LONGLONG) 1, (LONGLONG) 1,
 		       cdata, &status);
       }
@@ -871,7 +860,7 @@ FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
     }
   } else {
       if (length < 0 || repeat < 0)
-	throw FITSError("Cannot write column <" + colName + "> to FITS because"
+	throwFitsOrDump("Cannot write column <" + colName + "> to FITS because"
 			" it has variable-length string arrays.");
       // Array cells, write 1 row at a time
       vector<string> data;
@@ -884,7 +873,7 @@ FITSTable::writeFitsColumn<string>(FTable ft, string colName, int colNum,
 #pragma omp critical (fitsio)
       {
 	status = moveTo();
-	fits_write_col(parent, Tstring, colNum, (LONGLONG) iRow+1,
+	fits_write_col(fptr(), Tstring, colNum, (LONGLONG) iRow+1,
 		       (LONGLONG) 1, (LONGLONG) repeat, cdata, &status);
       }
       if (status) throw_CFITSIO("Writing to FITS column " + colName);
