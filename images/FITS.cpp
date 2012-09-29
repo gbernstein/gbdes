@@ -28,10 +28,11 @@ FITS::throw_CFITSIO(const string m1) {
 
 // Utility to throw exception, or if already processing exception, just print error
 // Use this for things that might be thrown in destructor
+// But be careful, does not interrupt control flow!!!
 void
 FITS::throwFitsOrDump(const string err) {
   if (std::uncaught_exception())
-    cerr << err << endl;
+    cerr << "During exception processing: " << err << endl;
   else
     throw FITSError(err);
 }
