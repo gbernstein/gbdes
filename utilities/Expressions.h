@@ -13,28 +13,28 @@
 namespace expressions {
 
   // Exception classes
-  class ExpressionError: public std::rutime_error {
+  class ExpressionError: public std::runtime_error {
   public:
-    ExpressionError(const string& m): std::runtime_error("Expression error: " +m);
+    ExpressionError(const std::string& m): std::runtime_error("Expression error: " +m) {}
   };
 
   // Exception class for syntax error, includes index of error location
   class ExpressionSyntaxError: public ExpressionError {
   public:
-    ExpressionSyntaxError(const string& m, size_t charBegin_): ExpressionError(m),
-							       charBegin(charBegin_),
-							       why(m) {}
+    ExpressionSyntaxError(const std::string& m, size_t charBegin_): ExpressionError(m),
+								    charBegin(charBegin_),
+								    why(m) {}
     size_t charBegin;
-    string why;
-    string longWhat(const string& fullInput) {
-      ostringstream oss;
+    std::string why;
+    std::string longWhat(const std::string& fullInput) {
+      std::ostringstream oss;
       oss << why << " at character " << charBegin;
       oss << "\n" << fullInput << "\n";
       for (size_t i=0; i<charBegin; i++) oss << " ";
       oss << "^";
       return oss.str();
     }
-  }
+  };
       
   //////  First are classes that be the result of evaluation of expressions:
   class Value {
@@ -45,9 +45,10 @@ namespace expressions {
 
   // Derived class for null return:
   class VoidValue: public Value {
+  public:
     virtual ~VoidValue() {};
     virtual Value* duplicate() const {return new VoidValue;}
-  }
+  };
 
   template <class T>
   class ScalarValue: public Value {
@@ -73,12 +74,13 @@ namespace expressions {
   class Evaluable {
   public:
     virtual ~Evaluable() {};
-    virtual Value* evaluate() {return VoidValue();}
+    virtual Value* evaluate() {return new VoidValue;}
     // Following function used to get return type of evaluation
-    virtual Value* returnEmptyEvaluation() const {return VoidValue();}
+    virtual Value* returnEmptyEvaluation() const {return new VoidValue;}
   };
 
-  template <Value V>
+  // V shoud be a Value class
+  template <class V>
   class ConstantEvaluable: public Evaluable {
   private:
     V value;
@@ -99,12 +101,12 @@ namespace expressions {
 
   class BinaryOpEvaluable: public Evaluable {
   protected:
-    Evaluable* leftt;
+    Evaluable* left;
     Evaluable* right;
   public:
-    UnaryOpEvaluable(Evaluable* left_, Evaluable* right_): 
+    BinaryOpEvaluable(Evaluable* left_, Evaluable* right_): 
       left(left_), right(right_) {}
-    virtual ~UnaryOpEvaluable() {delete left; delete right;}
+    virtual ~BinaryOpEvaluable() {delete left; delete right;}
   };
     
 
@@ -128,10 +130,10 @@ namespace expressions {
     
     virtual Evaluable* createEvaluable() const {
       throw ExpressionError("called unimplemented Token::createEvaluable;");
-
-    void throwSyntaxError(const string& m) {
-      throw SyntaxError(m, beginChar);
     }
+     
+    void throwSyntaxError(const std::string& m) {
+      throw SyntaxError(m, beginChar);
     }
   };
 
@@ -157,14 +159,14 @@ namespace expressions {
 
   // Tokenizer function: takes as argument a Token which will be used to
   // tokenize strings that don't match any standard ones
-  list<Token*> tokenize(const std::string& input,
-			const Token& lastToken = Token());
+  std::list<Token*> tokenize(const std::string& input,
+			     const Token& lastToken = Token());
 
   // Parser function: takes iterators in a container of tokens and turns them into 
   // an Evaluable tree.
   // Returns ptr to the Evaluable at root of tree.  Delete it to delete full tree.
 
-  Evaluable* parse(list<Token*> tokenList,
+  Evaluable* parse(std::list<Token*> tokenList,
 		   std::list<Token*>::iterator begin,
 		   std::list<Token*>::iterator end
 		   const std::string& input);

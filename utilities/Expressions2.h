@@ -50,11 +50,11 @@ public:
   StringConstantToken(const string& vv="", size_t begin=0): Token(begin), value(vv) {}
   virtual Token* createFromString(const string& input, size_t& begin, size_t& end,
 				  bool lastTokenWasOperator) const {
-    if (input[begin]=\")
-      char delim = \";
+    if (input[begin]='\"')
+      char delim = '\"';
     else
-      if (input[begin]=\')
-	char delim = \';
+      if (input[begin]='\'')
+	char delim = '\'';
       else
 	return 0;
     // Found a string, continue to matching delimiter
@@ -250,6 +250,9 @@ public:
 };
 
   // Redefine the macros to no longer put template type onto operator:
+#undef USTEST
+#undef UVTEST
+
 #define USTEST(OP,Type)					          \
   if ( dynamic_cast<ScalarValue<Type>*> (rVal))                   \
     return GenericUnaryEvaluable<OP, ScalarValue<Type> >(right); 
@@ -288,8 +291,8 @@ class SinToken: public UnaryOpToken {
   }
 };
 
-#undefine USTEST
-#undefine UVTEST
+#undef USTEST
+#undef UVTEST
 
 
 /////////////////////////////////////////////////
