@@ -70,15 +70,16 @@ expressions::tokenize(const std::string& input,
 	continue;
       }
 
-      // This token starts with a letter or non-special character.  Record all such:
-      size_t tokenEnd = begin+1;
+      // This token starts with a non-digit and matches none of the operators.
+      // Collect characters until whitespace or match an operator
+      size_t tokenEnd = begin;
       Token* following = 0;
-      size_t nextBegin;
       while (tokenEnd < end && !following) {
+	tokenEnd++;
 	// End token at white space
 	if (std::isspace(input[tokenEnd])) break;
 	// Or if any other token matches:
-	nextBegin = tokenEnd;
+	size_t nextBegin = tokenEnd;
 	for (std::list<Token*>::const_iterator i = trialTokens.begin();
 	     !following && (i != trialTokens.end());
 	     ++i) {
@@ -138,6 +139,8 @@ expressions::parse(std::list<Token*>& tokenList,
   // This table gives precedence groups for all binary operators.
   static list<list<BinaryOpToken*> > precedenceTable;
   if (precedenceTable.empty()) {
+    // Exponentiation is above multiplies, below unaries.
+    precedenceTable.push_back( list<BinaryOpToken*>(1, new PowerToken()));
     {
       list<BinaryOpToken*> multiplicative;
       multiplicative.push_back(new MultipliesToken());
@@ -182,7 +185,7 @@ expressions::parse(std::list<Token*>& tokenList,
 	// Look for close-parenthesis to match
 	iter j = end;
 	for (--j; j!= i; --j)
-	  if ( dynamic_cast<CloseParenthesis*> (*i)) break;
+	  if ( dynamic_cast<CloseParenthesis*> (*j)) break;
 
 	if (j == i) 
 	  (*i)->throwSyntaxError("Mismatched open parenthesis");
@@ -216,7 +219,7 @@ expressions::parse(std::list<Token*>& tokenList,
       iter rightIter = i;
       ++rightIter;
       if (rightIter==end || (*rightIter)->isOperator() ) 
-	(*i)->throwSyntaxError("Missing argument for unanry operator");
+	(*i)->throwSyntaxError("Missing argument for unary operator");
       Evaluable* right = (*rightIter)->createEvaluable();
       delete *rightIter;
       tokenList.erase(rightIter);
@@ -239,7 +242,7 @@ expressions::parse(std::list<Token*>& tokenList,
 	for (list<BinaryOpToken*>::iterator i2 = i1->begin();
 	     !foundOne && i2 != i1->end();
 	     ++i2) { 
-	  foundOne = (std::typeid(**i2) == std::typeid(**j));
+	  foundOne = (typeid(**i2) == typeid(**j));
 	}
 	if (foundOne) {
 	  // Build this binary op from (everything to left) Op (immediately to right)

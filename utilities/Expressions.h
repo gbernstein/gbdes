@@ -12,6 +12,7 @@
 #include <list>
 #include <ios>
 #include "Std.h"
+#include <typeinfo>
 
 namespace expressions {
 
@@ -80,7 +81,7 @@ namespace expressions {
   class Evaluable {
   public:
     virtual ~Evaluable() {};
-    virtual Value* evaluate() {return new VoidValue;}
+    virtual Value* evaluate() const {return new VoidValue;}
     // Following function used to get return type of evaluation
     virtual Value* returnEmptyEvaluation() const {return new VoidValue;}
   };
@@ -135,7 +136,7 @@ namespace expressions {
     virtual bool isBinaryOperator() const {return false;}
     
     virtual Evaluable* createEvaluable() const {
-      throw ExpressionError("called unimplemented Token::createEvaluable;");
+      throw ExpressionError("called unimplemented Token::createEvaluable() ");
     }
      
     void throwSyntaxError(const std::string& m) const {
@@ -147,6 +148,7 @@ namespace expressions {
   class UnaryOpToken: public  Token {
   public:
     UnaryOpToken(size_t begin=0): Token(begin) {}
+    virtual bool isOperator() const {return true;}
     virtual bool isUnaryOperator() const {return true;}
     virtual Evaluable* createEvaluable(Evaluable* right) const {
       throw ExpressionError("called unimplemented UnaryOpToken::createEvaluable;");
@@ -157,6 +159,7 @@ namespace expressions {
   class BinaryOpToken: public  Token {
   public:
     BinaryOpToken(size_t begin=0): Token(begin) {}
+    virtual bool isOperator() const {return true;}
     virtual bool isBinaryOperator() const {return true;}
     virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
       throw ExpressionError("called unimplemented BinaryOpToken::createEvaluable;");
