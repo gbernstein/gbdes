@@ -9,6 +9,9 @@
 #include <stdexcept>
 #include <sstream>
 #include <cmath>
+#include <list>
+#include <ios>
+#include "Std.h"
 
 namespace expressions {
 
@@ -16,14 +19,17 @@ namespace expressions {
   class ExpressionError: public std::runtime_error {
   public:
     ExpressionError(const std::string& m): std::runtime_error("Expression error: " +m) {}
+    virtual ~ExpressionError() throw() {}
   };
 
   // Exception class for syntax error, includes index of error location
-  class ExpressionSyntaxError: public ExpressionError {
+  class SyntaxError: public ExpressionError {
   public:
-    ExpressionSyntaxError(const std::string& m, size_t charBegin_): ExpressionError(m),
-								    charBegin(charBegin_),
-								    why(m) {}
+    SyntaxError(const std::string& m, size_t charBegin_): ExpressionError(m),
+							  charBegin(charBegin_),
+							  why(m) {}
+    
+    virtual ~SyntaxError() throw() {}
     size_t charBegin;
     std::string why;
     std::string longWhat(const std::string& fullInput) {
@@ -88,7 +94,7 @@ namespace expressions {
     ConstantEvaluable(const V& v_): value(v_) {}
     virtual ~ConstantEvaluable() {}
     virtual Value* evaluate() const {return value.duplicate();}
-    virtual Value* returnEmptyEvaluation() const {return V();}
+    virtual Value* returnEmptyEvaluation() const {return new V();}
   };
 
   class UnaryOpEvaluable: public Evaluable {
@@ -132,7 +138,7 @@ namespace expressions {
       throw ExpressionError("called unimplemented Token::createEvaluable;");
     }
      
-    void throwSyntaxError(const std::string& m) {
+    void throwSyntaxError(const std::string& m) const {
       throw SyntaxError(m, beginChar);
     }
   };
@@ -166,14 +172,13 @@ namespace expressions {
   // an Evaluable tree.
   // Returns ptr to the Evaluable at root of tree.  Delete it to delete full tree.
 
-  Evaluable* parse(std::list<Token*> tokenList,
-		   std::list<Token*>::iterator begin,
-		   std::list<Token*>::iterator end
-		   const std::string& input);
+  extern Evaluable* parse(std::list<Token*>& tokenList,
+			  std::list<Token*>::iterator& begin,
+			  std::list<Token*>::iterator end,
+			  const std::string& input);
     
   ///// Above is the framework.  Below here are the implementations of the
   ///// standard tokens and Evaluables
 
-#include "Expressions2.h"
-
+} // end namespace expressions
 #endif // EXPRESSIONS_H

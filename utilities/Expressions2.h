@@ -1,9 +1,17 @@
+// More classes to run the expression evaluator
+#ifndef EXPRESSIONS2_H
+#define EXPRESSIONS2_H
+
+#include <functional>
+
+namespace expressions {
+
 // useful inline for seeing if our token is present at front
 inline bool matchesThis(const std::string& key, 
 			const std::string& input,
 			size_t& begin, size_t& end) {
     
-  size_t keyIndex=0
+  size_t keyIndex=0;
     size_t inputIndex=begin;
   while ( keyIndex < key.size()) {
     if (inputIndex >= input.size() || inputIndex >= end) 
@@ -19,8 +27,8 @@ inline bool matchesThis(const std::string& key,
 
 class OpenParenthesis: public Token {
 public:    
-  OpenParenthesis(size_t begin): Token(begin) {}
-  virtual Token* createFromString(const string& input, size_t& begin, size_t& end,
+  OpenParenthesis(size_t begin=0): Token(begin) {}
+  virtual Token* createFromString(const std::string& input, size_t& begin, size_t& end,
 				  bool lastTokenWasOperator) const {
     if (matchesThis("(", input, begin, end)) {
       return new OpenParenthesis(begin);
@@ -32,8 +40,8 @@ public:
 
 class CloseParenthesis: public Token {
 public:    
-  CloseParenthesis(size_t begin): Token(begin) {}
-  virtual Token* createFromString(const string& input, size_t& begin, size_t& end,
+  CloseParenthesis(size_t begin=0): Token(begin) {}
+  virtual Token* createFromString(const std::string& input, size_t& begin, size_t& end,
 				  bool lastTokenWasOperator) const {
     if (matchesThis(")", input, begin, end)) {
       return new CloseParenthesis(begin);
@@ -45,25 +53,26 @@ public:
 
 class StringConstantToken: public Token {
 private:
-  string value;
+  std::string value;
 public:
-  StringConstantToken(const string& vv="", size_t begin=0): Token(begin), value(vv) {}
-  virtual Token* createFromString(const string& input, size_t& begin, size_t& end,
+  StringConstantToken(const std::string& vv="", size_t begin=0): Token(begin), value(vv) {}
+  virtual Token* createFromString(const std::string& input, size_t& begin, size_t& end,
 				  bool lastTokenWasOperator) const {
-    if (input[begin]='\"')
-      char delim = '\"';
+    char delim;
+    if (input[begin]=='\"')
+      delim = '\"';
     else
-      if (input[begin]='\'')
-	char delim = '\'';
+      if (input[begin]=='\'')
+	delim = '\'';
       else
 	return 0;
     // Found a string, continue to matching delimiter
-    string vv;
+    std::string vv;
     size_t firstDelim = begin;
     while (true) {
       begin++;
       if (begin == end || begin >= input.size()) {
-	throw ExpressionSyntaxError("Unmatched string delimiter", firstDelim);
+	throw SyntaxError("Unmatched string delimiter", firstDelim);
       } else if (input[begin]==delim) {
 	// done.
 	begin++;
@@ -74,7 +83,7 @@ public:
     }
   }
   virtual Evaluable* createEvaluable() const {
-    return new ConstantEvaluable<ScalarValue<string> >(ScalarValue<string>(value));
+    return new ConstantEvaluable<ScalarValue<std::string> >(ScalarValue<std::string>(value));
   }
 };
 
@@ -95,8 +104,10 @@ public:
     if (!std::isdigit(input[begin])) return 0;
     // read the number
     bool foundDouble = false;
+    long tmpLong;
+    double tmpDouble;
     size_t inChar = begin;
-    string buffer;
+    std::string buffer;
     while (begin != end) {
       char c=input[begin];
       if (std::isdigit(c)) {
@@ -124,19 +135,19 @@ public:
       }
       std::istringstream iss(buffer);
       if (foundDouble)
-	iss >> doubleValue;
+	iss >> tmpDouble;
       else 
-	iss >> longValue;
-      if (ios.fail() || !ios.eof()) 
+	iss >> tmpLong;
+      if (iss.fail() || !iss.eof()) 
 	throw SyntaxError("Malformed number", inChar);
     } // character loop
 
     NumberToken* result = new NumberToken(inChar);
     result->isDouble = foundDouble;
     if (foundDouble)
-      result->doubleValue = readDouble;
+      result->doubleValue = tmpDouble;
     else
-      result->longValue = readLong;
+      result->longValue = tmpLong;
     return result;
   }
   virtual Evaluable* createEvaluable() const {
@@ -152,6 +163,7 @@ public:
 /////////////////////////////////////////////////
 
 class NoOpEvaluable: public UnaryOpEvaluable {
+public:
   NoOpEvaluable(Evaluable* right): UnaryOpEvaluable(right) {}
   ~NoOpEvaluable() {}
   virtual Value* returnEmptyEvaluation() const {return right->returnEmptyEvaluation();}
@@ -159,46 +171,52 @@ class NoOpEvaluable: public UnaryOpEvaluable {
 };
 
 // Op is derived from std::binary_function so it has the typedef of Result
-template <class Op, class ScalarVariable<Arg> >
-GenericUnaryEvaluable: public UnaryOpEvaluable {
-  GenericUnaryEvaluable(Evaluable* right): UnaryOpEvaluable(right) {}
-  ~GenericUnaryEvaluable() {}
-  virtual Value* returnEmptyEvaluation() const {return ScalarValue<Op::Result>();}
+template <class Op, class Arg>
+class GenericUnaryEvaluableS: public UnaryOpEvaluable {
+public:
+  GenericUnaryEvaluableS(Evaluable* right): UnaryOpEvaluable(right) {}
+  ~GenericUnaryEvaluableS() {}
+  virtual Value* returnEmptyEvaluation() const {
+    return ScalarValue<typename Op::Result>();
+  }
   virtual Value* evaluate() const {
     ScalarValue<Arg>* rval = dynamic_cast<ScalarValue<Arg>*> (right->evaluate());
     if (!rval) throw ExpressionError("Bad GenericUnaryEvaluable::right type");
     Op f;
-    Value* retval = new ScalarValue<Op::Result>( f(rval->value));
+    Value* retval = new ScalarValue<typename Op::Result>( f(rval->value));
     delete rval;
     return retval;
   }
 };
 
-template <class Op, class VectorVariable<Arg> >
-GenericUnaryEvaluable: public UnaryOpEvaluable {
-  GenericUnaryEvaluable(Evaluable* right): UnaryOpEvaluable(right) {}
-  ~GenericUnaryEvaluable() {}
-  virtual Value* returnEmptyEvaluation() const {return VectorValue<Op::Result>();}
+template <class Op, class Arg>
+class GenericUnaryEvaluableV: public UnaryOpEvaluable {
+public:
+  GenericUnaryEvaluableV(Evaluable* right): UnaryOpEvaluable(right) {}
+  ~GenericUnaryEvaluableV() {}
+  virtual Value* returnEmptyEvaluation() const {
+    return new VectorValue<typename Op::Result>();
+  }
   virtual Value* evaluate() const {
     VectorValue<Arg>* rval = dynamic_cast<VectorValue<Arg>*> (right->evaluate());
     if (!rval) throw ExpressionError("Bad GenericUnaryEvaluable::right type");
-    vector<Op::Result> vv(rval->values.size());
+    std::vector<typename Op::Result> vv(rval->values.size());
     Op f;
-    for (size_t i=0; size_t i<vv.size(); i++) {
+    for (size_t i=0; i<vv.size(); i++) {
       vv[i] = f( rval->values[i] );
     }
     delete rval;
-    return new VectorValue<Op::Result>(vv);
+    return new VectorValue<typename Op::Result>(vv);
   }
 };
 
 
 #define USTEST(OP,Type)							\
   if ( dynamic_cast<ScalarValue<Type>*> (rVal))                         \
-     return GenericUnaryEvaluable<OP<Type>, ScalarValue<Type> >(right); 
+     return new GenericUnaryEvaluableS<OP<Type>, Type>(right); 
 #define UVTEST(OP,Type)							\
   if ( dynamic_cast<VectorValue<Type>*> (rVal))                         \
-      return GenericUnaryEvaluable<OP<Type>, VectorValue<Type> >(right); 
+      return new GenericUnaryEvaluableV<OP<Type>, Type>(right); 
 
 class UnaryPlusToken: public UnaryOpToken {
 public:
@@ -210,7 +228,7 @@ public:
 	|| dynamic_cast<ScalarValue<double>*> (rVal)
 	|| dynamic_cast<VectorValue<long>*> (rVal)
 	|| dynamic_cast<VectorValue<double>*> (rVal)) return new NoOpEvaluable(right);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -224,7 +242,7 @@ public:
     USTEST(std::negate, long);
     UVTEST(std::negate, double);
     UVTEST(std::negate, long);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -235,7 +253,7 @@ public:
 				  size_t& begin,
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
-    return matchesThis("!",input, begin) ? new NotToken(begin-1) : 0;
+    return matchesThis("!",input, begin, end) ? new NotToken(begin-1) : 0;
   }
   virtual Evaluable* createEvaluable(Evaluable* right) const {
     Value* rVal = right->returnEmptyEvaluation();
@@ -245,7 +263,7 @@ public:
     UVTEST(std::logical_not, bool);
     UVTEST(std::logical_not, long);
     UVTEST(std::logical_not, double);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -255,28 +273,29 @@ public:
 
 #define USTEST(OP,Type)					          \
   if ( dynamic_cast<ScalarValue<Type>*> (rVal))                   \
-    return GenericUnaryEvaluable<OP, ScalarValue<Type> >(right); 
+    return new GenericUnaryEvaluableS<OP, Type>(right); 
 #define UVTEST(OP,Type)						  \
   if ( dynamic_cast<VectorValue<Type>*> (rVal))                   \
-    return GenericUnaryEvaluable<OP, VectorValue<Type> >(right); 
+    return new GenericUnaryEvaluableV<OP, Type>(right); 
 
 // Example of a unary math function:
 class SinFunction: std::unary_function<double,double> {
 public:
-  double operator()(double x) const return std::sin(x);
+  double operator()(double x) const {return std::sin(x);}
 };
 
 class SinToken: public UnaryOpToken { 
+public:
   SinToken(size_t begin=0): UnaryOpToken(begin) {}
   virtual Token* createFromString(const std::string& input,
 				  size_t& begin,
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
     size_t inChar = begin;
-    const string name="sin";
+    const std::string name="sin";
     if (name == input.substr(begin,end)) {
       begin = end;
-      return SinToken(inChar);
+      return new SinToken(inChar);
     } else {
       return 0;
     }
@@ -287,7 +306,7 @@ class SinToken: public UnaryOpToken {
     USTEST(SinFunction, double);
     UVTEST(SinFunction, long);
     UVTEST(SinFunction, double);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -301,19 +320,22 @@ class SinToken: public UnaryOpToken {
 
 // Op is derived from std::binary_function so it has the typedef of Result
 // Scalar Op Scalar
-template <class Op, class ScalarVariable<Arg1>, class ScalarVariable<Arg2> >
-GenericBinaryEvaluable: public BinaryOpEvaluable {
-  GenericBinaryEvaluable(Evaluable* left, Evaluable* right): 
+template <class Op, class Arg1, class Arg2>
+class GenericBinaryEvaluableSS: public BinaryOpEvaluable {
+public:
+  GenericBinaryEvaluableSS(Evaluable* left, Evaluable* right): 
     BinaryOpEvaluable(left, right) {}
-  ~GenericBinaryEvaluable() {}
-  virtual Value* returnEmptyEvaluation() const {return ScalarValue<Op::Result>();}
+  ~GenericBinaryEvaluableSS() {}
+  virtual Value* returnEmptyEvaluation() const {
+    return new ScalarValue<typename Op::Result>();
+  }
   virtual Value* evaluate() const {
     ScalarValue<Arg1>* lval = dynamic_cast<ScalarValue<Arg1>*> (left->evaluate());
     if (!lval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
     ScalarValue<Arg2>* rval = dynamic_cast<ScalarValue<Arg2>*> (right->evaluate());
     if (!rval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
     Op f;
-    ScalarValue<Op::Result>* retval = new ScalarValue<Op::Result>( f(lval->value, rval->value));
+    ScalarValue<typename Op::Result>* retval = new ScalarValue<typename Op::Result>( f(lval->value, rval->value));
     delete lval;
     delete rval;
     return retval;
@@ -322,100 +344,101 @@ GenericBinaryEvaluable: public BinaryOpEvaluable {
 
 // Op is derived from std::binary_function so it has the typedef of Result
 // Scalar Op Vector
-template <class Op, class ScalarVariable<Arg1>, class VectorVariable<Arg2> >
-GenericBinaryEvaluable: public BinaryOpEvaluable {
-  GenericBinaryEvaluable(Evaluable* left, Evaluable* right): 
+template <class Op, class Arg1, class Arg2>
+class GenericBinaryEvaluableSV: public BinaryOpEvaluable {
+public:
+  GenericBinaryEvaluableSV(Evaluable* left, Evaluable* right): 
     BinaryOpEvaluable(left, right) {}
-  ~GenericBinaryEvaluable() {}
-  virtual Value* returnEmptyEvaluation() const {return VectorValue<Op::Result>();}
+  ~GenericBinaryEvaluableSV() {}
+  virtual Value* returnEmptyEvaluation() const {
+    return new VectorValue<typename Op::Result>();
+  }
   virtual Value* evaluate() const {
     ScalarValue<Arg1>* lval = dynamic_cast<ScalarValue<Arg1>*> (left->evaluate());
     if (!lval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
     VectorValue<Arg2>* rval = dynamic_cast<VectorValue<Arg2>*> (right->evaluate());
     if (!rval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
-    vector<Op::Result> vv(rval->values.size());
+    std::vector<typename Op::Result> vv(rval->values.size());
     Op f;
-    for (size_t i=0; size_t i<vv.size(); i++) {
+    for (size_t i=0; i<vv.size(); i++) {
       vv[i] = f(lval->value, rval->values[i] );
     }
     delete lval;
     delete rval;
-    return new VectorValue<Op::Result>(vv);
+    return new VectorValue<typename Op::Result>(vv);
   }
 };
 
 // Op is derived from std::binary_function so it has the typedef of Result
 // Vector Op Scalar
-template <class Op, class VectorVariable<Arg1>, class ScalarVariable<Arg2> >
-GenericBinaryEvaluable: public BinaryOpEvaluable {
-  GenericBinaryEvaluable(Evaluable* left, Evaluable* right): 
+template <class Op, class Arg1, class Arg2>
+class GenericBinaryEvaluableVS: public BinaryOpEvaluable {
+public:
+  GenericBinaryEvaluableVS(Evaluable* left, Evaluable* right): 
     BinaryOpEvaluable(left, right) {}
-  ~GenericBinaryEvaluable() {}
-  virtual Value* returnEmptyEvaluation() const {return VectorValue<Op::Result>();}
+  ~GenericBinaryEvaluableVS() {}
+  virtual Value* returnEmptyEvaluation() const {
+    return new VectorValue<typename Op::Result>();
+  }
   virtual Value* evaluate() const {
     VectorValue<Arg1>* lval = dynamic_cast<VectorValue<Arg1>*> (left->evaluate());
     if (!lval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
     ScalarValue<Arg2>* rval = dynamic_cast<ScalarValue<Arg2>*> (right->evaluate());
     if (!rval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
-    vector<Op::Result> vv(lval->values.size());
+    std::vector<typename Op::Result> vv(lval->values.size());
     Op f;
-    for (size_t i=0; size_t i<vv.size(); i++) {
+    for (size_t i=0; i<vv.size(); i++) {
       vv[i] = f(lval->values[i], rval->value);
     }
     delete lval;
     delete rval;
-    return new VectorValue<Op::Result>(vv);
+    return new VectorValue<typename Op::Result>(vv);
   }
 };
 
 // Vector Op Vector
-template <class Op, class VectorVariable<Arg1>, class VectorVariable<Arg2> >
-GenericBinaryEvaluable: public BinaryOpEvaluable {
-  GenericBinaryEvaluable(Evaluable* left, Evaluable* right): 
+template <class Op, class Arg1, class Arg2>
+class GenericBinaryEvaluableVV: public BinaryOpEvaluable {
+public:
+  GenericBinaryEvaluableVV(Evaluable* left, Evaluable* right): 
     BinaryOpEvaluable(left, right) {}
-  ~GenericBinaryEvaluable() {}
-  virtual Value* returnEmptyEvaluation() const {return ScalarValue<Op::Result>();}
+  ~GenericBinaryEvaluableVV() {}
+  virtual Value* returnEmptyEvaluation() const {
+    return new VectorValue<typename Op::Result>();
+  }
   virtual Value* evaluate() const {
     VectorValue<Arg1>* lval = dynamic_cast<VectorValue<Arg1>*> (left->evaluate());
     if (!lval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
     VectorValue<Arg2>* rval = dynamic_cast<VectorValue<Arg2>*> (right->evaluate());
     if (!rval) throw ExpressionError("Bad GenericBinaryEvaluable::left type");
-    vector<Op::Result> vv(lval->values.size());
-    Assert(lval->values.size() == rval->values.size())
+    std::vector<typename Op::Result> vv(lval->values.size());
+    Assert(lval->values.size() == rval->values.size());
     Op f;
-    for (size_t i=0; size_t i<vv.size(); i++) {
+    for (size_t i=0; i<vv.size(); i++) {
       vv[i] = f(lval->values[i], rval->values[i]);
     }
     delete lval;
     delete rval;
-    return new VectorValue<Op::Result>(vv);
+    return new VectorValue<typename Op::Result>(vv);
   }
 };
 
 #define BSSTEST(OP,Type,Type1,Type2)					\
-  if ( dynamic_cast<ScalarValue<Type1>*> (lVal))                        \
+  if ( dynamic_cast<ScalarValue<Type1>*> (lVal)                         \
       && dynamic_cast<ScalarValue<Type2>*> (rVal))                      \
-    return GenericBinaryEvaluable<OP<Type>,                             \
-                                  ScalarValue<Type1>,                   \
-			          ScalarValue<Type2> >(left, right);     
+    return new GenericBinaryEvaluableSS<OP<Type>, Type1,Type2>(left,right);
 #define BSVTEST(OP,Type,Type1,Type2)					\
-  if ( dynamic_cast<ScalarValue<Type1>*> (lVal))                        \
+  if ( dynamic_cast<ScalarValue<Type1>*> (lVal)                         \
       && dynamic_cast<VectorValue<Type2>*> (rVal))                      \
-    return GenericBinaryEvaluable<OP<Type>,                             \
-                                  ScalarValue<Type1>,                   \
-			          VectorValue<Type2> >(left, right);     
+    return new GenericBinaryEvaluableSV<OP<Type>, Type1,Type2>(left,right);
 #define BVSTEST(OP,Type,Type1,Type2)					\
-  if ( dynamic_cast<VectorValue<Type1>*> (lVal))                        \
+  if ( dynamic_cast<VectorValue<Type1>*> (lVal)                         \
       && dynamic_cast<ScalarValue<Type2>*> (rVal))                      \
-    return GenericBinaryEvaluable<OP<Type>,                             \
-                                  VectorValue<Type1>,                   \
-			          ScalarValue<Type2> >(left, right);     
+    return new GenericBinaryEvaluableVS<OP<Type>, Type1,Type2>(left,right);
 #define BVVTEST(OP,Type,Type1,Type2)					\
-  if ( dynamic_cast<VectorValue<Type1>*> (lVal))                        \
+  if ( dynamic_cast<VectorValue<Type1>*> (lVal)                         \
       && dynamic_cast<VectorValue<Type2>*> (rVal))                      \
-    return GenericBinaryEvaluable<OP<Type>,                             \
-                                  VectorValue<Type1>,                   \
-			          VectorValue<Type2> >(left, right);     
+    return new GenericBinaryEvaluableVV<OP<Type>, Type1,Type2>(left,right);
 
 
 class BinaryPlusToken: public BinaryOpToken {
@@ -424,7 +447,7 @@ public:
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {
     Value* lVal = left->returnEmptyEvaluation();
     Value* rVal = right->returnEmptyEvaluation();
-    BSSTEST(std::plus, string, string, string);
+    BSSTEST(std::plus, std::string, std::string, std::string);
     BSSTEST(std::plus, long, long, long);
     BSSTEST(std::plus, double, long, double);
     BSSTEST(std::plus, double, double, long);
@@ -441,7 +464,7 @@ public:
     BVVTEST(std::plus, double, long, double);
     BVVTEST(std::plus, double, double, long);
     BVVTEST(std::plus, double, double, double);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -467,7 +490,7 @@ public:
     BVVTEST(std::minus, double, long, double);
     BVVTEST(std::minus, double, double, long);
     BVVTEST(std::minus, double, double, double);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -478,7 +501,7 @@ public:
 				  size_t& begin,
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
-    return matchesThis("%",input, begin) ? new ModulusToken(begin-1) : 0;
+    return matchesThis("%",input, begin, end) ? new ModulusToken(begin-1) : 0;
   }
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {
     Value* lVal = left->returnEmptyEvaluation();
@@ -487,7 +510,7 @@ public:
     BSVTEST(std::modulus, long, long, long);
     BVSTEST(std::modulus, long, long, long);
     BVVTEST(std::modulus, long, long, long);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -498,7 +521,7 @@ public:
 				  size_t& begin,
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
-    return matchesThis("*",input, begin) ? new MultipliesToken(begin-1) : 0;
+    return matchesThis("*",input, begin, end) ? new MultipliesToken(begin-1) : 0;
   }
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {
     Value* lVal = left->returnEmptyEvaluation();
@@ -519,7 +542,7 @@ public:
     BVVTEST(std::multiplies, double, long, double);
     BVVTEST(std::multiplies, double, double, long);
     BVVTEST(std::multiplies, double, double, double);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -530,7 +553,7 @@ public:
 				  size_t& begin,
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
-    return matchesThis("*",input, begin) ? new DividesToken(begin-1) : 0;
+    return matchesThis("*",input, begin, end) ? new DividesToken(begin-1) : 0;
   }
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {
     Value* lVal = left->returnEmptyEvaluation();
@@ -551,7 +574,7 @@ public:
     BVVTEST(std::divides, double, long, double);
     BVVTEST(std::divides, double, double, long);
     BVVTEST(std::divides, double, double, double);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -563,8 +586,8 @@ public:
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
     long inChar = begin;
-    return ( matchesThis("&&",input, begin)
-	     || matchesThis("&",input, begin)) ? new AndToken(inChar) : 0;
+    return ( matchesThis("&&",input, begin, end)
+	     || matchesThis("&",input, begin, end)) ? new AndToken(inChar) : 0;
   }
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {
     Value* lVal = left->returnEmptyEvaluation();
@@ -608,7 +631,7 @@ public:
     BVVTEST(std::logical_and, bool, double, bool)
     BVVTEST(std::logical_and, bool, double, long)
     BVVTEST(std::logical_and, bool, double, double)
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -620,8 +643,8 @@ public:
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
     long inChar = begin;
-    return ( matchesThis("||",input, begin)
-	     || matchesThis("|",input, begin)) ? new OrToken(inChar) : 0;
+    return ( matchesThis("||",input, begin, end)
+	     || matchesThis("|",input, begin, end)) ? new OrToken(inChar) : 0;
   }
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {
     Value* lVal = left->returnEmptyEvaluation();
@@ -665,7 +688,7 @@ public:
     BVVTEST(std::logical_or, bool, double, bool)
     BVVTEST(std::logical_or, bool, double, long)
     BVVTEST(std::logical_or, bool, double, double)
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -678,45 +701,82 @@ public:									    \
 				  size_t& end,				    \
 				  bool lastTokenWasOperator) const {	    \
     long inChar = begin;						    \
-    return ( matchesThis(CODE,input, begin)) ? new NAME(inChar) : 0;	    \
+    return ( matchesThis(CODE,input, begin, end)) ? new NAME(inChar) : 0;	    \
   }									    \
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {   \
     Value* lVal = left->returnEmptyEvaluation();			    \
     Value* rVal = right->returnEmptyEvaluation();			    \
-    BSSTEST(FUNC, string, string, string);				    \
+    BSSTEST(FUNC, std::string, std::string, std::string);                   \
     BSSTEST(FUNC, long, long, long);					    \
     BSSTEST(FUNC, double, long, double);				    \
     BSSTEST(FUNC, double, double, long);				    \
     BSSTEST(FUNC, double, double, double);				    \
 									    \
-    BSVTEST(FUNC, string, string, string);				    \
+    BSVTEST(FUNC, std::string, std::string, std::string);                   \
     BSVTEST(FUNC, long, long, long);					    \
     BSVTEST(FUNC, double, long, double);				    \
     BSVTEST(FUNC, double, double, long);				    \
     BSVTEST(FUNC, double, double, double);				    \
 									    \
-    BVSTEST(FUNC, string, string, string);				    \
+    BVSTEST(FUNC, std::string, std::string, std::string);                   \
     BVSTEST(FUNC, long, long, long);					    \
     BVSTEST(FUNC, double, long, double);				    \
     BVSTEST(FUNC, double, double, long);				    \
     BVSTEST(FUNC, double, double, double);				    \
 									    \
-    BVVTEST(FUNC, string, string, string);				    \
+    BVVTEST(FUNC, std::string, std::string, std::string);                   \
     BVVTEST(FUNC, long, long, long);					    \
     BVVTEST(FUNC, double, long, double);				    \
     BVVTEST(FUNC, double, double, long);				    \
     BVVTEST(FUNC, double, double, double);				    \
 									    \
-    throw throwSyntaxError("Type mismatch");				    \
+    throwSyntaxError("Type mismatch");				    \
   }									    \
 }
 
+
+  ///  Some kludges needed because the comparison operators do not appear to 
+  /// meet the binary_function standard of having Result typecast
+  template <class T>
+  struct _NE: public std::not_equal_to<T> {
+    typedef bool Result;
+  };
+  template <class T>
+  struct _GT: public std::greater<T> {
+    typedef bool Result;
+  };
+  template <class T>
+  struct _LT: public std::less<T> {
+    typedef bool Result;
+  };
+  template <class T>
+  struct _EQ: public std::equal_to<T> {
+    typedef bool Result;
+  };
+  template <class T>
+  struct _GE: public std::greater_equal<T> {
+    typedef bool Result;
+  };
+  template <class T>
+  struct _LE: public std::less_equal<T> {
+    typedef bool Result;
+  };
+
+  /**
 COMPARISON(GreaterToken,std::greater,">");
 COMPARISON(LessToken,std::less,"<");
 COMPARISON(EqualToken,std::equal_to,"==");
 COMPARISON(GreaterEqualToken,std::greater_equal,">=");
 COMPARISON(LessEqualToken,std::less_equal,"<=");
 COMPARISON(NotEqualToken,std::not_equal_to,"!=");
+  **/
+COMPARISON(GreaterToken,_GT,">");
+COMPARISON(LessToken,_LT,"<");
+COMPARISON(EqualToken,_EQ,"==");
+COMPARISON(GreaterEqualToken,_GE,">=");
+COMPARISON(LessEqualToken,_LE,"<=");
+COMPARISON(NotEqualToken,_NE,"!=");
+
 
 #undef COMPARISON
 
@@ -725,18 +785,18 @@ class PowerOf {
 public:
   typedef T Result;
   T operator()(const T& v1, const T& v2) const {return std::pow(v1,v2);}
-}
+};
 
 class PowerToken: public BinaryOpToken {
 public:
-  PowreToken(size_t begin=0): BinaryOpToken(begin) {}
+  PowerToken(size_t begin=0): BinaryOpToken(begin) {}
   virtual Token* createFromString(const std::string& input,
 				  size_t& begin,
 				  size_t& end,
 				  bool lastTokenWasOperator) const {
     size_t inChar = begin;
-    return (matchesThis("**",input, begin)
-	    || matchesThis("^",input, begin)) ? new DividesToken(inChar) : 0;
+    return (matchesThis("**",input, begin, end)
+	    || matchesThis("^",input, begin, end)) ? new DividesToken(inChar) : 0;
   }
   virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) {
     Value* lVal = left->returnEmptyEvaluation();
@@ -757,7 +817,7 @@ public:
     BVVTEST(PowerOf, double, long, double);
     BVVTEST(PowerOf, double, double, long);
     BVVTEST(PowerOf, double, double, double);
-    throw throwSyntaxError("Type mismatch");
+    throwSyntaxError("Type mismatch");
   }
 };
 
@@ -778,12 +838,14 @@ public:
   PlusToken()  {}
   virtual ~PlusToken() {}
   virtual bool isOperator() const {return true;}
-  virtual Token* createFromString(const string& input, size_t& begin,
+  virtual Token* createFromString(const std::string& input, size_t& begin, size_t& end,
 				  bool lastTokenWasOperator) const {
-    if (matchesThis("+", input, begin)) {
+    if (matchesThis("+", input, begin, end)) {
       size_t opIndex = begin++;
-      return lastTokenWasOperator ? 
-	new UnaryPlusToken(opIndex) : new BinaryPlusToken(opIndex);
+      if (lastTokenWasOperator)
+	return new UnaryPlusToken(opIndex);
+      else
+	return new BinaryPlusToken(opIndex);
     } else {
       return 0;
     }
@@ -797,15 +859,19 @@ public:
   MinusToken()  {}
   virtual ~MinusToken() {}
   virtual bool isOperator() const {return true;}
-  virtual Token* createFromString(const string& input, size_t& begin,
+  virtual Token* createFromString(const std::string& input, size_t& begin, size_t& end,
 				  bool lastTokenWasOperator) const {
-    if (matchesThis("-", input, begin)) {
+    if (matchesThis("-", input, begin, end)) {
       size_t opIndex = begin++;
-      return lastTokenWasOperator ? 
-	new UnaryMinusToken(opIndex) : new BinaryMinusToken(opIndex);
+      if (lastTokenWasOperator)
+	return new UnaryMinusToken(opIndex);
+      else
+	return new BinaryMinusToken(opIndex);
     } else {
       return 0;
     }
   }
 };
 
+} // end namespace expressions
+#endif // EXPRESSIONS2_H

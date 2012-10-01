@@ -1,7 +1,10 @@
 // tokenizer and parser for expressions
 
 #include "Expressions.h"
+#include "Expressions2.h"
+
 #include <cctype>
+#include <typeinfo>
 
 using namespace expressions;
 using std::list;
@@ -44,7 +47,7 @@ expressions::tokenize(const std::string& input,
   size_t begin = 0;
   size_t end = input.size();
   std::list<Token*> output;
-
+  bool lastWasOp = false;
   try {
     while (begin < end) {
       // strip leading white spaces
@@ -56,13 +59,14 @@ expressions::tokenize(const std::string& input,
       for (std::list<Token*>::const_iterator i = trialTokens.begin();
 	   !next && (i != trialTokens.end());
 	   ++i) {
-	next = i->createFromString(input, begin, end);
+	next = (*i)->createFromString(input, begin, end, lastWasOp);
       }
       // Look for a numerical constant:
-      if (!next) next = NumericalToken().createFromString(input, begin, end);
+      if (!next) next = NumberToken().createFromString(input, begin, end, lastWasOp);
 
       if (next) {
 	output.push_back(next);
+	lastWasOp = next->isOperator();
 	continue;
       }
 
@@ -78,7 +82,7 @@ expressions::tokenize(const std::string& input,
 	for (std::list<Token*>::const_iterator i = trialTokens.begin();
 	     !following && (i != trialTokens.end());
 	     ++i) {
-	  following = i->createFromString(input, nextBegin, end);
+	  following = (*i)->createFromString(input, nextBegin, end, false);
 	}
       }
       if (following) delete following;
@@ -87,26 +91,27 @@ expressions::tokenize(const std::string& input,
       for (std::list<Token*>::const_iterator i = functionTokens.begin();
 	   !next && (i != functionTokens.end());
 	   ++i) {
-	next = i->createFromString(input, begin, tokenEnd);
+	next = (*i)->createFromString(input, begin, tokenEnd, lastWasOp);
       }
       if (!next) {
 	// Last resort is to ask the lastToken to parse:
-	next = lastToken.createFromString(input, begin, tokenEnd);
+	next = lastToken.createFromString(input, begin, tokenEnd, lastWasOp);
       }
       if (!next) {
 	// We have an undecipherable token:
-	throw ExpressionSyntaxError("Unknown token", begin);
+	throw SyntaxError("Unknown token", begin);
       }
       // Save the token found
       output.push_back(next);
+      lastWasOp = next->isOperator();
       // and continue tokenizing where it ended
       begin = tokenEnd;
     } // End character loop
 
-  } catch (ExpressionSyntaxError& e) {
+  } catch (SyntaxError& e) {
     // Make a longer explanation text from full expression string:
-    string err = e.longWhat(input);
-    throw ExpressionSyntaxError(err, e.charBegin);
+    std::string err = e.longWhat(input);
+    throw SyntaxError(err, e.charBegin);
   }
   return output;
 }
@@ -117,15 +122,14 @@ expressions::tokenize(const std::string& input,
 class ParsedToken: public Token {
 private:
   Evaluable* contents;
+public:
   ParsedToken(Evaluable* contents_): Token(0), contents(contents_) {}
   virtual ~ParsedToken() {} // Don't delete contents, it will be passed on
   virtual Evaluable* createEvaluable() const {return contents;}
 };
 
-// Parse will delete all the Tokens in the range it parses
-// and remove them from the tokenList.
 Evaluable*
-expressions::parse(std::list<Token>& tokenList,
+expressions::parse(std::list<Token*>& tokenList,
 		   std::list<Token*>::iterator& begin,
 		   std::list<Token*>::iterator end,
 		   const std::string& input) {
@@ -161,8 +165,8 @@ expressions::parse(std::list<Token>& tokenList,
       equality.push_back(new NotEqualToken());
       precedenceTable.push_back(equality);
     }
-    precedenceTable.push_back(List<BinaryOpToken*>(1,new AndToken()));
-    precedenceTable.push_back(List<BinaryOpToken*>(1,new OrToken()));
+    precedenceTable.push_back(std::list<BinaryOpToken*>(1,new AndToken()));
+    precedenceTable.push_back(std::list<BinaryOpToken*>(1,new OrToken()));
   } // End preparing precedence table
 
   try {
@@ -170,7 +174,7 @@ expressions::parse(std::list<Token>& tokenList,
       if (begin==tokenList.end())
 	throw SyntaxError("Empty expression", tokenList.size());
       else
-	begin->throwSyntaxError("Empty expression");
+	(*begin)->throwSyntaxError("Empty expression");
     }
     for (iter i=begin; i!=end; ++i) {
       // First look for any open-parentheses
@@ -235,7 +239,7 @@ expressions::parse(std::list<Token>& tokenList,
 	for (list<BinaryOpToken*>::iterator i2 = i1->begin();
 	     !foundOne && i2 != i1->end();
 	     ++i2) { 
-	  foundOne = std::typeid(*i2) == std::typeid(*j);
+	  foundOne = (std::typeid(**i2) == std::typeid(**j));
 	}
 	if (foundOne) {
 	  // Build this binary op from (everything to left) Op (immediately to right)
@@ -244,7 +248,7 @@ expressions::parse(std::list<Token>& tokenList,
 	  if (j == begin)
 	    (*j)->throwSyntaxError("Missing left operand");
 	  iter leftIter = j;
-	  if ( leftIter==begin || (*(--leftIter))->isOperand())
+	  if ( leftIter==begin || (*(--leftIter))->isOperator())
 	    (*j)->throwSyntaxError("Missing left operand");
 	  Evaluable* left = (*leftIter)->createEvaluable();
 	  delete *leftIter;
@@ -256,7 +260,7 @@ expressions::parse(std::list<Token>& tokenList,
 	  ++rightIter;
 	  if (rightIter==end || (*rightIter)->isOperator())
 	    (*j)->throwSyntaxError("Missing right operand");
-	  Evaluable* right = (*righIter)->createEvaluable();
+	  Evaluable* right = (*rightIter)->createEvaluable();
 	  delete *rightIter;
 	  tokenList.erase(rightIter);
 
@@ -274,8 +278,8 @@ expressions::parse(std::list<Token>& tokenList,
     if ( begin == end) 
       throw SyntaxError("parsed down to nothing!!",0);  // where to point??
     if ( (*begin)->isOperator()) 
-      (*begin)->throwsyntaxError("parsed down to an operator!!");
-    Evaluable result = (*begin)->createEvaluable();
+      (*begin)->throwSyntaxError("parsed down to an operator!!");
+    Evaluable* result = (*begin)->createEvaluable();
     delete *begin;
     begin = tokenList.erase(begin);
     if (begin != end) 
@@ -283,7 +287,7 @@ expressions::parse(std::list<Token>& tokenList,
 
     return result;
   } catch (SyntaxError& e) {
-    string err = e.longWhat(input);
+    std::string err = e.longWhat(input);
     throw SyntaxError(err, e.charBegin);
   }
 }
