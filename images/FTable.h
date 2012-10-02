@@ -117,11 +117,6 @@ namespace img {
       H->touch();
     }
 
-    // Users should not need these, they're for FitsTable:
-    int dataLinkCount() const {return *dcount;}
-    bool dataIsChanged() const {return D->isChanged();}
-    void clearChanged() {H->clearChanged(); D->clearChanged();}
-
     void clear() {H->clear(); D->clear();}
 
     // Access single element (copy created)

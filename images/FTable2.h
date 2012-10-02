@@ -3,6 +3,9 @@
 // This file contains classes / declarations that should not be needed
 // by the user.
 
+// Define RANGE_CHECK to have row arguments always checked:
+//#define RANGE_CHECK
+
 #ifndef FTABLE2_H
 #define FTABLE2_H
 
@@ -280,7 +283,7 @@ namespace img {
 
   class TableData {
   private:
-    typedef std::map<string,ColumnBase*,stringstuff::nocaseLess> Index;
+    typedef std::map<string,ColumnBase*,stringstuff::LessNoCase> Index;
     Index columns;	// This is where the columns are stored.
     long rowReserve;	// New columns reserve at least this much space
     long rowCount;	// Keep this number and all column lengths in synch 
@@ -349,7 +352,7 @@ namespace img {
     }
 
     const ColumnBase* operator[](string colname) const {
-      return constColumn(colName);
+      return constColumn(colname);
     }
 
     ColumnBase* operator[](string colname) {
@@ -498,11 +501,13 @@ namespace img {
     void operator=(const TableData& rhs);
 
     // call for anything that can alter data
+    // Note not a const routine since anything that is forbidden by lock should
+    // not be coded in a const routine.
     void checkLock(const string& s="") {
       if (isLocked()) throw FTableLockError(s);
     }
     // call for anything that can alter data
-    void rangeCheck(long row, const string& s="") {
+    void rangeCheck(long row, const string& s="") const {
 #ifdef RANGE_CHECK
       if (row<0 || row >= nrows())
 	FormatAndThrow<FTableRangeError>() << " accessing " << row << " of " << nrows()

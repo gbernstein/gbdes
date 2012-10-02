@@ -39,6 +39,8 @@ OBJ =  $(SUBOBJ)
 
 all: depend subs
 
+testFT: testFT.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT2: testFT2.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT3: testFT3.o $(OBJ)

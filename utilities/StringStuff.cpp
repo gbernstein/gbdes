@@ -19,7 +19,7 @@ namespace stringstuff {
   }
 
   bool nocaseEqual(char c1, char c2) {
-    return std::toupper(c1)==std::toupper(c2);
+    return std::toupper(c1)==std::toupper(c2); 
   }
 
   bool nocaseEqual(const string& s1, const string& s2) {
@@ -31,7 +31,8 @@ namespace stringstuff {
     return true;
   }
 
-  bool nocaseLess(const string& s1, const string& s2) {
+  bool 
+  LessNoCase::operator()(const string& s1, const string& s2) const {
     size_t nMin = std::min(s1.size(), s2.size());
     string::const_iterator p1=s1.begin();
     string::const_iterator p2=s2.begin();
