@@ -17,9 +17,7 @@
 
 #include "Header.h"
 
-
 namespace img {
-
 
   // Exception classes:
   class FTableError: public MyException {
@@ -37,6 +35,11 @@ namespace img {
     FTableRangeError(const string& m=""): 
       FTableError("Row out of range " + m) {}
   };
+  class FTableLockError: public FTableError {
+  public: 
+    FTableLockError(const string& m=""): 
+      FTableError("Write access to locked data " + m) {}
+  };
 
 }
 
@@ -45,6 +48,7 @@ namespace img {
 
 namespace img {
   // This is a handle class that contains a (reference-counted) header and table
+  // Locking occurs at the header and data classes and will be patrolled there.
   class FTable {
   private:
     TableData* D;	//pixel data
@@ -60,14 +64,13 @@ namespace img {
       dcount(new int(1)),
       hcount(new int(1)) {}
     // Copy constructor is really a data share:
-    FTable(const FTable &rhs): // ??? how to keep from setting non-const to const
+    FTable(const FTable &rhs): 
       D(rhs.D),
       H(rhs.H), 
       dcount(rhs.dcount),
       hcount(rhs.hcount) {(*dcount)++; (*hcount)++;}
     // So is assignment:
     FTable& operator=(const FTable& rhs) {
-      // Note no assignment of image to const image. ???
       if (&rhs == this) return *this;
       if (D!=rhs.D) {
 	if (--(*dcount)==0) {delete D; delete dcount;}
@@ -95,6 +98,12 @@ namespace img {
       if (--(*hcount)==0) {delete H; delete hcount;}
     }
 
+    bool isChanged() const {return H->isChanged() || D->isChanged();}
+    void clearChanged() {H->clearChanged(); D->clearChanged();}
+    bool isLocked() const {return H->isLocked() || D->isLocked();}
+    void setLock() {H->setLock(); D->setLock();}
+
+
     // Access header:
     Header* header() {return H;}
     const Header* header() const {return H;}
@@ -113,7 +122,7 @@ namespace img {
     bool dataIsChanged() const {return D->isChanged();}
     void clearChanged() {H->clearChanged(); D->clearChanged();}
 
-    void clear() {H->clear(); D->clear(); H->touch(); D->touch();}
+    void clear() {H->clear(); D->clear();}
 
     // Access single element (copy created)
     template <class T>
@@ -213,9 +222,10 @@ namespace img {
     template <class LessThan>
     void sort(string columnName, LessThan& ordering);
 
-    // Retain only elements whose keyword matches an element of the set:
-    template <class T>
-    void select(string columnName, const set<T>& retain);
+    // Retain only elements whose keyword is in the container.
+    // column data should be convertible to Container::key_type 
+    template <class Container>
+    void select(string columnName, const Container& retain);
 
     ///////////////////////
     // Direct header access, for convenience:

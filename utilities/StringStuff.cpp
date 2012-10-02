@@ -31,6 +31,18 @@ namespace stringstuff {
     return true;
   }
 
+  bool nocaseLess(const string& s1, const string& s2) {
+    size_t nMin = std::min(s1.size(), s2.size());
+    string::const_iterator p1=s1.begin();
+    string::const_iterator p2=s2.begin();
+    for (size_t i=0; i<nMin; ++i, ++p1, ++p2) {
+      if (std::toupper(*p1) < std::toupper(*p2)) return true;
+      if (std::toupper(*p1) > std::toupper(*p2)) return false;
+    }
+    // All characters tied, shorter string is lesser:
+    return s1.size() < s2.size();
+  }
+
   void stripTrailingBlanks(string& s) {
     string::iterator tail;
     while (!s.empty()) {

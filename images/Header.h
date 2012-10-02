@@ -75,6 +75,11 @@ namespace img {
     HeaderError(const string m=""): 
     std::runtime_error("img::Header Error: " + m) {}
   };
+  class HeaderLockError: public HeaderError {
+  public:
+    HeaderLockError(const string m=""): 
+      HeaderError("Write access to locked data " + m) {}
+  };
 
   //////////////////////////////////////////////////////////////////////////
   // Auxiliary information held for all images
@@ -196,15 +201,21 @@ namespace img {
     mutable std::list<HdrRecordBase*> hlist;
     mutable std::list<HdrRecordBase*>::iterator hptr;  //current record
     bool isAltered;
+    bool lock;
     std::list<string> lcomment;	//Comment and History strings
     std::list<string> lhistory;
+    void checkLock(const string& s="") {
+      if (isLocked()) throw HeaderLockError(s);
+    }
   public:
-    Header(): hlist(), hptr(hlist.begin()), isAltered(false) {}
+  Header(): hlist(), hptr(hlist.begin()), isAltered(false), lock(false) {}
     Header(const Header& rhs) {
       copyFrom(rhs);
       isAltered = false;
+      lock = false;
     }
     void copyFrom(const Header& rhs) {
+      checkLock();
       hlist.clear(); lcomment.clear(); lhistory.clear();
       std::list<HdrRecordBase*>::const_iterator rhsptr;
       for (rhsptr=rhs.hlist.begin(); rhsptr!=rhs.hlist.end(); ++rhsptr)
@@ -219,7 +230,7 @@ namespace img {
     }
     Header& operator=(const Header& rhs) {
       if (this==&rhs) return *this;
-      copyFrom(rhs);
+      copyFrom(rhs); //copyFrom checks locking and touches
       return *this;
     }
     ~Header() {
@@ -232,6 +243,7 @@ namespace img {
 
     // Clear all header records, plus comments & history
     void clear() {
+      checkLock();
       hlist.clear();
       hptr=hlist.begin(); 
       lcomment.clear();
@@ -249,6 +261,8 @@ namespace img {
     bool isChanged() const {return isAltered;}  //changed since creation?
     void clearChanged() {isAltered=false;}	//reset altered flag
     void touch() {isAltered=true;}
+    bool isLocked() const {return lock;}
+    void setLock() {lock = true;}
 
     // Manipulate the pointer to current header record:
     void rewind() const {hptr=hlist.begin();}
@@ -256,12 +270,13 @@ namespace img {
     int size() const {
       return hlist.size() + lcomment.size() + lhistory.size();
     }
-    HdrRecordBase* current() {return *hptr;}
+    HdrRecordBase* current() {checkLock(); touch(); return *hptr;}
     void incr() const {++hptr;}
     const HdrRecordBase* current() const {return *hptr;}
 
     // Append contents of another header to this one
     void operator+=(const Header& rhs) {
+      checkLock();
       if (this==&rhs) return;
       for (list<HdrRecordBase*>::const_iterator rptr=rhs.hlist.begin();
 	   rptr!=rhs.hlist.end();
@@ -277,13 +292,15 @@ namespace img {
     }
 
     // Add/remove header records, by base class ptr or keyword
-    void append(HdrRecordBase* record) {hlist.push_back(record); touch();}
-    void insert(HdrRecordBase* record) {hlist.insert(hptr,record); touch();}
+    void append(HdrRecordBase* record) {checkLock(); hlist.push_back(record); touch();}
+    void insert(HdrRecordBase* record) {checkLock(); hlist.insert(hptr,record); touch();}
     void erase() {
+      checkLock();
       delete *hptr; hptr=hlist.erase(hptr); touch();
     }
     void erase(const string kw) {
       if (find(kw)) {
+	checkLock();
 	delete *hptr; 
 	hptr=hlist.erase(hptr); 
 	touch();
@@ -294,33 +311,39 @@ namespace img {
     template <class T>
       void append(const string keyword, const T& value, 
 		  const string comment="", const string units="") {
+      checkLock();
       hlist.push_back(new HdrRecord<T>(keyword, value, comment,units));
       touch();
     }
     template <class T>
       void replace(const string keyword, const T& value, 
 		   const string comment="", const string units="") {
+      checkLock();
       try {erase(keyword);} catch (HeaderError &i) {}
       append(keyword, value, comment, units);
     }
     void appendNull(const string keyword, 
 		    const string comment="") {
+      checkLock();
       hlist.push_back(new HdrRecordNull(keyword, comment));
       touch();
     }
     template <class T>
       void insert(const string keyword, const T& value, 
 		  const string comment="", const string units="") {
+      checkLock();
       hlist.insert(hptr, new HdrRecord<T>(keyword, value, comment,units));
       touch();
     }
     void insertNull(const string keyword, 
 		    const string comment="") {
+      checkLock();
       hlist.insert(hptr, new HdrRecordNull(keyword, comment));
       touch();
     }
     HdrRecordBase* find(const string keyword) {
       list<HdrRecordBase*>::iterator start(hptr);
+      checkLock();
       touch();	// ?? note header is marked as altered just for returning
       // a non-const pointer to header record.
       for ( ; hptr!=hlist.end(); ++hptr)
@@ -349,7 +372,6 @@ namespace img {
     template <class T> 
     bool setValue(const string keyword, const T& inVal);
 
-
   };  
 
   // Get header from a character stream or vice-versa:
@@ -371,6 +393,7 @@ namespace img {
   template <class T> 
   bool 
   Header::setValue(const string keyword, const T& inVal) {
+    checkLock();
     HdrRecordBase* b=find(keyword);
     if (!b) return false;
     HdrRecord<T> *dhdr;

@@ -10,8 +10,8 @@
 #include <map>
 #include <typeinfo>
 
-// ??? TODO:
-// Case-insensitive column names
+#include "StringStuff.h"
+
 // sorts & filters
 
 namespace img {
@@ -280,14 +280,15 @@ namespace img {
 
   class TableData {
   private:
-    typedef std::map<string,ColumnBase*> Index;
+    typedef std::map<string,ColumnBase*,stringstuff::nocaseLess> Index;
     Index columns;	// This is where the columns are stored.
     long rowReserve;	// New columns reserve at least this much space
     long rowCount;	// Keep this number and all column lengths in synch 
     bool isAltered;
+    bool lock;
   public:
     TableData(long rowReserve_=0): rowReserve(rowReserve_), rowCount(0),
-				   isAltered(false)  {}
+				   isAltered(false), lock(false)  {}
     ~TableData() {
       for (iterator i=begin(); i!=end(); ++i) delete *i;
     }
@@ -302,6 +303,8 @@ namespace img {
     bool isChanged() const {return isAltered;}
     void clearChanged() {isAltered = false;}
     void touch() {isAltered = true;}
+    bool isLocked() const {return lock;}
+    void setLock() {lock = true;}
 
     // **** Make iterator classes to run over columns ***
     class iterator {
@@ -332,22 +335,29 @@ namespace img {
 
     const_iterator begin() const {return const_iterator(columns.begin());}
     const_iterator end() const {return const_iterator(columns.end());}
-    /// ??? touch for issuing non-const column iterator ??
-    iterator begin() {return iterator(columns.begin());}
-    iterator end() {return iterator(columns.end());}
 
-    const ColumnBase* operator[](string colname) const {
+    const_iterator const_begin() {return const_iterator(columns.begin());}
+    const_iterator const_end()   {return const_iterator(columns.end());}
+
+    iterator begin() {checkLock(); touch(); return iterator(columns.begin());}
+    iterator end() {checkLock(); touch(); return iterator(columns.end());}
+
+    const ColumnBase* constColumn(string colname) const {
       Index::const_iterator i=columns.find(colname);
       if (i==columns.end()) throw FTableNonExistentColumn(colname);
       return i->second;
     }
 
+    const ColumnBase* operator[](string colname) const {
+      return constColumn(colName);
+    }
+
     ColumnBase* operator[](string colname) {
+      checkLock(); touch();
       Index::iterator i=columns.find(colname);
       if (i==columns.end()) throw FTableNonExistentColumn(colname);
       return i->second;
     }
-
 
     // ***** Add / remove columns:
 
@@ -355,20 +365,20 @@ namespace img {
     template<class T>
     void addColumn(const vector<T>& values, string columnName, 
 		   long repeat=-1, long stringLength=-1 ) {
-      touch();
+      checkLock();   touch();
       add(new ScalarColumn<T>(values, columnName, stringLength));
     }
     // Specialization to recognize vector<vector> as array column
     template<class T>
     void addColumn(const vector<vector<T> >& values, string columnName, 
 		   long repeat=-1, long stringLength=-1) {
-      touch();
+      checkLock();   touch();
       if (repeat<0) add(new ArrayColumn<T>(values, columnName, stringLength));
       else add(new FixedArrayColumn<T>(values, columnName, repeat, stringLength));
     }
         
     void erase(string columnName) {
-      touch();
+      checkLock();   touch();
       Index::iterator i=columns.find(columnName);
       if (i==columns.end())
 	throw FTableNonExistentColumn(columnName);
@@ -377,13 +387,13 @@ namespace img {
       columns.erase(i);
     }
     void erase(iterator i) {
-      touch();
+      checkLock();   touch();
       delete *i;
       columns.erase(i.i);
     }
 
     void clear() {
-      touch();
+      checkLock();   touch();
       for (Index::iterator i=columns.begin();
 	   i != columns.end();
 	   ++i)
@@ -395,6 +405,7 @@ namespace img {
 
     // ***** Row erase / insert:
     void eraseRows(long rowStart, long rowEnd=-1) {
+      checkLock();
       touch();
       Assert(rowStart>=0);
       if (rowStart>=nrows()) return; // don't erase past end
@@ -406,6 +417,7 @@ namespace img {
       rowCount = (*begin())->size();
     }
     void insertRows(long insertBeforeRow, long insertNumber) {
+      checkLock();
       touch();
       if (insertBeforeRow > nrows()) throw FTableError("insertRows beyond end of table");
       for (iterator i=begin(); i!=end(); ++i) (*i)->insertRows(insertBeforeRow, insertNumber);
@@ -417,23 +429,17 @@ namespace img {
     // Access single element (copy created)
     template <class T>
     void readCell(T& value, string columnName, long row) const {
-#ifdef RANGE_CHECK
-      if (row<0 || row >= rowCount)
-	  FormatAndThrow<FTableRangeError>() << row << " for rowCount= " << rowCount;
-#endif
+      rangeCheck(row);
       const ScalarColumn<T>* col = dynamic_cast<const ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch reading column " + columnName);
       col->readCell(value, row);
     }
     // Or a range: rowEnd is one-past-last row; -1 means go to end.
     template <class T>
-    void readCells(vector<T>& values, string columnName, long rowStart=0, long rowEnd=-1) const {
-#ifdef RANGE_CHECK
-      if (rowStart<0 || rowStart>=rowCount)
-	  FormatAndThrow<FTableRangeError>() << rowStart << " for rowCount= " << rowCount;
-      if (rowEnd>rowCount)
-	  FormatAndThrow<FTableRangeError>() << rowEnd-1 << " for rowCount= " << rowCount;
-#endif
+    void readCells(vector<T>& values, string columnName, 
+		   long rowStart=0, long rowEnd=-1) const {
+      rangeCheck(rowStart);
+      if (rowEnd>0) rangeCheck(rowEnd-1);
       const ScalarColumn<T>* col = dynamic_cast<const ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch reading column " + columnName);
       col->readCells(values, rowStart, rowEnd);
@@ -442,27 +448,22 @@ namespace img {
     // Writing single or multiple cells:
     template <class T>
     void writeCell(const T& value, string columnName, long row) {
-#ifdef RANGE_CHECK
-      if (row<0)
-	  FormatAndThrow<FTableRangeError>() << row << " for rowCount= " << rowCount;
-#endif
+      if (row<0) rangeCheck(row);
+      checkLock();
+      touch();
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
-      touch();
       int doneRows = col->writeCell(value, row);
       growRows(doneRows);
     }
 
     template <class T>
     void writeCells(const vector<T>& values, string columnName, long rowStart=0) {
-#ifdef RANGE_CHECK
-      if (rowStart<0)
-	  FormatAndThrow<FTableRangeError>() << row << " for rowCount= " << rowCount;
-#endif
+      if (rowStart<0) rangeCheck(rowStart);
+      checkLock();
       touch();
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
-      touch();
       int doneRows = col->writeCells(values, rowStart);
       growRows(doneRows);
     }
@@ -470,23 +471,20 @@ namespace img {
     // Specialization to recognize array-valued Cells
     template <class T>
     void writeCell(const vector<T>& value, string columnName, long row) {
-#ifdef RANGE_CHECK
-      if (row<0)
-	  FormatAndThrow<FTableRangeError>() << row << " for rowCount= " << rowCount;
-#endif
+      if (row<0) rangeCheck(row);
+      checkLock();
+      touch();
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
-      touch();
       int doneRows = col->writeCell(value, row);
       growRows(doneRows);
     }
 
     template <class T>
     void writeCells(const vector<vector<T> >& values, string columnName, long rowStart=0) {
-#ifdef RANGE_CHECK
-      if (rowStart<0)
-	  FormatAndThrow<FTableRangeError>() << row << " for rowCount= " << rowCount;
-#endif
+      if (rowStart<0) rangeCheck(rowStart);
+      checkLock();
+      touch();
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
       touch();
@@ -495,6 +493,23 @@ namespace img {
     }
 
   private:
+    // No copy or assignment:
+    TableData(const TableData& rhs);
+    void operator=(const TableData& rhs);
+
+    // call for anything that can alter data
+    void checkLock(const string& s="") {
+      if (isLocked()) throw FTableLockError(s);
+    }
+    // call for anything that can alter data
+    void rangeCheck(long row, const string& s="") {
+#ifdef RANGE_CHECK
+      if (row<0 || row >= nrows())
+	FormatAndThrow<FTableRangeError>() << " accessing " << row << " of " << nrows()
+					   << " " << s;
+#endif
+    }
+
     // Expand all columns to some new size:
     void growRows(long targetRows) {
       if (targetRows <= nrows()) return;
@@ -503,7 +518,6 @@ namespace img {
 	(*i)->resize(targetRows);
     }
 
-    
     void add(ColumnBase* newColumn) {
       string addname = newColumn->name();
       if (columns.find(addname) != columns.end())

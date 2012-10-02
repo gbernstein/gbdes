@@ -16,6 +16,9 @@ namespace stringstuff {
   bool nocaseEqual(char c1, char c2);
   bool nocaseEqual(const string& s1, const string& s2);
 
+  // Comparison function suitable for standard containers
+  bool nocaseLess(const string& s1, const string& s2);
+    
   // Remove trailing whitespace
   void stripTrailingBlanks(string& s);
   // Remove everything after & including the last "." period

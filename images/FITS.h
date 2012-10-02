@@ -32,12 +32,16 @@ namespace FITS {
   // Utility function to throw FITSError and dump CFITSIO message stack.
   // Note that function will not throw while already processing an exception.
   void throw_CFITSIO(const string m="");
+  // throw if status is non-zero:
+  inline void checkCFITSIO(int status, const string m="") {if (status) throw_CFITSIO(m);}
 
   // This with throw a FITSError, but just print err to cerr if already processing exception
   void throwFitsOrDump(const string err);
 
   // And one to flush the error message stack
   void flushFitsErrors();
+  // And clear status value:
+  inline void flushFitsErrors(int& status) {status=0; flushFitsErrors();}
 
   // Class representing a CFITSIO fptr:
   class FitsioHandle {
