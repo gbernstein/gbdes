@@ -84,6 +84,18 @@ namespace img {
       }
       return *this;
     }
+
+    // Constructor that only FitsTable should use, build straight from elements:
+    FTable(Header* hh, int* hc, TableData* dd, int *dc):
+      D(dd), dcount(dc), H(hh), hcount(hc) {
+      (*dcount)++;
+      (*hcount)++;
+    }
+    // Also expose guts: should only use this in FitsTable
+    void showGuts(Header* &hh, int* &hc, TableData* &dd, int* &dc) const {
+      hh = H; hc = hcount; dd = D; dc = dcount;
+    }
+
     // Create a fresh deep copy
     FTable duplicate() const {
       FTable dup;  // Make empty header & table data
@@ -107,15 +119,6 @@ namespace img {
     // Access header:
     Header* header() {return H;}
     const Header* header() const {return H;}
-
-    // Adopt a header from elsewhere (and its link counter:)
-    void adoptHeader(Header* hptr_, int* hcount_) {
-      if (--(*hcount)==0) {delete H; delete hcount;}
-      hcount = hcount_;
-      H = hptr_;
-      (*hcount)++;
-      H->touch();
-    }
 
     void clear() {H->clear(); D->clear();}
 

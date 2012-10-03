@@ -300,6 +300,16 @@ namespace img {
       for (const_iterator i=begin(); i!=end(); ++i) dup->add((*i)->duplicate());
       return dup;
     }
+
+    void copyFrom(const TableData& rhs) {
+      checkLock("TableData::copyFrom()");
+      clear();
+      rowReserve = rhs.rowReserve;
+      rowCount = rhs.rowCount;
+      isAltered = true;
+      for (const_iterator i=rhs.begin(); i!=rhs.end(); ++i) add((*i)->duplicate());
+    }      
+      
     long nrows() const {return rowCount;}
     int ncols() const {return columns.size();}
 
