@@ -293,6 +293,8 @@ namespace img {
     TableData(long rowReserve_=0): rowReserve(rowReserve_), rowCount(0),
 				   isAltered(false), lock(false)  {}
     ~TableData() {
+      // Unlock for destruction:
+      lock = false;
       for (iterator i=begin(); i!=end(); ++i) delete *i;
     }
     TableData* duplicate() const {
@@ -352,8 +354,8 @@ namespace img {
     const_iterator const_begin() {return const_iterator(columns.begin());}
     const_iterator const_end()   {return const_iterator(columns.end());}
 
-    iterator begin() {checkLock(); touch(); return iterator(columns.begin());}
-    iterator end() {checkLock(); touch(); return iterator(columns.end());}
+    iterator begin() {checkLock("begin()"); touch(); return iterator(columns.begin());}
+    iterator end() {checkLock("end()"); touch(); return iterator(columns.end());}
 
     const ColumnBase* constColumn(string colname) const {
       Index::const_iterator i=columns.find(colname);
@@ -366,7 +368,7 @@ namespace img {
     }
 
     ColumnBase* operator[](string colname) {
-      checkLock(); touch();
+      checkLock("operator[]"); touch();
       Index::iterator i=columns.find(colname);
       if (i==columns.end()) throw FTableNonExistentColumn(colname);
       return i->second;
@@ -378,7 +380,7 @@ namespace img {
     template<class T>
     void addColumn(const vector<T>& values, string columnName, 
 		   long repeat=-1, long stringLength=-1 ) {
-      checkLock();   touch();
+      checkLock("addColumn()");   touch();
       add(new ScalarColumn<T>(values, columnName, stringLength));
     }
     // Specialization to recognize vector<vector> as array column
@@ -391,7 +393,7 @@ namespace img {
     }
         
     void erase(string columnName) {
-      checkLock();   touch();
+      checkLock("erase()");   touch();
       Index::iterator i=columns.find(columnName);
       if (i==columns.end())
 	throw FTableNonExistentColumn(columnName);
@@ -400,13 +402,13 @@ namespace img {
       columns.erase(i);
     }
     void erase(iterator i) {
-      checkLock();   touch();
+      checkLock("erase()");   touch();
       delete *i;
       columns.erase(i.i);
     }
 
     void clear() {
-      checkLock();   touch();
+      checkLock("clear()");   touch();
       for (Index::iterator i=columns.begin();
 	   i != columns.end();
 	   ++i)
@@ -418,7 +420,7 @@ namespace img {
 
     // ***** Row erase / insert:
     void eraseRows(long rowStart, long rowEnd=-1) {
-      checkLock();
+      checkLock("eraseRows()");
       touch();
       Assert(rowStart>=0);
       if (rowStart>=nrows()) return; // don't erase past end
@@ -430,7 +432,7 @@ namespace img {
       rowCount = (*begin())->size();
     }
     void insertRows(long insertBeforeRow, long insertNumber) {
-      checkLock();
+      checkLock("insertRows()");
       touch();
       if (insertBeforeRow > nrows()) throw FTableError("insertRows beyond end of table");
       for (iterator i=begin(); i!=end(); ++i) (*i)->insertRows(insertBeforeRow, insertNumber);
@@ -462,7 +464,7 @@ namespace img {
     template <class T>
     void writeCell(const T& value, string columnName, long row) {
       if (row<0) rangeCheck(row);
-      checkLock();
+      checkLock("writeCell()");
       touch();
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
@@ -473,7 +475,7 @@ namespace img {
     template <class T>
     void writeCells(const vector<T>& values, string columnName, long rowStart=0) {
       if (rowStart<0) rangeCheck(rowStart);
-      checkLock();
+      checkLock("writeCells()");
       touch();
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
@@ -485,7 +487,7 @@ namespace img {
     template <class T>
     void writeCell(const vector<T>& value, string columnName, long row) {
       if (row<0) rangeCheck(row);
-      checkLock();
+      checkLock("writeCell()");
       touch();
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
@@ -496,7 +498,7 @@ namespace img {
     template <class T>
     void writeCells(const vector<vector<T> >& values, string columnName, long rowStart=0) {
       if (rowStart<0) rangeCheck(rowStart);
-      checkLock();
+      checkLock("writeCells()");
       touch();
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);

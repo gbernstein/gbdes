@@ -110,7 +110,6 @@ namespace img {
 	   && comments.find(in[i])==string::npos ) keyword+=in[i++];
     if (keyword.length()==0) return 0;	//no useful info.
 
-    //**/cerr << "Working on keyword <" << keyword << ">" << endl;
     // Skip whitespace or equals; done for end or comment
     while (i<l && (in[i]==eq || std::isspace(in[i])) ) ++i;
 
@@ -130,7 +129,6 @@ namespace img {
       if (i==l) return 0;	// unbounded quote, failure!!!
       ++i;	//skip the closing quote
       while (i<l && std::isspace(in[i])) i++;	// skip whitespace
-      //**/cerr << "Got string: " << vstring << endl;
       if (i==l) return new HdrRecord<string>(keyword, vstring);
       else if (comments.find(in[i])!=string::npos) // Comment left?
 	return new HdrRecord<string>(keyword, vstring, in.substr(i+1));

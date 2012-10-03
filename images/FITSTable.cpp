@@ -20,12 +20,10 @@ FitsTable::~FitsTable() {
     // Make sure nothing else is using the mirrored data still:
     if (*dcount != 1)
       throwFitsOrDump("Closing FitsTable with its data still linked, file " + getFilename());
-    /**/cerr << "destructor calling flushData()" << endl;
     if (isWriteable() && dptr->isChanged()) flushData();
     delete dptr;
     delete dcount;
   }
-  /**/cerr << "~Hdu next" << endl;
   // Destructor for Hdu will flush header if still needed, and close files.
 }
 
@@ -157,7 +155,6 @@ FitsTable::flushData() {
 
 TableData* 
 FitsTable::loadData() const { 
-  /**/cerr << "loadData..." << endl;
   TableData* td = new TableData();
   int status = moveTo();
   long nrows;
@@ -165,13 +162,9 @@ FitsTable::loadData() const {
   img::TableData* tdata = new TableData(nrows);
   vector<string> colNames;
   vector<int> colNums;
-  /**/cerr << "...find cols" << endl;
   findFitsColumns("*", colNames, colNums);
-  /**/cerr << "...create cols" << endl;
   createColumns(td, colNames, colNums);
-  /**/cerr << "...read data" << endl;
   readFitsData(td, colNames, colNums, 0, -1);
-  /**/cerr << "...done" << endl;
   return td;
 }
 
