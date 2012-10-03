@@ -71,7 +71,7 @@ namespace FITS {
     void flushData();	// Push Table data back to FITS file
     img::TableData* loadData() const; // Turn the FITS file into a TableData structure
     // Find columns in FITS table matching template and add them to vector (no duplicates)
-    void findFitsColumns(string matchMe,
+    void findFitsColumns(const string& matchMe,
 			 vector<string>& names,
 			 vector<int>& numbers) const;
     // Create new column(s) in TableData to hold data in 

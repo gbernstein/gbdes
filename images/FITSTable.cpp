@@ -20,16 +20,21 @@ FitsTable::~FitsTable() {
     // Make sure nothing else is using the mirrored data still:
     if (*dcount != 1)
       throwFitsOrDump("Closing FitsTable with its data still linked, file " + getFilename());
+    /**/cerr << "destructor calling flushData()" << endl;
     if (isWriteable() && dptr->isChanged()) flushData();
     delete dptr;
     delete dcount;
   }
+  /**/cerr << "~Hdu next" << endl;
   // Destructor for Hdu will flush header if still needed, and close files.
 }
 
 img::FTable
 FitsTable::use() {
-  if (!dptr) dptr = loadData();
+  if (!dptr) {
+    dptr = loadData();
+    dcount = new int(1);
+  }
   Hdu::header();	// Force header loading
   // Build the table from our data and header:
   img::FTable ft(hptr, hcount, dptr, dcount);
@@ -79,7 +84,7 @@ FitsTable::extract(const vector<string>& templates,
   vector<string> colNames;
   vector<int> colNums;
   for (int i=0; i<templates.size(); i++)
-    findFitsColumns(templates[i], colNames, colNums);
+    findFitsColumns("*", colNames, colNums);
   createColumns(tdata, colNames, colNums);
   readFitsData(tdata, colNames, colNums, rowStart, rowEnd);
 
@@ -151,7 +156,24 @@ FitsTable::flushData() {
 ////////////////////////////////////////////////////////
 
 TableData* 
-FitsTable::loadData() const { /* ???  */}
+FitsTable::loadData() const { 
+  /**/cerr << "loadData..." << endl;
+  TableData* td = new TableData();
+  int status = moveTo();
+  long nrows;
+  fits_get_num_rows(fptr(), &nrows, &status);
+  img::TableData* tdata = new TableData(nrows);
+  vector<string> colNames;
+  vector<int> colNums;
+  /**/cerr << "...find cols" << endl;
+  findFitsColumns("*", colNames, colNums);
+  /**/cerr << "...create cols" << endl;
+  createColumns(td, colNames, colNums);
+  /**/cerr << "...read data" << endl;
+  readFitsData(td, colNames, colNums, 0, -1);
+  /**/cerr << "...done" << endl;
+  return td;
+}
 
 template <class T>
 void addEmptyColumn(img::TableData* tptr, string name, long repeat, long stringLength=-1) {
@@ -160,7 +182,7 @@ void addEmptyColumn(img::TableData* tptr, string name, long repeat, long stringL
 }
 
 void
-FitsTable::findFitsColumns(string matchMe,
+FitsTable::findFitsColumns(const string& matchMe,
 			   vector<string>& colNames,
 			   vector<int>& colNumbers) const {
   char colName[FITS::MAX_COLUMN_NAME_LENGTH];

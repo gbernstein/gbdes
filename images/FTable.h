@@ -156,8 +156,8 @@ namespace img {
     // Report names of columns
     vector<string> columnNames() const {
       vector<string> out;
-      for (TableData::const_iterator i = D->begin();
-	   i != D->end();
+      for (TableData::const_iterator i = D->const_begin();
+	   i != D->const_end();
 	   ++i) 
 	out.push_back((*i)->name());
       return out;

@@ -28,7 +28,7 @@ LIBS = -lm $(LIB_DIRS) -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 
 SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
-	images/FITS.o images/Header.o images/Hdu.o \
+	images/FITS.o images/Header.o images/Hdu.o images/FITSTable.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/PixelMapCollection.o 
 
@@ -48,6 +48,8 @@ testFT3: testFT3.o $(OBJ)
 testFT4: testFT4.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT5: testFT5.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+testFT6: testFT6.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ###############################################################
 ## Standard stuff:
