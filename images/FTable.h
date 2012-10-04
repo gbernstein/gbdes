@@ -110,6 +110,10 @@ namespace img {
       if (--(*hcount)==0) {delete H; delete hcount;}
     }
 
+    //////////////////////////////////////
+    // Table / column information
+    //////////////////////////////////////
+
     bool isChanged() const {return H->isChanged() || D->isChanged();}
     void clearChanged() {H->clearChanged(); D->clearChanged();}
     bool isLocked() const {return H->isLocked() || D->isLocked();}
@@ -120,6 +124,34 @@ namespace img {
     Header* header() {return H;}
     const Header* header() const {return H;}
 
+    // Report current table rows
+    long nrows() const {return D->nrows();}
+
+    // Report number of columns
+    int ncols() const {return D->ncols();}
+
+    // Report names of columns
+    vector<string> listColumns() const {return D->listColumns();}
+
+    // Get repeat count of a column's cell: 
+    // 1 for scalar, -1 for variable-length, >=0 for fixed.
+    long repeat(string columnName) const {return (*D)[columnName]->repeat();}
+   
+    // If the column holds strings, return the defined max length of strings, 
+    // or -1 for variable-length strings.
+    long stringLength(string columnName) const {
+      return (*D)[columnName]->stringLength();
+    }
+
+    // Get the type of data stored in the C arrays (using the FITStypes.h class)
+    FITS::DataType elementType(string columnName) const {
+      return (*D)[columnName]->elementType();
+    }
+
+    //////////////////////////////////////
+    // Reads and writes
+    //////////////////////////////////////
+
     void clear() {H->clear(); D->clear();}
 
     // Access single element (copy created)
@@ -129,7 +161,8 @@ namespace img {
     }
     // Or a range: rowEnd is one-past-last row; -1 means go to end.
     template <class T>
-    void readCells(vector<T>& values, string columnName, long rowStart=0, long rowEnd=-1) const {
+    void readCells(vector<T>& values, string columnName, 
+		   long rowStart=0, long rowEnd=-1) const {
       D->readCells(values, columnName, rowStart, rowEnd);
     }
     
@@ -147,33 +180,10 @@ namespace img {
       D->writeCells(values, columnName, rowStart);
     }
 
-    // Report current table rows
-    long nrows() const {return D->nrows();}
 
-    // Report number of columns
-    int ncols() const {return D->ncols();}
-
-    // Report names of columns
-    vector<string> columnNames() const {
-      vector<string> out;
-      for (TableData::const_iterator i = D->const_begin();
-	   i != D->const_end();
-	   ++i) 
-	out.push_back((*i)->name());
-      return out;
-    }
-
-    // Get repeat count of a column: 1 (or 0) for scalar, -1 for variable-length, >=0 for fixed.
-    long repeat(string columnName) const {return (*D)[columnName]->repeat();}
-   
-    // If the column holds strings, return the defined max length of strings, or -1 for variable.
-    long stringLength(string columnName) const {return (*D)[columnName]->stringLength();}
-
-    // Get the type of data stored in the C arrays (using the FITStypes.h class)
-    FITS::DataType elementType(string columnName) const {return (*D)[columnName]->elementType();}
-
-    // Get the character that FITSIO uses to code appropriate storage type for a column
-    char columnCode(string columnName) const {return (*D)[columnName]->columnCode();}
+    //////////////////////////////////////
+    // Row and column manipulations
+    //////////////////////////////////////
 
     // Add column from vector of values.  Grow table if needed, pad input array with default
     // value if it is too short.
@@ -191,7 +201,7 @@ namespace img {
     // ??? get/set the column attributes: units, TDIM, format, null values?
 
     // Delete column: exception to delete non-existent column
-    void deleteColumn(string columnName) {D->erase(columnName);}
+    void eraseColumn(string columnName) {D->erase(columnName);}
 
     // Delete row(s) - not particularly efficient since using vector storage
     // Asking to erase past end is ignored; erase before beginning throws exception.
@@ -205,25 +215,56 @@ namespace img {
       D->insertRows(insertBeforeRow, insertNumber);
     }
 
-    // Evaluate arithmetic / logical expression on columns, convert to type T and place in vector
-    template <class T>
-    void evaluate(vector<T>& result, string expression);
-    // Delete all rows that have zero in the input vector
-    template <class T>
-    void filter(const vector<T>& retain);
-    // Or filter those that give true (non-zero) result in expression
-    void filter(string expression);
+    // Get new table with rows chosen various ways:
+    // range of row numbers; also keep only columns that match one of the regexp's:
+    FTable extract(long rowStart=0, long rowEnd=-1,
+		   const vector<string>& regexps
+		   = vector<string>(1,".*")) const;
 
+    // bool that signals inclusion of a row
+    FTable extractRows(vector<bool>& vb) const;
+    // expression to evaluate for a row
+    FTable extractRows(const string& expression) const;
+    // rows with column's value in container
+    // column data should be convertible to Container::key_type 
+    /***
+    template <class Container>
+    FTable extractRows(const string& columnName, const Container& keepers) const {
+      FTable result;
+      D->filterRows(result.D, columnName, keepers);
+      result.D->clearChanged();
+      result.H->copyFrom(H);
+      return result;
+      } ***/
+
+    // Same as above but change internally rather than issuing new FTable
+    void filter(long rowStart=0, long rowEnd=-1,
+		const vector<string>& regexps
+		= vector<string>(1,".*"));
+    // bool that signals inclusion of a row
+    void filterRows(vector<bool>& vb);
+    // expression to evaluate for a row
+    void filterRows(const string& expression);
+    // rows with column's value in container
+    template <class Container>
+    void filterRows(const string& columnName, const Container& keepers) {
+      D->filterRows(D, columnName, keepers);
+    }
+
+    //////////////////////////////////////
+    // Evaluate arithmetic / logical expression on columns, 
+    // convert to type T and place in vector
+    template <class T>
+    void evaluate(vector<T>& result, string expression) {
+      D->evaluate(result, expression, H);
+    }
+
+    //////////////////////////////////////
     // Sort in increasing order with native comparison for specified column:
     void sort(string columnName);
     // Or according to specified ordering function operating on that column:
     template <class LessThan>
     void sort(string columnName, LessThan& ordering);
-
-    // Retain only elements whose keyword is in the container.
-    // column data should be convertible to Container::key_type 
-    template <class Container>
-    void select(string columnName, const Container& retain);
 
     ///////////////////////
     // Direct header access, for convenience:

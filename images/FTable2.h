@@ -34,13 +34,22 @@ namespace img {
     virtual long repeat() const=0;
     // Return max allowed length of string-valued elements of column, or -1 to be free
     virtual long stringLength() const=0;
-    virtual FITS::DataType elementType() const =0;  // FITS DataType for scalar or array element
-    virtual char columnCode() const =0;  // FITSIO code for appropriate column data storage
+    // FITS DataType for scalar or array element:
+    virtual FITS::DataType elementType() const =0;  
+    // FITSIO code for appropriate column data storage:
+    virtual char columnCode() const =0;  
 
     virtual void eraseRows(long rowStart, long rowEnd) =0;
     // insertBeforeRow = -1 will add row(s) to the end.
     // Return value is number of rows after insertion.
     virtual long insertRows(long insertBeforeRow, long insertNumber) =0;
+
+    // Create new column that is a subset of this one:
+    virtual ColumnBase* copyRows(long rowStart, long rowEnd) const =0;
+    // Choose the rows with true in their column.  
+    // nReserve is size of vector needed, -1 means don't know
+    virtual ColumnBase* copyRows(std::vector<bool>& vb,
+				 int nReserve=-1) const =0;
   private:
     const string colName;
     // Ancillary information ???
@@ -75,6 +84,33 @@ namespace img {
     virtual long stringLength() const {return length;} 
     virtual FITS::DataType elementType() const {return dType;}
     virtual char columnCode() const {return colCode;}
+
+    // Create new column that is a subset of this one:
+    virtual ColumnBase* copyRows(long rowStart, long rowEnd) const {
+      long nRows = rowEnd - rowStart;
+      ScalarColumn<DT>* target = new ScalarColumn<DT>(name(), stringLength());
+      if (nRows>0) target->v.resize(nRows);
+      for (int i=0; i<nRows; i++)
+	target->v[i] = v[i+rowStart];
+      return target;
+    }
+    virtual ColumnBase* copyRows(std::vector<bool>& vb, int nReserve) const {
+      if (vb.size() > v.size())
+	throw FTableError("too many input bools in copyRows() on column " + name());
+      ScalarColumn<DT>* target = new ScalarColumn<DT>(name(), stringLength());
+      if (nReserve<0) {
+	nReserve = 0;
+	for (std::vector<bool>::const_iterator i=vb.begin();
+	     i != vb.end();
+	     ++i)
+	  if (*i) nReserve++;
+      }
+      target->v.resize(nReserve);
+      typename vector<DT>::iterator j = target->v.begin();
+      for (int i=0; i<vb.size(); i++)
+	if (vb[i]) *(j++) = v[i];
+      return target;
+    }
 
     // Range checking will be done at TableData level, so none here
     virtual void readCell(DT& value, long row) const {value = v[row];}
@@ -116,6 +152,17 @@ namespace img {
       else
 	v.insert(v.begin()+insertBeforeRow, insertNumber, DT());
       return v.size();
+    }
+
+    // Routine that only exists for ScalarColumn: 
+    // Container needs find method (set, map)
+    // and column data must be convertible to Container::key_type
+    template <class Container>
+    vector<bool>& isMemberOf(const Container& keepers) const {
+      vector<bool> vb(v.size(), false);
+      for (int i=0; i<v.size(); i++)
+	if ( keepers.find(v[i]) != keepers.end()) vb[i] = true;
+      return vb;
     }
   };
 
@@ -292,25 +339,9 @@ namespace img {
   public:
     TableData(long rowReserve_=0): rowReserve(rowReserve_), rowCount(0),
 				   isAltered(false), lock(false)  {}
-    ~TableData() {
-      // Unlock for destruction:
-      lock = false;
-      for (iterator i=begin(); i!=end(); ++i) delete *i;
-    }
-    TableData* duplicate() const {
-      TableData* dup = new TableData(rowReserve);
-      for (const_iterator i=begin(); i!=end(); ++i) dup->add((*i)->duplicate());
-      return dup;
-    }
-
-    void copyFrom(const TableData& rhs) {
-      checkLock("TableData::copyFrom()");
-      clear();
-      rowReserve = rhs.rowReserve;
-      rowCount = rhs.rowCount;
-      isAltered = true;
-      for (const_iterator i=rhs.begin(); i!=rhs.end(); ++i) add((*i)->duplicate());
-    }      
+    ~TableData();
+    TableData* duplicate() const;
+    void copyFrom(const TableData& rhs);
       
     long nrows() const {return rowCount;}
     int ncols() const {return columns.size();}
@@ -354,25 +385,17 @@ namespace img {
     const_iterator const_begin() {return const_iterator(columns.begin());}
     const_iterator const_end()   {return const_iterator(columns.end());}
 
-    iterator begin() {checkLock("begin()"); touch(); return iterator(columns.begin());}
-    iterator end() {checkLock("end()"); touch(); return iterator(columns.end());}
+    iterator begin() {checkLock("begin()"); return iterator(columns.begin());}
+    iterator end() {checkLock("end()"); return iterator(columns.end());}
 
-    const ColumnBase* constColumn(string colname) const {
-      Index::const_iterator i=columns.find(colname);
-      if (i==columns.end()) throw FTableNonExistentColumn(colname);
-      return i->second;
-    }
+    const ColumnBase* constColumn(string colname) const;
 
     const ColumnBase* operator[](string colname) const {
       return constColumn(colname);
     }
+    ColumnBase* operator[](string colname);
 
-    ColumnBase* operator[](string colname) {
-      checkLock("operator[]"); touch();
-      Index::iterator i=columns.find(colname);
-      if (i==columns.end()) throw FTableNonExistentColumn(colname);
-      return i->second;
-    }
+    vector<string> listColumns() const;
 
     // ***** Add / remove columns:
 
@@ -380,65 +403,54 @@ namespace img {
     template<class T>
     void addColumn(const vector<T>& values, string columnName, 
 		   long repeat=-1, long stringLength=-1 ) {
-      checkLock("addColumn()");   touch();
+      checkLock("addColumn()");
       add(new ScalarColumn<T>(values, columnName, stringLength));
     }
     // Specialization to recognize vector<vector> as array column
     template<class T>
     void addColumn(const vector<vector<T> >& values, string columnName, 
 		   long repeat=-1, long stringLength=-1) {
-      checkLock();   touch();
+      checkLock();
       if (repeat<0) add(new ArrayColumn<T>(values, columnName, stringLength));
       else add(new FixedArrayColumn<T>(values, columnName, repeat, stringLength));
     }
         
-    void erase(string columnName) {
-      checkLock("erase()");   touch();
-      Index::iterator i=columns.find(columnName);
-      if (i==columns.end())
-	throw FTableNonExistentColumn(columnName);
-      // Destroy the column:
-      delete i->second;
-      columns.erase(i);
-    }
-    void erase(iterator i) {
-      checkLock("erase()");   touch();
-      delete *i;
-      columns.erase(i.i);
-    }
-
-    void clear() {
-      checkLock("clear()");   touch();
-      for (Index::iterator i=columns.begin();
-	   i != columns.end();
-	   ++i)
-	delete i->second;
-      columns.clear();
-      rowCount = 0;
-      rowReserve=0; // Choose to eliminate reservations too. ??
-    }
+    void erase(string columnName);
+    void erase(iterator i);
+    void clear();
 
     // ***** Row erase / insert:
-    void eraseRows(long rowStart, long rowEnd=-1) {
-      checkLock("eraseRows()");
-      touch();
-      Assert(rowStart>=0);
-      if (rowStart>=nrows()) return; // don't erase past end
-      if (columns.empty()) return;
-      if (rowEnd<0) rowEnd = nrows();
-      if (rowStart>=rowEnd) return;
-      for (iterator i=begin(); i!=end(); ++i) (*i)->eraseRows(rowStart, rowEnd);
-      // Update row count from first column:
-      rowCount = (*begin())->size();
-    }
-    void insertRows(long insertBeforeRow, long insertNumber) {
-      checkLock("insertRows()");
-      touch();
-      if (insertBeforeRow > nrows()) throw FTableError("insertRows beyond end of table");
-      for (iterator i=begin(); i!=end(); ++i) (*i)->insertRows(insertBeforeRow, insertNumber);
-      rowCount += insertNumber;
-      Assert(rowCount==(*begin())->size());
-    }
+    void eraseRows(long rowStart, long rowEnd=-1);
+    void insertRows(long insertBeforeRow, long insertNumber);
+
+    // Row and column selection.  For each, data from this instance
+    // is written into *td.  Routines know what to do when td = this.
+
+    // First selects a row range, and also limits columns to those
+    // matching one of the regexp's.
+    void filter(TableData* td, long rowStart, long rowEnd,
+		const vector<string>& regexps) const;
+    // Select rows corresponding to true element of vb:
+    void filterRows(TableData* td, vector<bool>& vb) const;
+
+    TableData* extract(long rowStart=0, long rowEnd=-1,
+		       const vector<string>& regexps
+		       = vector<string>(1,".*")) const;
+
+    /** ????
+    template <class Container>
+    void filterRows(TableData* td, 
+		    const string& columnName, const Container& keepers) const {
+      vector<bool> vb = (*this)[columnName]->isMemberOf(keepers);
+      filterRows(td, vb);
+      } ***/
+
+    // Expression evaluation, convert to type T.  Use Header hh to evaluate scalars.
+    template <class T>
+    void evaluate(vector<T>& result,
+		  const string& expression,
+		  const Header* hh) const;
+
 
     // ******* Data access:
     // Access single element (copy created)
@@ -465,7 +477,6 @@ namespace img {
     void writeCell(const T& value, string columnName, long row) {
       if (row<0) rangeCheck(row);
       checkLock("writeCell()");
-      touch();
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
       int doneRows = col->writeCell(value, row);
@@ -476,7 +487,6 @@ namespace img {
     void writeCells(const vector<T>& values, string columnName, long rowStart=0) {
       if (rowStart<0) rangeCheck(rowStart);
       checkLock("writeCells()");
-      touch();
       ScalarColumn<T>* col = dynamic_cast<ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
       int doneRows = col->writeCells(values, rowStart);
@@ -488,7 +498,6 @@ namespace img {
     void writeCell(const vector<T>& value, string columnName, long row) {
       if (row<0) rangeCheck(row);
       checkLock("writeCell()");
-      touch();
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
       int doneRows = col->writeCell(value, row);
@@ -499,7 +508,6 @@ namespace img {
     void writeCells(const vector<vector<T> >& values, string columnName, long rowStart=0) {
       if (rowStart<0) rangeCheck(rowStart);
       checkLock("writeCells()");
-      touch();
       ArrayColumn<T>* col = dynamic_cast<ArrayColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch writing column " + columnName);
       touch();
@@ -515,8 +523,10 @@ namespace img {
     // call for anything that can alter data
     // Note not a const routine since anything that is forbidden by lock should
     // not be coded in a const routine.
+    // Also anything the checks lock will alter data, so touch().
     void checkLock(const string& s="") {
       if (isLocked()) throw FTableLockError(s);
+      touch();
     }
     // call for anything that can alter data
     void rangeCheck(long row, const string& s="") const {
@@ -528,24 +538,9 @@ namespace img {
     }
 
     // Expand all columns to some new size:
-    void growRows(long targetRows) {
-      if (targetRows <= nrows()) return;
-      rowCount = targetRows;
-      for (iterator i = begin(); i!=end(); ++i)
-	(*i)->resize(targetRows);
-    }
-
-    void add(ColumnBase* newColumn) {
-      string addname = newColumn->name();
-      if (columns.find(addname) != columns.end())
-	throw FTableError("Adding column with duplicate name <" + addname + ">");
-      // Pad column to current table length, or vice-versa, to keep all columns same length
-      if (newColumn->size() < nrows()) newColumn->resize(nrows());
-      else if (newColumn->size() > nrows()) growRows(newColumn->size());
-      // Reserve requested space
-      newColumn->reserve(rowReserve);
-      columns.insert(std::pair<string, ColumnBase*>(addname, newColumn));
-    }
+    void growRows(long targetRows);
+    // Add a column
+    void add(ColumnBase* newColumn);
   };
 
 } // namespace img

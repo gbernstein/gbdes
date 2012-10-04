@@ -27,6 +27,14 @@ FitsTable::~FitsTable() {
   // Destructor for Hdu will flush header if still needed, and close files.
 }
 
+std::vector<std::string> 
+FitsTable::listColumns() const {
+  if (dptr)
+    return dptr->listColumns();
+  else 
+    return findFitsColumns();
+}
+
 img::FTable
 FitsTable::use() {
   if (!dptr) {
@@ -42,52 +50,16 @@ FitsTable::use() {
 
 
 img::FTable 
-FitsTable::extract(long rowStart, long rowEnd) const {
+FitsTable::extract(long rowStart=0, long rowEnd=-1,
+		   const std::vector<std::string>& colMatches) const { 
   // ??? Change this.... for now just flush extant data to file and read it back...
-  if (dptr) flush();
-  long nrows;
-  int status = moveTo();
-  fits_get_num_rows(fptr(), &nrows, &status);
-  // ???
-
-  if (rowEnd < 0 ) rowEnd = nrows;
-  if (rowEnd < rowStart) rowEnd = rowStart;  // Makes an empty table
-  int outRows = rowEnd - rowStart;
-  img::TableData* tdata = new TableData(outRows);
-  vector<string> colNames;
-  vector<int> colNums;
-  const string matchAll("*");
-  findFitsColumns(matchAll, colNames, colNums);
-  createColumns(tdata, colNames, colNums);
-  readFitsData(tdata, colNames, colNums, rowStart, rowEnd);
-
-  img::Header* hh = header()->duplicate();
-  return FTable(hptr, new int(0), tdata, new int(0)); 
-}
-
-img::FTable 
-FitsTable::extract(const vector<string>& templates,
-		   long rowStart, long rowEnd) const {
-  // ??? Change this.... for now just flush extant data to file and read it back...
-  if (dptr) flush();
-  long nrows;
-  int status = moveTo();
-  fits_get_num_rows(fptr(), &nrows, &status);
-  // ???
-
-  if (rowEnd < 0 ) rowEnd = nrows;
-  if (rowEnd < rowStart) rowEnd = rowStart;  // Makes an empty table
-  int outRows = rowEnd - rowStart;
-  img::TableData* tdata = new TableData(outRows);
-  vector<string> colNames;
-  vector<int> colNums;
-  for (int i=0; i<templates.size(); i++)
-    findFitsColumns("*", colNames, colNums);
-  createColumns(tdata, colNames, colNums);
-  readFitsData(tdata, colNames, colNums, rowStart, rowEnd);
-
-  img::Header* hh = header()->duplicate();
-  return FTable(hptr, new int(0), tdata, new int(0)); 
+  if (dptr) {
+    return dptr->extract(rowStart, rowEnd, colMatches);
+  } else {
+    img::TableData* tdata = loadData(rowStart, rowEnd, colMatches);
+    img::Header* hh = header()->duplicate();
+    return FTable(hptr, new int(0), tdata, new int(0)); 
+  }
 }
 
 void
@@ -154,18 +126,31 @@ FitsTable::flushData() {
 ////////////////////////////////////////////////////////
 
 TableData* 
-FitsTable::loadData() const { 
-  TableData* td = new TableData();
-  int status = moveTo();
-  long nrows;
-  fits_get_num_rows(fptr(), &nrows, &status);
-  img::TableData* tdata = new TableData(nrows);
+FitsTable::loadData(rowStart, rowEnd, colMatches) const { 
+    // FITS wants column numbers, not names, so try them all one by one
+  vector<string> allNames = findFitsColumns(); // index number is column number
   vector<string> colNames;
   vector<int> colNums;
-  findFitsColumns("*", colNames, colNums);
-  createColumns(td, colNames, colNums);
-  readFitsData(td, colNames, colNums, 0, -1);
-  return td;
+  for (int i=0; i<allNames.size(); i++) {
+    set<string> matchout = stringstuff::findMatches(colMatches,
+						    vector<string>(1,allNames[i]));
+    if (!matchout.empty()) {
+      colNames.push_back(allNames[i]);
+      colNums.push_back(i);
+    }
+  }
+
+  // Select row range
+  long nrows;
+  int status = moveTo();
+  fits_get_num_rows(fptr(), &nrows, &status);
+  if (rowEnd < 0 ) rowEnd = nrows;
+  if (rowEnd < rowStart) rowEnd = rowStart;  // Makes an empty table
+  int outRows = rowEnd - rowStart;
+  img::TableData* tdata = new TableData(outRows);
+  createColumns(tdata, colNames, colNums);
+  readFitsData(tdata, colNames, colNums, rowStart, rowEnd);
+  return tdata;
 }
 
 template <class T>
@@ -174,31 +159,30 @@ void addEmptyColumn(img::TableData* tptr, string name, long repeat, long stringL
   else tptr->addColumn(vector<T>(), name, repeat, stringLength);
 }
 
-void
-FitsTable::findFitsColumns(const string& matchMe,
-			   vector<string>& colNames,
-			   vector<int>& colNumbers) const {
+std::vector<std::string>
+FitsTable::findFitsColumns() const {
   char colName[FITS::MAX_COLUMN_NAME_LENGTH];
 
   int status = moveTo();
+  long ncols;
+  status = fits_get_num_cols(fptr(), &ncols, &status);
+  std::vector<std::string> result(ncols);
   do {
     int colNum;
+    char* wildcard="*";
     // Note const_cast to match non-const template for CFITSIO
     fits_get_colname(fptr(), CASEINSEN, 
-		     const_cast<char*> (matchMe.c_str()), colName, &colNum, &status);
+		     wildcard, colName, &colNum, &status);
     if (status==0 || status==COL_NOT_UNIQUE) {
-      // duplicate?
-      for (int i=0; i<colNumbers.size(); i++)
-	if (colNum==colNumbers[i]) continue;
-      // No; add to the lists
-      colNames.push_back(colName);
-      colNumbers.push_back(colNum);
+      Assert(colNum > 0 && colNum <= ncols);
+      result[colNum-1] = colName;
     }
   } while (status==COL_NOT_UNIQUE);
   if (status==COL_NOT_FOUND) {
     flushFitsErrors(status);
   }
   checkCFITSIO(status,"findFitsColumns()");
+  return result;
 }
 
 void

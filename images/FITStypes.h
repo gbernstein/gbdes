@@ -9,9 +9,9 @@
 #include <string>
 using std::string;
 
-//namespace, but then std libraries get stuck in there too...
-namespace FITS {
 #include "fitsio.h"	// ??? would be nice to keep this inside FITS
+
+namespace FITS {
 
 
   //const int MAX_FITS_FILES_OPEN=NIOBUF;

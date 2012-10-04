@@ -45,9 +45,14 @@ namespace FITS {
       dptr->touch();
     }
 
-    img::FTable extract(long rowStart=0, long rowEnd=-1) const;
-    // Extract columns matching any of the input strings (FITSIO wildcards OK)
-    img::FTable extract(const vector<string>& templates, long rowStart=0, long rowEnd=-1) const;
+    // Return a list of all the names of columns in this FITSTable
+    std::vector<std::string> listColumns() const;
+
+    // Extract columns matching any of the input strings (strings can be regular expressions)
+    // Note that column selection defaults to everything, as does row selection.
+    img::FTable extract(long rowStart=0, long rowEnd=-1,
+			const std::vector<std::string>& colMatches 
+			= std::vector<std::string>(1,".*")) const;
 
     // Issue FTable that is mirrored to FITS file data.  
     // If FITS HDU is read-only, FTable will be locked.
@@ -69,11 +74,12 @@ namespace FITS {
 
   private:
     void flushData();	// Push Table data back to FITS file
-    img::TableData* loadData() const; // Turn the FITS file into a TableData structure
-    // Find columns in FITS table matching template and add them to vector (no duplicates)
-    void findFitsColumns(const string& matchMe,
-			 vector<string>& names,
-			 vector<int>& numbers) const;
+    // load matching columns from row range into a TableData from FITS file
+    img::TableData* loadData(long rowStart=0, long rowEnd=-1,
+			     const std::vector<std::string>& colMatches 
+			     = std::vector<std::string>(1,".*")) const;
+    // Get vector of all column names in a FITS table.  Vector index is col Number (0-indexed)
+    std::vector<std::string> allFitsColumns();
     // Create new column(s) in TableData to hold data in 
     // FitsTable's column with given names and no's
     void createColumns(img::TableData* tptr, 
