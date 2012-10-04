@@ -32,7 +32,7 @@ FitsTable::listColumns() const {
   if (dptr)
     return dptr->listColumns();
   else 
-    return findFitsColumns();
+    return listFitsColumns();
 }
 
 img::FTable
@@ -50,16 +50,16 @@ FitsTable::use() {
 
 
 img::FTable 
-FitsTable::extract(long rowStart=0, long rowEnd=-1,
+FitsTable::extract(long rowStart, long rowEnd,
 		   const std::vector<std::string>& colMatches) const { 
-  // ??? Change this.... for now just flush extant data to file and read it back...
+  img::TableData* tdata;
   if (dptr) {
-    return dptr->extract(rowStart, rowEnd, colMatches);
+    tdata = dptr->extract(rowStart, rowEnd, colMatches);
   } else {
     img::TableData* tdata = loadData(rowStart, rowEnd, colMatches);
-    img::Header* hh = header()->duplicate();
-    return FTable(hptr, new int(0), tdata, new int(0)); 
   }
+  img::Header* hh = header()->duplicate();
+  return FTable(hptr, new int(0), tdata, new int(0)); 
 }
 
 void
@@ -126,9 +126,10 @@ FitsTable::flushData() {
 ////////////////////////////////////////////////////////
 
 TableData* 
-FitsTable::loadData(rowStart, rowEnd, colMatches) const { 
+FitsTable::loadData(long rowStart, long rowEnd, 
+		    const std::vector<std::string>& colMatches) const { 
     // FITS wants column numbers, not names, so try them all one by one
-  vector<string> allNames = findFitsColumns(); // index number is column number
+  vector<string> allNames = listFitsColumns(); // index number is column number
   vector<string> colNames;
   vector<int> colNums;
   for (int i=0; i<allNames.size(); i++) {
@@ -160,11 +161,11 @@ void addEmptyColumn(img::TableData* tptr, string name, long repeat, long stringL
 }
 
 std::vector<std::string>
-FitsTable::findFitsColumns() const {
+FitsTable::listFitsColumns() const {
   char colName[FITS::MAX_COLUMN_NAME_LENGTH];
 
   int status = moveTo();
-  long ncols;
+  int ncols;
   status = fits_get_num_cols(fptr(), &ncols, &status);
   std::vector<std::string> result(ncols);
   do {

@@ -79,7 +79,7 @@ namespace FITS {
 			     const std::vector<std::string>& colMatches 
 			     = std::vector<std::string>(1,".*")) const;
     // Get vector of all column names in a FITS table.  Vector index is col Number (0-indexed)
-    std::vector<std::string> allFitsColumns();
+    std::vector<std::string> listFitsColumns() const;
     // Create new column(s) in TableData to hold data in 
     // FitsTable's column with given names and no's
     void createColumns(img::TableData* tptr, 
