@@ -274,8 +274,9 @@ namespace img {
       return hlist.size() + lcomment.size() + lhistory.size();
     }
     HdrRecordBase* current() {checkLock("current()"); touch(); return *hptr;}
+    const HdrRecordBase* constCurrent() const {return *hptr;}
     void incr() const {++hptr;}
-    const HdrRecordBase* current() const {return *hptr;}
+    const HdrRecordBase* current() const {return constCurrent();}
 
     // Append contents of another header to this one
     void operator+=(const Header& rhs) {

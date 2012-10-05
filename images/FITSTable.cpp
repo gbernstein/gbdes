@@ -56,10 +56,10 @@ FitsTable::extract(long rowStart, long rowEnd,
   if (dptr) {
     tdata = dptr->extract(rowStart, rowEnd, colMatches);
   } else {
-    img::TableData* tdata = loadData(rowStart, rowEnd, colMatches);
+    tdata = loadData(rowStart, rowEnd, colMatches);
   }
   img::Header* hh = header()->duplicate();
-  return FTable(hptr, new int(0), tdata, new int(0)); 
+  return FTable(hh, new int(0), tdata, new int(0)); 
 }
 
 void
@@ -170,10 +170,10 @@ FitsTable::listFitsColumns() const {
   std::vector<std::string> result(ncols);
   do {
     int colNum;
-    char* wildcard="*";
+    const char* wildcard="*";
     // Note const_cast to match non-const template for CFITSIO
     fits_get_colname(fptr(), CASEINSEN, 
-		     wildcard, colName, &colNum, &status);
+		     const_cast<char *> (wildcard), colName, &colNum, &status);
     if (status==0 || status==COL_NOT_UNIQUE) {
       Assert(colNum > 0 && colNum <= ncols);
       result[colNum-1] = colName;
@@ -195,7 +195,7 @@ FitsTable::createColumns(img::TableData* tptr,
   long repeat, width;
   for (int i=0; i<colNames.size(); i++) {
     status = moveTo();
-    fits_get_eqcoltype(fptr(), colNumbers[i], &datatype, &repeat, &width, &status);
+    fits_get_eqcoltype(fptr(), colNumbers[i]+1, &datatype, &repeat, &width, &status);
     checkCFITSIO(status,"Getting info for column " + colNames[i]);
 
     // width will give length of strings if this is string type
@@ -390,9 +390,9 @@ FitsTable::getFitsColumnData(img::TableData* tptr,
     for (int i=0; i<nRows; i++) {
       status = moveTo();
       // Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-      fits_read_descript(fptr(), icol, rowStart+1+i, &nElements, &offset, &status);
+      fits_read_descript(fptr(), icol+1, rowStart+1+i, &nElements, &offset, &status);
       data.resize(nElements);
-      fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+      fits_read_col(fptr(), dtype, icol+1, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
 		    (LONGLONG) nElements, nullPtr, &data[0], &anyNulls, &status);
 
       checkCFITSIO(status, "Reading table column " + colName);
@@ -403,7 +403,7 @@ FitsTable::getFitsColumnData(img::TableData* tptr,
     long nElements = repeat * nRows;
     vector<T> data(nElements);
     status = moveTo();
-    fits_read_col(fptr(), dtype, icol, 
+    fits_read_col(fptr(), dtype, icol+1, 
 		  (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
 		  nullPtr, &data[0], &anyNulls, &status);
     checkCFITSIO(status, "Reading table vector column " + colName);
@@ -416,7 +416,7 @@ FitsTable::getFitsColumnData(img::TableData* tptr,
     // branch for scalar column
     vector<T> data(nRows);
     status = moveTo();
-    fits_read_col(fptr(), dtype, icol, 
+    fits_read_col(fptr(), dtype, icol+1, 
 		  (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
 		  nullPtr, &data[0], &anyNulls, &status);
     checkCFITSIO(status, "Reading table column " + colName);
@@ -446,9 +446,9 @@ FitsTable::getFitsColumnData<bool>(img::TableData* tptr,
     for (int i=0; i<nRows; i++) {
       status = moveTo();
       // Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-      fits_read_descript(fptr(), icol, rowStart+1+i, &nElements, &offset, &status);
+      fits_read_descript(fptr(), icol+1, rowStart+1+i, &nElements, &offset, &status);
       data.resize(nElements);
-      fits_read_col(fptr(), dtype, icol, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
+      fits_read_col(fptr(), dtype, icol+1, (LONGLONG) rowStart+1+i, (LONGLONG) 1, 
 		    (LONGLONG) nElements, nullPtr, &data[0], &anyNulls, &status);
       checkCFITSIO(status, "Reading table bool column " + colName);
       tptr->writeCell(vector<bool>(data.begin(), data.end()), colName, rowStart+i);
@@ -458,7 +458,7 @@ FitsTable::getFitsColumnData<bool>(img::TableData* tptr,
     long nElements=repeat * nRows;
     vector<char> data(nElements);
     status = moveTo();
-    fits_read_col(fptr(), dtype, icol, 
+    fits_read_col(fptr(), dtype, icol+1, 
 		  (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nElements,
 		  nullPtr, &data[0], &anyNulls, &status);
     checkCFITSIO(status, "Reading bool table vector column " + colName);
@@ -471,7 +471,7 @@ FitsTable::getFitsColumnData<bool>(img::TableData* tptr,
     // branch for scalar column
     vector<char> data(nRows);
     status = moveTo();
-    fits_read_col(fptr(), dtype, icol, 
+    fits_read_col(fptr(), dtype, icol+1, 
 		  (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nRows,
 		  nullPtr, &data[0], &anyNulls, &status);
     checkCFITSIO(status, "Reading bool table column " + colName);
@@ -508,10 +508,10 @@ FitsTable::getFitsColumnData<string>(img::TableData* tptr, string colName, int i
       for (int i=0; i<nRows; i++) {
 	status = moveTo();
 	// Note adding 1 to row numbers when FITS sees them, since CFITSIO is 1-indexed:
-	fits_read_descript(fptr(), icol, rowStart+1+i, &nElements, &offset, &status);
+	fits_read_descript(fptr(), icol+1, rowStart+1+i, &nElements, &offset, &status);
 	data = new char[nElements+1];
 	// Read as a c-string; wants char** for destination
-	fits_read_col(fptr(), Tbyte, icol, 
+	fits_read_col(fptr(), Tbyte, icol+1, 
 		      (LONGLONG) rowStart+1+i, (LONGLONG) 1, (LONGLONG) nElements, 
 		      nullPtr, &data, &anyNulls, &status);
 	checkCFITSIO(status, "Reading string table column " + colName);
@@ -534,7 +534,7 @@ FitsTable::getFitsColumnData<string>(img::TableData* tptr, string colName, int i
       data[i] = new char[length+1];
     status = moveTo();
     // ??? nStrings or # characters here ???
-    fits_read_col(fptr(), dtype, icol, 
+    fits_read_col(fptr(), dtype, icol+1, 
 		  (LONGLONG) rowStart+1, (LONGLONG) 1, (LONGLONG) nStrings,
 		  nullPtr, &data[0], &anyNulls, &status);
     checkCFITSIO(status, "Reading table column " + colName);
@@ -672,7 +672,6 @@ FitsTable::addFitsColumns(const img::TableData* tptr,
   fits_get_num_cols(fptr(), &colNum, &status);
   checkCFITSIO(status, "addFitsColumns()");
 
-  colNum++;	// columns are 1-indexed, and this arg gives desired posn of insertion
   colNums.clear();
 
   // Get all column names
@@ -716,7 +715,7 @@ FitsTable::addFitsColumns(const img::TableData* tptr,
     }
 
     status = moveTo();
-    fits_insert_col(fptr(), colNum, const_cast<char*> (colNames[i].c_str()), 
+    fits_insert_col(fptr(), colNum+1, const_cast<char*> (colNames[i].c_str()), 
 		    const_cast<char*> (oss.str().c_str()),
 		    &status);
     colNums.push_back(colNum);
@@ -753,7 +752,7 @@ FitsTable::writeFitsColumn(const img::TableData *tptr,
     // Scalar column, can write whole group at once
     tptr->readCells(data, colName, rowStart, rowEnd);
     status = moveTo();
-    fits_write_col(fptr(), FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) rowStart+1,
+    fits_write_col(fptr(), FITS::FITSTypeOf<DT>(), colNum+1, (LONGLONG) rowStart+1,
 		   (LONGLONG) 1, (LONGLONG) (rowEnd-rowStart), &data[0], &status);
     checkCFITSIO(status, "Writing to FITS column " + colName);
   } else {
@@ -762,7 +761,7 @@ FitsTable::writeFitsColumn(const img::TableData *tptr,
       tptr->readCell(data, colName, iRow);
       if (repeat >=0) Assert(data.size()==repeat);
       status = moveTo();
-      fits_write_col(fptr(), FITS::FITSTypeOf<DT>(), colNum, (LONGLONG) iRow+1,
+      fits_write_col(fptr(), FITS::FITSTypeOf<DT>(), colNum+1, (LONGLONG) iRow+1,
 		     (LONGLONG) 1, (LONGLONG) data.size(), &data[0], &status);
       checkCFITSIO(status, "Writing to FITS column " + colName);
     } // end row loop
@@ -786,7 +785,7 @@ FitsTable::writeFitsColumn<bool>(const img::TableData* tptr,
     for (int i=0; i<data.size(); i++)
       cdata[i] = data[i] ? 1 : 0;
     status = moveTo();
-    fits_write_col(fptr(), FITS::Tlogical, colNum, (LONGLONG) rowStart+1,
+    fits_write_col(fptr(), FITS::Tlogical, colNum+1, (LONGLONG) rowStart+1,
 		   (LONGLONG) 1, (LONGLONG) (rowEnd-rowStart), cdata, &status);
     checkCFITSIO(status, "Writing to FITS column " + colName);
   } else {
@@ -798,7 +797,7 @@ FitsTable::writeFitsColumn<bool>(const img::TableData* tptr,
 	cdata[i] = data[i] ? 1 : 0;
       if (repeat >=0) Assert(data.size()==repeat);
       status = moveTo();
-      fits_write_col(fptr(), FITS::Tlogical, colNum, (LONGLONG) iRow+1,
+      fits_write_col(fptr(), FITS::Tlogical, colNum+1, (LONGLONG) iRow+1,
 		     (LONGLONG) 1, (LONGLONG) data.size(), cdata, &status);
       checkCFITSIO(status, "Writing to FITS column " + colName);
     } // end row loop
@@ -824,7 +823,7 @@ FitsTable::writeFitsColumn<string>(const img::TableData* tptr,
       cdata[0] = const_cast<char*> (data.c_str());
       status = moveTo();
       // fits_write_col wants char** input for source of data
-      fits_write_col(fptr(), Tstring, colNum, (LONGLONG) iRow+1,
+      fits_write_col(fptr(), Tstring, colNum+1, (LONGLONG) iRow+1,
 		     (LONGLONG) 1, (LONGLONG) 1,
 		     cdata, &status);
       checkCFITSIO(status, "Writing to FITS column " + colName);
@@ -842,7 +841,7 @@ FitsTable::writeFitsColumn<string>(const img::TableData* tptr,
 	for (int j=0; j<repeat; j++)
 	  cdata[j] = const_cast<char*> (data[j].c_str());
 	status = moveTo();
-	fits_write_col(fptr(), Tstring, colNum, (LONGLONG) iRow+1,
+	fits_write_col(fptr(), Tstring, colNum+1, (LONGLONG) iRow+1,
 		       (LONGLONG) 1, (LONGLONG) repeat, cdata, &status);
 	checkCFITSIO(status, "Writing to FITS column " + colName);
     } // end row loop
