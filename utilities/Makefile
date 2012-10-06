@@ -9,7 +9,7 @@ SRC = $(shell ls *.cpp)
 
 OBJ = BinomFact.o fft.o StringStuff.o Poisson.o Table.o Pset.o odeint.o Poly2d.o Interpolant.o
 
-all: depend $(OBJ)
+all: $(OBJ)
 
 ###############################################################
 ## Standard stuff:

@@ -223,19 +223,20 @@ namespace img {
 
     // bool that signals inclusion of a row
     FTable extractRows(vector<bool>& vb) const;
+
     // expression to evaluate for a row
     FTable extractRows(const string& expression) const;
+
     // rows with column's value in container
     // column data should be convertible to Container::key_type 
-    /***
     template <class Container>
     FTable extractRows(const string& columnName, const Container& keepers) const {
       FTable result;
       D->filterRows(result.D, columnName, keepers);
       result.D->clearChanged();
-      result.H->copyFrom(H);
+      result.H->copyFrom(*H);
       return result;
-      } ***/
+    } 
 
     // Same as above but change internally rather than issuing new FTable
     void filter(long rowStart=0, long rowEnd=-1,

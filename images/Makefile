@@ -10,7 +10,7 @@ SRC = $(shell ls *.cpp)
 OBJ = FITS.o Header.o Hdu.o FITSTable.o FTable.o
 #Image.o FITSImage.o HeaderFromStream.o
 
-all: depend $(OBJ)
+all: $(OBJ)
 
 ###############################################################
 ## Standard stuff:

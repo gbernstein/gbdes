@@ -118,10 +118,12 @@ namespace FITS {
   void FitsTable::getFitsColumnData<bool>(img::TableData* tptr, string colName, int icol, 
 					  long rowStart, long rowEnd) const;
   template<>
-  void FitsTable::writeFitsColumn<string>(const img::TableData* tptr, string colName, int colNum,
+  void FitsTable::writeFitsColumn<string>(const img::TableData* tptr, 
+					  string colName, int colNum,
 					  long rowStart, long rowEnd);
   template<>
-  void FitsTable::writeFitsColumn<bool>(const img::TableData* tptr, string colName, int colNum,
+  void FitsTable::writeFitsColumn<bool>(const img::TableData* tptr, 
+					string colName, int colNum,
 					long rowStart, long rowEnd);
 
 } // end namespace FITS

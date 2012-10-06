@@ -50,6 +50,12 @@ namespace img {
     // nReserve is size of vector needed, -1 means don't know
     virtual ColumnBase* copyRows(std::vector<bool>& vb,
 				 int nReserve=-1) const =0;
+    // Convert column data to requested vector, if no loss of information
+    // Can't template this because it's a virtual function!
+    virtual bool makeVector(std::vector<bool>& vout) const {return false;}
+    virtual bool makeVector(std::vector<string>& vout) const {return false;}
+    virtual bool makeVector(std::vector<long>& vout) const {return false;}
+    virtual bool makeVector(std::vector<double>& vout) const {return false;}
   private:
     const string colName;
     // Ancillary information ???
@@ -84,6 +90,14 @@ namespace img {
     virtual long stringLength() const {return length;} 
     virtual FITS::DataType elementType() const {return dType;}
     virtual char columnCode() const {return colCode;}
+
+    // Convert column data to requested vector, if no loss of information
+    // Can't template this because it's a virtual function!
+    // Will specialize some bool and string
+    virtual bool makeVector(std::vector<bool>& vout) const {return false;}
+    virtual bool makeVector(std::vector<string>& vout) const {return false;}
+    virtual bool makeVector(std::vector<long>& vout) const {return false;}
+    virtual bool makeVector(std::vector<double>& vout) const {return false;}
 
     // Create new column that is a subset of this one:
     virtual ColumnBase* copyRows(long rowStart, long rowEnd) const {
@@ -154,16 +168,6 @@ namespace img {
       return v.size();
     }
 
-    // Routine that only exists for ScalarColumn: 
-    // Container needs find method (set, map)
-    // and column data must be convertible to Container::key_type
-    template <class Container>
-    vector<bool>& isMemberOf(const Container& keepers) const {
-      vector<bool> vb(v.size(), false);
-      for (int i=0; i<v.size(); i++)
-	if ( keepers.find(v[i]) != keepers.end()) vb[i] = true;
-      return vb;
-    }
   };
 
   // Specialization for string-valued scalar arrays, check length as needed
@@ -201,6 +205,39 @@ namespace img {
     return v.size();
   }
   
+  ////////////////////////
+  // Specializations of the vector-making routine
+#define MVECTOR(T1,T2)                                         \
+   template<>						       \
+   inline bool	  				               \
+   ScalarColumn<T2>::makeVector(std::vector<T1>& vout) const { \
+     vout.resize(v.size());				       \
+     for (int i=0; i<v.size(); i++) vout[i]=v[i];              \
+     return true;					       \
+   }							       
+
+  MVECTOR(bool, bool)
+  MVECTOR(string, string)
+  MVECTOR(long, char)
+  MVECTOR(long, signed char)
+  MVECTOR(long, short)
+  MVECTOR(long, unsigned short)
+  MVECTOR(long, int)
+  MVECTOR(long, unsigned int)
+  MVECTOR(long, long)
+  MVECTOR(long, unsigned long)
+  MVECTOR(double, char)
+  MVECTOR(double, signed char)
+  MVECTOR(double, short)
+  MVECTOR(double, unsigned short)
+  MVECTOR(double, int)
+  MVECTOR(double, unsigned int)
+  MVECTOR(double, long)
+  MVECTOR(double, unsigned long)
+  MVECTOR(double, float)
+  MVECTOR(double, double)
+#undef MVECTOR
+
   template <class DT>
   class ArrayColumn: public ScalarColumn<vector<DT> > {
   private:
@@ -227,10 +264,42 @@ namespace img {
 
     // Need to declare these so they can be specialized for string:
     long writeCell(const vector<DT>& value, long row) {
-      return Base::writeCell(value,row);}
+      return Base::writeCell(value,row);
+    }
     long writeCells(const vector<vector<DT> >& values, long rowStart=0) {
-      return Base::writeCells(values, rowStart);}
+      return Base::writeCells(values, rowStart);
+    }
 
+    // Create new column that is a subset of this one:
+    virtual ColumnBase* copyRows(long rowStart, long rowEnd) const {
+      long nRows = rowEnd - rowStart;
+      ArrayColumn<DT>* target = 
+	new ArrayColumn<DT>(ColumnBase::name(), 
+			    ScalarColumn<vector<DT> >::stringLength());
+      if (nRows>0) target->v.reserve(nRows);
+      for (int i=0; i<nRows; i++)
+	target->v.push_back(v[i+rowStart]);
+      return target;
+    }
+    virtual ColumnBase* copyRows(std::vector<bool>& vb, int nReserve) const {
+      if (vb.size() > v.size())
+	throw FTableError("too many input bools in copyRows() on column " 
+			  + ColumnBase::name());
+      ArrayColumn<DT>* target =
+	new ArrayColumn<DT>(ColumnBase::name(), 
+			    ScalarColumn<vector<DT> >::stringLength());
+      if (nReserve<0) {
+	nReserve = 0;
+	for (std::vector<bool>::const_iterator i=vb.begin();
+	     i != vb.end();
+	     ++i)
+	  if (*i) nReserve++;
+      }
+      target->v.reserve(nReserve);
+      for (int i=0; i<vb.size(); i++)
+	if (vb[i]) target->v.push_back(v[i]);
+      return target;
+    }
   };
 
   // Override the constructor & writing routines for Array column to check length
@@ -273,7 +342,6 @@ namespace img {
     typedef ArrayColumn<DT> Base;
     using ArrayColumn<DT>::v;
     const int width;
-    virtual ColumnBase* duplicate() const {return new FixedArrayColumn(*this);}
     // Function to pad input array to required width; exception if input too long
     void checkWidth(const vector<DT>& in) {
       if (in.size() > width)
@@ -294,8 +362,42 @@ namespace img {
 	writeCell(in[i], i);
       }
 
+    virtual ColumnBase* duplicate() const {return new FixedArrayColumn(*this);}
+
     virtual long repeat() const {return width;}
   
+    // Create new column that is a subset of this one:
+    virtual ColumnBase* copyRows(long rowStart, long rowEnd) const {
+      long nRows = rowEnd - rowStart;
+      FixedArrayColumn<DT>* target = 
+	new FixedArrayColumn<DT>(ColumnBase::name(), 
+				 repeat(),
+				 ScalarColumn<vector<DT> >::stringLength());
+      if (nRows>0) target->v.reserve(nRows);
+      for (int i=0; i<nRows; i++)
+	target->v.push_back(v[i+rowStart]);
+      return target;
+    }
+    virtual ColumnBase* copyRows(std::vector<bool>& vb, int nReserve) const {
+      if (vb.size() > v.size())
+	throw FTableError("too many input bools in copyRows() on column " + ColumnBase::name());
+      FixedArrayColumn<DT>* target = 
+	new FixedArrayColumn<DT>(ColumnBase::name(), 
+				 repeat(),
+				 ScalarColumn<vector<DT> >::stringLength());
+      if (nReserve<0) {
+	nReserve = 0;
+	for (std::vector<bool>::const_iterator i=vb.begin();
+	     i != vb.end();
+	     ++i)
+	  if (*i) nReserve++;
+      }
+      target->v.reserve(nReserve);
+      for (int i=0; i<vb.size(); i++)
+	if (vb[i]) target->v.push_back(v[i]);
+      return target;
+    }
+
     virtual long writeCell(const vector<DT>& value, long row) {
       checkWidth(value);
       v[row].reserve(width);
@@ -437,13 +539,25 @@ namespace img {
 		       const vector<string>& regexps
 		       = vector<string>(1,".*")) const;
 
-    /** ????
+    template <class VT>
+    bool makeVector(vector<VT>& v, const string& columnName) const {
+      return (*this)[columnName]->makeVector(v);
+    }
+
     template <class Container>
     void filterRows(TableData* td, 
 		    const string& columnName, const Container& keepers) const {
-      vector<bool> vb = (*this)[columnName]->isMemberOf(keepers);
+      const ColumnBase* cb = (*this)[columnName];
+      typedef typename Container::key_type CT;
+      vector<CT> data;
+      if (! cb->makeVector(data))
+	throw FTableError("In filterRows(), column " + cb->name() + "data type not"
+			  " convertible to container");
+      vector<bool> vb(data.size(), false);
+      for (int i=0; i<data.size(); i++)
+	if ( keepers.find(data[i]) != keepers.end()) vb[i] = true;
       filterRows(td, vb);
-      } ***/
+    }
 
     // Expression evaluation, convert to type T.  Use Header hh to evaluate scalars.
     template <class T>
@@ -461,6 +575,7 @@ namespace img {
       if (!col) throw FTableError("Type mismatch reading column " + columnName);
       col->readCell(value, row);
     }
+
     // Or a range: rowEnd is one-past-last row; -1 means go to end.
     template <class T>
     void readCells(vector<T>& values, string columnName, 
@@ -542,6 +657,7 @@ namespace img {
     // Add a column
     void add(ColumnBase* newColumn);
   };
+
 
 } // namespace img
 #endif // FTABLE2_H
