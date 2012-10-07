@@ -7,7 +7,8 @@ CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
 
 SRC = $(shell ls *.cpp)
 
-OBJ = BinomFact.o fft.o StringStuff.o Poisson.o Table.o Pset.o odeint.o Poly2d.o Interpolant.o
+OBJ = BinomFact.o fft.o StringStuff.o Poisson.o Table.o Pset.o odeint.o Poly2d.o \
+	Interpolant.o Expressions.o
 
 all: $(OBJ)
 

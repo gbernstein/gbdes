@@ -31,7 +31,7 @@ public:
       return new expressions::VectorValue<string>(vs);
     else if (col->makeVector(vl)) 
       return new expressions::VectorValue<long>(vl);
-    else if (col->makeVector(vd)) 
+    else if (col->makeVector(vd))
       return new expressions::VectorValue<double>(vd);
     else
       throw FTableError("Could not convert FTable column " + col->name()
@@ -123,10 +123,11 @@ TableData::evaluate(vector<T>& result,
     tokenList = expressions::tokenize(expression, tokenReader);
 
   // parse
+  std::list<expressions::Token*>::iterator b = tokenList.begin();
   expressions::Evaluable* eval = expressions::parse(tokenList,
-						    tokenList.begin(),
-				      tokenList.end(),
-				      expression);
+						    b,
+						    tokenList.end(),
+						    expression);
 
   expressions::Value* val = eval->evaluate();
 
@@ -199,3 +200,6 @@ bool ValueConverter(vector<double>& vec, const expressions::Value* val) {
     return false;
   }
 }
+
+template 
+void TableData::evaluate(vector<bool>&, const string&, const Header* hh) const;

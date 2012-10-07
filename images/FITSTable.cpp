@@ -759,7 +759,14 @@ FitsTable::writeFitsColumn(const img::TableData *tptr,
     // Array cells, write 1 row at a time
     for (int iRow = rowStart; iRow < rowEnd; iRow++) {
       tptr->readCell(data, colName, iRow);
-      if (repeat >=0) Assert(data.size()==repeat);
+      if (repeat >=0) //**Assert(data.size()==repeat);
+	/**/if (data.size() != repeat) 
+	  /**/	  cerr << "Writing column " << colName << " to extension " << getName()
+	       << " of " << getFilename() 
+	       << " row " << iRow 
+	       << " data.size() " << data.size()
+	       << " repeat " << repeat
+	       << endl;
       status = moveTo();
       fits_write_col(fptr(), FITS::FITSTypeOf<DT>(), colNum+1, (LONGLONG) iRow+1,
 		     (LONGLONG) 1, (LONGLONG) data.size(), &data[0], &status);

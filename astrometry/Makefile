@@ -9,7 +9,7 @@ SRC = $(shell ls *.cpp)
 
 OBJ = Astrometry.o Ephemeris.o PixelMap.o PolyMap.o PixelMapCollection.o
 
-all: depend $(OBJ)
+all:  $(OBJ)
 
 ###############################################################
 ## Standard stuff:

@@ -7,8 +7,8 @@ CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
 
 SRC = $(shell ls *.cpp)
 
-OBJ = FITS.o Header.o Hdu.o FITSTable.o FTable.o
-#Image.o FITSImage.o HeaderFromStream.o
+OBJ = FITS.o Header.o Hdu.o FITSTable.o FTable.o FTableExpression.o
+#Image.o 
 
 all: $(OBJ)
 
