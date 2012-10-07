@@ -144,7 +144,18 @@ namespace expressions {
     }
   };
 
-  // Derived classes are templates for unary and binary operators:
+  // First derived class is something that is directly Evaluable.
+  // Should always be a value, not an operator.
+  class EvaluableToken: public Token {
+  private:
+    Evaluable* contents;
+  public:
+    EvaluableToken(Evaluable* contents_): Token(0), contents(contents_) {}
+    virtual ~EvaluableToken() {} // Don't delete contents, it will be passed on
+    virtual Evaluable* createEvaluable() const {return contents;}
+  };
+
+  // Derived Token that represents a unary operator
   class UnaryOpToken: public  Token {
   public:
     UnaryOpToken(size_t begin=0): Token(begin) {}
@@ -155,7 +166,7 @@ namespace expressions {
     }
   };
 
-  // Derived classes are templates for unary and binary operators:
+  // ...and a binary operator
   class BinaryOpToken: public  Token {
   public:
     BinaryOpToken(size_t begin=0): Token(begin) {}

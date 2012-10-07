@@ -117,17 +117,6 @@ expressions::tokenize(const std::string& input,
   return output;
 }
 
-// For the parser, we'll need something that can sit in list<Token*> but
-// is already parsed.
-// Should always be a value, not an operator.
-class ParsedToken: public Token {
-private:
-  Evaluable* contents;
-public:
-  ParsedToken(Evaluable* contents_): Token(0), contents(contents_) {}
-  virtual ~ParsedToken() {} // Don't delete contents, it will be passed on
-  virtual Evaluable* createEvaluable() const {return contents;}
-};
 
 Evaluable*
 expressions::parse(std::list<Token*>& tokenList,
@@ -200,7 +189,7 @@ expressions::parse(std::list<Token*>& tokenList,
 	delete *j;
 	tokenList.erase(j);
 	delete *i;
-	*i = new ParsedToken(contents);
+	*i = new EvaluableToken(contents);
       }
     }
     // No open-parens.  Should therefore be no close-parens left:
@@ -227,7 +216,7 @@ expressions::parse(std::list<Token*>& tokenList,
       Assert(uot);
       Evaluable* contents = uot->createEvaluable(right);
       delete *i;
-      *i = new ParsedToken(contents);
+      *i = new EvaluableToken(contents);
     } while (i != begin);
 
     // Now descend binary-operator precedence list
@@ -270,9 +259,9 @@ expressions::parse(std::list<Token*>& tokenList,
 	  BinaryOpToken* bot = dynamic_cast<BinaryOpToken*> (*j);
 	  Assert(bot);
 	  Evaluable* contents = bot->createEvaluable(left, right);
-	  // delete the BinOpToken and replace by ParsedToken
+	  // delete the BinOpToken and replace by EvaluableToken
 	  delete (*j);
-	  *j = new ParsedToken(contents);
+	  *j = new EvaluableToken(contents);
 	}
       } // End iteration through tokenList
     } // End descent of precedence table
