@@ -56,6 +56,8 @@ testFT6: testFT6.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT7: testFT7.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+testFT8: testFT8.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ###############################################################
 ## Standard stuff:
 ###############################################################

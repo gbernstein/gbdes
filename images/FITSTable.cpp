@@ -1,6 +1,7 @@
 // Read/Writewrite FTables from FITS extensions
 
 #include "FITSTable.h"
+#include "Expressions.h"
 
 using namespace img;
 using namespace FITS;
@@ -48,6 +49,86 @@ FitsTable::use() {
   return ft;
 }
 
+// Here is a dummy tokenizer that just finds names of all columns we
+// will need data from.  Don't try to parse after tokenizing with this!
+class FindColumnsToken: public expressions::Token {
+public:
+  FindColumnsToken(const Header* hptr_): hptr(hptr_) {}
+  const set<string>& columnNames() const {return columns;}
+  virtual expressions::Token* createFromString(const std::string& input,
+					      size_t& begin, size_t& end,
+					      bool lastTokenWasOperator) const {
+    /**/cerr << "substr is <" << input.substr(begin,end-begin) << "> for begin "
+	     << begin << " " << end << endl;
+    Assert(end>begin);
+    if (input[begin]=='@') {
+      // Read a header keyword as a constant
+      string keyword = input.substr(begin+1, end-(begin+1));
+      bool vb;
+      string vs;
+      int vi;
+      double vd;
+      if (hptr->getValue(keyword, vb)
+	  || hptr->getValue(keyword, vs)
+	  || hptr->getValue(keyword, vi)
+	  || hptr->getValue(keyword, vd) )
+	return new FindColumnsToken(hptr);
+      else 
+	throw FTableError("FitsTable expression evaluation cannot find Header keyword "
+			  + keyword);
+    } else {
+      string colName = input.substr(begin,end-begin);
+      columns.insert(colName);
+      return new FindColumnsToken(hptr);
+    }
+  }
+private:
+  const Header* hptr;
+  mutable std::set<std::string> columns;
+};
+
+
+img::FTable 
+FitsTable::extract(const string& expression,
+		   const std::vector<std::string>& colMatches) const { 
+  img::TableData* tdata = new TableData();
+  if (dptr) {
+    vector<bool> vb;
+    dptr->evaluate(vb, expression, header());
+    dptr->filterRows(tdata, vb);
+  } else {
+    FindColumnsToken tokenReader(header());
+
+    // tokenize just to find out what columns are needed
+    std::list<expressions::Token*> 
+      tokenList = expressions::tokenize(expression, tokenReader);
+
+    // Get rid of these tokens, we'll re-parse below
+    for (std::list<expressions::Token*>::iterator i = tokenList.begin();
+	 i != tokenList.end();
+	 ++i)
+      delete *i; // ??? Need to do better...
+
+    // Read from file all desired columns plus those needed for filtering
+    const set<string>& forFiltering = tokenReader.columnNames();
+    vector<string> augmented = colMatches;
+    for ( set<string>::const_iterator i = forFiltering.begin();
+	  i != forFiltering.end();
+	  ++i)
+      augmented.push_back(*i);
+
+    TableData* tdata2 = loadData(0, -1, augmented);
+    vector<bool> vb;
+    tdata2->evaluate(vb, expression, header());
+    tdata2->filterRows(tdata, vb);
+    delete tdata2;
+  }
+
+  // Retain only the originally request columns
+  tdata->filter(tdata, 0, -1, colMatches);
+  img::Header* hh = header()->duplicate();
+  return FTable(hh, new int(0), tdata, new int(0)); 
+}
 
 img::FTable 
 FitsTable::extract(long rowStart, long rowEnd,

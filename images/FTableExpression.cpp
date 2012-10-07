@@ -71,7 +71,7 @@ public:
     Assert(end>begin);
     if (input[begin]=='@') {
       // Read a header keyword as a constant
-      string keyword = input.substr(begin+1, end);
+      string keyword = input.substr(begin+1, end-(begin+1));
       Evaluable* eval=0;
       {
 	bool val;
@@ -98,7 +98,7 @@ public:
 			  + keyword);
       return new EvaluableToken(eval);
     } else {
-      string colName = input.substr(begin,end);
+      string colName = input.substr(begin,end-begin);
       columns.insert(colName);
       return new EvaluableToken( new ColumnEvaluable(tptr, colName));
     }

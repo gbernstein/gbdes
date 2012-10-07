@@ -54,6 +54,11 @@ namespace FITS {
 			const std::vector<std::string>& colMatches 
 			= std::vector<std::string>(1,".*")) const;
 
+    // Select rows by an expression that evaluates to bool.
+    img::FTable extract(const string& expression,
+			const std::vector<std::string>& colMatches 
+			= std::vector<std::string>(1,".*")) const;
+
     // Issue FTable that is mirrored to FITS file data.  
     // If FITS HDU is read-only, FTable will be locked.
     img::FTable use();
