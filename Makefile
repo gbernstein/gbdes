@@ -30,12 +30,12 @@ LIBS = -lm $(LIB_DIRS) -lboost_regex -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
 	utilities/Expressions.o \
-	images/FITS.o images/Header.o images/Hdu.o images/FITSTable.o \
+	images/FITS.o images/Header.o images/Hdu.o images/FitsTable.o \
 	images/FTable.o images/FTableExpression.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/PixelMapCollection.o 
 
-#images/FITSTable.o images/Image.o images/FITSImage.o images/HeaderFromStream.o \
+#images/FitsTable.o images/Image.o images/FITSImage.o images/HeaderFromStream.o \
 
 #OBJ =  SCAMPMap.o $(SUBOBJ)
 OBJ =  $(SUBOBJ)
