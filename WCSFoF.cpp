@@ -215,12 +215,18 @@ main(int argc,
       exit(1);
     }
 
+    /**/cerr << "Read fields" << endl;
+
     // Open table containing information on input files
     FTable fileTable;
     {
       FitsTable ft(exposureSpecs,FITS::ReadOnly);
+      /**/cerr << "Open...";
       fileTable = ft.extract();
+      /**/cerr << "Extracted" << endl;
     }
+
+    /**/cerr << "Read fileTable " << fileTable.ncols() << endl;
 
     // Start a list of the instruments
     NameIndex instrumentNames;
@@ -253,6 +259,8 @@ main(int argc,
     const string idkeyCol="IDKEY";
 
     const string globalAffinity="GLOBAL";
+
+    /**/cerr << "Start input file loop" << endl;
 
     // Loop over input files
     for (int iFile = 0; iFile < fileTable.nrows(); iFile++) {
@@ -300,6 +308,8 @@ main(int argc,
 	starExpression.clear();	// everything becomes a star
       }
 
+      /**/cerr << "Read the parameters from " << filename << endl;
+
       // Open primary extension of the file to get its header
       img::Header primaryHeader;
       try {
@@ -310,6 +320,8 @@ main(int argc,
 	quit(m,1);
       }
       
+      /**/cerr << "Have primary header" << endl;
+
       // Open the WCS file that holds additional keywords, if any
       // ???? Could check to see if WCS file name is stored in a header keyword ???
       bool xyAreRaDec = stringstuff::nocaseEqual(wcsFile, "ICRS")
@@ -335,6 +347,7 @@ main(int argc,
 	   hduNumber<=lastHdu;
 	   hduNumber++) {
 
+	/**/cerr << "..Looking at HDU " << hduNumber << endl;
 	bool haveLDACHeader = false;
 	Header localHeader = primaryHeader;
 	FTable ft;
@@ -472,12 +485,15 @@ main(int argc,
 	}
 
 	// Assign a device
-	string thisDevice = maybeFromHeader(deviceName, localHeader);
-	if (!instruments[instrumentNumber].has(thisDevice)) 
-	  instruments[instrumentNumber].newDevice(thisDevice);
-	int deviceNumber = instruments[instrumentNumber].indexOf(thisDevice);
-	Assert(deviceNumber >= 0);
-
+	string thisDevice="";
+	int deviceNumber = -1;
+	if (instrumentNumber >= 0) {
+	  thisDevice = maybeFromHeader(deviceName, localHeader);
+	  if (!instruments[instrumentNumber].has(thisDevice)) 
+	    instruments[instrumentNumber].newDevice(thisDevice);
+	  deviceNumber = instruments[instrumentNumber].indexOf(thisDevice);
+	  Assert(deviceNumber >= 0);
+	}
 	// Read in a WCS, from pixel coords to the tangent plane for this Field:
 	astrometry::PixelMap* map = 0;
 	if (!xyAreRaDec) {

@@ -210,6 +210,7 @@ TableData*
 FitsTable::loadData(long rowStart, long rowEnd, 
 		    const std::vector<std::string>& colMatches) const { 
     // FITS wants column numbers, not names, so try them all one by one
+  /**/cerr << "In LoadData " << rowStart << " " << rowEnd << endl;
   vector<string> allNames = listFitsColumns(); // index number is column number
   vector<string> colNames;
   vector<int> colNums;
@@ -230,8 +231,11 @@ FitsTable::loadData(long rowStart, long rowEnd,
   if (rowEnd < rowStart) rowEnd = rowStart;  // Makes an empty table
   int outRows = rowEnd - rowStart;
   img::TableData* tdata = new TableData(outRows);
+  /**/cerr << "..call createColumns" << endl;
   createColumns(tdata, colNames, colNums);
+  /**/cerr << "..call readFitsData" << endl;
   readFitsData(tdata, colNames, colNums, rowStart, rowEnd);
+  /**/cerr << "..done loadData" << endl;
   return tdata;
 }
 
@@ -592,7 +596,7 @@ FitsTable::getFitsColumnData<string>(img::TableData* tptr, string colName, int i
 	fits_read_descript(fptr(), icol+1, rowStart+1+i, &nElements, &offset, &status);
 	data = new char[nElements+1];
 	// Read as a c-string; wants char** for destination
-	fits_read_col(fptr(), Tbyte, icol+1, 
+	fits_read_col(fptr(), dtype, icol+1, 
 		      (LONGLONG) rowStart+1+i, (LONGLONG) 1, (LONGLONG) nElements, 
 		      nullPtr, &data, &anyNulls, &status);
 	checkCFITSIO(status, "Reading string table column " + colName);
@@ -773,8 +777,9 @@ FitsTable::addFitsColumns(const img::TableData* tptr,
 	// single variable-length string per cell:
 	if (repeat==1) oss << "1PA";
 	// otherwise: we will punt right now
-	throwFitsOrDump("Cannot format variable-length string array for bintable "
-			"at column " + colNames[i]);
+	else
+	  throwFitsOrDump("Cannot format array of variable-length strings for bintable "
+			  "at column " + colNames[i]);
       } else {
 	// Fixed-length strings
 	if (repeat < 0) {

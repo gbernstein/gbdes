@@ -339,7 +339,6 @@ public:
       new ScalarValue<typename Op::result_type>( f(lval->value, rval->value));
     delete lval;
     delete rval;
-    /**/cerr << "binary evaluableSS returning scalar value " << retval->value << endl;
     return retval;
   }
 };
