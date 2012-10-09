@@ -11,7 +11,8 @@
 
 #include "Astrometry.h"
 #include "PolyMap.h"
-#include "Image.h"
+#include "Header.h"
+#include "Bounds.h"
 
 namespace astrometry {
   class SCAMPMap: public CompoundPixelMap {
@@ -21,7 +22,7 @@ namespace astrometry {
     // Note that this class copies the Orientation given
     //   for the reprojection, as well as owning the component PixelMaps.
     // Degree units are adopted for world systems here.
-    SCAMPMap(const img::ImageHeader& h,
+    SCAMPMap(const img::Header& h,
 	     const Orientation* reproject=0);
     ~SCAMPMap();
     SphericalICRS toICRS(double xpix, double ypix) const {
@@ -46,10 +47,10 @@ namespace astrometry {
     Orientation orientOut;
   };
 
-  img::ImageHeader FitSCAMP(Bounds<double> b,
-			    const PixelMap& pm,
-			    const Orientation& pmOrient,
-			    const SphericalCoords& pole,
-			    double tolerance=0.0001*ARCSEC/DEGREE);
+  img::Header FitSCAMP(Bounds<double> b,
+		       const PixelMap& pm,
+		       const Orientation& pmOrient,
+		       const SphericalCoords& pole,
+		       double tolerance=0.0001*ARCSEC/DEGREE);
 } // namespace astrometry
 #endif

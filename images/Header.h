@@ -279,13 +279,16 @@ namespace img {
     const HdrRecordBase* current() const {return constCurrent();}
 
     // Append contents of another header to this one
+    // Overwrite any duplicate keywords (except HISTORY and COMMENT)
     void operator+=(const Header& rhs) {
       checkLock("operator+=()");
       if (this==&rhs) return;
       for (list<HdrRecordBase*>::const_iterator rptr=rhs.hlist.begin();
 	   rptr!=rhs.hlist.end();
-	   ++rptr)
+	   ++rptr) {
+	try {erase((*rptr)->getKeyword());} catch (HeaderError &i) {}
 	hlist.push_back( (*rptr)->duplicate());
+      }
       lcomment.insert(lcomment.end(), 
 		      rhs.lcomment.begin(), 
 		      rhs.lcomment.end());

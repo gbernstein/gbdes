@@ -63,7 +63,7 @@ namespace fof {
 	upper[i] = std::max(upper[i], rhs->upper[i]);
       }
       // Suck points out of rhs:
-      splice(list<const P*>::end(), *rhs);
+      this->splice(list<const P*>::end(), *rhs);
       // Remove rhs and add this to Match list of all cells containing rhs
       for (typename set<Cell<P,DIM>*>::iterator i=rhs->cells.begin();
 	   i != rhs->cells.end();
@@ -82,7 +82,7 @@ namespace fof {
 	upper[i] = std::max(upper[i], xp[i]);
       }
       // add new point and its cells
-      push_back(&point);
+      this->push_back(&point);
       cells.insert(cellsContainingPoint.begin(), cellsContainingPoint.end());
     }
   private:
@@ -251,7 +251,7 @@ namespace fof {
 	    // Point touches 2 Matches, which hence match each other, so combine
 	    primary->absorb(*i);
 	    // Get rid of the 2nd one
-	    erase(*i);
+	    this->erase(*i);
 	    delete *i;
 	  }
 	}
@@ -260,7 +260,7 @@ namespace fof {
       if (!primary) {
 	primary = new Match<P,DIM>(point, containing);
 	// Add to Catalog's index of all Matches
-	insert(primary);
+	this->insert(primary);
 	// And add to every containing Cell's list of Matches:
 	for (typename set<Cell<P,DIM>*>::iterator i=containing.begin();
 	     i != containing.end();

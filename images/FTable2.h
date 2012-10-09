@@ -570,6 +570,8 @@ namespace img {
     // Access single element (copy created)
     template <class T>
     void readCell(T& value, string columnName, long row) const {
+      /**cerr << "In readCell with element type" << (*this)[columnName]->elementType()
+	       << " repeat " << (*this)[columnName]->repeat() << endl;*/
       rangeCheck(row);
       const ScalarColumn<T>* col = dynamic_cast<const ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch reading column " + columnName);

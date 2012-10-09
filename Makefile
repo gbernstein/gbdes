@@ -42,6 +42,10 @@ OBJ =  $(SUBOBJ)
 
 all: depend subs
 
+WCSFoF: WCSFoF.o SCAMPMap.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+test: test.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT: testFT.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT2: testFT2.o $(OBJ)

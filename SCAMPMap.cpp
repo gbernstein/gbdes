@@ -10,7 +10,7 @@ using namespace astrometry;
 // of the transformations from the header.
 
 LinearMap
-ReadCD(const ImageHeader* h,
+ReadCD(const Header* h,
        Orientation& orient) {
   double lon, lat;
   double crpix1, crpix2;
@@ -61,14 +61,14 @@ ReadCD(const ImageHeader* h,
 
 
 Poly2d
-ReadPV(const ImageHeader* h, int ipv) {
+ReadPV(const Header* h, int ipv) {
   string prefix;
-  if (ipv==1) prefix="PV1_";
-  else if (ipv==2) prefix="PV2_";
-  else {
-    cerr << "ReadPV needs ipv=1 or 2" << endl;
-    exit(1);
-  }
+  if (ipv==1) 
+    prefix="PV1_";
+  else if (ipv==2) 
+    prefix="PV2_";
+  else 
+    throw AstrometryError("SCAMPMap::ReadPV needs ipv=1 or 2");
   vector<double> coeffs;
   // Convention is that PV1_1 and PV2_1 default to 1. while other
   // coefficients default to 0, so that absence of any keywords equals
@@ -81,16 +81,14 @@ ReadPV(const ImageHeader* h, int ipv) {
     if (key.compare(0, prefix.size(), prefix)!=0) continue;
     key.erase(0,prefix.size());
     int index = atoi(key.c_str());
-    if (index<0) {
-      cerr << "Remainder of key is not integer: " << key << endl;
-      exit(1);
-    }
+    if (index<0) 
+      FormatAndThrow<AstrometryError>() 
+	<< "Remainder of PV[12]_x key is not integer: " << key;
     if (index==1) foundLinear = true;
     const HdrRecord<double>* p = dynamic_cast<const HdrRecord<double>*> (h->current());
-    if (!p) {
-      cerr << "Could not cast PV1_* record to double" << endl;
-      exit(1);
-    }
+    if (!p) 
+      throw AstrometryError("Could not cast PV1_* record to double");
+
     double v= p->Value();
     // Have index & value, add to a vector
     // Magic: 3, 11, 23, and 39 are missing, they are (non-analytic) odd powers of r
@@ -132,7 +130,7 @@ ReadPV(const ImageHeader* h, int ipv) {
   return Poly2d(cm);
 }
 
-SCAMPMap::SCAMPMap(const img::ImageHeader& h,
+SCAMPMap::SCAMPMap(const img::Header& h,
 		   const Orientation* reproject): lm(0), pm(0), rm(0),
 						  tp(0) {
   lm = new LinearMap(ReadCD(&h, orientIn));
@@ -195,7 +193,7 @@ SCAMPMap::~SCAMPMap() {
 // Now a function that will produce an image header embodying
 // a linear + polynomial map that fits the input map.
 //////////////////////////////
-img::ImageHeader 
+img::Header 
 astrometry::FitSCAMP(Bounds<double> b,
 		     const PixelMap& pm,
 		     const Orientation& pmOrient,
@@ -204,7 +202,7 @@ astrometry::FitSCAMP(Bounds<double> b,
   const int startOrder=3;
   const int maxOrder=5;
 
-  img::ImageHeader h;
+  img::Header h;
   // The linear map from pixels to intermediate world system:
   double crval1, crval2;
   double crpix1, crpix2;
