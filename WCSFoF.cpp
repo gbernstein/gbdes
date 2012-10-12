@@ -263,6 +263,8 @@ main(int argc,
     const string xkeyCol="XKEY";
     const string ykeyCol="YKEY";
     const string idkeyCol="IDKEY";
+    const string errorkeyCol="ERRORKEY";
+    const string weightCol="WEIGHT";
 
     const string globalAffinity="GLOBAL";
 
@@ -317,7 +319,27 @@ main(int argc,
       string ykey;
       fileTable.readCell(ykey, ykeyCol, iFile);
       string idkey;
-      fileTable.readCell(idkey, idkeyCol, iFile);
+      try {
+	fileTable.readCell(idkey, idkeyCol, iFile);
+      } catch (FTableNonExistentColumn& m) {
+	// Default to row number:
+	idkey = "@_ROW";
+      }
+
+      string errorkey;
+      try {
+	fileTable.readCell(errorkey, errorkeyCol, iFile);
+      } catch (FTableNonExistentColumn& m) {
+	errorkey.clear();
+      }
+
+      string weightString;
+      try {
+	fileTable.readCell(weightString, weightCol, iFile);
+      } catch (FTableNonExistentColumn& m) {
+	weightString.clear();
+      }
+
       // The affinity and selections we can take defaults for:
       string selectionExpression;
       try {
@@ -436,6 +458,28 @@ main(int argc,
 	  thisIdKey = maybeFromHeader(idkey, localHeader);
 	}
 
+	string thisErrorKey = maybeFromHeader(errorkey, localHeader);
+
+	// Read catalog's weight: it either defaults to 1. if string is empty,
+	// or it's a header keyword to look up, or it should be a number
+	double weight;
+	if (weightString.empty()) {
+	  weight = 1.;
+	} else if (weightString[0]='@') {
+	  string keyword = weightString.substr(1);
+	  if (!localHeader.getValue(keyword, weight)) {
+	    cerr << "Could not find weight in double-valued header keyword " 
+		 << keyword << endl;
+	    exit(1);
+	  }
+	} else {
+	  istringstream iss(weightString);
+	  if (!(iss >> weight)) {
+	    cerr << "Bad weight value string <" << weightString << ">" << endl;
+	    exit(1);
+	  }
+	}
+
 	// Go ahead and filter the input rows and get the columns we want
 	if (!selectionExpression.empty())
 	  ft.filterRows(selectionExpression);
@@ -458,11 +502,12 @@ main(int argc,
 	  ft.evaluate(isStar, starExpression);
 
 	// Determine center coordinates of this extension:
-	// ??? only need these if finding nearest field?
 	string thisRA = maybeFromHeader(ra, localHeader);
 	string thisDec = maybeFromHeader(dec, localHeader);
 	astrometry::SphericalICRS thisRADec;
-	{
+	// Will default to 0 RA, 0 Dec if not given.
+	// Coords only needed if first Device for exposure or using @_NEAREST field
+	if (!thisRA.empty() || !thisDec.empty()) {
 	  string coords = thisRA + " " + thisDec;
 	  istringstream iss(coords);
 	  if (!(iss >> thisRADec)) {
@@ -480,7 +525,7 @@ main(int argc,
 	  Assert(exposurePointings.size()==exposureNames.size());
 	}
 	int exposureNumber = exposureNames.indexOf(thisExposure);
-	// Reposition all devices of an exposure to same RA/Dec ???
+	// Reposition all devices of an exposure to same RA/Dec 
 	thisRADec = exposurePointings[exposureNumber];
 
 	// And assign a field:
@@ -574,10 +619,9 @@ main(int argc,
 	extensionTable.writeCell(thisXKey, "xKey", extensionNumber);
 	extensionTable.writeCell(thisYKey, "yKey", extensionNumber);
 	extensionTable.writeCell(thisIdKey, "idKey", extensionNumber);
-	//???	extensionTable.writeCell(vs, "errKey", extensionNumber);
-	//???extensionTable.writeCell(vd, "Weight", extensionNumber);
+	extensionTable.writeCell(thisErrorKey, "errKey", extensionNumber);
+	extensionTable.writeCell(weight, "Weight", extensionNumber);
 	extensionNumber++;
-
 
 	// Select the Catalog(s) to which points from this extension will be added
 	PointCat* starCatalog = fields[fieldNumber].catalogFor(globalAffinity);
