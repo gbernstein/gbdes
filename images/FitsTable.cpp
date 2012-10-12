@@ -58,8 +58,6 @@ public:
   virtual expressions::Token* createFromString(const std::string& input,
 					      size_t& begin, size_t& end,
 					      bool lastTokenWasOperator) const {
-    /**/cerr << "substr is <" << input.substr(begin,end-begin) << "> for begin "
-	     << begin << " " << end << endl;
     Assert(end>begin);
     if (input[begin]=='@') {
       // Read a header keyword as a constant
@@ -210,7 +208,6 @@ TableData*
 FitsTable::loadData(long rowStart, long rowEnd, 
 		    const std::vector<std::string>& colMatches) const { 
     // FITS wants column numbers, not names, so try them all one by one
-  /**/cerr << "In LoadData " << rowStart << " " << rowEnd << endl;
   vector<string> allNames = listFitsColumns(); // index number is column number
   vector<string> colNames;
   vector<int> colNums;
@@ -231,11 +228,8 @@ FitsTable::loadData(long rowStart, long rowEnd,
   if (rowEnd < rowStart) rowEnd = rowStart;  // Makes an empty table
   int outRows = rowEnd - rowStart;
   img::TableData* tdata = new TableData(outRows);
-  /**/cerr << "..call createColumns" << endl;
   createColumns(tdata, colNames, colNums);
-  /**/cerr << "..call readFitsData" << endl;
   readFitsData(tdata, colNames, colNums, rowStart, rowEnd);
-  /**/cerr << "..done loadData" << endl;
   return tdata;
 }
 
@@ -629,7 +623,7 @@ FitsTable::getFitsColumnData<string>(img::TableData* tptr, string colName, int i
       vector<string> vs(nRows);
       for (int i=0; i<nRows; i++) {
 	// Make sure it's null terminated:
-	data[i][length]=0;
+	data[i][length]='\0';
 	vs[i] = data[i];
 	delete[] data[i];
       }
@@ -640,7 +634,7 @@ FitsTable::getFitsColumnData<string>(img::TableData* tptr, string colName, int i
       int iString = 0;
       for (int j=0; j<nRows; j++) {
 	for (int i=0; i<repeat; i++, iString++) {
-	  data[iString][length] = 0; // insure null termination
+	  data[iString][length] = '\0'; // insure null termination
 	  vs[i] = data[iString];
 	  delete[] data[iString];
 	}

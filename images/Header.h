@@ -171,7 +171,7 @@ namespace img {
     };
     string getValueString() const {
       ostringstream os;
-      os  << val; // ??? compiler bug here ???
+      os  << val; 
       return os.str();
     }
     FITS::DataType dataType() const {return FITS::FITSTypeOf<T>();}
@@ -191,8 +191,11 @@ namespace img {
   string 
   HdrRecord<string>::getValueString() const;
 
-  // ??? bother to fix lack of decimal point on float/double?
-
+  // Also specialize double since default formatting is not good;
+  // need to force printing of decimal point.
+  template<>
+  string 
+  HdrRecord<double>::getValueString() const;
 
   ///////////////////////////////////////////////////////////////\
   // Now the class for Header itself:

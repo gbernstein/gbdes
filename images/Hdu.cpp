@@ -155,6 +155,7 @@ Hdu::flushHeader() const {
     fits_delete_key(fptr(), "EXTNAME", &status);
     if (status==KEY_NO_EXIST) flushFitsErrors(status);
   } else {
+    /**/cerr << "update EXTNAME " << hduName << endl;
     fits_update_key_str(fptr(), "EXTNAME",
 			const_cast<char *> (hduName.c_str()),
 			0, &status);
@@ -163,6 +164,7 @@ Hdu::flushHeader() const {
     fits_delete_key(fptr(), "EXTVER", &status);
     if (status==KEY_NO_EXIST) flushFitsErrors(status);
   } else {
+    /**/cerr << "update EXTVER " << hduVersion << endl;
     fits_update_key_lng(fptr(), "EXTVER",
 			(long) hduVersion, 0, &status);
   }

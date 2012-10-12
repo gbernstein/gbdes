@@ -36,11 +36,14 @@ string maybeFromHeader(const string& inValue, const Header& h) {
 // Struct that will hold the info about each point that matcher (and subsequent progs)
 // will need
 struct Point {
-  Point(double x_, double y_, long ext, long obj):
-    x(2), extensionNumber(ext), objectNumber(obj) {x[0]=x_; x[1]=y_;}
+  Point(double x_, double y_, long ext, long obj, long expo):
+    x(2), extensionNumber(ext), objectNumber(obj), exposureNumber(expo) {
+    x[0]=x_; x[1]=y_;
+  }
   vector<double> x;
   long extensionNumber;
   long objectNumber;
+  long exposureNumber;
   const vector<double> getX() const {return x;}
 };
 
@@ -51,6 +54,7 @@ struct Field {
   string name;
   astrometry::Orientation orient;
   double extent;
+  double matchRadius;
   // Map from affinity name to its catalog of matches:
   typedef map<string, PointCat*> CatMap;
   CatMap catalogs;
@@ -67,7 +71,7 @@ struct Field {
       catalogs.insert( std::pair<string, PointCat*>(affinity,
 						    new PointCat(lower,
 								 upper,
-								 extent)));
+								 matchRadius)));
     }
     return catalogs[affinity];
   }
@@ -92,6 +96,7 @@ struct Instrument: public NameIndex {
   Device& operator[](int index) {return devices[index];}
   int newDevice(const string& newName) {
     devices.push_back(Device());
+    devices.back().name = newName;
     return NameIndex::append(newName);
   }
   // Hide this from base class
@@ -166,8 +171,8 @@ main(int argc,
   // List parameters in use
   parameters.dump(cout);
 
-  // Convert matching radius to our system units (radians)
-  matchRadius *= ARCSEC;
+  // Convert matching radius to our system units for world coords (degrees)
+  matchRadius *= ARCSEC/DEGREE;
 
   try {
 
@@ -203,7 +208,8 @@ main(int argc,
 	  Field f;
 	  f.name = name;
 	  f.orient = astrometry::Orientation(pole);
-	  f.extent = extent * DEGREE;
+	  f.extent = extent;
+	  f.matchRadius = matchRadius;
 	  fields.push_back(f);
 	  fieldNames.append(name);
 	  Assert(fields.size()==fieldNames.size());
@@ -261,6 +267,30 @@ main(int argc,
     const string globalAffinity="GLOBAL";
 
     /**/cerr << "Start input file loop" << endl;
+
+    // Make a table into which we will stuff info about every extension 
+    // of every catalog file we read:
+    FTable extensionTable;
+    {
+      vector<string> vs;
+      vector<int> vi;
+      vector<double> vd;
+      extensionTable.addColumn(vs, "Filename");
+      extensionTable.addColumn(vi, "FileNumber");
+      extensionTable.addColumn(vi, "HDUNumber");
+      extensionTable.addColumn(vi, "FieldNumber");
+      extensionTable.addColumn(vi, "ExposureNumber");
+      extensionTable.addColumn(vi, "InstrumentNumber");
+      extensionTable.addColumn(vi, "DeviceNumber");
+      extensionTable.addColumn(vs, "WCSFile");
+      extensionTable.addColumn(vs, "xKey");
+      extensionTable.addColumn(vs, "yKey");
+      extensionTable.addColumn(vs, "idKey");
+      extensionTable.addColumn(vs, "errKey");
+      extensionTable.addColumn(vd, "Weight");
+    }
+
+    long extensionNumber = 0; // cumulative counter for all FITS tables read
 
     // Loop over input files
     for (int iFile = 0; iFile < fileTable.nrows(); iFile++) {
@@ -414,7 +444,15 @@ main(int argc,
 	vector<double> vy;
 	ft.readCells(vy, thisYKey);
 	vector<long> vid;
-	ft.readCells(vid, thisIdKey);
+	try {
+	  ft.readCells(vid, thisIdKey);
+	} catch (FTableError& m) {
+	  // Trap for using int column in source file instead of long:
+	  vector<int> vidint;
+	  ft.readCells(vidint, thisIdKey);
+	  vid.reserve(vidint.size());
+	  vid.insert(vid.begin(), vidint.begin(), vidint.end());
+	}
 	vector<bool> isStar(ft.nrows(), true);
 	if (!starExpression.empty())
 	  ft.evaluate(isStar, starExpression);
@@ -494,6 +532,7 @@ main(int argc,
 	  deviceNumber = instruments[instrumentNumber].indexOf(thisDevice);
 	  Assert(deviceNumber >= 0);
 	}
+
 	// Read in a WCS, from pixel coords to the tangent plane for this Field:
 	astrometry::PixelMap* map = 0;
 	if (!xyAreRaDec) {
@@ -522,8 +561,24 @@ main(int argc,
 	  }
 	}
 
-	// ??? Record information about this extension to an output catalog???
-	long extensionNumber = 0; // ???
+	// Record information about this extension to an output table
+
+	extensionTable.writeCell(filename, "Filename", extensionNumber);
+	extensionTable.writeCell(iFile, "FileNumber", extensionNumber);
+	extensionTable.writeCell(hduNumber, "HDUNumber", extensionNumber);
+	extensionTable.writeCell(fieldNumber, "FieldNumber", extensionNumber);
+	extensionTable.writeCell(exposureNumber, "ExposureNumber", extensionNumber);
+	extensionTable.writeCell(instrumentNumber, "InstrumentNumber", extensionNumber);
+	extensionTable.writeCell(deviceNumber, "DeviceNumber", extensionNumber);
+	extensionTable.writeCell(wcsFile, "WCSFile", extensionNumber);
+	extensionTable.writeCell(thisXKey, "xKey", extensionNumber);
+	extensionTable.writeCell(thisYKey, "yKey", extensionNumber);
+	extensionTable.writeCell(thisIdKey, "idKey", extensionNumber);
+	//???	extensionTable.writeCell(vs, "errKey", extensionNumber);
+	//???extensionTable.writeCell(vd, "Weight", extensionNumber);
+	extensionNumber++;
+
+
 	// Select the Catalog(s) to which points from this extension will be added
 	PointCat* starCatalog = fields[fieldNumber].catalogFor(globalAffinity);
 	PointCat* galaxyCatalog = (stringstuff::nocaseEqual(globalAffinity,
@@ -552,7 +607,7 @@ main(int argc,
 	    Assert(map);
 	    map->toWorld(xpix, ypix, xw, yw);
 	  }
-	  allPoints.push_back(Point(xw, yw, extensionNumber, vid[iObj]));
+	  allPoints.push_back(Point(xw, yw, extensionNumber, vid[iObj], exposureNumber));
 	  if (isStar[iObj])
 	    starCatalog->add(allPoints.back());
 	  else
@@ -564,15 +619,157 @@ main(int argc,
       } // end input extension loop
     } // end input file loop
 
-    //  Open output catalog
-    //  Put input file table into output table?
-    //  Write instrument information to output table?
-    //  Loop over fields
-    //  .. loop over affinities per field
-    //  ....purge <minMatches and self-matches
-    //  ....write output extension, with field center and affinity in header
-    //  ....write match catalog: sequence, input file, input extension, input ID
+    cerr << "*** Read " << allPoints.size() << " objects" << endl;
 
+    //  Open output catalog & put input file table into output table.
+    {
+      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::OverwriteFile, "Files");
+      ft.copy(fileTable);
+    }
+    //  Write fields - field centers are given in degrees.
+    {
+      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Fields");
+      FTable ff=ft.use();
+      vector<string> names;
+      vector<double> ra;
+      vector<double> dec;
+      for (int i=0; i<fields.size(); i++) {
+	names.push_back(fields[i].name);
+	astrometry::SphericalICRS pole = fields[i].orient.getPole();
+	double r,d;
+	pole.getLonLat(r,d);
+	ra.push_back( r/DEGREE);
+	dec.push_back( d/DEGREE);
+      }
+      ff.addColumn(names, "Name");
+      ff.addColumn(ra, "RA");
+      ff.addColumn(dec, "Dec");
+    }
+
+    //  Write exposure information to output table
+    {
+      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Exposures");
+      FTable ff=ft.use();
+      vector<string> names;
+      vector<double> ra;
+      vector<double> dec;
+      for (int i=0; i<exposureNames.size(); i++) {
+	names.push_back(exposureNames.nameOf(i));
+	astrometry::SphericalICRS pole = exposurePointings[i];
+	double r,d;
+	pole.getLonLat(r,d);
+	ra.push_back( r/DEGREE);
+	dec.push_back( d/DEGREE);
+      }
+      ff.addColumn(names, "Name");
+      ff.addColumn(ra, "RA");
+      ff.addColumn(dec, "Dec");
+    }
+
+    //  Write instrument information to output table
+    for (int i=0; i<instruments.size(); i++) {
+      // Append new table for each instrument
+      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
+      ft.setName("Instrument");
+      ft.setVersion(i+1); // might use this later, or put into extension name???
+      FTable ff = ft.use();
+      Instrument& inst = instruments[i];
+      ff.header()->replace("Name", inst.name, "Instrument name");
+      ff.header()->replace("Number", i, "Instrument number");
+      const int nDevices = inst.size();
+      vector<string> devnames(nDevices);
+      vector<double> vxmin(nDevices);
+      vector<double> vxmax(nDevices);
+      vector<double> vymin(nDevices);
+      vector<double> vymax(nDevices);
+      for (int j=0; j<nDevices; j++) {
+	devnames[j] = inst[i].name;
+	vxmin[j] = floor(inst[j].getXMin());
+	vxmax[j] = ceil(inst[j].getXMax());
+	vymin[j] = floor(inst[j].getYMin());
+	vymax[j] = ceil(inst[j].getYMax());
+      }
+      ff.addColumn(devnames, "Name");
+      ff.addColumn(vxmin, "XMin");
+      ff.addColumn(vxmax, "XMax");
+      ff.addColumn(vymin, "YMin");
+      ff.addColumn(vymax, "YMax");
+    }
+
+    //  Write the extension catalog to output file
+    {
+      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Extensions");
+      ft.copy(extensionTable);
+    }
+
+    long matchCount = 0;
+    long pointCount = 0;
+    //  Loop over fields
+    for (int iField=0; iField<fields.size(); iField++) {
+      //  loop over affinities per field
+      for (Field::CatMap::iterator iAffinity=fields[iField].catalogs.begin();
+	   iAffinity != fields[iField].catalogs.end();
+	   ++iAffinity) {
+	const PointCat* pcat= iAffinity->second;
+	cerr << "Catalog for field " << fields[iField].name
+	     << " affinity " << iAffinity->first
+	     << " with " << pcat->size() << " matches "
+	     << endl;
+	if (pcat->empty()) continue;
+	FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
+	ft.setName("MatchCatalog");
+	FTable ff=ft.use();
+	ff.header()->replace("Field", fields[iField].name, "Field name");
+	ff.header()->replace("FieldNum", iField, "Field number");
+	ff.header()->replace("Affinity", iAffinity->first, "Affinity name");
+
+	vector<int> sequence;
+	vector<long> extn;
+	vector<long> obj;
+	long matches=0;
+	// Now loop through matches in this catalog
+	for (PointCat::const_iterator j=pcat->begin();
+	     j != pcat->end();
+	     ++j) {
+	  // Skip any Match that is below minimum match size
+	  if ((*j)->size() < minMatches) continue;
+	  bool selfMatch = false;
+	  if (!allowSelfMatches) {
+	    set<long> itsExposures;
+	    for (list<const Point*>::const_iterator k=(*j)->begin();
+		 k != (*j)->end();
+		 ++k) 
+	      if ( !itsExposures.insert((*k)->exposureNumber).second) {
+		selfMatch = true;
+		break;
+	      }
+	  }
+	  if (selfMatch) continue;
+
+	  // Add elements of this match to the output vectors
+	  int seq=0;
+	  ++matches;
+	  ++matchCount;
+	  for (list<const Point*>::const_iterator k=(*j)->begin();
+	       k != (*j)->end();
+	       ++k, ++seq) {
+	    sequence.push_back(seq);
+	    extn.push_back((*k)->extensionNumber);
+	    obj.push_back((*k)->objectNumber);
+	  }
+	} // end match loop
+	cerr << "...Kept " << matches << " matches with " << sequence.size()
+	     << " points." << endl;
+	pointCount += sequence.size();
+	ff.addColumn(sequence, "SequenceNumber");
+	ff.addColumn(extn, "Extension");
+	ff.addColumn(obj, "Object");
+      } // end Affinity loop
+    } // end Field loop
+    
+    cerr << "Total of " << matchCount
+	 << " matches with " << pointCount
+	 << " points." << endl;
 
   } catch (std::runtime_error &m) {
     quit(m,1);

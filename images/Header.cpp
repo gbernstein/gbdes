@@ -74,9 +74,25 @@ namespace img {
   string 
   HdrRecord<double>::getValueString() const {
     ostringstream oss;
-    oss << right << setw(20) << uppercase << showpos
-	<< setprecision(12) << val;
-      return oss.str();
+    oss << right << setw(20) << uppercase 
+	<< showpoint << setprecision(12) << val;
+    // Above puts lots of trailing zeroes... get rid of them:
+    string work=oss.str();
+    size_t eSpot = work.find('E');
+    int nPad=0;  // Number of zeros removed
+    bool hasExp = (eSpot != string::npos);
+    // where is last non-zero part of mantissa?
+    int last = (hasExp ? eSpot : work.size() ) -1;
+    while (last>0 && work[last]=='0') {
+      last--;
+      nPad++;
+    }
+    string out;
+    for (int i=0; i<nPad; i++) out += " ";
+    out += work.substr(0,last+1);
+    if (hasExp)
+      out += work.substr(eSpot);
+    return out;
   }
 
   // ??? Force decimal point on float, double?
@@ -169,7 +185,10 @@ namespace img {
     string buffer;
     while (std::getline(is, buffer)) {
       HdrRecordBase* hrb = ReadASCIIHeader(buffer);
-      if (!hrb) is.setstate(ios::failbit);  // ??? do we want to throw here?
+      if (!hrb) {
+	is.setstate(ios::failbit);  // ??? do we want to throw here?
+	continue;
+      }
       if (hrb->getKeyword()=="END") return is;
       else if (hrb->getKeyword()=="COMMENT") h.addComment(hrb->getComment());
       else if (hrb->getKeyword()=="HISTORY") h.addHistory(hrb->getComment());
