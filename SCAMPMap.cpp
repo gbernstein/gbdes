@@ -59,6 +59,31 @@ ReadCD(const Header* h,
   return LinearMap(plin);
 }
 
+void
+WriteCD(const LinearMap& lm,
+	const Orientation& orient,
+	Header& h) {
+  h.replace("CTYPE1", string("RA---TAN"));
+  h.replace("CTYPE2", string("DEC--TAN"));
+  double ra, dec;
+  SphericalICRS pole = orient.getPole();
+  pole.getLonLat(ra,dec);
+  ra /= DEGREE;
+  if (ra < 0.) ra += 360.;
+  dec /= DEGREE;
+  h.replace("CRVAL1", ra);
+  h.replace("CRVAL2", dec);
+
+  double xpix, ypix;
+  lm.toPix(0., 0., xpix, ypix);
+  h.replace("CRPIX1", xpix);
+  h.replace("CRPIX2", ypix);
+  Matrix22 m = lm.dWorlddPix(xpix, ypix);
+  h.replace("CD1_1", m(0,0));
+  h.replace("CD1_2", m(0,1));
+  h.replace("CD2_1", m(1,0));
+  h.replace("CD2_2", m(1,1));
+}
 
 Poly2d
 ReadPV(const Header* h, int ipv) {
@@ -374,3 +399,61 @@ astrometry::FitSCAMP(Bounds<double> b,
   if (ycoeffs) delete ycoeffs;
   return h;
 }
+
+void
+WritePV(const PolyMap& pm,
+	Header& h,
+	int ipv) {
+  string prefix;
+  DMatrix coeffs;
+  /**/cerr << "...getting coeffs" << endl;
+  if (ipv==1) {
+    prefix="PV1_";
+    DMatrix cm = pm.getXPoly().getM();
+    coeffs.resize(cm.nrows(), cm.ncols());
+    coeffs = cm;
+  } else if (ipv==2) {
+    prefix="PV2_";
+    DMatrix cm = pm.getYPoly().getM();
+    coeffs.resize(cm.nrows(), cm.ncols());
+    coeffs = cm;
+    coeffs.transposeSelf();
+  } else {
+    throw AstrometryError("SCAMPMap::WritePV needs ipv=1 or 2");
+  }
+  /**/cerr << "...writing coeffs" << endl;
+  int order = coeffs.nrows()-1;
+  int i=0;
+  int j=0;
+  int pvnumber=0;
+  while (i+j <= order) {
+    if (coeffs(i,j) != 0.) {
+      ostringstream oss;
+      oss << prefix << pvnumber;
+      h.replace(oss.str(), coeffs(i,j));
+    }
+    // Move to next PV number, skipping the nonsense ones:
+    pvnumber++;
+    if (pvnumber==3) pvnumber++;
+    if (pvnumber==11) pvnumber++;
+    if (pvnumber==23) pvnumber++;
+    if (pvnumber==39) pvnumber++;
+    // Move down diagonals of matrix:
+    if (i==0) {
+      i=j+1; j=0;
+    } else {
+      i--; j++;
+    }
+  }
+}
+
+Header 
+SCAMPMap::writeHeader() const {
+  Header h;
+  if (!lm) throw AstrometryError("SCAMPMap::writeHeader() with no linear map defied");
+  WriteCD(*lm, orientIn, h);
+  if (pm) WritePV(*pm, h, 1);
+  if (pm) WritePV(*pm, h, 2);
+  return h;
+}
+

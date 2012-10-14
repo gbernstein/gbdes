@@ -7,26 +7,24 @@
 #include "NameIndex.h"
 #include "PixelMapCollection.h"
 
-class Exposure;
-
 class Instrument {
 public:
   Instrument(string name_):
     name(name_), nDevices(0) {}
   string name;
   int nDevices;
-  NameIndex extensionNames;	// Names of all extensions that exist for this instrument
+  NameIndex deviceNames;	// Names of all devices that exist for this instrument
   vector<int> exposures;	// Which exposures use this Instrument
-  vector<PixelMapChain> maps;	// Instrument parts of PixelMaps for each extension - key chains
-  vector<PixelMap*> pixelMaps;	// Instrument parts of PixelMaps for each extension - callable map
-  // Keep track of range of pixel coords per extension
+  vector<PixelMapChain> maps;	// Instrument parts of PixelMaps for each device - key chains
+  vector<PixelMap*> pixelMaps;	// Instrument parts of PixelMaps for each device - callable map
+  // Keep track of range of pixel coords per device
   vector<Bounds<double> > domains;	// Rectangles bounding pixel coords of objects
-  void addDevice(string extName) {
-    extensionNames.append(extName);
+  void addDevice(string devName, Bounds<double>& devBounds=Bounds<double>()) {
+    deviceNames.append(extName);
     maps.push_back(PixelMapChain());
     pixelMaps.push_back(0);
-    domains.push_back(Bounds<double>());
-    nDevices = extensionNames.size();
+    domains.push_back(devBounds);
+    nDevices = deviceNames.size();
     Assert(maps.size()==nDevices);
     Assert(domains.size()==nDevices);
   }
@@ -34,31 +32,41 @@ public:
   ~Instrument() {}
 private:
   // Hide:
-  Instrument(const Instrument& rhs) {}
-  void operator=(const Instrument& rhs) {}
+  Instrument(const Instrument& rhs);
+  void operator=(const Instrument& rhs);
 };
+
+// Class that represents a single pointing of the telescope:
 
 class Exposure {
 public:
-  Exposure(): orient(0), reproject(-1) {}
+  Exposure(const string& name_, Orientation& orient_): 
+    name(name_), orient(orient_), reproject(-1) {}
   string name;
-  int field;
-  int instrument;
-  Orientation *orient;	// Telescope pointing for this one
+  Orientation orient;	// Telescope pointing for this one
+  int  fieldNumber;
   PixelMapKey reproject; // Map from exposure's TangentPlane to field's TangentPlane
   PixelMapChain warp;		// Exposure portion of PixelMap
-  vector<SubMap*> extensionMaps; // Compounded maps for each extension (owned by PixelMapCollection)
-  vector<PixelMap*> startpm;  // Input PixelMap for this extension (owned by this class)
-  // Everything cleaned up in destructor:
-  ~Exposure() {
-    if (orient) delete orient;
-    for (int i=0; i<startpm.size(); i++)
-      if (startpm[i]) delete startpm[i];
-  }
 private:
   // Hide:
-  Exposure(const Exposure& rhs) {}
-  void operator=(const Exposure& rhs) {}
+  Exposure(const Exposure& rhs);
+  void operator=(const Exposure& rhs);
+};
+
+// Class that represents an catalog of objects from a single device on single exposure.
+// Will have originated from a single bintable HDU that we can access
+class Extension {
+public:
+  Extension(): extensionMaps(0),  startpm(0) {}
+  int exposure;
+  int instrument;
+  int device;
+  SubMap* extensionMaps; // Compounded maps for each extension (owned by PixelMapCollection)
+  PixelMap* startpm;  // Input PixelMap for this extension (owned by this class)
+  ~Extension() {
+    if (startpm) delete startpm;
+  }
+private:
 };
 
 #endif

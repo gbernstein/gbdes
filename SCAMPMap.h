@@ -38,6 +38,8 @@ namespace astrometry {
     const PolyMap* poly() const {return pm;}
     const Orientation& orientFITS() const {return orientIn;}
     const Orientation& projection() const {return orientOut;}
+    img::Header writeHeader() const;
+      
   private:
     LinearMap* lm;
     PolyMap* pm;

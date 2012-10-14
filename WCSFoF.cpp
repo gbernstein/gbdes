@@ -244,6 +244,7 @@ main(int argc,
     // And the exposures
     NameIndex exposureNames;
     vector<astrometry::SphericalICRS> exposurePointings;
+    vector<int> exposureFields; // Record one field per exposure
 
     // And a list holding all Points being matched
     list<Point> allPoints;
@@ -280,11 +281,10 @@ main(int argc,
       extensionTable.addColumn(vs, "Filename");
       extensionTable.addColumn(vi, "FileNumber");
       extensionTable.addColumn(vi, "HDUNumber");
-      extensionTable.addColumn(vi, "FieldNumber");
       extensionTable.addColumn(vi, "ExposureNumber");
       extensionTable.addColumn(vi, "InstrumentNumber");
       extensionTable.addColumn(vi, "DeviceNumber");
-      extensionTable.addColumn(vs, "WCSFile");
+      extensionTable.addColumn(vs, "WCS");
       extensionTable.addColumn(vs, "xKey");
       extensionTable.addColumn(vs, "yKey");
       extensionTable.addColumn(vs, "idKey");
@@ -517,18 +517,7 @@ main(int argc,
 	  }
 	}
 
-	// Assign an exposure number:
-	string thisExposure = maybeFromHeader(exposureName, localHeader);
-	if (!exposureNames.has(thisExposure)) {
-	  exposureNames.append(thisExposure);
-	  exposurePointings.push_back(thisRADec);
-	  Assert(exposurePointings.size()==exposureNames.size());
-	}
-	int exposureNumber = exposureNames.indexOf(thisExposure);
-	// Reposition all devices of an exposure to same RA/Dec 
-	thisRADec = exposurePointings[exposureNumber];
-
-	// And assign a field:
+	// Assign a field:
 	string thisField;
 	if (stringstuff::nocaseEqual(fieldName, "@_NEAREST")) {
 	  // Assign exposure to nearest field:
@@ -550,6 +539,24 @@ main(int argc,
 	  cerr << "Did not find information for field <" << thisField << ">" << endl;
 	  exit(1);
 	}
+
+	// Assign an exposure number:
+	string thisExposure = maybeFromHeader(exposureName, localHeader);
+	if (!exposureNames.has(thisExposure)) {
+	  exposureNames.append(thisExposure);
+	  exposurePointings.push_back(thisRADec);
+	  exposureFields.push_back(fieldNumber);
+	  Assert(exposurePointings.size()==exposureNames.size());
+	  Assert(exposurePointings.size()==exposureFields.size());
+	} 
+	int exposureNumber = exposureNames.indexOf(thisExposure);
+	  // Error if different extensions put same exposure in different fields
+	if (fieldNumber != exposureFields[exposureNumber]) {
+	  cerr << "Conflicting field assignments for exposure " << thisExposure << endl;
+	  exit(1);
+	}
+
+	// Henceforth should use RA/Dec from the exposure.
 
 	// Assign an instrument, new one if not yet existent:
 	string thisInstrument = maybeFromHeader(instrumentName, localHeader);
@@ -611,16 +618,34 @@ main(int argc,
 	extensionTable.writeCell(filename, "Filename", extensionNumber);
 	extensionTable.writeCell(iFile, "FileNumber", extensionNumber);
 	extensionTable.writeCell(hduNumber, "HDUNumber", extensionNumber);
-	extensionTable.writeCell(fieldNumber, "FieldNumber", extensionNumber);
 	extensionTable.writeCell(exposureNumber, "ExposureNumber", extensionNumber);
 	extensionTable.writeCell(instrumentNumber, "InstrumentNumber", extensionNumber);
 	extensionTable.writeCell(deviceNumber, "DeviceNumber", extensionNumber);
-	extensionTable.writeCell(wcsFile, "WCSFile", extensionNumber);
 	extensionTable.writeCell(thisXKey, "xKey", extensionNumber);
 	extensionTable.writeCell(thisYKey, "yKey", extensionNumber);
 	extensionTable.writeCell(thisIdKey, "idKey", extensionNumber);
 	extensionTable.writeCell(thisErrorKey, "errKey", extensionNumber);
 	extensionTable.writeCell(weight, "Weight", extensionNumber);
+	{
+	  string wcsDump;
+	  if (!map) {
+	    wcsDump = "ICRS";
+	  } else {
+	    const astrometry::SCAMPMap* sm = dynamic_cast<const astrometry::SCAMPMap*> (map);
+	    if (!sm) {
+	      cerr << "Only know how to serialize SCAMPMap now, file/extn "
+		   << filename << " / " << iFile << endl;
+	      exit(1);
+	    }
+	    /**/cerr << "Ready to writeHeader()" << endl;
+	    img::Header hh = sm->writeHeader();
+	    /**/cerr << " done" << endl;
+	    ostringstream oss;
+	    oss << hh;
+	    wcsDump = oss.str();
+	  }
+	  extensionTable.writeCell(wcsDump, "WCS", extensionNumber);
+	}
 	extensionNumber++;
 
 	// Select the Catalog(s) to which points from this extension will be added
@@ -697,6 +722,7 @@ main(int argc,
       vector<string> names;
       vector<double> ra;
       vector<double> dec;
+      vector<int> fieldNum;
       for (int i=0; i<exposureNames.size(); i++) {
 	names.push_back(exposureNames.nameOf(i));
 	astrometry::SphericalICRS pole = exposurePointings[i];
@@ -704,10 +730,12 @@ main(int argc,
 	pole.getLonLat(r,d);
 	ra.push_back( r/DEGREE);
 	dec.push_back( d/DEGREE);
+	fieldNum.push_back( exposureFields[i]);
       }
       ff.addColumn(names, "Name");
       ff.addColumn(ra, "RA");
       ff.addColumn(dec, "Dec");
+      ff.addColumn(fieldNum, "FieldNumber");
     }
 
     //  Write instrument information to output table

@@ -205,7 +205,7 @@ Hdu::openHDU(Flags f, HDUType existingType) {
     createdEmptyExtension = true;
   } else if (existingType==HDUNull) {
     // Did not find HDU and not allowed to create it:
-    FormatAndThrow<FITSError>() << "Did not find HDU number" << hduNumber
+    FormatAndThrow<FITSError>() << "Did not find HDU number " << hduNumber
 				<< " or name " << hduName
 				<< " in FITS file " << getFilename();
   } else if (f & OverwriteHDU) {

@@ -222,10 +222,13 @@ main(int argc, char *argv[])
 
     MCat::setDefaultMatchTolerance(matchtol);
 
-    // Keep track of all the Fields, Instruments, Filters,
-    // & Exposures in use:
+    /////////////////////////////////////////////////////
+    //  Read in properties of all Fields, Instruments, Devices, Exposures
+    /////////////////////////////////////////////////////
+
+    // All we care about fields are names and orientations:
     NameIndex fieldNames;
-    vector<SphericalICRS> fieldCenters;
+    vector<Orientation> fieldOrients;
 
     {
       FitsTable in(inputTables, FITS::ReadOnly, "Fields");
@@ -238,34 +241,110 @@ main(int argc, char *argv[])
       ft.readCells(dec, "Dec");
       for (int i=0; i<name.size(); i++) {
 	fieldNames.append(name[i]);
-	fieldCenters.append( SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
+	fieldOrients.append( Orientation(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE)));
       }
     }
 
-    NameIndex instrumentNames;
-    vector<Instrument*> instruments;
+    // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
+    vector<int> instrumentHDUs;
+    vector<int> catalogHDUs;
     {
       // Find which extensions are instrument tables
-      vector<int> instrumentExtensions;
       FitsFile ff(inputTables);
       for (int i=1; i<ff.HDUCount(); i++) {
-	?????
-
-    NameIndex exposureNames;
-    vector<Exposure*> exposures;
-
-    // Table for input catalogs (aka extensions)
+	Hdu h(inputTables, FITS::HduAny, i);
+	if (stringstuff::nocaseEqual(h.getName(), "Instrument"))
+	  instrumentHDUs.push_back(i);
+	else if (stringstuff::nocaseEqual(h.getName(), "MatchCatalog"))
+	  catalogHDUs.push_back(i);
+      }
+    }
     
-    // ?????
-    // Jobs to do:
-    // ** read instruments and their devices
-    // ** read exposures (need their centers?)
-    // ** read all catalogs and their input WCS's.
-    // *** find out catalogs using each instrument
+    // Read in all the instrument extensions and their device info.
+    vector<Instrument*> instruments(instrumentHDUs.size(),
+				    new Instrument("dummy"));
+    for (int i=0; i<instrumentHDUs.size(); i++) {
+      FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
+      Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
+      FTable ff=ft.use();
+      string instrumentName;
+      int instrumentNumber;
+      if (!ff.header()->getValue(instrumentName, "Name")
+	  || !ff.header()->getValue(instrumentNumber, "Number")) {
+	cerr << "Could not read name and/or number of instrument at extension "
+	     << instrumentHDUs[i] << endl;
+      }
+      Assert(instrumentNumber < instruments.size());
+      Instrument* instptr = instruments[instrumentNumber];
+      instptr->name = instrumentName;
+      
+      vector<string> devnames;
+      vector<double> vxmin;
+      vector<double> vxmax;
+      vector<double> vymin;
+      vector<double> vymax;
+      ff.readCells(devnames, "Name");
+      ff.readCells(vxmin, "XMin");
+      ff.readCells(vxmax, "XMax");
+      ff.readCells(vymin, "YMin");
+      ff.readCells(vymax, "YMax");
+      for (int j=0; j<devnames.size(); j++)
+	instptr->addDevice( devnames[j],
+			    Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
+    }
+
+    // Read in the table of exposures
+    vector<Exposure*> exposures;
+    {
+      FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
+      FTable ff = ft.use();
+      vector<string> names;
+      vector<double> ra;
+      vector<double> dec;
+      vector<int> fieldNumber;
+      ff.readCells(names, "Name");
+      ff.readCells(ra, "RA");
+      ff.readCells(dec, "Dec");
+      ff.readCells(fieldNumber, "fieldNumber");
+      for (int i=0; i<names.size(); i++) {
+	Exposure* expo = new Exposure(names[i],
+				      Orientation(SphericalICRS(ra[i]*DEGREE, 
+								dec[i]*DEGREE)));
+	expo->fieldNumber = fieldNumber[i];
+	exposures.push_back(expo);
+      }
+    }
+
+    // Read and keep the table giving instructions for all input files:
+    FTable fileTable;
+    {
+      FitsTable ft(inputTables; FITS::ReadOnly, "Files");
+      fileTable = ft.extract();
+    }
+
+    // Read info about all Extensions - we will keep the Table around.
+    FTable extensionTable;
+    vector<Extension*> extensions;
+    {
+      FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
+      extensions = ft.extract();
+      //** want: exposure, instrument, device
+      //** wcs (startpm)
+      //** column keys for x, y, error, object number
+      //** filename and extension of bintable
+    }
+
+    // A list of all Detections
+    list<Detection> detections;
+    // ...and a list of all Matches.
+    list<Match*> matches;    // ??? Store objects, not pointers??
+
+    
     // *** create astrometric models for each instrument and exposure
     // *** initialize instrument model by finding a reference exposure that has all devices
     // *** initialize exposure models
-    // *** Read in all matched catalogs, create Detections, purge minMatches
+
+    // *** Read in all matched catalogs, create Detections, purge minMatches, map to world
     // *** summarize read-in statistics?
 
     // *** re-fit
@@ -284,41 +363,6 @@ main(int argc, char *argv[])
     identityChain.append(identityKey);
     SubMap* identitySubMap = mapCollection.issue(identityChain);
 
-    // Read fields:
-    {
-      ifstream ifs(fieldSpecs.c_str());
-      if (!ifs) {
-	cerr << "Can't open field specification file " << fieldSpecs << endl;
-	exit(1);
-      }
-
-      string buffer;
-      while (stringstuff::getlineNoComment(ifs, buffer)) {
-	string name;
-	SphericalICRS pole;
-	string refcat;
-	int ifield=-1;
-	string tagcat;
-	{
-	  istringstream iss(buffer);
-	  if (!(iss >> name >> pole >> refcat)) {
-	    cerr << "Bad field spec <" << buffer << ">" << endl;
-	    exit(1);
-	  }
-	  if (!(iss >> tagcat)) {
-	    // No tag catalog in use:
-	    tagcat.clear();
-	  }
-	  // Check for duplicate field name:
-	  if (fieldNames.has(name)) {
-	    cerr << "Duplicate field name: " << name << endl;
-	    exit(1);
-	  }
-	  Field f;
-	  f.name = name;
-	  // Note Field instance saves the pointer but will not delete
-	  // the Orientation created here.  It needs to stick around
-	  // until program is done.
 	  f.orient = new Orientation(pole);
 	  fields.push_back(f);
 	  fieldNames.append(name);
