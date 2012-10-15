@@ -7,6 +7,7 @@
 #define MATCH_H
 
 #include <list>
+#include <set> 
 using std::list;
 #include <string>
 #include "Std.h"
@@ -15,7 +16,6 @@ using std::list;
 #include "Bounds.h"
 #include "Astrometry.h"
 #include "PixelMap.h"
-#include <set>
 #include "PixelMapCollection.h"
 
 namespace astrometry {
@@ -93,19 +93,18 @@ namespace astrometry {
   };
 
   typedef list<Match*> MCat;
-  void  minMatches(MCat& mlist,
-		   int nMin,
-		   bool deleteDetections);
 
   // Class that aligns all coordinates
   class CoordAlign {
   private:
-    list<Match*> mlist;
+    list<Match*>& mlist;
     PixelMapCollection& pmc;
     double relativeTolerance;
   public:
-    CoordAlign(PixelMapCollection& pmc_): pmc(pmc_),
-					  relativeTolerance(0.001)  {}
+    CoordAlign(PixelMapCollection& pmc_,
+	       list<Match*>& mlist_): mlist(mlist_),
+				      pmc(pmc_), 
+				      relativeTolerance(0.001)  {}
     void add(MCat& mc);
     void remap();	// Re-map all Detections using current params
     double fitOnce();	// Returns chisq of previous fit, updates params.

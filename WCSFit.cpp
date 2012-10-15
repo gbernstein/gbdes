@@ -121,7 +121,7 @@ main(int argc, char *argv[])
   int minMatches;
   bool clipEntireMatch;
   int exposureOrder;
-  int extensionOrder;
+  int deviceOrder;
   string outCatalog;
   string catalogSuffix;
   string newHeadSuffix;
@@ -149,13 +149,11 @@ main(int argc, char *argv[])
     parameters.addMember("clipEntireMatch",&clipEntireMatch, def,
 			 "Discard entire object if one outlier", false);
     parameters.addMemberNoValue("FITTING");
-    parameters.addMember("reFit",&reFit, def,
-			 "Re-fit coordinate maps?", true);
     parameters.addMember("reserveFraction",&reserveFraction, def | low,
 			 "Fraction of matches reserved from re-fit", 0., 0.);
     parameters.addMember("exposureOrder",&exposureOrder, def | low,
 			 "Order of per-exposure map", 1, 0);
-    parameters.addMember("extensionOrder",&extensionOrder, def | low,
+    parameters.addMember("deviceOrder",&deviceOrder, def | low,
 			 "Order of per-extension map", 2, 0);
     parameters.addMember("chisqTolerance",&chisqTolerance, def | lowopen,
 			 "Fractional change in chisq for convergence", 0.001, 0.);
@@ -208,7 +206,7 @@ main(int argc, char *argv[])
     // List parameters in use
     parameters.dump(cout);
 
-    // Open up output catalog file if desired
+    // Open up output catalog file if desired ???
     ofstream ocatfile;
     if (!outCatalog.empty()) {
       ocatfile.open(outCatalog.c_str());
@@ -220,7 +218,6 @@ main(int argc, char *argv[])
       parameters.dump(ocatfile);
     }
 
-    MCat::setDefaultMatchTolerance(matchtol);
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Fields, Instruments, Devices, Exposures
@@ -302,15 +299,18 @@ main(int argc, char *argv[])
       vector<double> ra;
       vector<double> dec;
       vector<int> fieldNumber;
+      vector<int> instrumentNumber;
       ff.readCells(names, "Name");
       ff.readCells(ra, "RA");
       ff.readCells(dec, "Dec");
       ff.readCells(fieldNumber, "fieldNumber");
+      ft.readCells(instrumentNumber, "InstrumentNumber");
       for (int i=0; i<names.size(); i++) {
 	Exposure* expo = new Exposure(names[i],
 				      Orientation(SphericalICRS(ra[i]*DEGREE, 
 								dec[i]*DEGREE)));
-	expo->fieldNumber = fieldNumber[i];
+	expo->field = fieldNumber[i];
+	expo->instrument = instrumentNumber[j];
 	exposures.push_back(expo);
       }
     }
@@ -328,30 +328,30 @@ main(int argc, char *argv[])
     {
       FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
       extensions = ft.extract();
-      //** want: exposure, instrument, device
-      //** wcs (startpm)
-      //** column keys for x, y, error, object number
-      //** filename and extension of bintable
+    }
+    for (int i=0; i<extensions.nrows(); i++) {
+      extensions.push_back(new Extension);
+      Extension* extn = extensions.back();
+      int j;
+      ft.readCell(j, "ExposureNumber");
+      extn->exposure = j;
+      ft.readCell(j, "DeviceNumber");
+      extn->device = j;
+      string s;
+      ft.readCell(s, "WCS");
+      if (stringstuff::nocaseEqual(s, "ICRS")) {
+	// leave startpm null to signal RA/Dec coordinates
+      } else {
+	istringstream iss(s);
+	img::Header h;
+	h << iss;
+	extn->startpm = new SCAMPMap(h, &(fieldOrients[extn->exposure->field]));
+      }
     }
 
-    // A list of all Detections
-    list<Detection> detections;
-    // ...and a list of all Matches.
-    list<Match*> matches;    // ??? Store objects, not pointers??
-
-    
-    // *** create astrometric models for each instrument and exposure
-    // *** initialize instrument model by finding a reference exposure that has all devices
-    // *** initialize exposure models
-
-    // *** Read in all matched catalogs, create Detections, purge minMatches, map to world
-    // *** summarize read-in statistics?
-
-    // *** re-fit
-
-    // ** write out put catalog
-    // ** statistics out (separate code??)
-
+    /////////////////////////////////////////////////////
+    //  Create and initialize all coordinate maps
+    /////////////////////////////////////////////////////
 
     // Create a PixelMapCollection to hold all the components of the PixelMaps.
     PixelMapCollection mapCollection;
@@ -363,454 +363,193 @@ main(int argc, char *argv[])
     identityChain.append(identityKey);
     SubMap* identitySubMap = mapCollection.issue(identityChain);
 
-	  f.orient = new Orientation(pole);
-	  fields.push_back(f);
-	  fieldNames.append(name);
-	  Assert(fields.size()==fieldNames.size());
-	}
-	Field& fp = fields.back();
-	ifield = fields.size()-1;
+    // Set up coordinate maps for each instrument & exposure
+    for (int iinst=0; iinst<instruments.size(); iinst++) {
+      Instrument* inst = instruments[iinst];
+      // First job is to find an exposure that has all devices for this instrument
+      int iexp1;
+      for (iexp1 = 0; iexp1 < exposures.size(); iexp1++) {
+	if (exposures[iexp1]->instrument != iinst) continue; 
+	// Filter the extension table for this exposure:
+	vector<int> vexp(1,iexp1);
+	FTable exts = extensionTable.extract("ExposureNumber", vexp);
+	// Stop here if this exposure has right number of extensions (exactly 1 per device):
+	if (exts.nrows() == inst->nDevices) break; 
+      }
 
-	// Open reference catalog for each
-	ifstream refs(refcat.c_str());
-	if (!refs) {
-	  cerr << "Cannot open reference catalog " << refcat << endl;
-	  exit(1);
-	}
-
-	cerr << "Reading reference catalog " << refcat
-	     << " for field " << fp.name << endl;
-
-	// Read each entry in reference catalog
-	while (getlineNoComment(refs, buffer)) {
-	  SphericalICRS posn;
-	  double sigma;
-	  string name;
-	  istringstream iss(buffer);
-	  // input RA in hours 
-	  if (!(iss >> name >> posn >> sigma)) {
-	    cerr << "Bad reference catalog entry <" << buffer << ">" << endl;
-	    cerr << "In catalog " << refcat << endl;
-	    exit(1);
-	  }
-
-	  Detection* d = new Detection;
-
-	  // Project into this field's tangent plane
-	  double xw, yw;
-	  TangentPlane tp(posn, *fp.orient);
-	  tp.getLonLat(xw, yw);
-	  // set "pixel" and world coords
-	  d->id = name;
-	  d->xpix = xw/DEGREE;  
-	  d->ypix = yw/DEGREE;
-	  sigma = MAX(minReferenceError,sigma);
-	  d->sigmaPix = sigma*ARCSEC/DEGREE; // Sigma comes in arcsec
-	  d->xw = xw/DEGREE;
-	  d->yw = yw/DEGREE;
-	  d->clipsqx = pow(d->sigmaPix, -2.);
-	  d->clipsqy = pow(d->sigmaPix, -2.);
-	  // Reference objects can be weighted more/less than their
-	  // uncertainties indicate:
-	  d->wtx = d->clipsqx * referenceWeight;
-	  d->wty = d->clipsqy * referenceWeight;
-	  d->map = identitySubMap;
-	  d->field = ifield;
-	  d->exposure = REF_EXPOSURE;
-	  d->extension = 0;	// means nothing here
-	  d->isStar = true;	// *** note that all reference objects assumed stars
-	  d->affinity = 0;	// *** and given affinity=0
-
-#ifdef DUMP
-	  cout << d->field
-	       << " " << d->exposure
-	       << " 0"
-	       << " " << d->id
-	       << " " << d->xw
-	       << " " << d->yw
-	       << endl;
-#endif
-
-	  // Match object into catalog for its affinity
-	  // Map will create a new MCat if this is a new affinity
-	  (fp.affinities[d->affinity]).add(d);
-	} // end reference catalog object loop
-
-
-	// Open tag catalog if there is one:
-	if (!tagcat.empty()) {
-	  ifstream tags(tagcat.c_str());
-	  if (!tags) {
-	    cerr << "Cannot open tag catalog " << tagcat << endl;
-	    exit(1);
-	  }
-
-	  cerr << "Reading tag catalog " << tagcat
-	       << " for field " << fp.name << endl;
-
-	  // Read each entry in tag catalog
-	  while (getlineNoComment(tags, buffer)) {
-	    SphericalICRS posn;
-	    double sigma;
-	    string name;
-	    istringstream iss(buffer);
-	    // input RA in hours 
-	    if (!(iss >> name >> posn >> sigma)) {
-	      cerr << "Bad tag catalog entry <" << buffer << ">" << endl;
-	      cerr << "In catalog " << refcat << endl;
-	      exit(1);
-	    }
-
-	    // get ancillary info (tags!)
-	    iss >> ws;
-	    string ancillary;
-	    getline(iss, ancillary);
-
-	    Detection* d = new Detection;
-
-	    // Project into this field's tangent plane
-	    double xw, yw;
-	    TangentPlane tp(posn, *fp.orient);
-	    tp.getLonLat(xw, yw);
-	    // set "pixel" and world coords
-	    d->id = name;
-	    d->xpix = xw/DEGREE;  
-	    d->ypix = yw/DEGREE;
-	    sigma = MAX(minReferenceError,sigma);
-	    d->sigmaPix = sigma*ARCSEC/DEGREE; // Sigma comes in arcsec
-	    d->xw = xw/DEGREE;
-	    d->yw = yw/DEGREE;
-	    d->clipsqx = pow(d->sigmaPix, -2.);
-	    d->clipsqy = pow(d->sigmaPix, -2.);
-	    // Tag catalog objects get ZERO WEIGHT:
-	    d->wtx = 0.;
-	    d->wty = 0.;
-	    d->map = identitySubMap;
-	    d->field = ifield;
-	    d->exposure = TAG_EXPOSURE;	
-	    d->extension = 0;	// means nothing here
-	    d->isStar = true;	// *** note that all reference objects assumed stars
-	    d->affinity = 0;	// *** and given affinity=0
-	    d->ancillary = ancillary;
-	    
-	    // Match object into catalog for its affinity
-	    // Map will create a new MCat if this is a new affinity
-	    (fp.affinities[d->affinity]).add(d);
-	  } // end tag catalog object loop
-	} // end tag catalog read
-      } // end field loop
-    } // end use of fieldSpec file
-
-
-    {
-      // Read Exposures:
-      ifstream ifs(exposureSpecs.c_str());
-      if (!ifs) {
-	cerr << "Can't open exposure specification file " << exposureSpecs << endl;
+      if (iexp1 >= exposures.size()) {
+	cerr << "Could not find exposure with all devices for intrument "
+	     << inst->name << endl;
 	exit(1);
       }
 
-      string buffer;
-      while (stringstuff::getlineNoComment(ifs, buffer)) {
-	string basename;
-	string field;
-	string instName;
-	string filter;
-	SphericalICRS pointing;
-	double positionAngle=0.; // ???
-	{
-	  istringstream iss(buffer);
-	  if (!(iss >> basename >> pointing 
-		>> field >> filter >> instName)) {
-	    cerr << "Bad exposure spec <" << buffer << ">" << endl;
-	    exit(1);
-	  }
-	}
-	  
-	// Check for duplicate exposure name
-	if (exposureNames.has(basename)) {
-	  cerr << "Duplicate exposure basename: " << basename << endl;
-	  exit(1);
-	}
+      // Used this exposure to initialize the map for each extension
+      Exposure* exp1 = exposures[iexp1];
+      // First exposure of instrument will have identity map
+      exp1->warp = nullChain;
 
-	// Find the field that this exposure is in
-	int ifield = fieldNames.indexOf(field);
-	if (ifield < 0) {
-	  cerr << "Exposure " << basename << " has field name <" << field 
-	       << "> not given in field specification file" << endl;
-	  exit(1);
-	}
-	Field& fp = fields[ifield];
-
-	// Add this filter name to the index list if needed
-	if (filterNames.indexOf(filter) < 0) filterNames.append(filter);
-	// Choose affinity numbers for stars and galaxies in this exposure
-	int starAffinity = 0;
-	// If useAffinities=true, then galaxies are only matched if filters match:
-	int galaxyAffinity = useAffinities ? filterNames.indexOf(filter)+1 : 0;
-
-	// Find the instrument that is in use
-	int iinst = instrumentNames.indexOf(instName);
-	bool firstExposureForInstrument = false;
-	if (iinst < 0) {
-	  // First exposure with this instrument
-	  firstExposureForInstrument = true;
-	  instruments.push_back(new Instrument(instName));
-	  instrumentNames.append(instName);
-	  iinst = instrumentNames.indexOf(instName);
-	  Assert(instruments.size()==instrumentNames.size());
-	  Assert(iinst>=0);
-	}
-	Instrument& inst = *instruments[iinst];
-
-	// Add this exposure to the list of ID's
-	exposureNames.append(basename);
-	int iexp = exposureNames.indexOf(basename);
-	Exposure* expo = new Exposure;
-	expo->name = basename;
-	expo->field = ifield;
-	expo->instrument = iinst;
-	// Exposure will delete this Orientation when it is destroyed.
-	// Must stick around for all the TangentPlane coordinates to work!
-	expo->orient = new Orientation(pointing, positionAngle);
-
-	exposures.push_back(expo);
-	Assert(exposures.size()==exposureNames.size());
-
-	// Tell each field and instrument about all of its exposures
-	fp.exposures.push_back(iexp);
-	inst.exposures.push_back(iexp);
-
-	// Read catalog
-	string catfile = exposures.back()->name + catalogSuffix;
-	cerr << "Reading catalog " << exposures.size()-1 << " " << catfile << endl;
-	ifstream catfs(catfile.c_str());
-	if (!catfs) {
-	  cerr << "Could not open catalog file " << catfile << endl;
-	  exit(1);
-	}
-	while (getlineNoComment(catfs, buffer)) {
-	  string name;
-	  string extName;
-	  double xpix;
-	  double ypix;
-	  double sigmaPix;
-	  istringstream iss(buffer);
-	  if (!(iss >> name >> extName >> xpix >> ypix >> sigmaPix)) {
-	    cerr << "Bad catalog entry <" << buffer
-		 << "> in catalog " << catfile
-		 << endl;
-	    exit(1);
-	  }
-	  // See if there is a s/g specifier
-	  iss >> ws;	// strip leading whitespace
-	  string ancillary;
-	  getline(iss, ancillary);
-	  bool isStar = true;   // Set true if not using affinities
-	  if (ancillary.empty()) {
-	    if (useAffinities) {
-	      // Need a s/g spec, don't have it
-	      cerr << "Using affinities but catalog entry does not give s|g"
-		" in catalog " << catfile << endl;
-	      cerr << buffer << endl;
-	      exit(1);
-	    }
-	  } else if (ancillary[0]=='s') {
-	    // It's a star
-	    isStar = true;
-	    // Strip first character and additional whitespace
-	    ancillary.erase(0,1);
-	    while (!ancillary.empty() && std::isspace(ancillary[0])) ancillary.erase(0,1);
-	  } else if (ancillary[0]=='g') {
-	    // It's a galaxy
-	    isStar = false;
-	    // Strip first character and additional whitespace
-	    ancillary.erase(0,1);
-	    while (!ancillary.empty() && std::isspace(ancillary[0])) ancillary.erase(0,1);
-	  // and the rest of the string is "ancillary"
-	  } else if (useAffinities) {
-	    // Did not get s or g but needed it for affinities:
-	    cerr << "Using affinities but catalog entry does not give s|g"
-	      " in catalog " << catfile << endl;
-	    cerr << buffer << endl;
-	    exit(1);
-	  }
-
-	  // Done reading the detection's fields. 
-
-	  int iext = inst.extensionNames.indexOf(extName);
-	  if (iext < 0) {
-	    // New extension for this instrument.
-	    inst.addExtension(extName);
-	    iext = inst.extensionNames.indexOf(extName);
-	  }
-
-	  // First pad the Exposure's startpm array to reach this extension number:
-	  while (expo->startpm.size() < iext+1) expo->startpm.push_back(0);
-
-
-	  // Get the WCS map if this is first Detection in this extension
-	  // for this Exposure
-	  if (!expo->startpm[iext]) {
-	    string mapfile = basename + "_" + extName + oldHeadSuffix;
-	    ifstream mapfs(mapfile.c_str());
-	    if (!mapfs) {
-	      cerr << "Could not open map spec file " << mapfile << endl;
-	      exit(1);
-	    } else {
-	      cerr << "Opened map spec file " << mapfile << endl;
-	    }
-
-	    img::ImageHeader h = img::HeaderFromStream(mapfs);
-	    expo->startpm[iext] = new SCAMPMap(h, fp.orient);
-	    if (expo->startpm[iext]==0) {
-	      cerr << "Error reading initial WCS map for extension " << iext
-		   << " in file " << mapfile
-		   << endl;
-	      exit(1);
-	    }
-	  }
-
-	  // Don't use things with too-large errors
-	  if (sigmaPix > maxPixError) continue;
-
-	  Detection* d = new Detection;
-	  d->id = name;
-	  d->xpix = xpix;
-	  d->ypix = ypix;
-	  d->sigmaPix = MAX(minPixError,sigmaPix);
-	  d->field = ifield;
-	  d->exposure = iexp;
-	  d->extension = iext;
-	  d->affinity = d->isStar ? starAffinity : galaxyAffinity;
-	  d->isStar = isStar;
-	  d->ancillary = ancillary;
-
-	  //   map pixel coordinates to world from original map
-	  double xw, yw;
-	  exposures[iexp]->startpm[iext]->toWorld(xpix, ypix, xw, yw);
-	  //**/cerr << iexp << " " << iext << " " << xw << " " << yw << endl;
-	  d->xw = xw;
-	  d->yw = yw;
-	  Matrix22 dwdp = exposures[iexp]->startpm[iext]->dWorlddPix(xpix, ypix);
-	  d->wtx = pow(d->sigmaPix,-2.) / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
-	  d->wty = pow(d->sigmaPix,-2.) / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
-	  d->clipsqx = d->wtx;
-	  d->clipsqy = d->wty;
-
-#ifdef DUMP
-	  cout << d->field
-		   << " " << d->exposure
-		   << " " << d->extension
-		   << " " << d->id
-		   << " " << d->xw
-		   << " " << d->yw
-		   << endl;
-#endif
-
-	  // Tell Instrument about this detection to complete its range
-	  inst.addDetection(*d);
-
-	  // Match object into its catalog of its affinity
-	  (fp.affinities[d->affinity]).add(d);
-	
-	} // end detection loop
-      } // end exposure loop
-    }// close exposure specification file
-    
-    /**/cerr << "done reading exposures" << endl;
-    for (int ifield=0; ifield<fields.size(); ifield++) {
-      for (map<int, MCat>::iterator iaff = fields[ifield].affinities.begin();
-	   iaff != fields[ifield].affinities.end();
-	   ++iaff) {
-	MCat& mc = iaff->second;
-	int affinity = iaff->first;
-	// Purge Matches with multiple entries from single exposure or <minMatches:
-	mc.minMatches(minMatches, true);
-	cout << "Field " << fields[ifield].name
-	     << " affinity " << affinity
-	     << " has " << mc.size()
-	     << " matches." 
-	     << endl;
-	long int mcount=0;
-	int dof=0;
-	double chi=0.;
-	double maxdev=0.;
-	for (MCat::const_iterator i=mc.begin();
-	     i != mc.end();
-	     ++i) {
-	  mcount += (*i)->size();
-	  chi += (*i)->chisq(dof, maxdev);
-	}
-	cout << " with " << mcount << " total detections." << endl;
-	cout << " chisq " << chi << " / " << dof << " dof maxdev " << sqrt(maxdev) << endl;
-	mc.purgeSelfMatches(true);
-	cout << "After purgeSelfMatches: " << mc.size()
-	     << " matches." 
-	     << endl;
-	mcount=0;
-	dof = 0;
-	chi = maxdev = 0.;
-	for (MCat::const_iterator i=mc.begin();
-	     i != mc.end();
-	     ++i) {
-	  mcount += (*i)->size();
-	  chi += (*i)->chisq(dof, maxdev);
-	}
-	cout << " with " << mcount << " total detections." << endl;
-	cout << " chisq " << chi << " / " << dof << " dof maxdev " << sqrt(maxdev) << endl;
-      }
-    }
-
-    // Now everyone is matched up and cleaned up.
-
-    ///////////////////////////////////////////////////////////
-    // Now do the re-fitting if desired
-    ///////////////////////////////////////////////////////////
-    if (reFit) {
-
-
-      // Set up coordinate maps for each instrument & exposure
-      for (int iinst=0; iinst<instruments.size(); iinst++) {
-	Instrument* inst = instruments[iinst];
-	// First exposure for this instrument gets identity exposure map,
-	// Used to initialize the map for each extension
-	Exposure* exp1 = exposures[inst->exposures.front()];
-	// First exposure of instrument will have identity map
-	exp1->warp = nullChain;
-
-	// Save reprojection map for first exposure with this instrument:
-	// Map from exposure's projection to field's projection
-	{
-	  const Field& fp = fields[exp1->field];
-	  exp1->reproject = mapCollection.add(new ReprojectionMap( TangentPlane(exp1->orient->getPole(),
+      // Save reprojection map for first exposure with this instrument:
+      // Map from exposure's projection to field's projection
+      {
+	const Field& fp = fields[exp1->field];
+	exp1->reproject = mapCollection.add(new ReprojectionMap( TangentPlane(exp1->orient->getPole(),
 									      *exp1->orient),
 								 TangentPlane(fp.orient->getPole(),
 									      *fp.orient),
 								 DEGREE),
-					      exp1->name + "_reprojection");
-	}
-	const int nGridPoints=400;	// Number of test points for map initialization
+					    exp1->name + "_reprojection");
+      }
 
-	for (int iext=0; iext<inst->nExtensions; iext++) {
-	  Bounds<double> b=inst->domains[iext];
-	  double step = sqrt(b.area()/nGridPoints);
+      // Create new PolyMap for each device and fit to the starting map of the reference exposure
+      const int nGridPoints=400;	// Number of test points for map initialization
+
+      // Get all Extensions that are part of this exposure
+      list<Extension*> thisExposure;
+      for (int i=0; i<exposures.size(); i++)
+	if (exposures[i]->exposure = iexp1)
+	  thisExposure.push_back(i);
+      Assert(thisExposure.size()==inst->nDevices);
+
+      for (int idev=0; idev<inst->nDevices; idev++) {
+	// Create coordinate map for each Device, initialize its parameter by fitting to
+	// the input map for this device in the reference exposure of this Instrument.
+	Bounds<double> b=inst->domains[idev];
+	double step = sqrt(b.area()/nGridPoints);
+	int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
+	int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
+	double xstep = (b.getXMax()-b.getXMin())/nx;
+	double ystep = (b.getYMax()-b.getYMin())/ny;
+	list<Detection*> testPoints;
+
+	Extension* extn=0;
+	for (list<Extension*>::iterator i = thisExposure.begin();
+	     i != thisExposure.end();
+	     ++i) 
+	  if ((*i)->device==idev) {
+	    extn = *i;
+	    break;
+	  }
+	if (!extn) {
+	  cerr << "Could not find Extension for device " << inst->deviceNames.nameOf(idev)
+	       << " in exposure " << exp1->name << endl;
+	  exit(1);
+	}
+
+	PixelMap* startpm=extn->startpm;
+	if (!startpm) {
+	  cerr << "Did not read starting WCS for device " << inst->deviceNames.nameOf(iext)
+		 << " in exposure " << exp1->name
+		 << " with instrument " << inst->name
+		 << endl;
+	  exit(1);
+	}
+	const PixelMap* reproject = mapCollection.element(exp1->reproject);
+
+	for (int ix=0; ix<=nx; ix++) {
+	  for (int iy=0; iy<=ny; iy++) {
+	    double xpix = b.getXMin() + ix*xstep;
+	    double ypix = b.getYMin() + iy*ystep;
+	    double xw, yw;
+	    startpm->toWorld(xpix, ypix, xw, yw);
+	    // Undo the change of projections:
+	    reproject->toPix(xw,yw,xw,yw);
+	    Detection* d = new Detection;
+	    d->xpix = xpix;
+	    d->ypix = ypix;
+	    d->xw = xw;
+	    d->yw = yw;
+	    // Note MapMarq does not use positional uncertainties.
+	    testPoints.push_back(d);
+	  }
+	}
+	PixelMap* pm = new PolyMap(deviceOrder, worldTolerance);
+	MapMarq mm(testPoints, pm);
+	// Since polynomial fit is linear, should just take one iteration:
+	double var=0.;
+	DVector beta(pm->nParams(), 0.);
+	DVector params(pm->nParams(), 0.);
+	tmv::SymMatrix<double> alpha(pm->nParams(), 0.);
+	mm(params, var, beta, alpha);
+	beta /= alpha;
+	params = beta;
+	beta.setZero();
+	alpha.setZero();
+	var = 0.;
+	mm(params, var, beta, alpha);
+	beta /= alpha;
+	params += beta;
+	pm->setParams(params);
+
+	// Clear out the testPoints:
+	for (list<Detection*>::iterator i = testPoints.begin();
+	     i != testPoints.end();
+	     ++i)
+	  delete *i;
+
+	// Save this map into the collection
+	PixelMapKey key = mapCollection.add(pm, inst->name + "_" + inst->deviceNames.nameOf(iext));
+	inst->maps[idev].append(key);
+	inst->pixelMaps[idev] = mapCollection.issue(inst->maps[idev]);
+      } // device loop
+
+      // Now create an exposure map for all other exposures with this instrument,
+      // and set initial parameters by fitting to input WCS map.
+
+      int pointsPerDevice = nGridPoints / inst->nDevices + 1;
+      for (int iexp=0; iexp<exposures.size(); iexp++) {
+	if ( exposures[iexp]->instrument != iinst) continue;
+	if (iexp == iexp1) continue;  // Skip the reference exposure
+
+	// Each additional exposure needs a warping tranformation
+	Exposure* expo = exposures[iexp];
+	PixelMap* warp;
+	if (exposureOrder==1) 
+	  warp = new LinearMap;
+	else
+	  warp = new PolyMap(exposureOrder, worldTolerance);
+
+	// Set numerical-derivative step to 1 arcsec, polynomial is working in degrees:
+	warp->setPixelStep(ARCSEC/DEGREE);
+
+	// And a reprojection map:
+	const Field& fp = fields[expo->field];
+	expo->reproject = mapCollection.add(new ReprojectionMap( TangentPlane(expo->orient.getPole(),
+									      expo->orient),
+								 TangentPlane(fp.orient.getPole(),
+									      fp.orient),
+								 DEGREE),
+					    expo->name + "_reprojection");
+	const PixelMap* reproject = mapCollection.element(expo->reproject);
+
+	// Get all Extensions that are part of this exposure
+	thisExposure.clear();
+	for (int i=0; i<exposures.size(); i++)
+	  if (exposures[i]->exposure = iexp)
+	    thisExposure.push_back(i);
+
+	// Build new test points
+	list<Detection*> testPoints;
+	for (list<Extenstion*>::iterator j=thisExposure.begin();
+	     j != thisExposure.end();
+	     ++j) {
+	  int iext = *j;
+	  Extension* extn = extensions[iext];
+	  int idev = extn->device;
+	  Bounds<double> b=inst->domains[idev];
+	  double step = sqrt(b.area()/pointsPerDevice);
 	  int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
 	  int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
 	  double xstep = (b.getXMax()-b.getXMin())/nx;
 	  double ystep = (b.getYMax()-b.getYMin())/ny;
-	  list<Detection*> testPoints;
 	  // starting pixel map for the first exposure with this instrument
-	  PixelMap* startpm=exp1->startpm[iext];
+	  PixelMap* startpm=extn->startpm;
 	  if (!startpm) {
-	    cerr << "Did not read starting WCS for extension " << inst->extensionNames.nameOf(iext)
-		 << " in first exposure " << exp1->name
-		 << " with instrument " << inst->name
+	    cerr << "Failed to get starting PixelMap for device "
+		 << inst->deviceNames.nameOf(idev)
+		 << " in exposure " << expo->name
 		 << endl;
 	    exit(1);
 	  }
-	  const PixelMap* reproject = mapCollection.element(exp1->reproject);
-
 	  for (int ix=0; ix<=nx; ix++) {
 	    for (int iy=0; iy<=ny; iy++) {
 	      double xpix = b.getXMin() + ix*xstep;
@@ -819,276 +558,380 @@ main(int argc, char *argv[])
 	      startpm->toWorld(xpix, ypix, xw, yw);
 	      // Undo the change of projections:
 	      reproject->toPix(xw,yw,xw,yw);
+	      // And process the pixel coordinates through Instrument map:
+	      inst->pixelMaps[idev]->toWorld(xpix,ypix,xpix,ypix);
 	      Detection* d = new Detection;
 	      d->xpix = xpix;
 	      d->ypix = ypix;
 	      d->xw = xw;
 	      d->yw = yw;
-	      // Note MapMarq does not use positional uncertainties.
 	      testPoints.push_back(d);
 	    }
 	  }
-	  PixelMap* pm = new PolyMap(extensionOrder, worldTolerance);
-	  MapMarq mm(testPoints, pm);
-	  // Since polynomial fit is linear, should just take one iteration:
-	  double var=0.;
-	  DVector beta(pm->nParams(), 0.);
-	  DVector params(pm->nParams(), 0.);
-	  tmv::SymMatrix<double> alpha(pm->nParams(), 0.);
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params = beta;
-	  beta.setZero();
-	  alpha.setZero();
-	  var = 0.;
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params += beta;
-	  pm->setParams(params);
+	} // finish device loop for test points
 
-	  // Clear out the testPoints:
-	  for (list<Detection*>::iterator i = testPoints.begin();
-	       i != testPoints.end();
-	       ++i)
-	    delete *i;
+	MapMarq mm(testPoints, warp);
+	// Since polynomial fit is linear, should just take one iteration:
+	double var=0.;
+	DVector beta(warp->nParams(), 0.);
+	DVector params(warp->nParams(), 0.);
+	tmv::SymMatrix<double> alpha(warp->nParams(), 0.);
+	mm(params, var, beta, alpha);
+	beta /= alpha;
+	params = beta;
+	beta.setZero();
+	alpha.setZero();
+	var = 0.;
 
-	  // Save this map into the collection
-	  PixelMapKey key = mapCollection.add(pm, inst->name + "_" + inst->extensionNames.nameOf(iext));
-	  inst->maps[iext].append(key);
-	  inst->pixelMaps[iext] = mapCollection.issue(inst->maps[iext]);
-	} // extension loop
+	mm(params, var, beta, alpha);
+	beta /= alpha;
+	params += beta;
+	warp->setParams(params);
+	
+	// Save this warp into the collection and save key for exposure
+	expo->warp.append(mapCollection.add(warp, expo->name));
 
-	int pointsPerExtension = nGridPoints / inst->nExtensions + 1;
-	for (int iexp=1; iexp<inst->exposures.size(); iexp++) {
-	  // Each additional exposure needs a warping tranformation
-	  Exposure* expo = exposures[inst->exposures[iexp]];
-	  PixelMap* warp;
-	  if (exposureOrder==1) 
-	    warp = new LinearMap;
-	  else
-	    warp = new PolyMap(exposureOrder, worldTolerance);
-	  // Set numerical-derivative step to 1 arcsec, polynomial is working in degrees:
-	  warp->setPixelStep(ARCSEC/DEGREE);
+	// Clear out the testPoints:
+	for (list<Detection*>::iterator i = testPoints.begin();
+	     i != testPoints.end();
+	     ++i)
+	  delete *i;
+      } // End exposure loop for this instrument
+    } // end instrument loop.
 
-	  // And a reprojection map:
-	  const Field& fp = fields[expo->field];
-	  expo->reproject = mapCollection.add(new ReprojectionMap( TangentPlane(expo->orient->getPole(),
-									      *expo->orient),
-								   TangentPlane(fp.orient->getPole(),
-										*fp.orient),
-								   DEGREE),
-					      expo->name + "_reprojection");
-	  const PixelMap* reproject = mapCollection.element(expo->reproject);
+    // Now construct compound maps for every Extension
+    // and save SubMap for it
+    for (int iext=0; iext<extensions.size(); iext++) {
+      Extension* extn = extensions[iext];
+      Exposure* expo = exposures[extn->exposure];
+      if ( expo->instrument == REF_INSTRUMENT) {
+	// This is a reference catalog, use identity map:
+	extn->extensionMap = identitySubMap;
+      } else if (exp->instrument == TAG_INSTRUMENT) {
+	// Tag catalog - will not be fit, signal with null SubMap
+	extn->extensionMap = 0;
+      } else {
+	// Real instrument, make its compounded map:
+	// Start with the instrument map for device:
+	PixelMapChain chain = inst->maps[extn->device];
+	// Then the exposure's warp
+	chain.append(expo->warp);
+	// And exposure's reprojection:
+	chain.append(expo->reproject);
+	extn->extensionMap = mapCollection.issue(chain);
+      }
+    } // Extension loop
 
-	  // Build new test points
-	  list<Detection*> testPoints;
-	  for (int iext=0; iext<inst->nExtensions; iext++) {
-	    // Skip extensions that did not have data in this exposure,
-	    // hence did not read their initial pixel maps:
-	    if (iext >= expo->startpm.size() || !expo->startpm[iext]) continue;
-	    Bounds<double> b=inst->domains[iext];
-	    double step = sqrt(b.area()/pointsPerExtension);
-	    int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
-	    int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
-	    double xstep = (b.getXMax()-b.getXMin())/nx;
-	    double ystep = (b.getYMax()-b.getYMin())/ny;
-	    // starting pixel map for the first exposure with this instrument
-	    PixelMap* startpm=expo->startpm[iext];
-	    for (int ix=0; ix<=nx; ix++) {
-	      for (int iy=0; iy<=ny; iy++) {
-		double xpix = b.getXMin() + ix*xstep;
-		double ypix = b.getYMin() + iy*ystep;
-		double xw, yw;
-		startpm->toWorld(xpix, ypix, xw, yw);
-		// Undo the change of projections:
-		reproject->toPix(xw,yw,xw,yw);
-		// And process the pixel coordinates through Instrument map:
-		inst->pixelMaps[iext]->toWorld(xpix,ypix,xpix,ypix);
-		Detection* d = new Detection;
-		d->xpix = xpix;
-		d->ypix = ypix;
-		d->xw = xw;
-		d->yw = yw;
-		testPoints.push_back(d);
-	      }
-	    }
-	  } // finish extension loop for test points
+    /**/cerr << "Total number of map elements " << mapCollection.nMaps()
+	     << " with " << mapCollection.nParams() << " free parameters."
+	     << endl;
 
-	  MapMarq mm(testPoints, warp);
-	  // Since polynomial fit is linear, should just take one iteration:
-	  double var=0.;
-	  DVector beta(warp->nParams(), 0.);
-	  DVector params(warp->nParams(), 0.);
-	  tmv::SymMatrix<double> alpha(warp->nParams(), 0.);
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params = beta;
-	  beta.setZero();
-	  alpha.setZero();
-	  var = 0.;
 
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params += beta;
-	  warp->setParams(params);
+    //////////////////////////////////////////////////////////
+    // Read in all the data
+    //////////////////////////////////////////////////////////
 
-	  // Save this warp into the collection and save key for exposure
-	  expo->warp.append(mapCollection.add(warp, expo->name));
+    // List of all Matches - they will hold pointers to all Detections too.
+    list<Match*> matches;    // ??? Store objects, not pointers??
 
-	  // Clear out the testPoints:
-	  for (list<Detection*>::iterator i = testPoints.begin();
-	       i != testPoints.end();
-	       ++i)
-	    delete *i;
-	}
+    // Start by reading all matched catalogs, creating Detection and Match arrays, and 
+    // telling each Extension which objects it should retrieve from its catalog
 
-	// Now construct compound maps for every extension of
-	// every exposure and save SubMap for it
-	for (int iexp=0; iexp<inst->exposures.size(); iexp++) {
-	  Exposure* expo = exposures[inst->exposures[iexp]];
-	  for (int iext=0; iext<instruments[iinst]->nExtensions; iext++) {
-	    // Start with the instrument map for extension:
-	    PixelMapChain chain = inst->maps[iext];
-	    // Then the exposure's warp
-	    chain.append(expo->warp);
-	    // And exposure's reprojection:
-	    chain.append(expo->reproject);
-	    expo->extensionMaps.push_back(mapCollection.issue(chain));
-
-	    Assert(expo->extensionMaps.size()==iext+1);
-
-	  } // extension loop for compound maps
-	} // exposure loop for compound maps
-      } // instrument loop
-
-      /**/cerr << "Total number of map elements " << mapCollection.nMaps()
-	       << " with " << mapCollection.nParams() << " free parameters."
-	       << endl;
-
-      // Assign maps to every detection
-      for (int ifield=0; ifield<fields.size(); ifield++) {
-	for (map<int, MCat>::iterator iaff = fields[ifield].affinities.begin();
-	     iaff != fields[ifield].affinities.end();
-	     ++iaff) {
-	  MCat& mc = iaff->second;
-	  for (MCat::iterator icat=mc.begin();
-	       icat!=mc.end();
-	       ++icat) {
-	    Match& m = *(*icat);
-	    for (Match::const_iterator idet=m.begin();
-		 idet != m.end();
-		 ++idet) {
-	      Detection* d = *idet;
-	      if (d->exposure < 0) 
-		d->map = identitySubMap;
-	      else 
-		d->map = exposures[d->exposure]->extensionMaps[d->extension];
-	    }
+    for (int icat = 0; icat < catalogHDUs.size(); icat++) {
+      FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
+      FTable ff = ft.use();
+      vector<int> sequence;
+      vector<long> extension;
+      vector<long> object;
+      ff.readCells(sequence, "Sequence");
+      ff.readCells(extension, "Extension");
+      ff.readCells(object, "Object");
+      // Smaller collections for each match
+      vector<long> extns;
+      vector<long> objs;
+      for (int i=0; i<sequence.size(); i++) {
+	if (sequence[i]==0 && !extns.empty()) {
+	  // Make a match from previous few entries
+	  Detection* d = new Detection;
+	  d->catalogNumber = extns[0];
+	  d->objectNumber = objs[0];
+	  matches.push_back(new Match(d));
+	  extensions[extns[0]].keepers.insert(std::pair(objs[0], d));
+	  for (int j=1; j<extns.size(); j++) {
+	    d = new Detection;
+	    d->catalogNumber = extns[j];
+	    d->objectNumber = objs[j];
+	    matches.back()->add(d);
+	    extensions[extns[j]].keepers.insert(std::pair(objs[j], d));
 	  }
+	  extns.clear();
+	  objs.clear();
+	} // Finished processing previous match
+	extns.push_back(extension[i]);
+	objs.push_back(object[i]);
+      } // End loop of catalog entries
+      
+      // Make a last match out of final entries
+      if (!extns.empty()) {
+	detections.push_back(Detection());
+	Detection* d = &(detections.back());
+	d->catalogNumber = extns[0];
+	d->objectNumber = objs[0];
+	matches.push_back(new Match(d));
+	extensions[extns[0]].keepers.insert(std::pair(objs[0], d));
+	for (int j=1; j<extns.size(); j++) {
+	  detections.push_back(Detection());
+	  Detection* d = &(detections.back());
+	  d->catalogNumber = extns[j];
+	  d->objectNumber = objs[j];
+	  matches.back()->add(d);
+	  extensions[extns[j]].keepers.insert(std::pair(objs[j], d));
 	}
       }
+    } // End loop over input matched catalogs
 
-      // Mark a selected fraction of all matches as being reserved from fit
-      if (reserveFraction > 0.) {
-	ran::UniformDeviate u;
-	for (int ifield=0; ifield<fields.size(); ifield++) {
-	  for (map<int, MCat>::iterator iaff = fields[ifield].affinities.begin();
-	       iaff != fields[ifield].affinities.end();
-	       ++iaff) {
-	    MCat& mc = iaff->second;
-	    for (MCat::iterator icat=mc.begin();
-		 icat!=mc.end();
-		 ++icat) {
-	      Match& m = *(*icat);
-	      m.setReserved( u < reserveFraction );
-	    }
-	  }
+    // Now loop over all original catalog bintables, reading the desired rows
+    // and collecting needed information into the Detection structures
+    for (int iext = 0; iext < extensions.size(); iext++) {
+      string filename;
+      extensionTable.readCell(filename, "Filename", iext);
+      int hduNumber;
+      extensionTable.readCell(hduNumber, "HDUNumber", iext);
+      string xKey;
+      extensionTable.readCell(xKey, "xKey", iext);
+      string yKey;
+      extensionTable.readCell(yKey, "yKey", iext);
+      string idKey;
+      extensionTable.readCell(idKey, "idKey", iext);
+      string errKey;
+      extensionTable.readCell(errKey, "errKey", iext);
+      double weight;
+      extensionTable.readCell(weight, "Weight", iext);
+
+      // Relevant structures for this extension
+      Extension* extn = extensions[iext];
+      Exposure* expo = exposures[extn->exposure];
+      const Field& fld = fields[expo->field];
+      Instrument* instr = 0;
+      const SubMap* map=extn->extensionMap;
+      const PixelMap* startMap = extn->startpm;
+      bool isReference = false;
+      bool isTag = false;
+      if (expo->instrument == REF_INSTRUMENT) {
+	isReference = true;
+      } else if (expo->instrument == TAG_INSTRUMENT) {
+	isTag = true;
+      }
+
+      bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
+      // What we need to read from the FitsTable:
+      vector<string> neededColumns;
+      if (!useRows)
+	neededColumns.push_back(idKey);
+      neededColumns.push_back(xKey);
+      neededColumns.push_back(yKey);
+      neededColumns.push_back(errKey);
+
+      FitsTable ft(filename, FITS::ReadOnly, hduNumber);
+      FTable ff = ft.extract(0, -1, neededColumns);
+      vector<long> id;
+      if (useRows) {
+	id.resize(ff.nrows());
+	for (long i=0; i<id.size(); i++)
+	  id[i] = i;
+      } else {
+	ff.readCells(id, idKey);
+      }
+      Assert(id.size() == ff.nrows());
+
+      for (long irow = 0; irow < ff.nrows(); irow++) {
+	map<long, Detection*>::iterator pr = extn->keepers.find(id[irow]);
+	if (pr == extn->keepers.end()) continue; // Not a desired object
+
+	// Have a desired object now.  Fill its Detection structure
+	Detection* d = pr->second;
+	extn->keepers.erase(pr);
+
+	d->map = map;
+	ff.readCell(d->xpix, xKey, irow);
+	ff.readCell(d->ypix, yKey, irow);
+	double sigma;
+	ff.readCell(sigma, idKey, irow);
+	if (startMap) {
+	  sigma = std::max(minPixError, sigma);
+	  d->sigmaPix = sigma;
+	  startMap->toWorld(d->xpix, d->ypix, d->xw, d->yw);
+	  Matrix22 dwdp = startMap->dWorlddPix(d->xpix, d->ypix);
+	  d->clipsqx = pow(d->sigmaPix,-2.) / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
+	  d->clipsqy = pow(d->sigmaPix,-2.) / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
+	  d->wtx = d->clipsqx * (isTag ? 0. : weight);
+	  d->wty = d->clipsqy * (isTag ? 0. : weight);
+	} else {
+	  // Input coords were degrees RA/Dec; project into Field's tangent plane
+	  TangentPlane tp( SphericalICRS(d->xpix*DEGREE, d->ypix*DEGREE), fld.orient);
+	  double xw, yw;
+	  tp.getLonLat(xw,yw);
+	  xw /= DEGREE;
+	  yw /= DEGREE;  // Back to our WCS system of degrees.
+
+	  // Anything that's coming in as RA/Dec gets "reference" floor on errors
+	  sigma = std::max(minReferenceError, sigma);
+
+	  d->xpix = d->xw = xw;
+	  d->ypix = d->yw = yw;
+	  d->sigmaPix = sigma;
+	  double wt = pow(sigma,-2.);
+	  d->clipsqx = wt;
+	  d->clipsqy = wt;
+	  wt *= isTag ? 0. : weight;   // Tags have no weight in fits.
+	  d->wtx = wt;
+	  d->wty = wt;
 	}
-      } // Done reserving matches
+      } // End loop over catalog objects
 
-      // make CoordAlign class
-      CoordAlign ca(mapCollection);
-      for (int ifield=0; ifield<fields.size(); ifield++)
-	for (map<int, MCat>::iterator iaff = fields[ifield].affinities.begin();
-	     iaff != fields[ifield].affinities.end();
-	     ++iaff) 
-	  ca.add(iaff->second);
-      int nclip;
-      double oldthresh=0.;
-
-      // Start off in a "coarse" mode so we are not fine-tuning the solution
-      // until most of the outliers have been rejected:
-      bool coarsePasses = true;
-      ca.setRelTolerance(10.*chisqTolerance);
-      // Here is the actual fitting loop 
-      do {
-	// Report number of active Matches / Detections in each iteration:
-	{
-	  long int mcount=0;
-	  long int dcount=0;
-	  ca.count(mcount, dcount, false, 2);
-	  double maxdev=0.;
-	  int dof=0;
-	  double chi= ca.chisqDOF(dof, maxdev, false);
-	  cout << "Fitting " << mcount << " matches with " << dcount << " detections "
-	       << " chisq " << chi << " / " << dof << " dof,  maxdev " << sqrt(maxdev) 
-	       << " sigma" << endl;
-      for (int ifield=0; ifield<fields.size(); ifield++)
-{
-      for (map<int, MCat>::iterator iaff = fields[ifield].affinities.begin();
-           iaff != fields[ifield].affinities.end();
-           ++iaff) {
-        MCat& mc = iaff->second;
-          for (int iext=0; iext<instruments[0]->nExtensions; iext++) {
-             mc.detailed_info(iext);
-          }
-          }
-         
-	} }
-	// Do the fit here!!
-	double chisq = ca.fitOnce();
-	// Note that fitOnce() remaps *all* the matches, including reserved ones.
-	double max;
-	int dof;
-	ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
-	double thresh = sqrt(chisq/dof) * clipThresh;
-	cout << "Final chisq: " << chisq 
-	     << " / " << dof << " dof, max deviation " << max
-	     << "  new clip threshold at: " << thresh << " sigma"
+      if (!extn->keepers.empty()) {
+	cerr << "Did not find all desired objects in catalog " << filename
+	     << " extension " << hduNumber
 	     << endl;
-	if (thresh >= max || (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement)) {
-	  // Sigma clipping is no longer doing much.  Quit if we are at full precision,
-	  // else require full target precision and initiate another pass.
-	  if (coarsePasses) {
-	    coarsePasses = false;
-	    ca.setRelTolerance(chisqTolerance);
-	    cout << "--Starting strict tolerance passes" << endl;
-	    oldthresh = thresh;
-	    nclip = ca.sigmaClip(thresh, false, clipEntireMatch);
-	    cout << "Clipped " << nclip
-		 << " matches " << endl;
-	    continue;
+	exit(1);
+      }
+    } // end loop over catalogs to read
+	
+    cerr << "Done reading catalogs." << endl;
+
+    // Make a pass through all matches to reserve as needed and purge 
+    // those not wanted.  
+
+    {
+      ran::UniformDeviate u;
+      long dcount=0;
+      int dof=0;
+      double chi=0.;
+      double maxdev=0.;
+
+      list<Match*>::iterator i = matches.begin();
+      while (i != matches.end() ) {
+	// Remove Detections with too-large errors:
+	int ngood = 0;
+	list<Detection*> kill;
+	for (Match::iterator j=(*i)->begin();
+	     j != (*i)->end();
+	     ++j) {
+	  Detection* d = *j;
+	  // Keep it if pixel error is small or if it's from a tag or reference "instrument"
+	  if ( d->sigmaPix > maxPixError
+	       && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
+	    kill.push_back(d);
 	  } else {
-	    // Done!
-	    break;
+	    // count Detections with non-zero weights
+	    if ( d->wtx > 0.) ngood++;
 	  }
 	}
-	oldthresh = thresh;
-	nclip = ca.sigmaClip(thresh, false, clipEntireMatch);
-	if (nclip==0 && coarsePasses) {
-	  // Nothing being clipped; tighten tolerances and re-fit
+	if ( ngood < minMatches) {
+	  // Remove entire match if it's too small, and kill its Detections too
+	  (*i)->clear(true);
+	  i = matches.erase(i);
+	} else {
+	  // Still a good match.  Kill the detections above maxPixError
+	  for (list<Detection*>::iterator j=kill.begin();
+	       j != kill.end();
+	       ++j) {
+	    (*i)->erase(*j);
+	    delete *j;
+	  }
+
+	  dcount += ngood;	// Count total good detections
+	  chi += (*i)->chisq(dof, maxdev);
+
+	  // Decide whether to reserve this match
+	  if (reserveFraction > 0.)
+	    (*i)->setReserved( u < reserveFraction );
+
+	  ++i;
+	}
+      } // End loop over all matches
+
+      cout << "Using " << matches.size() 
+	   << " matches with " << dcount << " total detections." << endl;
+      cout << " chisq " << chi << " / " << dof << " dof maxdev " << sqrt(maxdev) << endl;
+
+    } // End Match-culling section.
+
+
+    ///////////////////////////////////////////////////////////
+    // Now do the re-fitting 
+    ///////////////////////////////////////////////////////////
+
+    // make CoordAlign class
+    CoordAlign ca(mapCollection, matches);
+
+    int nclip;
+    double oldthresh=0.;
+
+    // Start off in a "coarse" mode so we are not fine-tuning the solution
+    // until most of the outliers have been rejected:
+    bool coarsePasses = true;
+    ca.setRelTolerance(10.*chisqTolerance);
+    // Here is the actual fitting loop 
+    do {
+      // Report number of active Matches / Detections in each iteration:
+      {
+	long int mcount=0;
+	long int dcount=0;
+	ca.count(mcount, dcount, false, 2);
+	double maxdev=0.;
+	int dof=0;
+	double chi= ca.chisqDOF(dof, maxdev, false);
+	cout << "Fitting " << mcount << " matches with " << dcount << " detections "
+	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << sqrt(maxdev) 
+	     << " sigma" << endl;
+      }
+
+      // Do the fit here!!
+      double chisq = ca.fitOnce();
+      // Note that fitOnce() remaps *all* the matches, including reserved ones.
+      double max;
+      int dof;
+      ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
+      double thresh = sqrt(chisq/dof) * clipThresh;
+      cout << "Final chisq: " << chisq 
+	   << " / " << dof << " dof, max deviation " << max
+	   << "  new clip threshold at: " << thresh << " sigma"
+	   << endl;
+      if (thresh >= max || (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement)) {
+	// Sigma clipping is no longer doing much.  Quit if we are at full precision,
+	// else require full target precision and initiate another pass.
+	if (coarsePasses) {
 	  coarsePasses = false;
 	  ca.setRelTolerance(chisqTolerance);
-	  cout << "No clipping--Starting strict tolerance passes" << endl;
+	  cout << "--Starting strict tolerance passes" << endl;
+	  oldthresh = thresh;
+	  nclip = ca.sigmaClip(thresh, false, clipEntireMatch);
+	  cout << "Clipped " << nclip
+	       << " matches " << endl;
 	  continue;
+	} else {
+	  // Done!
+	  break;
 	}
-	cout << "Clipped " << nclip
-	     << " matches " << endl;
-        long int dcount=0;
-        long int mcount=0;
-
-        ca.count(mcount, dcount, false, 2, -2, -1);
-        cout << "-1 / 0: " << dcount << endl;
+      }
+      oldthresh = thresh;
+      nclip = ca.sigmaClip(thresh, false, clipEntireMatch);
+      if (nclip==0 && coarsePasses) {
+	// Nothing being clipped; tighten tolerances and re-fit
+	coarsePasses = false;
+	ca.setRelTolerance(chisqTolerance);
+	cout << "No clipping--Starting strict tolerance passes" << endl;
+	continue;
+      }
+      cout << "Clipped " << nclip
+	   << " matches " << endl;
+      long int dcount=0;
+      long int mcount=0;
+      
+      // ??? check on count()
+      ca.count(mcount, dcount, false, 2, -2, -1);
+      cout << "-1 / 0: " << dcount << endl;
         for (int iexp=0; iexp<exposures.size(); iexp++) {
           int iinst = exposures[iexp]->instrument;
           for (int iext=0; iext<instruments[iinst]->nExtensions; iext++) {
@@ -1096,10 +939,10 @@ main(int argc, char *argv[])
                 cout << iexp << " / " << iext << ": " << dcount << endl;
           }
         }
-      } while (coarsePasses || nclip>0);
+    } while (coarsePasses || nclip>0);
 
-      // The re-fitting is now complete.  Save the new header files
-      const double SCAMPTolerance=0.0001*ARCSEC/DEGREE;  // accuracy of SCAMP-format fit to real solution
+    // The re-fitting is now complete.  Save the new header files
+    const double SCAMPTolerance=0.0001*ARCSEC/DEGREE;  // accuracy of SCAMP-format fit to real solution
       for (int iexp=0; iexp<exposures.size(); iexp++) {
 	int iinst = exposures[iexp]->instrument;
 	for (int iext=0; iext<instruments[iinst]->nExtensions; iext++) {
@@ -1149,41 +992,6 @@ main(int argc, char *argv[])
 	     << " matches " << endl;
       } while (nclip>0);
 
-    } else { 
-      // reFit = false.  Do sigma-clipping on input world coordinates.
-      // Create a CoordAlign class used just for clipping
-      PixelMapCollection nullCollection;	// an empty list
-      CoordAlign ca(nullCollection);
-      for (int ifield=0; ifield<fields.size(); ifield++)
-	for (map<int, MCat>::iterator iaff = fields[ifield].affinities.begin();
-	     iaff != fields[ifield].affinities.end();
-	     ++iaff) 
-	  ca.add(iaff->second);
-      int nclip;
-      double oldthresh=0.;
-      do {
-	// Report number of active Matches / Detections in each iteration:
-	long int mcount=0;
-	long int dcount=0;
-	ca.count(mcount, dcount, false, 2);
-	double max;
-	int dof=0;
-	double chisq= ca.chisqDOF(dof, max, false);
-	cout << "Clipping " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << sqrt(max) 
-	     << " sigma" << endl;
-
-	double thresh = sqrt(chisq/dof) * clipThresh;
-	cout << "  new clip threshold: " << thresh << " sigma"
-	     << endl;
-	if (thresh >= max) break;
-	if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
-	oldthresh = thresh;
-	nclip = ca.sigmaClip(thresh, false, clipEntireMatch);
-	cout << "Clipped " << nclip
-	     << " matches " << endl;
-      } while (nclip>0);
-    }
 
     //////////////////////////////////////
     // Output data and calculate some statistics

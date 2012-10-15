@@ -44,7 +44,8 @@ public:
     name(name_), orient(orient_), reproject(-1) {}
   string name;
   Orientation orient;	// Telescope pointing for this one
-  int  fieldNumber;
+  int  field;
+  int  instrument;
   PixelMapKey reproject; // Map from exposure's TangentPlane to field's TangentPlane
   PixelMapChain warp;		// Exposure portion of PixelMap
 private:
@@ -59,10 +60,10 @@ class Extension {
 public:
   Extension(): extensionMaps(0),  startpm(0) {}
   int exposure;
-  int instrument;
   int device;
-  SubMap* extensionMaps; // Compounded maps for each extension (owned by PixelMapCollection)
+  SubMap* extensionMap; // Compounded maps for each extension (owned by PixelMapCollection)
   PixelMap* startpm;  // Input PixelMap for this extension (owned by this class)
+  map<long, Detection*> keepers;  // The objects from this catalog that we will use
   ~Extension() {
     if (startpm) delete startpm;
   }

@@ -245,6 +245,7 @@ main(int argc,
     NameIndex exposureNames;
     vector<astrometry::SphericalICRS> exposurePointings;
     vector<int> exposureFields; // Record one field per exposure
+    vector<int> exposureInstruments; // Record one instrument per exposure
 
     // And a list holding all Points being matched
     list<Point> allPoints;
@@ -282,7 +283,6 @@ main(int argc,
       extensionTable.addColumn(vi, "FileNumber");
       extensionTable.addColumn(vi, "HDUNumber");
       extensionTable.addColumn(vi, "ExposureNumber");
-      extensionTable.addColumn(vi, "InstrumentNumber");
       extensionTable.addColumn(vi, "DeviceNumber");
       extensionTable.addColumn(vs, "WCS");
       extensionTable.addColumn(vs, "xKey");
@@ -540,23 +540,6 @@ main(int argc,
 	  exit(1);
 	}
 
-	// Assign an exposure number:
-	string thisExposure = maybeFromHeader(exposureName, localHeader);
-	if (!exposureNames.has(thisExposure)) {
-	  exposureNames.append(thisExposure);
-	  exposurePointings.push_back(thisRADec);
-	  exposureFields.push_back(fieldNumber);
-	  Assert(exposurePointings.size()==exposureNames.size());
-	  Assert(exposurePointings.size()==exposureFields.size());
-	} 
-	int exposureNumber = exposureNames.indexOf(thisExposure);
-	  // Error if different extensions put same exposure in different fields
-	if (fieldNumber != exposureFields[exposureNumber]) {
-	  cerr << "Conflicting field assignments for exposure " << thisExposure << endl;
-	  exit(1);
-	}
-
-	// Henceforth should use RA/Dec from the exposure.
 
 	// Assign an instrument, new one if not yet existent:
 	string thisInstrument = maybeFromHeader(instrumentName, localHeader);
@@ -573,6 +556,31 @@ main(int argc,
 	  instrumentNumber = instrumentNames.indexOf(thisInstrument);
 	  Assert(instrumentNumber >= 0);
 	}
+
+	// Assign an exposure number:
+	string thisExposure = maybeFromHeader(exposureName, localHeader);
+	if (!exposureNames.has(thisExposure)) {
+	  exposureNames.append(thisExposure);
+	  exposurePointings.push_back(thisRADec);
+	  exposureFields.push_back(fieldNumber);
+	  exposureInstruments.push_back(instrumentNumber);
+	  Assert(exposurePointings.size()==exposureNames.size());
+	  Assert(exposurePointings.size()==exposureFields.size());
+	  Assert(exposurePointings.size()==exposureInstruments.size());
+	} 
+	int exposureNumber = exposureNames.indexOf(thisExposure);
+	// Error if different extensions put same exposure in different fields or instruments:
+	if (fieldNumber != exposureFields[exposureNumber]) {
+	  cerr << "Conflicting field assignments for exposure " << thisExposure << endl;
+	  exit(1);
+	}
+	if (instrumentNumber != exposureInstruments[exposureNumber]) {
+	  cerr << "Conflicting instrument assignment " << thisInstrument 
+	       << " for exposure " << thisExposure << endl;
+	  exit(1);
+	}
+
+	// Henceforth should use RA/Dec from the exposure.
 
 	// Assign a device
 	string thisDevice="";
@@ -619,7 +627,6 @@ main(int argc,
 	extensionTable.writeCell(iFile, "FileNumber", extensionNumber);
 	extensionTable.writeCell(hduNumber, "HDUNumber", extensionNumber);
 	extensionTable.writeCell(exposureNumber, "ExposureNumber", extensionNumber);
-	extensionTable.writeCell(instrumentNumber, "InstrumentNumber", extensionNumber);
 	extensionTable.writeCell(deviceNumber, "DeviceNumber", extensionNumber);
 	extensionTable.writeCell(thisXKey, "xKey", extensionNumber);
 	extensionTable.writeCell(thisYKey, "yKey", extensionNumber);
@@ -722,7 +729,6 @@ main(int argc,
       vector<string> names;
       vector<double> ra;
       vector<double> dec;
-      vector<int> fieldNum;
       for (int i=0; i<exposureNames.size(); i++) {
 	names.push_back(exposureNames.nameOf(i));
 	astrometry::SphericalICRS pole = exposurePointings[i];
@@ -730,12 +736,12 @@ main(int argc,
 	pole.getLonLat(r,d);
 	ra.push_back( r/DEGREE);
 	dec.push_back( d/DEGREE);
-	fieldNum.push_back( exposureFields[i]);
       }
       ff.addColumn(names, "Name");
       ff.addColumn(ra, "RA");
       ff.addColumn(dec, "Dec");
-      ff.addColumn(fieldNum, "FieldNumber");
+      ff.addColumn(exposureFields, "FieldNumber");
+      ff.addColumn(exposureInstruments, "InstrumentNumber");
     }
 
     //  Write instrument information to output table
