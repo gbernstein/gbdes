@@ -22,6 +22,13 @@ string usage="WCSFoF: Match objects using FoF algorithm on world coordinate syst
              "                      (in degrees) N, S, E, or W of any point from center.\n"
              "      <exposure specs>: FITS file with binary table of input file info...";
 
+// Strip leading and trailing white space from a string:
+void stripWhite(string& s) {
+  while (!s.empty() && std::isspace(s[0]))
+    s.erase(0,1);
+  while (!s.empty() && std::isspace(s[s.size()-1]))
+    s.erase(s.size()-1);
+}
 // Parse the inValue of string: if it starts with @ sign, specifies to read a value
 // from keyword of a header:
 string maybeFromHeader(const string& inValue, const Header& h) {
@@ -227,9 +234,7 @@ main(int argc,
     FTable fileTable;
     {
       FitsTable ft(exposureSpecs,FITS::ReadOnly);
-      /**/cerr << "Open...";
       fileTable = ft.extract();
-      /**/cerr << "Extracted" << endl;
     }
 
     /**/cerr << "Read fileTable " << fileTable.ncols() << endl;
@@ -344,23 +349,27 @@ main(int argc,
       string selectionExpression;
       try {
 	fileTable.readCell(selectionExpression,inSelectCol, iFile);
+	stripWhite(selectionExpression);
       } catch (FTableNonExistentColumn& m) {
 	selectionExpression.clear();
       }
       string affinityName;
       try {
 	fileTable.readCell(affinityName, affinityCol, iFile);
+	stripWhite(affinityName);
       } catch (FTableNonExistentColumn& m) {
 	affinityName = globalAffinity;
       }
       string starExpression;
       try {
 	fileTable.readCell(starExpression,starSelectCol, iFile);
+	stripWhite(starExpression);
       } catch (FTableNonExistentColumn& m) {
 	starExpression.clear();	// everything becomes a star
       }
 
-      /**/cerr << "Read the parameters from " << filename << endl;
+      /**/cerr << "Read file " << iFile << "/" << fileTable.nrows()
+	       << " " << filename << endl;
 
       // Open primary extension of the file to get its header
       img::Header primaryHeader;
@@ -372,17 +381,20 @@ main(int argc,
 	quit(m,1);
       }
       
-      /**/cerr << "Have primary header" << endl;
 
       // Open the WCS file that holds additional keywords, if any
       // ???? Could check to see if WCS file name is stored in a header keyword ???
+      // Strip leading & trailing whitespace from wcsFile:
+      stripWhite(wcsFile);
+	
       bool xyAreRaDec = stringstuff::nocaseEqual(wcsFile, "ICRS")
 	|| stringstuff::nocaseEqual(wcsFile, "@_ICRS");
       ifstream wcsStream;
       if (! (wcsFile.empty() || xyAreRaDec)) {
 	wcsStream.open(wcsFile.c_str());
 	if (!wcsStream.is_open()) {
-	  cerr << "Could not open WCS information file " << wcsFile << endl;
+	  cerr << "Could not open WCS information file <" << wcsFile 
+	       << ">" << endl;
 	  exit(1);
 	}
       }
@@ -399,7 +411,6 @@ main(int argc,
 	   hduNumber<=lastHdu;
 	   hduNumber++) {
 
-	/**/cerr << "..Looking at HDU " << hduNumber << endl;
 	bool haveLDACHeader = false;
 	Header localHeader = primaryHeader;
 	FTable ft;
@@ -465,7 +476,7 @@ main(int argc,
 	double weight;
 	if (weightString.empty()) {
 	  weight = 1.;
-	} else if (weightString[0]='@') {
+	} else if (weightString[0]=='@') {
 	  string keyword = weightString.substr(1);
 	  if (!localHeader.getValue(keyword, weight)) {
 	    cerr << "Could not find weight in double-valued header keyword " 
@@ -504,6 +515,8 @@ main(int argc,
 	// Determine center coordinates of this extension:
 	string thisRA = maybeFromHeader(ra, localHeader);
 	string thisDec = maybeFromHeader(dec, localHeader);
+	stripWhite(thisRA);
+	stripWhite(thisDec);
 	astrometry::SphericalICRS thisRADec;
 	// Will default to 0 RA, 0 Dec if not given.
 	// Coords only needed if first Device for exposure or using @_NEAREST field
@@ -633,6 +646,7 @@ main(int argc,
 	extensionTable.writeCell(thisIdKey, "idKey", extensionNumber);
 	extensionTable.writeCell(thisErrorKey, "errKey", extensionNumber);
 	extensionTable.writeCell(weight, "Weight", extensionNumber);
+
 	{
 	  string wcsDump;
 	  if (!map) {
@@ -644,9 +658,7 @@ main(int argc,
 		   << filename << " / " << iFile << endl;
 	      exit(1);
 	    }
-	    /**/cerr << "Ready to writeHeader()" << endl;
 	    img::Header hh = sm->writeHeader();
-	    /**/cerr << " done" << endl;
 	    ostringstream oss;
 	    oss << hh;
 	    wcsDump = oss.str();
@@ -683,6 +695,10 @@ main(int argc,
 	    Assert(map);
 	    map->toWorld(xpix, ypix, xw, yw);
 	  }
+	  // ??? Note that frequent small memory allocations are making memory mgmt and overhead
+	  // exceed the actual Point memory usage.  Also the allPoints list is really superfluous
+	  // (just extra link pointers), 16B per Point.  Probably a good deal of overhead
+	  // in the Catalog structures too.  In fact up to ~300 B per Point now!
 	  allPoints.push_back(Point(xw, yw, extensionNumber, vid[iObj], exposureNumber));
 	  if (isStar[iObj])
 	    starCatalog->add(allPoints.back());
@@ -761,7 +777,7 @@ main(int argc,
       vector<double> vymin(nDevices);
       vector<double> vymax(nDevices);
       for (int j=0; j<nDevices; j++) {
-	devnames[j] = inst[i].name;
+	devnames[j] = inst[j].name;
 	vxmin[j] = floor(inst[j].getXMin());
 	vxmax[j] = ceil(inst[j].getXMax());
 	vymin[j] = floor(inst[j].getYMin());

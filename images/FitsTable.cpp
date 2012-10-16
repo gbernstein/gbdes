@@ -383,8 +383,8 @@ FitsTable::readFitsData(img::TableData* tptr,
   fits_get_rowsize(fptr(), &bufferRows, &status);
   checkCFITSIO(status, "readFitsData()");
   
-  for (long firstRow = rowStart; firstRow < rowEnd; firstRow+=bufferRows) {
-    long rowCount = std::min(rowEnd, firstRow+bufferRows) - firstRow;
+  for ( ; rowStart < rowEnd; rowStart+=bufferRows) {
+    long rowCount = std::min(rowEnd, rowStart+bufferRows) - rowStart;
     for (int i=0; i<numbers.size(); i++) {
       string name = names[i];
       int num = numbers[i];
@@ -664,8 +664,8 @@ FitsTable::writeFitsTableData(const img::TableData *tptr) {
   fits_get_rowsize(fptr(), &bufferRows, &status);
   checkCFITSIO(status, "writeFitsTableData()"); 
   
-  for (long firstRow = rowStart; firstRow < rowEnd; firstRow+=bufferRows) {
-    long rowCount = std::min(rowEnd, firstRow+bufferRows) - firstRow;
+  for ( ; rowStart < rowEnd; rowStart+=bufferRows) {
+    long rowCount = std::min(rowEnd, rowStart+bufferRows) - rowStart;
     // Loop over columns, writing interval of each to output
     for (int iCol = 0; iCol < colNames.size(); iCol++) {
       FITS::DataType dt = (*tptr)[colNames[iCol]]->elementType();
@@ -673,63 +673,63 @@ FitsTable::writeFitsTableData(const img::TableData *tptr) {
       switch (dt) {
       case Tlogical:
 	writeFitsColumn<bool>(tptr, colNames[iCol], colNums[iCol], 
-			      firstRow, firstRow+rowCount);
+			      rowStart, rowStart+rowCount);
 	break;
       case Tstring:
 	writeFitsColumn<string>(tptr, colNames[iCol], colNums[iCol], 
-				firstRow, firstRow+rowCount);
+				rowStart, rowStart+rowCount);
 	break;
       case Tbyte:
 	writeFitsColumn<unsigned char>(tptr, colNames[iCol], colNums[iCol], 
-				       firstRow, firstRow+rowCount);
+				       rowStart, rowStart+rowCount);
 	break;
       case Tsbyte:
 	writeFitsColumn<signed char>(tptr, colNames[iCol], colNums[iCol], 
-				     firstRow, firstRow+rowCount);
+				     rowStart, rowStart+rowCount);
 	break;
       case Tshort:
 	writeFitsColumn<short>(tptr, colNames[iCol], colNums[iCol], 
-			       firstRow, firstRow+rowCount);
+			       rowStart, rowStart+rowCount);
 	break;
       case Tushort:
 	writeFitsColumn<unsigned short>(tptr, colNames[iCol], colNums[iCol], 
-					firstRow, firstRow+rowCount);
+					rowStart, rowStart+rowCount);
 	break;
       case Tint:
 	writeFitsColumn<int>(tptr, colNames[iCol], colNums[iCol], 
-			     firstRow, firstRow+rowCount);
+			     rowStart, rowStart+rowCount);
 	break;
       case Tuint:
 	writeFitsColumn<unsigned int>(tptr, colNames[iCol], colNums[iCol], 
-				      firstRow, firstRow+rowCount);
+				      rowStart, rowStart+rowCount);
 	break;
       case Tlong:
 	writeFitsColumn<long>(tptr, colNames[iCol], colNums[iCol], 
-			     firstRow, firstRow+rowCount);
+			     rowStart, rowStart+rowCount);
 	break;
       case Tulong:
 	writeFitsColumn<unsigned long>(tptr, colNames[iCol], colNums[iCol], 
-				      firstRow, firstRow+rowCount);
+				      rowStart, rowStart+rowCount);
 	break;
       case Tlonglong:
 	writeFitsColumn<LONGLONG>(tptr, colNames[iCol], colNums[iCol], 
-				  firstRow, firstRow+rowCount);
+				  rowStart, rowStart+rowCount);
 	break;
       case Tfloat:
 	writeFitsColumn<float>(tptr, colNames[iCol], colNums[iCol], 
-			       firstRow, firstRow+rowCount);
+			       rowStart, rowStart+rowCount);
 	break;
       case Tdouble:
 	writeFitsColumn<double>(tptr, colNames[iCol], colNums[iCol], 
-				firstRow, firstRow+rowCount);
+				rowStart, rowStart+rowCount);
 	break;
       case Tcomplex:
 	writeFitsColumn<complex<float> >(tptr, colNames[iCol], colNums[iCol], 
-					 firstRow, firstRow+rowCount);
+					 rowStart, rowStart+rowCount);
 	break;
       case Tdblcomplex:
 	writeFitsColumn<complex<double> >(tptr, colNames[iCol], colNums[iCol], 
-					  firstRow, firstRow+rowCount);
+					  rowStart, rowStart+rowCount);
 	break;
       default:
 	ostringstream oss;

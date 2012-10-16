@@ -406,7 +406,6 @@ WritePV(const PolyMap& pm,
 	int ipv) {
   string prefix;
   DMatrix coeffs;
-  /**/cerr << "...getting coeffs" << endl;
   if (ipv==1) {
     prefix="PV1_";
     DMatrix cm = pm.getXPoly().getM();
@@ -421,7 +420,6 @@ WritePV(const PolyMap& pm,
   } else {
     throw AstrometryError("SCAMPMap::WritePV needs ipv=1 or 2");
   }
-  /**/cerr << "...writing coeffs" << endl;
   int order = coeffs.nrows()-1;
   int i=0;
   int j=0;

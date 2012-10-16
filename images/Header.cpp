@@ -175,9 +175,11 @@ namespace img {
     HdrRecord<int>* hi = new HdrRecord<int>(keyword, 0, comment);
     if (!hi->setValueString(vstring)) return hi;
     // If that failed, try a double
+    delete hi;
     HdrRecord<double>* hd = new HdrRecord<double>(keyword, 0., comment);
     if (!hd->setValueString(vstring)) return hd;
-    else return 0;	// Formatting error
+    delete hd;
+    return 0;	// Formatting error
   }
 
   istream& 
@@ -189,10 +191,18 @@ namespace img {
 	is.setstate(ios::failbit);  // ??? do we want to throw here?
 	continue;
       }
-      if (hrb->getKeyword()=="END") return is;
-      else if (hrb->getKeyword()=="COMMENT") h.addComment(hrb->getComment());
-      else if (hrb->getKeyword()=="HISTORY") h.addHistory(hrb->getComment());
-      else h.append(hrb);
+      if (hrb->getKeyword()=="END") {
+	delete hrb;
+	return is;
+      } else if (hrb->getKeyword()=="COMMENT") {
+	h.addComment(hrb->getComment());
+	delete hrb;
+      } else if (hrb->getKeyword()=="HISTORY") {
+	h.addHistory(hrb->getComment());
+	delete hrb;
+      } else {
+	h.append(hrb);
+      }
     }
     // Get here is we exhaust the istream before END.  eof should already be set.
     return is;
