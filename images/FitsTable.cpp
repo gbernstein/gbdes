@@ -1,6 +1,6 @@
 // Read/Writewrite FTables from FITS extensions
 
-#include "FITSTable.h"
+#include "FitsTable.h"
 #include "Expressions.h"
 
 using namespace img;

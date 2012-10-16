@@ -222,13 +222,14 @@ class UnaryPlusToken: public UnaryOpToken {
 public:
   UnaryPlusToken(size_t begin=0): UnaryOpToken(begin) {}
   ~UnaryPlusToken() {}
-  virtual Evaluable* createEvaluable(Evaluable* right) const {
+  virtual Evaluable* createEvaluableUnary(Evaluable* right) const {
     Value* rVal = right->returnEmptyEvaluation();
     if (dynamic_cast<ScalarValue<long>*> (rVal)
 	|| dynamic_cast<ScalarValue<double>*> (rVal)
 	|| dynamic_cast<VectorValue<long>*> (rVal)
 	|| dynamic_cast<VectorValue<double>*> (rVal)) return new NoOpEvaluable(right);
     throwSyntaxError("Type mismatch");
+    return 0; //Can't get here
   }
 };
 
@@ -236,13 +237,14 @@ class UnaryMinusToken: public UnaryOpToken {
 public:
   UnaryMinusToken(size_t begin=0): UnaryOpToken(begin) {}
   ~UnaryMinusToken() {}
-  virtual Evaluable* createEvaluable(Evaluable* right) const {
+  virtual Evaluable* createEvaluableUnary(Evaluable* right) const {
     Value* rVal = right->returnEmptyEvaluation();
     USTEST(std::negate, double);
     USTEST(std::negate, long);
     UVTEST(std::negate, double);
     UVTEST(std::negate, long);
     throwSyntaxError("Type mismatch");
+    return 0; //Can't get here
   }
 };
 
@@ -255,7 +257,7 @@ public:
 				  bool lastTokenWasOperator) const {
     return matchesThis("!",input, begin, end) ? new NotToken(begin-1) : 0;
   }
-  virtual Evaluable* createEvaluable(Evaluable* right) const {
+  virtual Evaluable* createEvaluableUnary(Evaluable* right) const {
     Value* rVal = right->returnEmptyEvaluation();
     USTEST(std::logical_not, bool);
     USTEST(std::logical_not, long);
@@ -264,6 +266,7 @@ public:
     UVTEST(std::logical_not, long);
     UVTEST(std::logical_not, double);
     throwSyntaxError("Type mismatch");
+    return 0; //Can't get here
   }
 };
 
@@ -300,13 +303,14 @@ public:
       return 0;
     }
   }
-  virtual Evaluable* createEvaluable(Evaluable* right) const {
+  virtual Evaluable* createEvaluableUnary(Evaluable* right) const {
     Value* rVal = right->returnEmptyEvaluation();
     USTEST(SinFunction, long);
     USTEST(SinFunction, double);
     UVTEST(SinFunction, long);
     UVTEST(SinFunction, double);
     throwSyntaxError("Type mismatch");
+    return 0; //Can't get here
   }
 };
 
@@ -445,7 +449,7 @@ public:
 class BinaryPlusToken: public BinaryOpToken {
 public:
   BinaryPlusToken(size_t begin=0): BinaryOpToken(begin) {}
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const {
     Value* lVal = left->returnEmptyEvaluation();
     Value* rVal = right->returnEmptyEvaluation();
     BSSTEST(std::plus, std::string, std::string, std::string);
@@ -466,13 +470,14 @@ public:
     BVVTEST(std::plus, double, double, long);
     BVVTEST(std::plus, double, double, double);
     throwSyntaxError("Type mismatch");
+    return 0; //Cannot get here;
   }
 };
 
 class BinaryMinusToken: public BinaryOpToken {
 public:
   BinaryMinusToken(size_t begin=0): BinaryOpToken(begin) {}
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const {
     Value* lVal = left->returnEmptyEvaluation();
     Value* rVal = right->returnEmptyEvaluation();
     BSSTEST(std::minus, long, long, long);
@@ -492,6 +497,7 @@ public:
     BVVTEST(std::minus, double, double, long);
     BVVTEST(std::minus, double, double, double);
     throwSyntaxError("Type mismatch");
+    return 0; // Can't get here
   }
 };
 
@@ -504,7 +510,7 @@ public:
 				  bool lastTokenWasOperator) const {
     return matchesThis("%",input, begin, end) ? new ModulusToken(begin-1) : 0;
   }
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const {
     Value* lVal = left->returnEmptyEvaluation();
     Value* rVal = right->returnEmptyEvaluation();
     BSSTEST(std::modulus, long, long, long);
@@ -512,6 +518,7 @@ public:
     BVSTEST(std::modulus, long, long, long);
     BVVTEST(std::modulus, long, long, long);
     throwSyntaxError("Type mismatch");
+    return 0; // Can't get here
   }
 };
 
@@ -524,7 +531,7 @@ public:
 				  bool lastTokenWasOperator) const {
     return matchesThis("*",input, begin, end) ? new MultipliesToken(begin-1) : 0;
   }
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const {
     Value* lVal = left->returnEmptyEvaluation();
     Value* rVal = right->returnEmptyEvaluation();
     BSSTEST(std::multiplies, long, long, long);
@@ -544,6 +551,7 @@ public:
     BVVTEST(std::multiplies, double, double, long);
     BVVTEST(std::multiplies, double, double, double);
     throwSyntaxError("Type mismatch");
+    return 0; // Can't get here
   }
 };
 
@@ -556,7 +564,7 @@ public:
 				  bool lastTokenWasOperator) const {
     return matchesThis("/",input, begin, end) ? new DividesToken(begin-1) : 0;
   }
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const {
     Value* lVal = left->returnEmptyEvaluation();
     Value* rVal = right->returnEmptyEvaluation();
     BSSTEST(std::divides, long, long, long);
@@ -576,6 +584,7 @@ public:
     BVVTEST(std::divides, double, double, long);
     BVVTEST(std::divides, double, double, double);
     throwSyntaxError("Type mismatch");
+    return 0; // Can't get here
   }
 };
 
@@ -591,7 +600,7 @@ public:									       \
     return ( matchesThis(CODE1,input, begin, end)			       \
 	     || matchesThis(CODE2,input, begin, end)) ? new NAME(inChar) : 0;  \
   }									       \
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {  \
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const { \
     Value* lVal = left->returnEmptyEvaluation();			       \
     Value* rVal = right->returnEmptyEvaluation();			       \
     BSSTEST(FUNC, bool, bool, bool)					       \
@@ -634,6 +643,7 @@ public:									       \
     BVVTEST(FUNC, bool, double, long)					       \
     BVVTEST(FUNC, bool, double, double)					       \
     throwSyntaxError("Type mismatch");					       \
+    return 0;								       \
   }									       \
 }
 
@@ -642,6 +652,7 @@ public:									       \
   BINARY_LOGICAL(OrToken, std::logical_or, "||", "|");
 
 #undef BINARY_LOGICAL
+
 
 #define COMPARISON(NAME,FUNC,CODE)                                          \
 class NAME: public BinaryOpToken {					    \
@@ -653,8 +664,8 @@ public:									    \
 				  bool lastTokenWasOperator) const {	    \
     long inChar = begin;						    \
     return ( matchesThis(CODE,input, begin, end)) ? new NAME(inChar) : 0;   \
-  }									    \
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {   \
+  }     								    \
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const { \
     Value* lVal = left->returnEmptyEvaluation();			    \
     Value* rVal = right->returnEmptyEvaluation();			    \
     BSSTEST(FUNC, std::string, std::string, std::string);                   \
@@ -681,7 +692,8 @@ public:									    \
     BVVTEST(FUNC, double, double, long);				    \
     BVVTEST(FUNC, double, double, double);				    \
 									    \
-    throwSyntaxError("Type mismatch");				    \
+    throwSyntaxError("Type mismatch");   				    \
+    return 0;                 				                    \
   }									    \
 }
 
@@ -712,7 +724,7 @@ public:
     return (matchesThis("**",input, begin, end)
 	    || matchesThis("^",input, begin, end)) ? new PowerToken(inChar) : 0;
   }
-  virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
+  virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const {
     Value* lVal = left->returnEmptyEvaluation();
     Value* rVal = right->returnEmptyEvaluation();
     BSSTEST(PowerOf, double, long, long);
@@ -732,6 +744,7 @@ public:
     BVVTEST(PowerOf, double, double, long);
     BVVTEST(PowerOf, double, double, double);
     throwSyntaxError("Type mismatch");
+    return 0;  // Can't get here
   }
 };
 

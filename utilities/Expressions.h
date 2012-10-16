@@ -161,7 +161,7 @@ namespace expressions {
     UnaryOpToken(size_t begin=0): Token(begin) {}
     virtual bool isOperator() const {return true;}
     virtual bool isUnaryOperator() const {return true;}
-    virtual Evaluable* createEvaluable(Evaluable* right) const {
+    virtual Evaluable* createEvaluableUnary(Evaluable* right) const {
       throw ExpressionError("called unimplemented UnaryOpToken::createEvaluable;");
     }
   };
@@ -172,7 +172,7 @@ namespace expressions {
     BinaryOpToken(size_t begin=0): Token(begin) {}
     virtual bool isOperator() const {return true;}
     virtual bool isBinaryOperator() const {return true;}
-    virtual Evaluable* createEvaluable(Evaluable* left, Evaluable* right) const {
+    virtual Evaluable* createEvaluableBinary(Evaluable* left, Evaluable* right) const {
       throw ExpressionError("called unimplemented BinaryOpToken::createEvaluable;");
     }
   };

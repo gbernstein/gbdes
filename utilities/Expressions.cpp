@@ -214,7 +214,7 @@ expressions::parse(std::list<Token*>& tokenList,
       tokenList.erase(rightIter);
       UnaryOpToken* uot = dynamic_cast<UnaryOpToken*> (*i);
       Assert(uot);
-      Evaluable* contents = uot->createEvaluable(right);
+      Evaluable* contents = uot->createEvaluableUnary(right);
       delete *i;
       *i = new EvaluableToken(contents);
     } while (i != begin);
@@ -258,7 +258,7 @@ expressions::parse(std::list<Token*>& tokenList,
 
 	  BinaryOpToken* bot = dynamic_cast<BinaryOpToken*> (*j);
 	  Assert(bot);
-	  Evaluable* contents = bot->createEvaluable(left, right);
+	  Evaluable* contents = bot->createEvaluableBinary(left, right);
 	  // delete the BinOpToken and replace by EvaluableToken
 	  delete (*j);
 	  *j = new EvaluableToken(contents);
@@ -283,8 +283,3 @@ expressions::parse(std::list<Token*>& tokenList,
     throw SyntaxError(err, e.charBegin);
   }
 }
-
-    
-	
-      
-    

@@ -263,10 +263,10 @@ namespace img {
     virtual char columnCode() const {return colCode2;}
 
     // Need to declare these so they can be specialized for string:
-    long writeCell(const vector<DT>& value, long row) {
+    virtual long writeCell(const vector<DT>& value, long row) {
       return Base::writeCell(value,row);
     }
-    long writeCells(const vector<vector<DT> >& values, long rowStart=0) {
+    virtual long writeCells(const vector<vector<DT> >& values, long rowStart=0) {
       return Base::writeCells(values, rowStart);
     }
 
@@ -400,6 +400,7 @@ namespace img {
 
     virtual long writeCell(const vector<DT>& value, long row) {
       checkWidth(value);
+      if (v.size() < row+1) v.resize(row+1);
       v[row].reserve(width);
       // Use normal variable-length array writer
       long out = Base::writeCell(value, row);
@@ -570,8 +571,6 @@ namespace img {
     // Access single element (copy created)
     template <class T>
     void readCell(T& value, string columnName, long row) const {
-      /**cerr << "In readCell with element type" << (*this)[columnName]->elementType()
-	       << " repeat " << (*this)[columnName]->repeat() << endl;*/
       rangeCheck(row);
       const ScalarColumn<T>* col = dynamic_cast<const ScalarColumn<T>*> ((*this)[columnName]);
       if (!col) throw FTableError("Type mismatch reading column " + columnName);

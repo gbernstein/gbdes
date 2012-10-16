@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <set>
 
 // For regular-expression matching:
 #include <boost/regex.hpp>

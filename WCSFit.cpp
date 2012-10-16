@@ -24,7 +24,7 @@ string usage=
   "     stdin is read as parameters.";
 
 
-#include "Exposure.h"
+#include "Instrument.h"
 
 class MapMarq {
 public:
