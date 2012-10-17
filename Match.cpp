@@ -108,7 +108,7 @@ private:
 #endif
 };
 
-Match::Match(Detection *e): elist(1,e), ngood(1), isReserved(false) {
+Match::Match(Detection *e): elist(1,e), nFit(1), isReserved(false) {
   e->itsMatch = this;
 }
 void
@@ -116,14 +116,15 @@ Match::add(Detection *e) {
   elist.push_back(e);
   e->itsMatch = this;
   e->isClipped = false;
-  ngood++;
+  nFit++;
 }
 
 void
 Match::remove(Detection* e) {
   elist.remove(e);  
   e->itsMatch = 0;
-  ngood--;
+  // Recount fittable objects
+  countFit();
 }
 
 void
@@ -137,7 +138,7 @@ Match::clear(bool deleteDetections) {
       (*i)->itsMatch = 0;
   }
   elist.clear();
-  ngood = 0;
+  nFit = 0;
 }
 
 void
@@ -146,7 +147,18 @@ Match::clipAll() {
        i!=elist.end();
        ++i) 
     (*i)->isClipped = true;
-  ngood = 0;
+  nFit = 0;
+}
+
+// Update and return count of fittable objects:
+int
+Match::countFit() {
+  nFit = 0;
+  for (list<Detection*>::iterator i=elist.begin();
+       i!=elist.end();
+       ++i) 
+    if ( !(*i)->isClipped && !((*i)->wtx==0. && (*i)->wty==0.)) nFit++;
+  return nFit;
 }
 
 void
@@ -158,7 +170,7 @@ Match::centroid(double& x, double& y) const {
 void
 Match::centroid(double& x, double& y,
 		double& wtx, double& wty) const {
-  if (ngood<1) {
+  if (nFit<1) {
     wtx=wty=x=y=0.;
     return;
   }
@@ -182,54 +194,6 @@ Match::centroid(double& x, double& y,
   y = swy/wty;
 }
 
-void
-minMatches(MCat& mlist,
-	   int nMin,
-	   bool deleteDetections) {
-  for (MCat::iterator i=mlist.begin(); i!=mlist.end(); )
-    if ((*i)->size()<nMin) {
-      (*i)->clear(deleteDetections);
-      MCat::iterator j=i;
-      ++j;
-      delete *i;
-      mlist.erase(i);
-      i=j;
-    } else {
-      ++i;
-    }
-}    
-
-/*** won't work right now! ***/
-void
-detailed_info(const MCat& mlist, int extension) {
-  int notherext=0;
-  int nreference=0;
-  for (MCat::iterator i=mlist.begin(); i!=mlist.end(); i++) {
-   bool has_otherextension=false;
-   bool has_reference=false;
-   bool has_self=false;
-   for (Match::iterator d=(*i)->begin(); d!=(*i)->end(); d++) {
-	// count matches which have one detection with this exposure and extension
-        // and at least one other detection with different extension
-        // or one detection with exposure -1 (reference catalog)
-	if((*d)->isClipped)
-         continue;
-
-        if((*d)->extension==extension && (*d)->exposure>=0)
-         has_self=true;
-        else if((*d)->exposure==-1)
-         has_reference=true;
-        else if((*d)->extension!=extension && (*d)->exposure>=0)
-         has_otherextension=true;
-   }
-   if(has_self) {
-    if(has_reference) nreference++;
-    if(has_otherextension) notherext++;
-   }
-  }
-  cout << "extension " << extension << " has " << nreference << " reference matches and " << notherext << " matches with other extensions" << endl;
-}
-****/
 
 ///////////////////////////////////////////////////////////
 // Coordinate-matching routines
@@ -255,7 +219,7 @@ Match::accumulateChisq(double& chisq,
   //**  Assert(alpha.nrows()==nP);
 
   // No contributions to fit for <2 detections:
-  if (ngood<=1) return 0;
+  if (nFit<=1) return 0;
 
   // Update mapping and save derivatives for each detection:
   vector<DMatrix*> dxyi(elist.size(), 0);
@@ -375,7 +339,7 @@ Match::accumulateChisq(double& chisq,
     }
   }
 
-  return 2*(ngood-1);
+  return 2*(nFit-1);
 }
 
 bool
@@ -383,7 +347,7 @@ Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
   // ??? Only clip the worst outlier at most
   double xmean, ymean;
-  if (ngood<=1) return false;
+  if (nFit<=1) return false;
   double maxSq=0.;
   list<Detection*>::iterator worst=elist.end();
   centroid(xmean,ymean);
@@ -404,8 +368,8 @@ Match::sigmaClip(double sigThresh,
   }
   if (worst != elist.end()) {
 #ifdef DEBUG
-    cerr << "clipped " << (*worst)->exposure
-	 << " / " << (*worst)->extension << " / " << (*worst)->id 
+    cerr << "clipped " << (*worst)->catalogNumber
+	 << " / " << (*worst)->objectNumber 
 	 << " at " << (*worst)->xw << "," << (*worst)->yw 
 	 << " resid " << setw(6) << ((*worst)->xw-xmean)*DEGREE/ARCSEC
 	 << " " << setw(6) << ((*worst)->yw-ymean)*DEGREE/ARCSEC
@@ -418,7 +382,7 @@ Match::sigmaClip(double sigThresh,
       }	else {
 	(*worst)->isClipped = true;
       }
-      ngood--;
+      nFit--;
       return true;
   } else {
     // Nothing to clip
@@ -430,7 +394,7 @@ double
 Match::chisq(int& dof, double& maxDeviateSq) const {
   double xmean, ymean;
   double chi=0.;
-  if (ngood<=1) return chi;
+  if (nFit<=1) return chi;
   centroid(xmean,ymean);
   for (list<Detection*>::const_iterator i=elist.begin(); 
        i!=elist.end(); 
@@ -445,16 +409,8 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
     maxDeviateSq = MAX(cc , maxDeviateSq);
     chi += cc;
   }
-  dof += 2*(ngood-1);
+  dof += 2*(nFit-1);
   return chi;
-}
-
-void
-CoordAlign::add(MCat& c) {
-  for (MSet::iterator i=c.begin();
-       i!=c.end();
-       ++i)
-    mlist.push_back(*i);
 }
 
 void
@@ -610,31 +566,25 @@ CoordAlign::count(long int& mcount, long int& dcount,
        i != mlist.end();
        ++i) {
     if (((*i)->getReserved() ^ doReserved) 
-	|| (*i)->goodSize() < minMatches) continue;
+	|| (*i)->fitSize() < minMatches) continue;
     mcount++;
-    dcount+=(*i)->goodSize();
+    dcount+=(*i)->fitSize();
   }
 }
 void
 CoordAlign::count(long int& mcount, long int& dcount,
-                  bool doReserved, int minMatches, int field, int exposure, int extension, int affinity) const {
+                  bool doReserved, int minMatches, long catalog) const {
   mcount = 0;
   dcount = 0;
   for (list<Match*>::const_iterator i=mlist.begin();
        i != mlist.end();
        ++i) {
     if (((*i)->getReserved() ^ doReserved)
-        || (*i)->goodSize() < minMatches) continue;
+        || (*i)->fitSize() < minMatches) continue;
 
     int ddcount=0;
     for(list<Detection*>::iterator d=(*i)->begin(); d != (*i)->end(); ++d) {
-//    for(int id=0; id<(*i)->elist.size(); id++) {
-//       cout << "checking " << ((*d)->isClipped) << " " << (*d)->field << " " << (*d)->exposure << " " << (*d)->extension << endl;
-       if(!((*d)->isClipped))
-        if(field<-1 || field==(*d)->field)
-         if(exposure<-1 || exposure==(*d)->exposure)
-          if(extension<-1 || extension==(*d)->extension)
-           if(affinity<-1 || affinity==(*d)->affinity)
+      if(!((*d)->isClipped) && (*d)->catalogNumber==catalog)
             ddcount++;
     }
 

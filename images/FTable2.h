@@ -584,7 +584,19 @@ namespace img {
       rangeCheck(rowStart);
       if (rowEnd>0) rangeCheck(rowEnd-1);
       const ScalarColumn<T>* col = dynamic_cast<const ScalarColumn<T>*> ((*this)[columnName]);
-      if (!col) throw FTableError("Type mismatch reading column " + columnName);
+      if (!col) {
+	const ScalarColumn<int>* col2 = dynamic_cast<const ScalarColumn<int>*> ((*this)[columnName]);
+	const ScalarColumn<LONGLONG>* col3 = dynamic_cast<const ScalarColumn<LONGLONG>*> ((*this)[columnName]);
+	const ScalarColumn<long>* col4 = dynamic_cast<const ScalarColumn<long>*> ((*this)[columnName]);
+	/**/cerr << "col " << col << " int? " << col2 << " longlong " << col3 
+		 << " long " << col4 <<  endl;
+	/**/cerr << sizeof(int) << " " << sizeof(long) << " " << sizeof(LONGLONG) << endl;
+	/**/cerr << typeid(long).name() << " LONGLONG: " << typeid(LONGLONG).name() << endl;
+	/**/cerr << FITS::ColumnCode<T>() << " on cccolumn type " << (*this)[columnName]->elementType()
+		 << " repeat " << (*this)[columnName]->repeat()
+		 << endl;
+	throw FTableError("Type mismatch reading column " + columnName);
+      }
       col->readCells(values, rowStart, rowEnd);
     }
 

@@ -19,8 +19,8 @@ public:
   vector<PixelMap*> pixelMaps;	// Instrument parts of PixelMaps for each device - callable map
   // Keep track of range of pixel coords per device
   vector<Bounds<double> > domains;	// Rectangles bounding pixel coords of objects
-  void addDevice(string devName, Bounds<double>& devBounds=Bounds<double>()) {
-    deviceNames.append(extName);
+  void addDevice(string devName, const Bounds<double>& devBounds=Bounds<double>()) {
+    deviceNames.append(devName);
     maps.push_back(PixelMapChain());
     pixelMaps.push_back(0);
     domains.push_back(devBounds);
@@ -40,7 +40,7 @@ private:
 
 class Exposure {
 public:
-  Exposure(const string& name_, Orientation& orient_): 
+  Exposure(const string& name_, const Orientation& orient_): 
     name(name_), orient(orient_), reproject(-1) {}
   string name;
   Orientation orient;	// Telescope pointing for this one
@@ -58,7 +58,7 @@ private:
 // Will have originated from a single bintable HDU that we can access
 class Extension {
 public:
-  Extension(): extensionMaps(0),  startpm(0) {}
+  Extension(): extensionMap(0),  startpm(0) {}
   int exposure;
   int device;
   SubMap* extensionMap; // Compounded maps for each extension (owned by PixelMapCollection)

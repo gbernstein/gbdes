@@ -48,7 +48,7 @@ namespace astrometry {
   class Match {
   private:
     list<Detection*> elist;
-    int ngood;  // Number of un-clipped points
+    int nFit;	// Number of un-clipped points with non-zero weight in fit
     bool isReserved;	// Do not contribute to re-fitting if true
   public:
     Match(Detection* e);
@@ -57,13 +57,23 @@ namespace astrometry {
     void remove(Detection* e);
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
+    list<Detection*>::iterator erase(list<Detection*>::iterator i,
+				     bool deleteDetection=false) {
+      if (deleteDetection) delete *i;
+      return elist.erase(i);
+    }
+    // Mark all members of match as unmatched, or optionally delete them,
+    // then empty the list:
     void clear(bool deleteDetections=false);
     void remap();  // Remap each point to world coords with current map
     void centroid(double& x, double& y) const;
     void centroid(double& x, double& y, 
 		  double& wtx, double &wty) const;
     int size() const {return elist.size();}
-    int goodSize() const {return ngood;}
+    // Number of points that would have nonzero weight in next fit
+    int fitSize() const {return nFit;}
+    // Update and return count of above:
+    int countFit(); 
 
     // Is this object to be reserved from re-fitting?
     bool getReserved() const {return isReserved;}
@@ -105,7 +115,7 @@ namespace astrometry {
 	       list<Match*>& mlist_): mlist(mlist_),
 				      pmc(pmc_), 
 				      relativeTolerance(0.001)  {}
-    void add(MCat& mc);
+
     void remap();	// Re-map all Detections using current params
     double fitOnce();	// Returns chisq of previous fit, updates params.
     // Conduct one round of sigma-clipping.  If doReserved=true, 
@@ -125,7 +135,7 @@ namespace astrometry {
     // Count either reserved or non-reserved objects, and require minMatches useful
     // Detections for a valid match:
     void count(long int& mcount, long int& dcount, bool doReserved=false, int minMatches=2) const;
-    void count(long int& mcount, long int& dcount, bool doReserved, int minMatches, int field, int exposure=-2, int extension=-2, int affinity=-2) const;
+    void count(long int& mcount, long int& dcount, bool doReserved, int minMatches, long catalog) const;
   };
 
 } // namespace astrometry

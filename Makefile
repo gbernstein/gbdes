@@ -44,6 +44,8 @@ all: depend subs
 
 WCSFoF: WCSFoF.o SCAMPMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+WCSFit: WCSFit.o SCAMPMap.o Match.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testPrep: testPrep.o $(OBJ)
