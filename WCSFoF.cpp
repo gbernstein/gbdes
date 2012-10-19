@@ -665,8 +665,7 @@ main(int argc,
 	  }
 	  extensionTable.writeCell(wcsDump, "WCS", extensionNumber);
 	}
-	extensionNumber++;
-
+	
 	// Select the Catalog(s) to which points from this extension will be added
 	PointCat* starCatalog = fields[fieldNumber].catalogFor(globalAffinity);
 	PointCat* galaxyCatalog = (stringstuff::nocaseEqual(globalAffinity,
@@ -708,6 +707,7 @@ main(int argc,
 
 	if (map) delete map;
 	
+	extensionNumber++;
       } // end input extension loop
     } // end input file loop
 

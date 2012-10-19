@@ -208,6 +208,8 @@ main(int argc, char *argv[])
     // List parameters in use
     parameters.dump(cout);
 
+    minReferenceError *= ARCSEC/DEGREE;
+
     // ??? log parameters to output file somehow?
 
     // ??? Copy instruments, etc. to output file ???
@@ -517,8 +519,8 @@ main(int argc, char *argv[])
 
 	// Get all Extensions that are part of this exposure
 	thisExposure.clear();
-	for (int i=0; i<exposures.size(); i++)
-	  if (extensions[i]->exposure = iexp)
+	for (int i=0; i<extensions.size(); i++)
+	  if (extensions[i]->exposure == iexp)
 	    thisExposure.push_back(extensions[i]);
 
 	// Build new test points
@@ -635,15 +637,11 @@ main(int argc, char *argv[])
       vector<LONGLONG> extn;
       vector<LONGLONG> obj;
       ff.readCells(seq, "SequenceNumber");
-      // ???? getting 1-indexed extensions on input file!!!
-      /**/cerr << "get extension" << endl;
       ff.readCells(extn, "Extension");
-      /**/cerr << "get object" << endl;
       ff.readCells(obj, "Object");
       // Smaller collections for each match
       vector<long> extns;
       vector<long> objs;
-      /**/cerr << "Entering loop with size " << seq.size() << endl;
       for (int i=0; i<seq.size(); i++) {
 	if (seq[i]==0 && !extns.empty()) {
 	  // Make a match from previous few entries
@@ -653,7 +651,6 @@ main(int argc, char *argv[])
 	  matches.push_back(new Match(d));
 	  extensions[extns[0]]->keepers.insert(std::pair<long, Detection*>(objs[0], d));
 	  for (int j=1; j<extns.size(); j++) {
-	    /**/cerr << "writing " << j << " extension " << extns[j] << endl;
 	    d = new Detection;
 	    d->catalogNumber = extns[j];
 	    d->objectNumber = objs[j];
@@ -663,12 +660,10 @@ main(int argc, char *argv[])
 	  extns.clear();
 	  objs.clear();
 	} // Finished processing previous match
-	/**/cerr << "pushing " << i << endl;
 	extns.push_back(extn[i]);
 	objs.push_back(obj[i]);
       } // End loop of catalog entries
       
-      /**/cerr << "Out of object loop" << endl;
       // Make a last match out of final entries
       if (!extns.empty()) {
 	Detection* d = new Detection;
@@ -751,8 +746,9 @@ main(int argc, char *argv[])
 	d->map = pixmap;
 	ff.readCell(d->xpix, xKey, irow);
 	ff.readCell(d->ypix, yKey, irow);
-	double sigma;
-	ff.readCell(sigma, idKey, irow);
+	float fsigma; // ??? 
+	ff.readCell(fsigma, errKey, irow);
+	double sigma = fsigma;
 	if (startMap) {
 	  sigma = std::max(minPixError, sigma);
 	  d->sigmaPix = sigma;
@@ -762,6 +758,7 @@ main(int argc, char *argv[])
 	  d->clipsqy = pow(d->sigmaPix,-2.) / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
 	  d->wtx = d->clipsqx * (isTag ? 0. : weight);
 	  d->wty = d->clipsqy * (isTag ? 0. : weight);
+	    
 	} else {
 	  // Input coords were degrees RA/Dec; project into Field's tangent plane
 	  TangentPlane tp( SphericalICRS(d->xpix*DEGREE, d->ypix*DEGREE), fOrient);
@@ -924,6 +921,7 @@ main(int argc, char *argv[])
     for (int iext=0; iext<extensions.size(); iext++) {
       Extension& extn = *extensions[iext];
       Exposure& expo = *exposures[extn.exposure];
+      if (expo.instrument < 0) continue;
       Instrument& inst = *instruments[expo.instrument];
       // Open file for new ASCII headers  ??? Change the way these are done!!!
       string newHeadName = expo.name + "_" 
@@ -1129,8 +1127,10 @@ main(int argc, char *argv[])
 	    int exposureNumber = extensions[d->catalogNumber]->exposure;
 	    Exposure* expo = exposures[exposureNumber];
 	    if (m->getReserved()) {
-	      if (expo->instrument==REF_INSTRUMENT) refAccReserve.add(d, xc, yc, dofPerPt);
-	      else if (expo->instrument==TAG_INSTRUMENT) {
+	      if (expo->instrument==REF_INSTRUMENT) {
+		refAccReserve.add(d, xc, yc, dofPerPt);
+		vaccReserve[exposureNumber].add(d, xc, yc, dofPerPt);
+	      } else if (expo->instrument==TAG_INSTRUMENT) {
 		// do nothing
 	      } else {
 		accReserve.add(d, xc, yc, dofPerPt);
@@ -1138,8 +1138,10 @@ main(int argc, char *argv[])
 	      }
 	    } else {
 	      // Not a reserved object:
-	      if (expo->instrument==REF_INSTRUMENT) refAccFit.add(d, xc, yc, dofPerPt);
-	      else if (expo->instrument==TAG_INSTRUMENT) {
+	      if (expo->instrument==REF_INSTRUMENT) {
+		refAccFit.add(d, xc, yc, dofPerPt);
+		vaccFit[exposureNumber].add(d, xc, yc, dofPerPt);
+	      } else if (expo->instrument==TAG_INSTRUMENT) {
 		// do nothing
 	      } else {
 		accFit.add(d, xc, yc, dofPerPt);

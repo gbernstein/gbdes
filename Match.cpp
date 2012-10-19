@@ -15,8 +15,7 @@ using std::set;
 #include <omp.h>
 #endif
 
-/**/
-#define DEBUG
+// #define DEBUG
 #include <Marquardt.h>
 
 using namespace astrometry;
@@ -366,6 +365,7 @@ Match::sigmaClip(double sigThresh,
       maxSq = devSq;
     }
   }
+
   if (worst != elist.end()) {
 #ifdef DEBUG
     cerr << "clipped " << (*worst)->catalogNumber
