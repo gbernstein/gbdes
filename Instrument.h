@@ -9,7 +9,7 @@
 
 class Instrument {
 public:
-  Instrument(string name_):
+  Instrument(string name_=""):
     name(name_), nDevices(0) {}
   string name;
   int nDevices;

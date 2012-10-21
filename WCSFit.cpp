@@ -253,8 +253,7 @@ main(int argc, char *argv[])
     }
     
     // Read in all the instrument extensions and their device info.
-    vector<Instrument*> instruments(instrumentHDUs.size(),
-				    new Instrument("dummy"));
+    vector<Instrument*> instruments(instrumentHDUs.size());
     for (int i=0; i<instrumentHDUs.size(); i++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
       Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
@@ -267,8 +266,8 @@ main(int argc, char *argv[])
 	     << instrumentHDUs[i] << endl;
       }
       Assert(instrumentNumber < instruments.size());
-      Instrument* instptr = instruments[instrumentNumber];
-      instptr->name = instrumentName;
+      Instrument* instptr = new Instrument(instrumentName);
+      instruments[instrumentNumber] = instptr;
       
       vector<string> devnames;
       vector<double> vxmin;
@@ -280,9 +279,10 @@ main(int argc, char *argv[])
       ff.readCells(vxmax, "XMax");
       ff.readCells(vymin, "YMin");
       ff.readCells(vymax, "YMax");
-      for (int j=0; j<devnames.size(); j++)
+      for (int j=0; j<devnames.size(); j++) {
 	instptr->addDevice( devnames[j],
 			    Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
+      }
     }
 
     // Read in the table of exposures
@@ -631,6 +631,7 @@ main(int argc, char *argv[])
     // telling each Extension which objects it should retrieve from its catalog
 
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
+      /**/cerr << "# Reading catalog extension " << catalogHDUs[icat] << endl;
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
       FTable ff = ft.use();
       vector<int> seq;
@@ -686,6 +687,9 @@ main(int argc, char *argv[])
     for (int iext = 0; iext < extensions.size(); iext++) {
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
+      /**/cerr << "# Reading object catalog " << iext
+	       << "/" << extensions.size()
+	       << " from " << filename << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "HDUNumber", iext);
       string xKey;
@@ -735,6 +739,13 @@ main(int argc, char *argv[])
       }
       Assert(id.size() == ff.nrows());
 
+      bool errorColumnIsDouble = true;
+      try {
+	double d;
+	ff.readCell(d, errKey, 0);
+      } catch (img::FTableError& e) {
+	errorColumnIsDouble = false;
+      }
       for (long irow = 0; irow < ff.nrows(); irow++) {
 	map<long, Detection*>::iterator pr = extn->keepers.find(id[irow]);
 	if (pr == extn->keepers.end()) continue; // Not a desired object
@@ -746,9 +757,15 @@ main(int argc, char *argv[])
 	d->map = pixmap;
 	ff.readCell(d->xpix, xKey, irow);
 	ff.readCell(d->ypix, yKey, irow);
-	float fsigma; // ??? 
-	ff.readCell(fsigma, errKey, irow);
-	double sigma = fsigma;
+	double sigma;
+	if (errorColumnIsDouble) {
+	  ff.readCell(sigma, errKey, irow);
+	} else {
+	  float f;
+	  ff.readCell(f, errKey, irow);
+	  sigma = f;
+	}
+
 	if (startMap) {
 	  sigma = std::max(minPixError, sigma);
 	  d->sigmaPix = sigma;
