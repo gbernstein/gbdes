@@ -1,4 +1,14 @@
-#   $Id: Makefile,v 1.3 2012/01/01 18:56:10 garyb Exp $ 
+# These should come from environment:
+# CXX
+# TMV_DIR
+# FFTW_DIR
+# OPTFLAGS
+
+export CXX
+export OPTFLAGS
+
+ABS_INCLUDES = -I $(FFTW_DIR)/include -I $(TMV_DIR)/include
+
 SUBDIRS = 
 
 INCLUDES = 
@@ -15,10 +25,6 @@ all: $(OBJ)
 ###############################################################
 ## Standard stuff:
 ###############################################################
-
-export CXX
-export OPTFLAGS
-export ABS_INCLUDES
 
 subs:
 	for dir in $(SUBDIRS); do (cd $$dir && $(MAKE)); done

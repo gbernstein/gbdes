@@ -1,4 +1,17 @@
-#   $Id: Makefile,v 1.7 2011/02/14 15:22:13 garyb Exp $ 
+# These should come from environment:
+# CXX
+# TMV_DIR
+# FFTW_DIR
+# BOOST_DIR
+# CFITSIO_DIR
+# OPTFLAGS
+
+export CXX
+export OPTFLAGS
+
+ABS_INCLUDES = -I $(FFTW_DIR)/include -I $(TMV_DIR)/include \
+	-I $(CFITSIO_DIR)/include -I $(BOOST_DIR)/include
+
 SUBDIRS = 
 
 INCLUDES = -I ../utilities
@@ -16,10 +29,6 @@ all: $(OBJ)
 ## Standard stuff:
 ###############################################################
 
-export CXX
-export OPTFLAGS
-export ABS_INCLUDES
-
 subs:
 	for dir in $(SUBDIRS); do (cd $$dir && $(MAKE)); done
 
@@ -34,8 +43,5 @@ clean:
 ifeq (.depend, $(wildcard .depend))
 include .depend
 endif
-
-export
-# don't export INCLUDES??
 
 .PHONY: all install dist depend clean 

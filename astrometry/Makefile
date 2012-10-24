@@ -1,4 +1,13 @@
-#   $Id: Makefile,v 1.6 2012/02/02 23:34:25 garyb Exp $ 
+#Following should be in environment:
+#CXX = g++-4 -fopenmp
+#TMV_DIR
+#OPTFLAGS
+export CXX
+export OPTFLAGS
+
+# ABS_INCLUDES are absolute paths 
+ABS_INCLUDES = -I $(TMV_DIR)/include
+
 SUBDIRS = 
 
 INCLUDES = -I ../utilities
@@ -15,9 +24,6 @@ all:  $(OBJ)
 ## Standard stuff:
 ###############################################################
 
-export CXX
-export OPTFLAGS
-export ABS_INCLUDES
 
 subs:
 	for dir in $(SUBDIRS); do (cd $$dir && $(MAKE)); done

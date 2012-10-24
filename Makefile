@@ -1,20 +1,33 @@
 # $Id: Makefile,v 1.20 2012/01/02 19:25:58 garyb Exp $
 
-# First are site-dependent items
-CXX = g++-4 -fopenmp
+# First are site-dependent items - expect these to be defined in environment!
+#CXX = g++-4 -fopenmp
+#TMV_DIR
+#CFITSIO_DIR
+#FFTW_DIR
+#BOOST_DIR
+
+export CXX
+export TMV_DIR
+export CFITSIO_DIR
+export BOOST_DIR
+export FFTW_DIR
 
 # OPTFLAGS will be exported for subdir makes
 OPTFLAGS = -O3 -DASSERT
+export OPTFLAGS
 
-# ABS_INCLUDES are absolute paths that will be exported to subdirectories
-ABS_INCLUDES = -I /sw/include -I /usr/local/cfitsio/include -I /usr/local/tmv/include \
-	-I /usr/local/fftw/include -I /usr/local/boost/include
+
+# ABS_INCLUDES are absolute paths 
+ABS_INCLUDES = -I $(TMV_DIR)/include -I $(CFITSIO_DIR)/include \
+	-I $(FFTW_DIR)/include -I $(BOOST_DIR)/include
 
 # LIB_DIRS 
-LIB_DIRS = -L /sw/lib -L /usr/local/cfitsio/lib -L /usr/local/tmv/lib -L /usr/local/fftw/lib \
-	-L /usr/local/boost/lib
+LIB_DIRS = -L $(CFITSIO_DIR)/lib -L $(TMV_DIR)/lib -L $(FFTW_DIR)/lib \
+	-L $(BOOST_DIR)/lib
 
-TMV_LINK := $(shell cat /usr/local/tmv/share/tmv/tmv-link)
+#TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
+TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv-link)
 
 ##### Below here should be site-independent
 SUBDIRS = utilities images astrometry
@@ -72,9 +85,6 @@ testFT8: testFT8.o $(OBJ)
 ## Standard stuff:
 ###############################################################
 
-export CXX
-export OPTFLAGS
-export ABS_INCLUDES
 
 subs:
 	for dir in $(SUBDIRS); do (cd $$dir && $(MAKE)); done
