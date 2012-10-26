@@ -26,8 +26,8 @@ ABS_INCLUDES = -I $(TMV_DIR)/include -I $(CFITSIO_DIR)/include \
 LIB_DIRS = -L $(CFITSIO_DIR)/lib -L $(TMV_DIR)/lib -L $(FFTW_DIR)/lib \
 	-L $(BOOST_DIR)/lib
 
-#TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
-TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv-link)
+TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
+#TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv-link)
 
 ##### Below here should be site-independent
 SUBDIRS = utilities images astrometry
@@ -48,7 +48,7 @@ SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/PixelMapCollection.o 
 
-#images/FitsTable.o images/Image.o images/FITSImage.o images/HeaderFromStream.o \
+#images/FitsTable.o images/Image.o images/FITSImage.o \
 
 #OBJ =  SCAMPMap.o $(SUBOBJ)
 OBJ =  $(SUBOBJ)

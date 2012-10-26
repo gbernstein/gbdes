@@ -64,6 +64,7 @@ public:
   SubMap* extensionMap; // Compounded maps for each extension (owned by PixelMapCollection)
   PixelMap* startpm;  // Input PixelMap for this extension (owned by this class)
   map<long, Detection*> keepers;  // The objects from this catalog that we will use
+  string wcsOutFile;
   ~Extension() {
     if (startpm) delete startpm;
   }

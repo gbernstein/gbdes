@@ -7,7 +7,7 @@
 export CXX
 export OPTFLAGS
 
-ABS_INCLUDES = -I $(FFTW_DIR)/include -I $(TMV_DIR)/include
+ABS_INCLUDES = -I $(FFTW_DIR)/include -I $(TMV_DIR)/include -I $(BOOST_DIR)/include
 
 SUBDIRS = 
 

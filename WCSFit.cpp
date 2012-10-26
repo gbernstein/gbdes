@@ -160,9 +160,6 @@ main(int argc, char *argv[])
     parameters.addMemberNoValue("FILES");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "wcscat.fits");
-    // ???
-    parameters.addMember("newHeadSuffix",&newHeadSuffix, def,
-			 "Suffix for new ASCII header files", ".head2");
   }
 
   // Positional accuracy (in degrees) demanded of numerical solutions for inversion of 
@@ -212,8 +209,6 @@ main(int argc, char *argv[])
 
     // ??? log parameters to output file somehow?
 
-    // ??? Copy instruments, etc. to output file ???
-
     /////////////////////////////////////////////////////
     //  Read in properties of all Fields, Instruments, Devices, Exposures
     /////////////////////////////////////////////////////
@@ -224,7 +219,9 @@ main(int argc, char *argv[])
 
     {
       FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
-      FTable ft = in.use();
+      FITS::FitsTable out(outCatalog, FITS::ReadWrite + FITS::OverwriteFile + FITS::Create, "Fields");
+      FTable ft = in.extract();
+      out.adopt(ft);
       vector<double> ra;
       vector<double> dec;
       vector<string> name;
@@ -256,8 +253,10 @@ main(int argc, char *argv[])
     vector<Instrument*> instruments(instrumentHDUs.size());
     for (int i=0; i<instrumentHDUs.size(); i++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
+      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Instrument");
       Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
-      FTable ff=ft.use();
+      FTable ff=ft.extract();
+      out.adopt(ff);
       string instrumentName;
       int instrumentNumber;
       if (!ff.header()->getValue("Name", instrumentName)
@@ -289,7 +288,9 @@ main(int argc, char *argv[])
     vector<Exposure*> exposures;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
-      FTable ff = ft.use();
+      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Exposures");
+      FTable ff = ft.extract();
+      out.adopt(ff);
       vector<string> names;
       vector<double> ra;
       vector<double> dec;
@@ -314,7 +315,9 @@ main(int argc, char *argv[])
     FTable fileTable;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Files");
+      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Files");
       fileTable = ft.extract();
+      out.copy(fileTable);
     }
 
     // Read info about all Extensions - we will keep the Table around.
@@ -323,6 +326,8 @@ main(int argc, char *argv[])
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
       extensionTable = ft.extract();
+      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Extensions");
+      out.copy(extensionTable);
     }
     for (int i=0; i<extensionTable.nrows(); i++) {
       extensions.push_back(new Extension);
@@ -342,6 +347,9 @@ main(int argc, char *argv[])
 	iss >> h;
 	extn->startpm = new SCAMPMap(h, &(fieldOrients[exposures[extn->exposure]->field]));
       }
+      string wcsOutFile;
+      extensionTable.readCell(wcsOutFile, "WCSOut", i);
+      extn->wcsOutFile = wcsOutFile;
     }
 
     /////////////////////////////////////////////////////
@@ -934,6 +942,10 @@ main(int argc, char *argv[])
     } while (coarsePasses || nclip>0);
   
     // The re-fitting is now complete.  Save the new header files
+    
+    // Keep track of those we've already written to:
+    set<string> alreadyOpened;
+
     const double SCAMPTolerance=0.0001*ARCSEC/DEGREE;  // accuracy of SCAMP-format fit to real solution
     for (int iext=0; iext<extensions.size(); iext++) {
       Extension& extn = *extensions[iext];
@@ -941,10 +953,13 @@ main(int argc, char *argv[])
       if (expo.instrument < 0) continue;
       Instrument& inst = *instruments[expo.instrument];
       // Open file for new ASCII headers  ??? Change the way these are done!!!
-      string newHeadName = expo.name + "_" 
-	+ inst.deviceNames.nameOf(extn.device)
-	+ newHeadSuffix;
-      ofstream newHeads(newHeadName.c_str());
+      string newHeadName = extn.wcsOutFile;
+      bool overwrite = false;
+      if ( alreadyOpened.find(newHeadName) == alreadyOpened.end()) {
+	overwrite = true;
+	alreadyOpened.insert(newHeadName);
+      }
+      ofstream newHeads(newHeadName.c_str(), overwrite ? ios::out : (ios::out | ios::ate));
       if (!newHeads) {
 	cerr << "WARNING: could not open new header file " << newHeadName << endl;
 	cerr << "...Continuing with program" << endl;
@@ -1002,7 +1017,7 @@ main(int argc, char *argv[])
     Accum accReserve;
 
     // Open the output bintable
-    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::OverwriteHDU + FITS::Create, "WCSOut");
+    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, "WCSOut");
     FTable outTable = ft.use();;
 
     // Create vectors that will be put into output table

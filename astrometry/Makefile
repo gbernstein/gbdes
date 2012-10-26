@@ -6,7 +6,7 @@ export CXX
 export OPTFLAGS
 
 # ABS_INCLUDES are absolute paths 
-ABS_INCLUDES = -I $(TMV_DIR)/include
+ABS_INCLUDES = -I $(TMV_DIR)/include -I $(BOOST_DIR)/include
 
 SUBDIRS = 
 

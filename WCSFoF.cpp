@@ -267,6 +267,7 @@ main(int argc,
     const string inSelectCol="SELECT";
     const string starSelectCol="STAR_SELECT";
     const string wcsFileCol="WCSFILE";
+    const string wcsOutFileCol="WCSOUT";
     const string xkeyCol="XKEY";
     const string ykeyCol="YKEY";
     const string idkeyCol="IDKEY";
@@ -295,6 +296,7 @@ main(int argc,
       extensionTable.addColumn(vs, "idKey");
       extensionTable.addColumn(vs, "errKey");
       extensionTable.addColumn(vd, "Weight");
+      extensionTable.addColumn(vs, "WCSOut");
     }
 
     long extensionNumber = 0; // cumulative counter for all FITS tables read
@@ -336,6 +338,13 @@ main(int argc,
 	fileTable.readCell(errorkey, errorkeyCol, iFile);
       } catch (FTableNonExistentColumn& m) {
 	errorkey.clear();
+      }
+
+      string wcsOut;
+      try {
+	fileTable.readCell(wcsOut, wcsOutFileCol, iFile);
+      } catch (FTableNonExistentColumn& m) {
+	wcsOut.clear();
       }
 
       string weightString;
@@ -469,7 +478,9 @@ main(int argc,
 	  thisIdKey = maybeFromHeader(idkey, localHeader);
 	}
 
+	// Couple of things that WCS fitting program will want if they're here:
 	string thisErrorKey = maybeFromHeader(errorkey, localHeader);
+	string thisWcsOutFile = maybeFromHeader(wcsOut, localHeader);
 
 	// Read catalog's weight: it either defaults to 1. if string is empty,
 	// or it's a header keyword to look up, or it should be a number
@@ -646,6 +657,7 @@ main(int argc,
 	extensionTable.writeCell(thisIdKey, "idKey", extensionNumber);
 	extensionTable.writeCell(thisErrorKey, "errKey", extensionNumber);
 	extensionTable.writeCell(weight, "Weight", extensionNumber);
+	extensionTable.writeCell(thisWcsOutFile, "WCSOut", extensionNumber);
 
 	{
 	  string wcsDump;

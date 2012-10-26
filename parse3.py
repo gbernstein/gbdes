@@ -21,8 +21,7 @@ class Enum(tuple):
 Assigned =['Params','AddFiles','Outfile']
 
 # These are a list properties every extension has
-#Internal =['name','filename','ext','cattype',
-#           'wcstype','wcsfile','filetype','next']
+
 Internal =['FILENAME','EXTENSION','INSTRUMENT','DEVICE',
            'FIELD','EXPOSURE','RA','DEC','WCSFILE','XKEY',
            'YKEY','IDKEY']
@@ -169,19 +168,47 @@ def setInitExp(exps,regex,alist,param):
     assign all files with matching filename the parameters from param
     """
     # make sure all params are in param list
-    for p in param:
-        if p not in alist and p not in Internal :
-            raise ValueError('Cannot set '+p+' not in Params list')
+    #refmatch=re.compile(r'\${(.*)}')
+    refmatch='\${(\w*)}'
+    for key,val in param.items():
+        match_list=re.findall(refmatch,val)
+        for m in match_list: 
+            if m not in alist and m not in Internal :
+                raise ValueError('Cannot set '+
+                                 m+' not in Params list')
+            continue
+        if key not in alist and key not in Internal :
+            raise ValueError('Cannot set '+key+' not in Params list')
 
     #head=re.compile(r'Header')
     filematch=re.compile(regex)
-    for exp in exps:
-        if filematch.search(exp.getVal('FILENAME')):
-            for key,val in param.items():
-                #mhead=head.match(val)
-                #if not mhead:
-                exp.setVal(key,val)
 
+
+    for exp in exps:
+        if not filematch.search(exp.getVal('FILENAME')): continue
+        
+        # list for parameters that reference other parameters
+        # the first entry in map will be the reference parameter
+        # and the string with 
+        wait={}#defaultdict(list)
+        for key,val in param.items():
+            match_list=re.findall(refmatch,val)
+            if len(match_list)>0:
+                wait[key]=val
+            #    sub_string=val
+            #    for i,m in enumerate(match_list):
+            #        sub_string=re.sub(m,'XXXX%d'%i,sub_string)
+            #        wait[key][.append(m)
+            #    wait[key].append(sub_string)
+            #    continue
+            exp.setVal(key,val)
+
+        for key,val in wait.items():
+            match_list=re.findall(refmatch,val)
+            for m in match_list:
+                par_val=str(exp.getVal(m))
+                val=re.sub('\${%s}'%m,par_val,val)
+            exp.setVal(key,val)
 
 def buildExpList(flist):
     """
@@ -203,6 +230,7 @@ def buildExpList(flist):
 
         # remove trailing ccd number
         name=re.sub('_\d\d$','',name)
+        
         exp.setVal('EXPOSURE',name)
         exps.append(exp)
         
@@ -236,12 +264,14 @@ for file in files:
     ext.setVal('FILENAME',file)
     flist.append(ext)
 
+exps=buildExpList(flist)
+
 setInitExp(flist,'.*',eparams,global_p)
 for regex,p in local_p.items():
     setInitExp(flist,regex,eparams,p)
 
 
-exps=buildExpList(flist)
+
 
 
 vars=deepcopy(Internal)
