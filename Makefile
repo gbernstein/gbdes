@@ -55,6 +55,8 @@ OBJ =  $(SUBOBJ)
 
 all: depend subs
 
+FitsGlue: FitsGlue.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFoF: WCSFoF.o SCAMPMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFit: WCSFit.o SCAMPMap.o Match.o $(OBJ)

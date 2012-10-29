@@ -1185,8 +1185,8 @@ main(int argc, char *argv[])
 	} // End residuals calculation
 
 	// Put world residuals into milliarcsec
-	xrespix.push_back(xerrpix*1000.*DEGREE/ARCSEC);
-	yrespix.push_back(yerrpix*1000.*DEGREE/ARCSEC);
+	xrespix.push_back(xerrpix);
+	yrespix.push_back(yerrpix);
 	xresw.push_back(xerrw*1000.*DEGREE/ARCSEC);
 	yresw.push_back(yerrw*1000.*DEGREE/ARCSEC);
 
