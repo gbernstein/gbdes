@@ -24,7 +24,7 @@ string img::KeyFormat(const string input) {
 string
 HdrRecordBase::writeCard() const {
   string vv=getValueString();
-  string card=keyword;
+  string card= (keyword.size() <=8) ? keyword : "HIERARCH " + keyword;
   for (int i=card.size(); i<8; i++) card += " ";
   if (!vv.empty()) {
     card += "= ";
@@ -124,6 +124,14 @@ namespace img {
 	   && in[i]!=eq
 	   && !std::isspace(in[i])
 	   && comments.find(in[i])==string::npos ) keyword+=in[i++];
+
+    // HIERARCH means an extension whereby keyword keeps going until = sign:
+    if (keyword=="HIERARCH") {
+      keyword.clear();
+      while (i<l && std::isspace(in[i])) ++i;
+      if (i==l) return 0;
+      while (i<l && in[i]!=eq) keyword+=in[i++];
+    }
     if (keyword.length()==0) return 0;	//no useful info.
 
     // Skip whitespace or equals; done for end or comment

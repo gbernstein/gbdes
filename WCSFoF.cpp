@@ -34,9 +34,11 @@ void stripWhite(string& s) {
 string maybeFromHeader(const string& inValue, const Header& h) {
   if (inValue.empty() || inValue[0]!='@') return inValue;
   string result;
-  if (!h.getValue(inValue.substr(1), result)) 
+  if (!h.getValue(inValue.substr(1), result)) {
     throw std::runtime_error("Could not find string-valued header keyword " + 
 			     inValue.substr(1));
+  }
+
   return result;
 }
 
@@ -506,9 +508,25 @@ main(int argc,
 	if (!selectionExpression.empty())
 	  ft.filterRows(selectionExpression);
 	vector<double> vx;
-	ft.readCells(vx, thisXKey);
+	try {
+	  ft.readCells(vx, thisXKey);
+	} catch (FTableError& m) {
+	  // Trap for using float column in source file instead of long:
+	  vector<float> vf;
+	  ft.readCells(vf, thisXKey);
+	  vx.resize(vf.size());
+	  for (int i=0; i<vf.size(); i++) vx[i]=vf[i];
+	}
 	vector<double> vy;
-	ft.readCells(vy, thisYKey);
+	try {
+	  ft.readCells(vy, thisYKey);
+	} catch (FTableError& m) {
+	  // Trap for using float column in source file instead of long:
+	  vector<float> vf;
+	  ft.readCells(vf, thisYKey);
+	  vy.resize(vf.size());
+	  for (int i=0; i<vf.size(); i++) vy[i]=vf[i];
+	}
 	vector<long> vid;
 	try {
 	  ft.readCells(vid, thisIdKey);
