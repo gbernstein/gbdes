@@ -959,7 +959,7 @@ main(int argc, char *argv[])
 	overwrite = true;
 	alreadyOpened.insert(newHeadName);
       }
-      ofstream newHeads(newHeadName.c_str(), overwrite ? ios::out : (ios::out | ios::ate));
+      ofstream newHeads(newHeadName.c_str(), overwrite ? ios::out : (ios::out | ios::in | ios::ate));
       if (!newHeads) {
 	cerr << "WARNING: could not open new header file " << newHeadName << endl;
 	cerr << "...Continuing with program" << endl;
