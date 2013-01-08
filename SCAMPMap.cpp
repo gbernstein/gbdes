@@ -118,6 +118,7 @@ ReadPV(const Header* h, int ipv) {
     // Have index & value, add to a vector
     // Magic: 3, 11, 23, and 39 are missing, they are (non-analytic) odd powers of r
     // in some documentation.
+    if (index==3 || index==11 || index==23 || index==39) continue;
     if (index>=39) index--;
     if (index>=23) index--;
     if (index>=11) index--;
