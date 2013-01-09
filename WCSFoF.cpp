@@ -35,10 +35,16 @@ string maybeFromHeader(const string& inValue, const Header& h) {
   if (inValue.empty() || inValue[0]!='@') return inValue;
   string result;
   if (!h.getValue(inValue.substr(1), result)) {
-    throw std::runtime_error("Could not find string-valued header keyword " + 
-			     inValue.substr(1));
+    // Try reading an integer and convering to a string
+    int i;
+    if (!h.getValue(inValue.substr(1), i)) {
+      throw std::runtime_error("Could not find string-valued header keyword " + 
+			       inValue.substr(1));
+    }
+    ostringstream oss;
+    oss << i;
+    result = oss.str();
   }
-
   return result;
 }
 
