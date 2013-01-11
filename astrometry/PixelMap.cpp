@@ -1,8 +1,24 @@
 // $Id: PixelMap.cpp,v 1.12 2012/02/02 02:23:31 garyb Exp $
 
 #include "PixelMap.h"
+#include <cctype>
 
 using namespace astrometry;
+
+int 
+PixelMap::anonymousCounter=0;
+
+PixelMap::PixelMap(string name_): name(name_), pixStep(1.) {
+  if (name.empty()) {
+    std::ostringstream oss;
+    oss << "map_" << anonymousCounter++;
+    name = oss.str();
+  } else {
+    // Replace white space with underscores in PixelMap names:
+    for (string::iterator i=name.begin(); i!=name.end(); ++i)
+      if (std::isspace(*i)) *i='_';
+  }
+}
 
 double
 PixelMap::pixelArea(double xpix, double ypix) const {
@@ -146,7 +162,6 @@ CompoundPixelMap::toWorld(double xpix, double ypix,
   yworld = y;
 }
 
-// Chain together some maps:
 void
 CompoundPixelMap::toPix(double xworld, double yworld,
 			double& xpix, double& ypix) const {
@@ -217,9 +232,9 @@ CompoundPixelMap::setParams(const DVector& p) {
 }
 
 void 
-CompoundPixelMap::toWorld( double xpix, double ypix,
-		      double &xworld, double &yworld,
-		      DMatrix& derivs) const {
+CompoundPixelMap::toWorldDerivs( double xpix, double ypix,
+				 double &xworld, double &yworld,
+				 DMatrix& derivs) const {
   double x=xpix;
   double y=ypix;
   Assert(derivs.nrows()==2 && derivs.ncols()==nParams());
@@ -236,7 +251,7 @@ CompoundPixelMap::toWorld( double xpix, double ypix,
     int nNext = (*i)->nParams();
     if (nNext>0) {
       DMatrix dd(2,nNext);
-      (*i)->toWorld(x,y,x,y,dd);
+      (*i)->toWorldDerivs(x,y,x,y,dd);
       derivs.colRange(index, index+nNext) += dd;
       index += nNext;
     } else {
@@ -247,9 +262,9 @@ CompoundPixelMap::toWorld( double xpix, double ypix,
 }
 
 void 
-CompoundPixelMap::toPix( double xworld, double yworld,
-		    double &xpix, double &ypix,
-		    DMatrix& derivs) const {
+CompoundPixelMap::toPixDerivs( double xworld, double yworld,
+			       double &xpix, double &ypix,
+			       DMatrix& derivs) const {
   toPix(xworld,yworld,xpix,ypix);
   double x=xpix;
   double y=ypix;
@@ -269,7 +284,7 @@ CompoundPixelMap::toPix( double xworld, double yworld,
     int nNext = (*i)->nParams();
     if (nNext>0) {
       DMatrix dd(2,nNext);
-      (*i)->toWorld(x,y,x,y,dd);
+      (*i)->toWorldDerivs(x,y,x,y,dd);
       derivs.colRange(index, index+nNext) += dd;
       index += nNext;
     } else {
