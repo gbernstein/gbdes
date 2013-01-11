@@ -1282,7 +1282,7 @@ MapMarq::operator()(const DVector& a,
     const Detection* d = *i;
     if (d->isClipped) continue;
     double xmod, ymod;
-    pm->toWorld(d->xpix, d->ypix, xmod, ymod, derivs);
+    pm->toWorldDerivs(d->xpix, d->ypix, xmod, ymod, derivs);
     xmod = d->xw - xmod;
     ymod = d->yw - ymod;
 

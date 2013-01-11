@@ -1,5 +1,7 @@
 // $Id: PolyMap.cpp,v 1.7 2012/02/02 02:23:32 garyb Exp $
 #include "PolyMap.h"
+#include "StringStuff.h"
+#include <sstream>
 
 using namespace astrometry;
 
@@ -51,9 +53,9 @@ PolyMap::getParams() const {
 }
 
 void 
-PolyMap::toPix( double xworld, double yworld,
-		double &xpix, double &ypix,
-		DMatrix& derivs) const {
+PolyMap::toPixDerivs( double xworld, double yworld,
+		      double &xpix, double &ypix,
+		      DMatrix& derivs) const {
   toPix(xworld, yworld, xpix, ypix);
   //#pragma omp critical (maps)
   {
@@ -67,9 +69,9 @@ PolyMap::toPix( double xworld, double yworld,
 }
 
 void 
-PolyMap::toWorld(double xpix, double ypix,
-		 double& xworld, double& yworld,
-		 DMatrix& derivs) const {
+PolyMap::toWorldDerivs(double xpix, double ypix,
+		       double& xworld, double& yworld,
+		       DMatrix& derivs) const {
   toWorld(xpix,ypix,xworld, yworld);
   //#pragma omp critical (maps)
   {
@@ -127,9 +129,9 @@ LinearMap::dPixdWorld(double xpix, double ypix) const {
 }
 
 void 
-LinearMap::toPix( double xworld, double yworld,
-		  double &xpix, double &ypix,
-		  DMatrix& derivs) const {
+LinearMap::toPixDerivs( double xworld, double yworld,
+			double &xpix, double &ypix,
+			DMatrix& derivs) const {
   toPix(xworld, yworld, xpix, ypix);
   //#pragma omp critical (maps)
   {
@@ -145,9 +147,9 @@ LinearMap::toPix( double xworld, double yworld,
 }
 
 void 
-LinearMap::toWorld(double xpix, double ypix,
-		   double& xworld, double& yworld,
-		   DMatrix& derivs) const {
+LinearMap::toWorldDerivs(double xpix, double ypix,
+			 double& xworld, double& yworld,
+			 DMatrix& derivs) const {
   toWorld(xpix, ypix, xworld, yworld);
   //#pragma omp critical (maps)
   {
@@ -171,4 +173,35 @@ LinearMap::makeInv() {
   vinv[5] = v[1]/det;
   vinv[0] = -(vinv[1]*v[0]+vinv[2]*v[3]);
   vinv[3] = -(vinv[4]*v[0]+vinv[5]*v[3]);
+}
+
+// ??? Implement reads and writes!
+static
+PixelMap*
+LinearMap::create(std::istream& is, string name) {
+  DVector v[6];
+  string buffer;
+  getlineNoComment(is, buffer);
+  istringstream& iss;
+  if (!(iss >> v[0] >> v[1] >> v[2])) 
+    throw AstrometryError("LinearMap::create has bad x coefficients: " + buffer);
+  if (!(iss >> v[3] >> v[4] >> v[5])) 
+    throw AstrometryError("LinearMap::create has bad y coefficients: " + buffer);
+  return new LinearMap(v);
+}
+
+void
+LinearMap::write(std::ostream& os) const {
+  os << v[0] << " " << v[1] << " " << v[2] << endl;
+  os << v[3] << " " << v[4] << " " << v[5] << endl;
+}
+
+static
+PixelMap*
+PolyMap::create(std::istream& is, string name) {
+}
+
+void
+PolyMap::write(std::ostream& os) const {
+
 }

@@ -334,7 +334,7 @@ astrometry::FitSCAMP(Bounds<double> b,
     Assert(vxp.size()==vyw.size());
     for (int i=0; i<vxp.size(); i++) {
       double xmod, ymod;
-      poly.toWorld(vxp[i], vyp[i], xmod, ymod, derivs);
+      poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
       xmod = vxw[i] - xmod;
       ymod = vyw[i] - ymod;
       for (int j=0; j<nP; j++) {
@@ -348,7 +348,7 @@ astrometry::FitSCAMP(Bounds<double> b,
     rms = 0.;
     for (int i=0; i<vxp.size(); i++) {
       double xmod, ymod;
-      poly.toWorld(vxp[i], vyp[i], xmod, ymod, derivs);
+      poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
       rms += pow(vxw[i] - xmod, 2.) + pow(vyw[i] - ymod,2.);
     }
     rms = sqrt(rms/vxp.size());

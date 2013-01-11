@@ -231,9 +231,9 @@ Match::accumulateChisq(double& chisq,
     double xw, yw;
     if (npi>0) {
       dxyi[ipt] = new DMatrix(2,npi);
-      (*i)->map->toWorld((*i)->xpix, (*i)->ypix,
-			 xw, yw,
-			 *dxyi[ipt]);
+      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
+			       xw, yw,
+			       *dxyi[ipt]);
     } else {
       (*i)->map->toWorld((*i)->xpix, (*i)->ypix, xw, yw);
     }

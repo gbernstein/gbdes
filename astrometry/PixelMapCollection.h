@@ -71,15 +71,15 @@ namespace astrometry {
     void setParams(const DVector& p) {map->setParams(p);}
     DVector getParams() const {return map->getParams();}
     int nParams() const {return map->nParams();}
-    void toPix( double xworld, double yworld,
-			double &xpix, double &ypix,
-			DMatrix& derivs) const {
-      map->toPix(xworld,yworld,xpix,ypix,derivs);
+    void toPixDerivs( double xworld, double yworld,
+		      double &xpix, double &ypix,
+		      DMatrix& derivs) const {
+      map->toPixDerivs(xworld,yworld,xpix,ypix,derivs);
     }
-    void toWorld(double xpix, double ypix,
-			 double& xworld, double& yworld,
-			 DMatrix& derivs) const {
-      map->toWorld(xpix,ypix,xworld,yworld,derivs);
+    void toWorldDerivs(double xpix, double ypix,
+		       double& xworld, double& yworld,
+		       DMatrix& derivs) const {
+      map->toWorldDerivs(xpix,ypix,xworld,yworld,derivs);
     }
     void toWorld(double xpix, double ypix,
 		 double& xworld, double& yworld) const {
