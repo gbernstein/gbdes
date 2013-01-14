@@ -43,18 +43,18 @@ namespace astrometry {
     // Note here that a zero-length vector is returned as parameters by default
     virtual DVector getParams() const {return DVector(0);}
     virtual int nParams() const {return 0;}
-    // Here the derivatives are of world coords w.r.t. map parameters
+    // These calls include derivs of world w.r.t. parameters of map.  
     // Default implementation does not calculate derivs as default is no parameters
-    virtual void toPixDerivs( double xworld, double yworld,
-			      double &xpix, double &ypix,
-			      DMatrix& derivs) const {
-      toPix(xworld,yworld,xpix,ypix);}
-    // And derivs of world w.r.t. parameters of map.  Resizing of derivs
-    // done if needed.
     virtual void toWorldDerivs(double xpix, double ypix,
 			       double& xworld, double& yworld,
 			       DMatrix& derivs) const {
       toWorld(xpix,ypix,xworld,yworld);}
+    // In toPixDerivs, the derivatives are of world coords w.r.t. map parameters, even
+    // thought the call is going from world to pix coords:
+    virtual void toPixDerivs( double xworld, double yworld,
+			      double &xpix, double &ypix,
+			      DMatrix& derivs) const {
+      toPix(xworld,yworld,xpix,ypix);}
     // Step size for derivatives in "pixel" space:
     virtual double getPixelStep() const {return pixStep;}
     virtual void setPixelStep(double ps) {pixStep=ps;}

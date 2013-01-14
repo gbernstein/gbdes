@@ -50,7 +50,7 @@ namespace astrometry {
     // Set tolerance in world coords for soln of inverse
     void setWorldTolerance(double wt) {worldTolerance=wt;}
 
-    static string mapType("Poly");
+    static string mapType() {return "Poly";}
     static PixelMap* create(std::istream& is, string name="");
     void write(std::ostream& os) const;
 
@@ -85,7 +85,7 @@ namespace astrometry {
     DVector getParams() const {return v;}
     int nParams() const {return 6;}
 
-    static string mapType("Linear");
+    static string mapType() {return "Linear";}
     static PixelMap* create(std::istream& is, string name="");
     void write(std::ostream& os) const;
 
