@@ -226,9 +226,128 @@ PixelMapCollection::allWcsNames() const {
   return output;
 }
 
-// ??? Need issue, add
+void 
+PixelMapCollection::addMap(PixelMap* pm, bool duplicateNamesAreExceptions) {
+  // ???
+  // ??? need to distinguish compound, submaps, and wcs's from atomic types.
+}
+
+void 
+PixelMapCollection::addWcs(Wcs* pm, bool duplicateNamesAreExceptions) {
+  // ???
+}
+
+// Define a new pixelMap that is compounding of a list of other PixelMaps.  Order
+// of the list is from pixel to world coordinates.
+void 
+PixelMapCollection::defineChain(string chainName, const list<string>& elements) {
+  if (mapExists(chainName)) 
+    throw AstrometryError("PixelMapCollection::defineChain with duplicate name: " 
+			  + chainName);
+  // Check that elements exist
+  for (list<string>::const_iterator i = elements.begin();
+       i != elements.end();
+       ++i) 
+    if (!mapExists(*i))
+      throw AstrometryError("PixelMapCorrection::defineChain with unknown pixel map element: "
+			    + *i);
+  mapElements.insert(std::pair<string, MapElement>(chainName, MapElement()));
+  mapElements[chainName].subordinateMaps = elements;
+  // Note that adding a new chain does not change parameter vector assignments
+}
+
+// Define a WCS system to be the given PixelMap followed by projection to the
+// sky described by the nativeCoords system.
+void 
+PixelMapCollection::defineWcs(string wcsName, const SphericalCoords& nativeCoords, 
+			      string mapName, double wScale) {
+  // Check that Wcs name does not exist
+  if (mapExists(wcsName)) 
+    throw AstrometryError("PixelMapCollection::defineWcs with duplicate name: " 
+			  + wcsName);
+  // and that the PixelMap does:
+  if (!mapExists(mapName)) 
+      throw AstrometryError("PixelMapCorrection::defineWcs with undefined pixelMap element: "
+			    + mapName);
+  wcsElements.insert(std::pair<string, WcsElement>(wcsName, WcsElement()));
+  wcsElements[wcsName].mapName = mapName;
+  wcsElements[wcsName].nativeCoords = nativeCoords.duplicate();
+  wcsElements[wcsName].wScale = wScale;
+}
+
+// Return pointer to a SubMap realizing the named coordinate transformation
+SubMap* 
+PixelMapCollection::issueMap(string mapName) {
+  if (!wcsExists(mapName))
+    throw AstrometryError("PixelMapCollection::issueMap requested for unknown PixelMap: "
+			  +  mapName);
+  MapElement& el = mapElements[mapName];
+
+  if (!el.realization) {
+    // Create a realization if one does not exist
+    list<string> atomList = orderAtoms(mapName);
+    vector<int> startIndices(atomList.size(), 0);
+    vector<int> nParams(atomList.size(), 0);
+
+    list<PixelMap*> atoms;
+    int index=0;
+    for (list<string>::const_iterator i = atomList.begin();
+	 i != atomList.end();
+	 ++i, ++index) {
+      Assert(mapElements[*i].atom);	// All elements should be atomic
+      atoms.push_back(mapElements[*i].atom);
+      // fill in its indices into master vector:
+      startIndices[index] = mapElements[*i].startIndex;
+      nParams[index] = mapElements[*i].isFixed ? 0 : mapElements[*i].nParams;
+    }
+    SubMap* sm = new SubMap(atoms, mapName);
+    sm->vStartIndices = startIndices;
+    sm->vNSubParams = nParams;
+    sm->countFreeParameters();
+    el.realization = sm;
+  }
+  return el.realization;
+}
+
+// Return a pointer to a Wcs built from a SubMap and realizing the named coord system
+Wcs* 
+PixelMapCollection::issueWcs(string wcsName) {
+  if (!wcsExists(wcsName))
+    throw AstrometryError("PixelMapCollection::issueWcs requested for unknown Wcs: "
+			  +  wcsName);
+  WcsElement& el = wcsElements[wcsName];
+
+  if (!el.realization) {
+    // Create a realization if one does not exist
+    SubMap* sm = issueMap(el.mapName);
+    el.realization = new Wcs(sm, *el.nativeCoords, wcsName, el.wScale);
+  }
+  return el.realization;
+}
+
+list<string> 
+PixelMapCollection::orderAtoms(string mapName,
+			       const set<string>& ancestors) const {
+  // ???
+}
 
 //////////////////////////////////////////////////////////////
 // (De-) Serialization
 //////////////////////////////////////////////////////////////
 
+void 
+PixelMapCollection::read(istream& is, string namePrefix) {
+  // ???
+}
+void 
+PixelMapCollection::write(ostream& os) const {
+  // ???
+}
+void 
+PixelMapCollection::writeMap(ostream& os, string name) const {
+  // ???
+}
+void 
+PixelMapCollection::writeWcs(ostream& os, string name) const {
+  // ???
+}

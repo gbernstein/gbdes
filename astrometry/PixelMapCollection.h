@@ -42,8 +42,8 @@ namespace astrometry {
     void countFreeParameters(); // update countFreeParameters from vNSubParams
   public:
     // ?? names ??
-    SubMap();
-    SubMap(list<PixelMap*> pixelMaps); 
+    SubMap(string name="");
+    SubMap(list<PixelMap*> pixelMaps, string name=""); 
     virtual ~SubMap();
     vector<PixelMap*> vMaps;
     int nMaps() const {return vMaps.size();}
@@ -73,14 +73,6 @@ namespace astrometry {
     void write(ostream& os) const;
   };
 
-  // Convenience class to hold sequences of PixelMaps (by names)
-  class PixelMapChain: public list<string> {
-  public:
-    // will use front(), size(), empty(), iterators, begin(), end()
-    void append(string m) {push_back(m);}
-    void append(PixelMapChain& mc) {insert(end(), mc.begin(), mc.end());}
-  };
-
   // ?? Implement the PixelMap and/or Wcs interfaces by selecting a member to use??
   // get rid of Keys and Chains and just use names??
   class PixelMapCollection {
@@ -92,26 +84,26 @@ namespace astrometry {
     ~PixelMapCollection();
 
     // Include a new map or Wcs into this collection (will also absorb any parts
-    // of compound maps).  PixelMapCollection will assume ownership.
-    // Duplicate names are left as is when adding.
-    void addMap(PixelMap* pm); 
-    void addWcs(Wcs* pm); 
+    // of compound maps).  PixelMapCollection will assume ownership of these objects
+    // and all PixelMaps that they are dependent upon.
+    // If the boolean flag is true, then names that match names existing collection will
+    // throw an exception.  If the flag is false, any new PixelMap or Wcs with same name as
+    // an existing will be assumed to refer to existing one.  (ownership???)
+    void addMap(PixelMap* pm, bool duplicateNamesAreExceptions=false); 
+    void addWcs(Wcs* pm, bool duplicateNamesAreExceptions=false);
 
-    // Get pointer to a new map constructed as the specified chain.
-    SubMap* issueMap(PixelMapChain& chain, string name="");
-    // Return pointer to map with specified name.  Returns 0 if name is not in collection
-    SubMap* issueMap(string name);
+    // Define a new pixelMap that is compounding of a list of other PixelMaps.  Order
+    // of the list is from pixel to world coordinates.
+    void defineChain(string chainName, const list<string>& elements);
+    // Define a WCS system to be the given PixelMap followed by projection to the
+    // sky described by the nativeCoords system.
+    void defineWcs(string wcsName, const SphericalCoords& nativeCoords, string mapName,
+		   double wScale = DEGREE);
 
-    // Get pointer to a new Wcs constructed as the specified chain and 
-    // projected with the given Orientation or projection.  Name is given to
-    // both the PixelMap and the Wcs that uses it.
-    Wcs* issueWcs(PixelMapChain& chain, const Orientation& nativeOrient, string name="");
-    Wcs* issueWcs(PixelMapChain& chain, const SphericalCoords& nativeCoords, string name="");
-    // Issue a WCS that is projection of existing PixelMap into specified coord system
-    Wcs* issueWcs(string mapName, const Orientation& nativeOrient, string name="");
-    Wcs* issueWcs(string mapName, const SphericalCoords& nativeCoords, string name="");
-    // Issue a previously specified WCS
-    Wcs* issueWcs(string name);
+    // Return pointer to a SubMap realizing the named coordinate transformation
+    SubMap* issueMap(string mapName);
+    // Return a pointer to a Wcs built from a SubMap and realizing the named coord system
+    Wcs* issueWcs(string wcsName);
     
     // Create and read serializations of all the maps or just one
     void read(istream& is, string namePrefix=""); // prefix added to names of all elements
@@ -138,7 +130,7 @@ namespace astrometry {
 
     // And the WCS specified for this collection:
     int nWcs() const {return wcsElements.size();}
-    bool WcsExists(string name) const {return wcsElements.count(name);}
+    bool wcsExists(string name) const {return wcsElements.count(name);}
     vector<string> allWcsNames() const;
 
     // This routine adds a new type of PixelMap to the parsing dictionary
@@ -160,7 +152,7 @@ namespace astrometry {
 
     // Structure for every PixelMap that we know about:
     struct MapElement {
-      MapElement(): realization(0), atom(0) {}
+      MapElement(): realization(0), atom(0), isFixed(false) {}
       list<string> subordinateMaps;  // If it's compound, what it will be made from
       SubMap* realization;	     // pointer to its SubMap, if it's been built
       PixelMap* atom;		     // Pointer to the PixelMap itself, if atomic
@@ -173,18 +165,27 @@ namespace astrometry {
 
     // Structure for every WCS that we know about:
     struct WcsElement {
-      WcsElement(): nativeCoords(0), realization(0) {}
+      WcsElement(): nativeCoords(0), realization(0), wScale(DEGREE) {}
       WcsElement(const WcsElement& rhs): mapName(rhs.mapName), nativeCoords(0),
-					 realization(rhs.realization) {
+					 realization(rhs.realization),
+					 wScale(rhs.wScale)    {
 	if (rhs.nativeCoords) nativeCoords = rhs.nativeCoords->duplicate();
       }
+      ~WcsElement() {if (nativeCoords) delete nativeCoords;}
       string mapName;	// The PixelMap it should use.
       // Projection it will use.  We own it.
       SphericalCoords* nativeCoords;
       Wcs* realization;	// Pointer to realization if we've got it.
+      double wScale;	// Scaling to apply to PixelMap world coords to get radians
     private:
       void operator=(const MapElement& rhs); // hide assignment
     };
+
+    // Produce a list giving the atomic transformation sequence needed to implement a
+    // specified map (will be called recursively for chains, so ancestors array checks
+    // for circular dependence):
+    list<string> orderAtoms(string mapName,
+			     const set<string>& ancestors = set<string>()) const;
 
     map<string, WcsElement> wcsElements; // all known Wcs's, indexed by name.
     typedef map<string, MapElement>::iterator MapIter;
