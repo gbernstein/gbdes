@@ -33,19 +33,32 @@ namespace astrometry {
     // A PixelMap that is the compounded action of one or more PixelMaps potentially
     // taken from a PixelMapCollection.  If so, the
     // startIndices and nParams index each compounded map's parameters into a master vector.
+    //    Calls to get/setParams work with a vector that is the concatenated
+    // parameter vectors of the chain elements, in order that they are chained.
+    // If, however, the vNSubParams entry for any referenced PixelMap is set to zero, it
+    // will be treated as a map with no free parameters, and skipped in the chain.
     friend class PixelMapCollection;
+    // Since SubMaps can be issued by a PixelMapCollection, it is a friend class that
+    // can fix/free the parameters of an element by accessing vNSubParams, and also
+    // adjusts the vStartIndices to reflect each element's position in a master parameter
+    // vector.  
   private:
     // These two arrays are all that we are adding to PixelMap:
     vector<int> vStartIndices;
     vector<int> vNSubParams;
     int totalFreeParameters;	// Cache this total
     void countFreeParameters(); // update countFreeParameters from vNSubParams
+    bool wasIssued;	// Set to true if this SubMap is being managed by a PixelMapCollection
+
+    // Hide:
+    SubMap(const SubMap& rhs);
+    void operator=(const SubMap& rhs);
+
   public:
-    // ?? names ??
     SubMap(string name="");
-    SubMap(list<PixelMap*> pixelMaps, string name=""); 
+    SubMap(const list<PixelMap*>& pixelMaps, string name=""); 
     virtual ~SubMap();
-    vector<PixelMap*> vMaps;
+    const vector<PixelMap*> vMaps;    // Make it private??
     int nMaps() const {return vMaps.size();}
     int startIndex(int iMap) const {return vStartIndices[iMap];}
     int nSubParams(int iMap) const {return vNSubParams[iMap];}
@@ -54,7 +67,7 @@ namespace astrometry {
     // works with a single contiguous vector of parameters of all components.
     void setParams(const DVector& p);
     DVector getParams() const;
-    int nParams() const {return totalFreeParameters;}
+    int nParams() const {return totalFreeParameters;} // ??? need nSubParams too ???
     void toWorld(double xpix, double ypix,
 		 double& xworld, double& yworld) const;
     void toPix( double xworld, double yworld,
@@ -70,27 +83,39 @@ namespace astrometry {
     // Step size for derivatives in "pixel" space - applied to first map in the chain, if any
     double getPixelStep() const;
     void setPixelStep(double ps);
-    void write(ostream& os) const;
+    void write(ostream& os) const {
+      throw AstrometryError("SubMap " + getName() + " should not be getting serialized");
+    }
   };
 
   // ?? Implement the PixelMap and/or Wcs interfaces by selecting a member to use??
-  // get rid of Keys and Chains and just use names??
+
   class PixelMapCollection {
   public:
     // add some or all maps from another collection
     // add wcs from another collection or external
-    // create the last wcs or pixmap specified in some file??
     PixelMapCollection();
     ~PixelMapCollection();
 
-    // Include a new map or Wcs into this collection (will also absorb any parts
-    // of compound maps).  PixelMapCollection will assume ownership of these objects
-    // and all PixelMaps that they are dependent upon.
     // If the boolean flag is true, then names that match names existing collection will
     // throw an exception.  If the flag is false, any new PixelMap or Wcs with same name as
     // an existing will be assumed to refer to existing one.  (ownership???)
-    void addMap(PixelMap* pm, bool duplicateNamesAreExceptions=false); 
-    void addWcs(Wcs* pm, bool duplicateNamesAreExceptions=false);
+
+    // Include a new map or Wcs into this collection (will also absorb any parts
+    // of compound maps).  PixelMapCollection will assume ownership of these objects
+    // and all PixelMaps that they are dependent upon.  THE OBJECT THAT THE INPUT POINTER
+    // REFERENCES WILL EITHER BE OWNED BY THIS COLLECTION OR WILL BE DELETED.
+    // Hence any attempts to delete it later will be potentially catastrophic, and you 
+    // should not ever try to use it again.  In particular, don't pass in here anything that 
+    // was issued by a PixelMapCollection.  
+    void absorbMap(PixelMap* pm, bool duplicateNamesAreExceptions=false); 
+    void absorbWcs(Wcs* pm, bool duplicateNamesAreExceptions=false);
+
+    // Take all the contents of a source PixelMapCollection and make them part of this collection.
+    // The source will no longer be usable as we will have removed its contents.  Everything
+    // that the source collection owned will be transferred here.  All its issued
+    // SubMaps are still valid but belong to new PixelMapCollection now.
+    void absorb(PixelMapCollection& source, bool duplicateNamesAreExceptions=false);
 
     // Define a new pixelMap that is compounding of a list of other PixelMaps.  Order
     // of the list is from pixel to world coordinates.

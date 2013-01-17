@@ -3,13 +3,6 @@
 
 using namespace astrometry;
 
-Wcs::Wcs(PixelMap* pm_, const Orientation& nativeOrient_, string name, 
-	 double wScale_, bool ownPM): PixelMap(name),pm(pm_), wScale(wScale), 
-				      nativeOrient(nativeOrient_),
-				      nativeCoords(0),
-				      targetCoords(0) {
-  nativeCoords = new TangentPlane(nativeOrient);
-}
 Wcs::Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name, 
 	 double wScale_, bool ownPM): PixelMap(name),pm(pm_), wScale(wScale), 
 				      nativeCoords(0),
@@ -39,25 +32,6 @@ Wcs::fromSky(const SphericalCoords& sky, double& xpix, double& ypix) const {
   xw /= wScale;
   yw /= wScale;
   pm->toPix(xw, yw, xpix, ypix);
-}
-
-void
-Wcs::reprojectTo(const Orientation& targetOrient_) {
-  useNativeProjection();
-  // No reprojection if we're already in TangentPlane projection to this orientation:
-  bool needReprojection = true;
-  const TangentPlane* tp = dynamic_cast<TangentPlane*> (nativeCoords);
-  if (tp) {
-    // Need a reprojection if the targetOrient differs signficantly from native orientation
-    const double orientTolerance = 1e-4*ARCSEC;
-    if ( tp->getOrient()->getPole().distance(targetOrient_.getPole()) < orientTolerance
-	 && abs(tp->getOrient()->getPA() - targetOrient_.getPA()) < orientTolerance)
-      needReprojection = false;
-  }
-  if (needReprojection) {
-    targetOrient = targetOrient_;
-    targetCoords = new TangentPlane(targetOrient);
-  }
 }
 
 void

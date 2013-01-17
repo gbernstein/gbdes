@@ -9,6 +9,24 @@
 
 using namespace astrometry;
 
+SubMap::SubMap(string name): PixelMap(name), wasIssued(false), totalFreeParameters(0) {}
+
+SubMap::SubMap(const list<PixelMap*>& pixelMaps, 
+	       string name): PixelMap(name), wasIssued(false), totalFreeParameters(0) {
+  // set up parameter vectors, making all PixelMap parameters free and consectuve by default
+  vNSubParams.clear();
+  vStartIndices.clear();
+  vMaps.clear();
+  for (list<PixelMap*>::const_iterator i = pixelMaps.begin();
+       i != pixelMaps.end();
+       ++i) {
+    vMaps.push_back(*i);
+    vStartIndices.push_back(totalFreeParameters);
+    vNSubParams.push_back((*i)->nParams());
+    totalFreeParameters += (*i)->nParams();
+  }
+}
+
 void
 SubMap::countFreeParameters() {
   totalFreeParameters = 0;
@@ -20,6 +38,7 @@ SubMap::countFreeParameters() {
 // parameters of our components in order:
 DVector
 SubMap::getParams() const {
+  if (nParams()==0) return DVector(0);
   int nm = nMaps();
   if (nm==1) return vMaps.front()->getParams();
   DVector p(nParams(),0.);
@@ -36,6 +55,7 @@ SubMap::getParams() const {
 
 void
 SubMap::setParams(const DVector& p) {
+  if (nParams()==0) return;
   int nm = nMaps();
   if (nm==1) vMaps.front()->setParams(p);
   Assert(p.size() == nParams());
@@ -102,6 +122,10 @@ void
 SubMap::toWorldDerivs( double xpix, double ypix,
 		       double &xworld, double &yworld,
 		       DMatrix& derivs) const {
+  if (nParams()==0) {
+    toWorld(xpix, ypix, xworld, yworld);
+    return;
+  }
   int nm = nMaps();
   if (nm==1) vMaps.front()->toWorldDerivs(xpix, ypix, xworld, yworld, derivs);
 
@@ -124,6 +148,7 @@ SubMap::toWorldDerivs( double xpix, double ypix,
     }
     int nNext = nSubParams(iMap);  
     if (nNext>0) {
+      Assert(nNext == vMaps[iMap]->nParams());
       DMatrix dd(2,nNext);
       vMaps[iMap]->toWorldDerivs(xpix,ypix,xworld,yworld,dd);
       derivs.colRange(index, index+nNext) += dd;  // Could just set =, not += here??
@@ -139,6 +164,10 @@ void
 SubMap::toPixDerivs( double xworld, double yworld,
 		     double &xpix, double &ypix,
 		     DMatrix& derivs) const {
+  if (nParams()==0) {
+    toPix(xworld, yworld, xpix, ypix);
+    return;
+  }
   if (nMaps()==1) vMaps.front()->toPixDerivs(xworld, yworld, xpix, ypix, derivs);
 
   // Do the inverse map then call the forward routine to find dWorld / dParams:

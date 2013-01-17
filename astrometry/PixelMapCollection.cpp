@@ -227,13 +227,13 @@ PixelMapCollection::allWcsNames() const {
 }
 
 void 
-PixelMapCollection::addMap(PixelMap* pm, bool duplicateNamesAreExceptions) {
+PixelMapCollection::absorbMap(PixelMap* pm, bool duplicateNamesAreExceptions) {
   // ???
   // ??? need to distinguish compound, submaps, and wcs's from atomic types.
 }
 
 void 
-PixelMapCollection::addWcs(Wcs* pm, bool duplicateNamesAreExceptions) {
+PixelMapCollection::absorbWcs(Wcs* pm, bool duplicateNamesAreExceptions) {
   // ???
 }
 
@@ -301,6 +301,7 @@ PixelMapCollection::issueMap(string mapName) {
       nParams[index] = mapElements[*i].isFixed ? 0 : mapElements[*i].nParams;
     }
     SubMap* sm = new SubMap(atoms, mapName);
+    sm->wasIssued = true;	// Mark this SubMap as being owned by someone.
     sm->vStartIndices = startIndices;
     sm->vNSubParams = nParams;
     sm->countFreeParameters();
@@ -325,10 +326,36 @@ PixelMapCollection::issueWcs(string wcsName) {
   return el.realization;
 }
 
+// Return a list of the atomic elements of the named map, in order of
+// their application to data.  Checking for circular dependece.
 list<string> 
 PixelMapCollection::orderAtoms(string mapName,
 			       const set<string>& ancestors) const {
-  // ???
+  if (!mapExists(mapName))
+    throw AstrometryError("PixelMapCollection::orderAtoms requested for unknown map: "
+			  + mapName);
+  list<string> retval;
+  const MapElement& m = mapElements.find(mapName)->second;
+  if (m.atom) {
+    // Simple atomic element just returns itself
+    retval.push_back(mapName);
+    return retval;
+  }
+
+  // Otherwise we have a compound map at work here.  First check for circularity:
+  if (ancestors.find(mapName) != ancestors.end())
+    throw AstrometryError("Circular dependence in PixelMapCollection::orderAtoms at map "
+			  + mapName);
+  // Then call recursively to all subordinateMaps, adding self to ancestor list:
+  set<string> ancestorsPlusSelf(ancestors);
+  ancestorsPlusSelf.insert(mapName);
+  for (list<string>::const_iterator i = m.subordinateMaps.begin();
+       i != m.subordinateMaps.end();
+       ++i) {
+    list<string> subList = orderAtoms(*i, ancestorsPlusSelf);
+    retval.splice(retval.end(), subList);
+  }
+  return retval;
 }
 
 //////////////////////////////////////////////////////////////
