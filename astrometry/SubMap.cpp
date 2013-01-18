@@ -9,10 +9,10 @@
 
 using namespace astrometry;
 
-SubMap::SubMap(string name): PixelMap(name), wasIssued(false), totalFreeParameters(0) {}
+SubMap::SubMap(string name): PixelMap(name), totalFreeParameters(0) {}
 
 SubMap::SubMap(const list<PixelMap*>& pixelMaps, 
-	       string name): PixelMap(name), wasIssued(false), totalFreeParameters(0) {
+	       string name): PixelMap(name), totalFreeParameters(0) {
   // set up parameter vectors, making all PixelMap parameters free and consectuve by default
   vNSubParams.clear();
   vStartIndices.clear();

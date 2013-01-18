@@ -172,35 +172,6 @@ PixelMapCollection::rebuildParameterVector() {
   }
 }
 
-set<string>
-PixelMapCollection::dependencies(string target,
-				 const set<string>& ancestors) const {
-  // If target is on the ancestor list, there is a circular dependence
-  if (ancestors.count(target) == 0)
-    throw AstrometryError("Circular dependence in PixelMapCollection at element " + target);
-
-  // Make a new ancestor list with target on it
-  // (I'm sure there is a more clever algorithm for finding circular dependence!)
-  set<string> ancestorsPlusTarget(ancestors);
-  ancestorsPlusTarget.insert(target);
-
-  // Find target MapElement and add target to output dependency list
-  ConstMapIter iTarget = mapElements.find(target);
-  if (iTarget == mapElements.end()) 
-    throw AstrometryError("PixelMapCollection has no element " + target + " in dependencies()");
-  set<string> output;
-  output.insert(target);
-
-  // Call this routine recursively for all the map elements that the target depends on
-  for (list<string>::const_iterator i = iTarget->second.subordinateMaps.begin();
-       i != iTarget->second.subordinateMaps.begin();
-       ++i) {
-    set<string> subs = dependencies(*i, ancestorsPlusTarget);
-    output.insert(subs.begin(), subs.end());
-  }
-
-  return output;
-}
 
 //////////////////////////////////////////////////////////////
 // Member maintenance
@@ -226,176 +197,154 @@ PixelMapCollection::allWcsNames() const {
   return output;
 }
 
-void
-PixelMapCollection::deleteMap(PixelMap* pm, const set<PixelMap*>& ancestors) const {
-  if (ancestors.find(pm))
-    throw AstrometryError("Circular PixelMap dependence detected in "
-			  "PixelMapCollection::deleteMap at " + pm->getName());
-  if ( (SubMap* sm = dynamic_cast<SubMap*> (pm))!=0) {
-    // Should not be deleting a SubMap that is owned by another PixelMapCollection:
-    if (sm->isOwned)
-      throw AstrometryError("PixelMapCollection::deleteMap called on owned SubMap "
-			    + pm->getName());
-    // Call recursively on all elements of SubMap:
-    set<PixelMap*> ancestorsPlusSelf(ancestors);
-    ancestorsPlusSelf.insert(pm);
-    for (int i = 0; i< sm->vMaps.size(); i++)
-      deleteMap(sm->vMaps[i], ancestorsPlusSelf);
-  } else if ( (Wcs* wcsm = dynamic_cast<wcs*> (pm))!=0) {
-    // If the PixelMap is a Wcs, call on its associated pixelMap
-    deleteMap(wcsm->getMap(), ancestors);
-  }
-  // See if this pm is referenced by any part of this PixelMapCollection
-  bool deleteIt = true;
-  for (ConstMapIter i = mapElements.begin();
-       i != mapElements.end();
-       ++i) 
-    if (i->second.atom == pm) {
-      deleteIt = false;
-      break;
-    }
-  // If not in use, delete it.
-  if (deleteIt) delete pm;
-}
-
 void 
-PixelMapCollection::absorbMap(PixelMap* pm, bool duplicateNamesAreExceptions) {
-  if (mapExists(pm->getName())) {
+PixelMapCollection::learnMap(const PixelMap& pm, bool duplicateNamesAreExceptions) {
+  if (mapExists(pm.getName())) {
     if (duplicateNamesAreExceptions)
-      throw AstrometryError("Duplicate map name in PixelMapCollection::absorbMap at "
-			    + pm->getName());
-    // We will just ignore this duplicate-named map.
-    // Delete it and its dependencies if they are not in this PixelMapCollection:
-    deleteMap(pm);
+      throw AstrometryError("Duplicate map name in PixelMapCollection::learnMap at "
+			    + pm.getName());
+    // If not throwing an exception, we will just ignore this duplicate-named map.
     return;
   }
-  if ( (SubMap* sm = dynamic_cast<SubMap*> (pm))!=0) {
-    // Should not be absorbing a SubMap that is owned by another PixelMapCollection:
-    if (sm->isOwned)
-      throw AstrometryError("PixelMapCollection::absorbMap called on already-owned SubMap "
-			    + pm->getName());
-    // If this is a single-element SubMap that has same name as its dependent, then we'll
-    // just absorb the dependent:
-    if (sm->vMaps.size()==1 && pm->getName()==sm->vMaps.front()->getName()) {
-      absorbMap(sm->vMaps.front(), duplicateNamesAreExceptions);
-      // Delete this SubMap and be done
-      delete sm;
-    } else {
-      // create a new compound map from this, absorbing each dependency:
-      MapElement mel;
-      for (int i = 0; i< sm->vMaps.size(); i++) {
-	if (sm->getName() == sm->vMaps[i]->getName())
-	  throw AstrometryError("PixelMapCollection::absorbMap encountered SubMap that has "
-				"a dependence on PixelMap with the same name: " + sm->getName());
-	mel.subordinateMaps.push_back(sm->vMaps[i]->getName());
-	absorbMap(sm->vMaps[i], duplicateNamesAreExceptions);
-      }
-      // Register this compound map
-      mapElements.insert(std::pair<string,MapElement>(pm->getName(), mel));
-      // Delete the original SubMap
-      delete sm;
-    }
-  } else   if ( (WcsMap* wcsm = dynamic_cast<WcsMap*> (pm))!=0) {
-    // A Wcs has been submitted as a PixelMap, which is just too confusing to deal with
-    throw AstrometryError("Passed the Wcs <" + pm->getName() "> as a PixelMap to"
-			  " PixelMapCollection::absorbMap.\n"
-			  "This is not supported, use defineWcs and/or ReprojectionMaps.");
-  } else if ( (CompoundPixelMap* cpm = dynamic_cast<CompoundPixelMap*> (pm))!=0) {
-    // absorb each dependency:
+  const SubMap* sm = dynamic_cast<const SubMap*> (&pm);
+  const CompoundPixelMap* cpm = dynamic_cast<const CompoundPixelMap*> (&pm);
+  if (sm) {
+    if (sm->vMaps.size()==1 && pm.getName()==sm->vMaps.front()->getName()) {
+      // If this is a single-element SubMap that has same name as its dependent, then we'll
+      // just learn the dependent:
+      learnMap(*sm->vMaps.front(), duplicateNamesAreExceptions);
+      return;
+    } 
+    // create a new compound map from this, learning each dependency:
     MapElement mel;
-    for (list<PixelMap*>::iterator i = cpm->pmlist.begin();
-	 i != cpm->pmlist.end();
+    for (int i = 0; i< sm->vMaps.size(); i++) {
+      if (sm->getName() == sm->vMaps[i]->getName())
+	throw AstrometryError("PixelMapCollection::learnMap encountered SubMap that has "
+			      "a dependence on PixelMap with the same name: " + sm->getName());
+      mel.subordinateMaps.push_back(sm->vMaps[i]->getName());
+      learnMap(*sm->vMaps[i], duplicateNamesAreExceptions);
+    }
+    // Register this compound map
+    mapElements.insert(std::pair<string,MapElement>(pm.getName(), mel));
+
+  } else if (cpm) {
+    // learn each dependency
+    MapElement mel;
+    const list<PixelMap*>& pmlist = cpm->getList();
+    for (list<PixelMap*>::const_iterator i = pmlist.begin();
+	 i != pmlist.end();
 	 ++i) {
       if (cpm->getName() == (*i)->getName())
-	throw AstrometryError("PixelMapCollection::absorbMap encountered CompoundPixelMap that "
+	throw AstrometryError("PixelMapCollection::learnMap encountered CompoundPixelMap that "
 			      "has a dependence on PixelMap with the same name: "
 			      + cpm->getName());
       mel.subordinateMaps.push_back((*i)->getName());
-      absorbMap(*i, duplicateNamesAreExceptions);
+      learnMap(**i, duplicateNamesAreExceptions);
     }
     // Register this compound map
-    mapElements.insert(std::pair<string,MapElement>(pm->getName(), mel));
-    // Delete the original CompoundPixelMap
-    delete cpm;
+    mapElements.insert(std::pair<string,MapElement>(pm.getName(), mel));
+
+  } else if ( const Wcs* wcsm = dynamic_cast<const Wcs*> (&pm)) {
+    // A Wcs has been submitted as a PixelMap, which means it will be treated as
+    // its pixel map followed by a reprojection.
+    // Make sure we will not have a name conflict between this wcs and the PixelMap within it:
+    if (pm.getName() == wcsm->getMap()->getName()) 
+      throw AstrometryError("PixelMapCollection::learnMap received Wcs with same name as its "
+			    " PixelMap: " + pm.getName());
+    learnMap(*wcsm->getMap(), duplicateNamesAreExceptions);
+    if (!wcsm->getTargetCoords()) 
+      throw AstrometryError("PixelMapCollection::learnMap using a Wcs that has no target coord "
+			    " system: " + wcsm->getName());
+    string reprojectName = wcsm->getName() + "_reproject";
+    ReprojectionMap repro(*wcsm->getNativeCoords(),
+			  *wcsm->getTargetCoords(),
+			  wcsm->getScale(),
+			  reprojectName);
+    learnMap(repro, duplicateNamesAreExceptions);
+    MapElement mel;
+    mel.subordinateMaps.push_back(wcsm->getMap()->getName());
+    mel.subordinateMaps.push_back(reprojectName);
+    // Register as compound map
+    mapElements.insert(std::pair<string,MapElement>(pm.getName(), mel));
   } else {
     //  This should be an atomic PixelMap; simply add it to our element list:
     MapElement mel;
-    mel.atomic = pm;
-    mapElements.insert(std::pair<string,MapElement>(pm->getName(), mel));
+    mel.atom = pm.duplicate();
+    mapElements.insert(std::pair<string,MapElement>(pm.getName(), mel));
   }
+
+  // Check that new map did not introduce circularity (though I do not know how it could)
+  checkCircularDependence(pm.getName());
 
   // re-index everything
   rebuildParameterVector();
 }
 
 void
-PixelMapCollection::absorb(PixelMapCollection& rhs, bool duplicateNamesAreExceptions) {
-  set<PixelMap*> atomsToKill;
-  for (MapIter iMap = rhs.mapElements.begin();
+PixelMapCollection::learnWcs(const Wcs& wcs, bool duplicateNamesAreExceptions) {
+  // Check for duplicate Wcs name:
+  if (wcsExists(wcs.getName())) {
+    if (duplicateNamesAreExceptions) 
+      throw AstrometryError("PixelMapCollection::learnWcs duplicates existing Wcs name " 
+			    + wcs.getName());
+    // We'll just ignore this if it's duplicated and we don't want to throw
+    return;
+  }
+  // Learn the pixel map of the Wcs:
+  learnMap(*wcs.getMap());
+  // Enter a new WcsElement into our tables:
+  WcsElement wel;
+  wel.mapName = wcs.getMap()->getName();
+  wel.nativeCoords = wcs.getNativeCoords()->duplicate();
+  wel.wScale = wcs.getScale();
+  wcsElements.insert(std::pair<string,WcsElement>(wcs.getName(), wel));
+}
+
+void
+PixelMapCollection::learn(PixelMapCollection& rhs, bool duplicateNamesAreExceptions) {
+  for (ConstMapIter iMap = rhs.mapElements.begin();
        iMap != rhs.mapElements.end();
        ++iMap) {
-    MapElement& incoming = iMap->second;
-    // Kill any existing realization of incoming map
-    if (incoming.realization) {
-      delete incoming.realization;
-      incoming.realization = 0;
-    }
-
+    const MapElement& incoming = iMap->second;
     if (mapExists(iMap->first)) {
       // incoming map duplicates and existing name.
       if (duplicateNamesAreExceptions) 
-	throw AstrometryError("PixelMapCollection::absorb with duplicate map name "
+	throw AstrometryError("learn(PixelMapCollection) with duplicate map name "
 			      + iMap->first);
-      // Duplicate will just be ignored.  We want to delete its
-      // atom, will check later if it's needed elsewhere though.
-      atomsToKill.insert(incoming.atom);
+      // Duplicate will just be ignored. 
     } else {
       // A new mapName for us.  Add its mapElement to our list.
-      mapElements.insert(*iMap);
+      MapElement mel;
+      mel.atom = iMap->second.atom->duplicate();
+      mel.isFixed = iMap->second.isFixed;
+      mel.subordinateMaps = iMap->second.subordinateMaps;
+      mapElements.insert(std::pair<string,MapElement>(iMap->first, mel));
+      // Note cannot introduce circularity if the top-level map is new.
     }
-  }
-
-  // Remove from the kill list any duplicate-name atomic PixelMaps that are still in use
-  for (MapIter iMap = mapElements.begin();
-       iMap != mapElements.end();
-       ++iMap)
-    if (iMap->second.atom)
-      atomsToKill.erase(iMap->second.atom);
-  // Then delete all the duplicaate atomic PixelMaps that are no longer in use
-  for (set<PixelMap*>::iterator i = atomsToKill.begin();
-       i != atomsToKill.end();
-       ++i)
-    delete *i;
-
+  } // end input map loop
 
   for (WcsIter iWcs = rhs.wcsElements.begin();
        iWcs != rhs.wcsElements.end();
        ++iWcs) {
     WcsElement& incoming = iWcs->second;
-    // Kill any existing realization of incoming wcs
-    if (incoming.realization) {
-      delete incoming.realization;
-      incoming.realization = 0;
-    }
-
     if (wcsExists(iWcs->first)) {
       // incoming wcs duplicates and existing name.
       if (duplicateNamesAreExceptions) 
-	throw AstrometryError("PixelMapCollection::absorb with duplicate wcs name "
+	throw AstrometryError("learn(PixelMapCollection) with duplicate WCS name "
 			      + iWcs->first);
       // Duplicate will just be ignored.  
     } else {
-      // A new wcsName for us.  Add its wcsElement to our list.
-      wcsElements.insert(*iWcs);
+      // A new wcsName for us.  Add its info to our collection
+      WcsElement wel;
+      wel.mapName = iWcs->second.mapName;
+      wel.nativeCoords = iWcs->second.nativeCoords->duplicate();
+      wel.wScale = iWcs->second.wScale;
+      wcsElements.insert(std::pair<string,WcsElement>(iWcs->first, wel));
     }
-  }
+  } // end input wcs loop
 
   // And re-index everything
   rebuildParameterVector();
-
-  // Empty out the incoming collection:
-  rhs.mapElements.clear();
-  rhs.wcsElements.clear();
 }
 
 // Define a new pixelMap that is compounding of a list of other PixelMaps.  Order
@@ -415,6 +364,7 @@ PixelMapCollection::defineChain(string chainName, const list<string>& elements) 
   mapElements.insert(std::pair<string, MapElement>(chainName, MapElement()));
   mapElements[chainName].subordinateMaps = elements;
   // Note that adding a new chain does not change parameter vector assignments
+  // Nor can it introduce circular dependence if chain name is new and all elements exist.
 }
 
 // Define a WCS system to be the given PixelMap followed by projection to the
@@ -462,7 +412,6 @@ PixelMapCollection::issueMap(string mapName) {
       nParams[index] = mapElements[*i].isFixed ? 0 : mapElements[*i].nParams;
     }
     SubMap* sm = new SubMap(atoms, mapName);
-    sm->wasIssued = true;	// Mark this SubMap as being owned by someone.
     sm->vStartIndices = startIndices;
     sm->vNSubParams = nParams;
     sm->countFreeParameters();
@@ -487,11 +436,31 @@ PixelMapCollection::issueWcs(string wcsName) {
   return el.realization;
 }
 
+set<string>
+PixelMapCollection::dependencies(string target) const {
+  // Find target MapElement and add target to output dependency list.  
+  // Assume no circular dependence.
+  ConstMapIter iTarget = mapElements.find(target);
+  if (iTarget == mapElements.end()) 
+    throw AstrometryError("PixelMapCollection has no element " + target + " in dependencies()");
+  set<string> output;
+  output.insert(target);
+
+  // Call this routine recursively for all the map elements that the target depends on
+  for (list<string>::const_iterator i = iTarget->second.subordinateMaps.begin();
+       i != iTarget->second.subordinateMaps.end();
+       ++i) {
+    set<string> subs = dependencies(*i);
+    output.insert(subs.begin(), subs.end());
+  }
+
+  return output;
+}
+
 // Return a list of the atomic elements of the named map, in order of
-// their application to data.  Checking for circular dependece.
+// their application to data.  Assumes no circular dependence.
 list<string> 
-PixelMapCollection::orderAtoms(string mapName,
-			       const set<string>& ancestors) const {
+PixelMapCollection::orderAtoms(string mapName) const {
   if (!mapExists(mapName))
     throw AstrometryError("PixelMapCollection::orderAtoms requested for unknown map: "
 			  + mapName);
@@ -503,21 +472,36 @@ PixelMapCollection::orderAtoms(string mapName,
     return retval;
   }
 
-  // Otherwise we have a compound map at work here.  First check for circularity:
-  if (ancestors.find(mapName) != ancestors.end())
-    throw AstrometryError("Circular dependence in PixelMapCollection::orderAtoms at map "
-			  + mapName);
-  // Then call recursively to all subordinateMaps, adding self to ancestor list:
-  set<string> ancestorsPlusSelf(ancestors);
-  ancestorsPlusSelf.insert(mapName);
+  // Otherwise we have a compound map at work here.
+  // Call recursively to all subordinateMaps:
   for (list<string>::const_iterator i = m.subordinateMaps.begin();
        i != m.subordinateMaps.end();
        ++i) {
-    list<string> subList = orderAtoms(*i, ancestorsPlusSelf);
+    list<string> subList = orderAtoms(*i);
     retval.splice(retval.end(), subList);
   }
   return retval;
 }
+
+void
+PixelMapCollection::checkCircularDependence(string mapName,
+					    const set<string>& ancestors) const {
+  if (!mapExists(mapName))
+    throw AstrometryError("Unknown mapName in PixelMapCollection::checkCircularDependency: "
+			  + mapName);
+  if (ancestors.count(mapName))
+    throw AstrometryError("Circular dependency in PixelMapCollection at map "
+			  + mapName);
+  // Then call recursively to all subordinateMaps, adding self to ancestor list:
+  set<string> ancestorsPlusSelf(ancestors);
+  ancestorsPlusSelf.insert(mapName);
+  const MapElement& m = mapElements.find(mapName)->second;
+  for (list<string>::const_iterator i = m.subordinateMaps.begin();
+       i != m.subordinateMaps.end();
+       ++i) 
+    checkCircularDependence(*i, ancestorsPlusSelf);
+}
+
 
 //////////////////////////////////////////////////////////////
 // (De-) Serialization

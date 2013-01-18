@@ -48,7 +48,6 @@ namespace astrometry {
     vector<int> vNSubParams;
     int totalFreeParameters;	// Cache this total
     void countFreeParameters(); // update countFreeParameters from vNSubParams
-    bool wasIssued;	// Set to true if this SubMap is being managed by a PixelMapCollection
 
     // Hide:
     SubMap(const SubMap& rhs);
@@ -58,6 +57,9 @@ namespace astrometry {
     SubMap(string name="");
     SubMap(const list<PixelMap*>& pixelMaps, string name=""); 
     virtual ~SubMap();
+    virtual PixelMap* duplicate() const {
+      throw AstrometryError("Duplication of SubMap is a bad idea, name is " + getName());
+    }
     const vector<PixelMap*> vMaps;    // Make it private??
     int nMaps() const {return vMaps.size();}
     int startIndex(int iMap) const {return vStartIndices[iMap];}
@@ -214,22 +216,17 @@ namespace astrometry {
     // setFixed or adding new elements with parameters)
     void rebuildParameterVector();
 
-    // Return list of pointers to all map elements needed to fully specify the target.
-    // Includes self, after checking for circular dependence on any of the ancestors.
-    set<string> dependencies(string target,
-			     const set<string>& ancestors = set<string>()) const;
+    // See if the chain of dependence of a map has any cycles.  Throws exception if so.
+    void checkCircularDependence(string mapName,
+				 const set<string>& ancestors = set<string>()) const;
 
-    // Recursively delete a PixelMap and all of the PixelMaps that it is dependent upon,
-    // except do not delete those that are already in our Collection.
-    // Checking for circular dependence on any of the ancestors.
-    void deleteMap(PixelMap* pm,
-		   const set<PixelMap*>& ancestors = set<PixelMap*>()) const;
+    // Return list of pointers to all map elements needed to fully specify the target.
+    // Includes self.  Assumes no dependence cycles.
+    set<string> dependencies(string mapName) const;
 
     // Produce a list giving the atomic transformation sequence needed to implement a
-    // specified map (will be called recursively for chains, so ancestors array checks
-    // for circular dependence):
-    list<string> orderAtoms(string mapName,
-			     const set<string>& ancestors = set<string>()) const;
+    // specified map. Assumes no dependence cycles.
+    list<string> orderAtoms(string mapName) const;
 
     // **** Static structures for serialization: ****
     // Static lists of what kind of PixelMaps the parser will be able to identify

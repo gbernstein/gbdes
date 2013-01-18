@@ -20,7 +20,9 @@ namespace astrometry {
     Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name="", 
 	double wScale_=DEGREE, bool ownPM=false);
     virtual ~Wcs();
-
+    virtual PixelMap* duplicate() const {
+      throw AstrometryError("Duplication of WCS is a bad idea, name is " + getName());
+    }
     // Extend the PixelMap interface to include maps to/from true celestial coordinates
     SphericalICRS toSky(double xpix, double ypix) const;
     void fromSky(const SphericalCoords& sky, double& xpix, double& ypix) const;
@@ -55,7 +57,6 @@ namespace astrometry {
     virtual double getPixelStep() const {return pm->getPixelStep();}
     virtual void setPixelStep(double p) {pm->setPixelStep(p);}
 
-    PixelMap* getMap() {return pm;}
     const PixelMap* getMap() const {return pm;}
     const SphericalCoords* getNativeCoords() const {return nativeCoords;}
     const SphericalCoords* getTargetCoords() const {return targetCoords;}

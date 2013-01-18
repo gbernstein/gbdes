@@ -94,6 +94,8 @@ namespace astrometry {
     ~CompoundPixelMap() {}
     virtual PixelMap* duplicate() const;
 
+    const list<PixelMap*>& getList() const {return pmlist;}
+
     static string mapType() {return "Compound";}
     // * will not implement a static read from stream since compound must be built in code that is aware of 
     // * the elements to be compounded.
@@ -126,7 +128,9 @@ namespace astrometry {
     virtual void setPixelStep(double p) {pmlist.front()->setPixelStep(p);}
     // ??? should set all steps by propagating derivatives??
 
-    virtual void write(std::ostream& os) const;
+    virtual void write(std::ostream& os) const {
+      throw AstrometryError("write() not implemented for CompoundPixelMap, name is " + getName());
+    }
   };
 
   class IdentityMap: public PixelMap {
