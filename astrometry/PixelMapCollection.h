@@ -97,25 +97,23 @@ namespace astrometry {
     PixelMapCollection();
     ~PixelMapCollection();
 
-    // If the boolean flag is true, then names that match names existing collection will
+    // The following routines have the PixelMapCollection learn the names and behavior
+    // of individual PixelMaps, Wcs's, or an entire other collection.  This Collection
+    // will make copies of everything needed to issue new SubMaps or Wcs's that reproduce
+    // the behavior of the contributed items.  You just need to request something issued
+    // under the same name as the input object(s).
+
+    // If called with duplicateNamesAreExceptions=true, then incoming names that match 
+    // any name already in the collection will 
     // throw an exception.  If the flag is false, any new PixelMap or Wcs with same name as
-    // an existing will be assumed to refer to existing one.  (ownership???)
+    // an existing will be assumed to have the same behavior as the existing one, and will
+    // therefore just be ignored.
 
-    // Include a new map or Wcs into this collection (will also absorb any parts
-    // of compound maps).  PixelMapCollection will assume ownership of these objects
-    // and all PixelMaps that they are dependent upon.  THE OBJECT THAT THE INPUT POINTER
-    // REFERENCES WILL EITHER BE OWNED BY THIS COLLECTION OR WILL BE DELETED.
-    // Hence any attempts to delete it later will be potentially catastrophic, and you 
-    // should not ever try to use it again.  In particular, don't pass in here anything that 
-    // was issued by a PixelMapCollection.  
-    void absorbMap(PixelMap* pm, bool duplicateNamesAreExceptions=false); 
-    void absorbWcs(Wcs* pm, bool duplicateNamesAreExceptions=false);
-
-    // Take all the contents of a source PixelMapCollection and make them part of this collection.
-    // The source will no longer be usable as we will have removed its contents.  Everything
-    // that the source collection owned will be transferred here.  All its issued
-    // SubMaps will be destroyed and become invalid.
-    void absorb(PixelMapCollection& source, bool duplicateNamesAreExceptions=false);
+    void learnMap(const PixelMap& pm, bool duplicateNamesAreExceptions=false); 
+    // Note that if you pass a Wcs to learnMap, it will be treated as a map followed by
+    // a reprojection, and will not be available to be issued as a Wcs.
+    void learnWcs(const Wcs& pm, bool duplicateNamesAreExceptions=false);
+    void learn(PixelMapCollection& source, bool duplicateNamesAreExceptions=false);
 
     // Define a new pixelMap that is compounding of a list of other PixelMaps.  Order
     // of the list is from pixel to world coordinates.
@@ -167,13 +165,10 @@ namespace astrometry {
     PixelMapCollection(const PixelMapCollection& rhs);
     void operator=(const PixelMapCollection& rhs);
 
-    // Static lists of what kind of PixelMaps the parser will be able to identify
-    static vector<string> mapTypeNames;
-    typedef PixelMap* (*Creator)(istream& is, string name);
-    static vector<Creator> mapCreators;
-    static bool creatorsInitialized;
-    // Call to give parser an initial inventory of map types to create:
-    static void PixelMapTypeInitialize();
+    int parameterCount; // Total parameters currently free to vary.
+
+    // ***Main data of the class are these two containers of structures listing
+    // all the PixelMaps and Wcs's curated by this class:
 
     // Structure for every PixelMap that we know about:
     struct MapElement {
@@ -208,26 +203,42 @@ namespace astrometry {
 
     map<string, WcsElement> wcsElements; // all known Wcs's, indexed by name.
 
+    typedef map<string, MapElement>::iterator MapIter;
+    typedef map<string, WcsElement>::iterator WcsIter;
+    typedef map<string, MapElement>::const_iterator ConstMapIter;
+    typedef map<string, WcsElement>::const_iterator ConstWcsIter;
+
+    // **** Useful utilities: *****
+
+    // Reassign all parameter indices and update all issued SubMaps (call whenever
+    // setFixed or adding new elements with parameters)
+    void rebuildParameterVector();
+
+    // Return list of pointers to all map elements needed to fully specify the target.
+    // Includes self, after checking for circular dependence on any of the ancestors.
+    set<string> dependencies(string target,
+			     const set<string>& ancestors = set<string>()) const;
+
+    // Recursively delete a PixelMap and all of the PixelMaps that it is dependent upon,
+    // except do not delete those that are already in our Collection.
+    // Checking for circular dependence on any of the ancestors.
+    void deleteMap(PixelMap* pm,
+		   const set<PixelMap*>& ancestors = set<PixelMap*>()) const;
+
     // Produce a list giving the atomic transformation sequence needed to implement a
     // specified map (will be called recursively for chains, so ancestors array checks
     // for circular dependence):
     list<string> orderAtoms(string mapName,
 			     const set<string>& ancestors = set<string>()) const;
 
-    typedef map<string, MapElement>::iterator MapIter;
-    typedef map<string, WcsElement>::iterator WcsIter;
-    typedef map<string, MapElement>::const_iterator ConstMapIter;
-    typedef map<string, WcsElement>::const_iterator ConstWcsIter;
-
-    int parameterCount; // Total parameters currently free to vary.
-
-    // Return list of pointers to all map elements needed to fully specify the target.
-    // Includes self, after checking for circular dependence on any of the ancestors.
-    set<string> dependencies(string target,
-			     const set<string>& ancestors = set<string>()) const;
-    // Reassign all parameter indices and update all issued SubMaps (call whenever
-    // setFixed or adding new elements with parameters)
-    void rebuildParameterVector();
+    // **** Static structures for serialization: ****
+    // Static lists of what kind of PixelMaps the parser will be able to identify
+    static vector<string> mapTypeNames;
+    typedef PixelMap* (*Creator)(istream& is, string name);
+    static vector<Creator> mapCreators;
+    static bool creatorsInitialized;
+    // Call to give parser an initial inventory of map types to create:
+    static void PixelMapTypeInitialize();
 
   };
 

@@ -101,6 +101,30 @@ IdentityMap::dPixdWorld(double xworld, double yworld) const {
   return Matrix22().setToIdentity();
 }
 
+ReprojectionMap::ReprojectionMap(const ReprojectionMap& rhs): PixelMap(rhs),
+							      pix(rhs.pix->duplicate()), 
+							      world(rhs.world->duplicate()), 
+							      scaleFactor(rhs.scaleFactor)  {
+  setPixelStep(rhs.getPixelStep());
+}
+
+ReprojectionMap&
+ReprojectionMap::operator=(const ReprojectionMap& rhs) {
+  if (this == &rhs) return *this;  // self-assignment
+  delete pix;
+  delete world;
+  PixelMap::operator=(rhs);
+  pix = rhs.pix->duplicate(); 
+  world = rhs.world->duplicate(); 
+  scaleFactor = rhs.scaleFactor;
+  setPixelStep(rhs.getPixelStep());
+}
+
+PixelMap*
+ReprojectionMap::duplicate() const {
+  return new ReprojectionMap(*this);
+}
+  
 void 
 ReprojectionMap::toWorld(double xpix, double ypix,
 			 double& xworld, double& yworld) const {
@@ -147,7 +171,21 @@ ReprojectionMap::dPixdWorld(double xworld, double yworld) const {
 }
 
 
-// Chain together some maps:
+///////////////////////////
+// CompoundMap
+///////////////////////////
+
+// Deep copy
+PixelMap*
+CompoundPixelMap::duplicate() const {
+  // Note possibility of endless recursion from circular dependence here!
+  CompoundPixelMap* retval = new CompoundPixelMap(pmlist.front()->duplicate(), getName());
+  list<PixelMap*>::const_iterator i = pmlist.begin();
+  for ( ++i; i != pmlist.end(); ++i)
+    retval->append((*i)->duplicate());
+  return retval;
+}
+
 void
 CompoundPixelMap::toWorld(double xpix, double ypix,
 			  double& xworld, double& yworld) const {

@@ -226,41 +226,106 @@ PixelMapCollection::allWcsNames() const {
   return output;
 }
 
-void 
-PixelMapCollection::absorbMap(PixelMap* pm, bool duplicateNamesAreExceptions) {
-  if (mapExists(pm->getName())) {
-    // throw if flag set
-    // if SubMap or WCS, find all descendents
-    // delete ones not in use
-    delete pm; // ?? if not in use
-    return;
+void
+PixelMapCollection::deleteMap(PixelMap* pm, const set<PixelMap*>& ancestors) const {
+  if (ancestors.find(pm))
+    throw AstrometryError("Circular PixelMap dependence detected in "
+			  "PixelMapCollection::deleteMap at " + pm->getName());
+  if ( (SubMap* sm = dynamic_cast<SubMap*> (pm))!=0) {
+    // Should not be deleting a SubMap that is owned by another PixelMapCollection:
+    if (sm->isOwned)
+      throw AstrometryError("PixelMapCollection::deleteMap called on owned SubMap "
+			    + pm->getName());
+    // Call recursively on all elements of SubMap:
+    set<PixelMap*> ancestorsPlusSelf(ancestors);
+    ancestorsPlusSelf.insert(pm);
+    for (int i = 0; i< sm->vMaps.size(); i++)
+      deleteMap(sm->vMaps[i], ancestorsPlusSelf);
+  } else if ( (Wcs* wcsm = dynamic_cast<wcs*> (pm))!=0) {
+    // If the PixelMap is a Wcs, call on its associated pixelMap
+    deleteMap(wcsm->getMap(), ancestors);
   }
-  if (SubMap) {
-    // ??? throw if owned
-    // ??? absorb all descendants
-    // ??? create a new compound map from this, unless it's just one of matching name
-  } else if (wcs) {
-    // make a reprojection map
-    // absorb pixelMap
-    // make a new compound map with the reprojection
-  } else if (CompoundMap) {
-    // ??? absorb all elements
-    // define new compound map mapElement
-  } else {
-    // make new mapElement for this
-  }
-  //  delete pm if not in use
-
-  // And re-index everything
-  rebuildParameterVector();
+  // See if this pm is referenced by any part of this PixelMapCollection
+  bool deleteIt = true;
+  for (ConstMapIter i = mapElements.begin();
+       i != mapElements.end();
+       ++i) 
+    if (i->second.atom == pm) {
+      deleteIt = false;
+      break;
+    }
+  // If not in use, delete it.
+  if (deleteIt) delete pm;
 }
 
 void 
-PixelMapCollection::absorbWcs(Wcs* w, bool duplicateNamesAreExceptions) {
-  // check for duplicate name
-  // absorb the PixelMap ???
-  // create new wcsElement
-  delete w;
+PixelMapCollection::absorbMap(PixelMap* pm, bool duplicateNamesAreExceptions) {
+  if (mapExists(pm->getName())) {
+    if (duplicateNamesAreExceptions)
+      throw AstrometryError("Duplicate map name in PixelMapCollection::absorbMap at "
+			    + pm->getName());
+    // We will just ignore this duplicate-named map.
+    // Delete it and its dependencies if they are not in this PixelMapCollection:
+    deleteMap(pm);
+    return;
+  }
+  if ( (SubMap* sm = dynamic_cast<SubMap*> (pm))!=0) {
+    // Should not be absorbing a SubMap that is owned by another PixelMapCollection:
+    if (sm->isOwned)
+      throw AstrometryError("PixelMapCollection::absorbMap called on already-owned SubMap "
+			    + pm->getName());
+    // If this is a single-element SubMap that has same name as its dependent, then we'll
+    // just absorb the dependent:
+    if (sm->vMaps.size()==1 && pm->getName()==sm->vMaps.front()->getName()) {
+      absorbMap(sm->vMaps.front(), duplicateNamesAreExceptions);
+      // Delete this SubMap and be done
+      delete sm;
+    } else {
+      // create a new compound map from this, absorbing each dependency:
+      MapElement mel;
+      for (int i = 0; i< sm->vMaps.size(); i++) {
+	if (sm->getName() == sm->vMaps[i]->getName())
+	  throw AstrometryError("PixelMapCollection::absorbMap encountered SubMap that has "
+				"a dependence on PixelMap with the same name: " + sm->getName());
+	mel.subordinateMaps.push_back(sm->vMaps[i]->getName());
+	absorbMap(sm->vMaps[i], duplicateNamesAreExceptions);
+      }
+      // Register this compound map
+      mapElements.insert(std::pair<string,MapElement>(pm->getName(), mel));
+      // Delete the original SubMap
+      delete sm;
+    }
+  } else   if ( (WcsMap* wcsm = dynamic_cast<WcsMap*> (pm))!=0) {
+    // A Wcs has been submitted as a PixelMap, which is just too confusing to deal with
+    throw AstrometryError("Passed the Wcs <" + pm->getName() "> as a PixelMap to"
+			  " PixelMapCollection::absorbMap.\n"
+			  "This is not supported, use defineWcs and/or ReprojectionMaps.");
+  } else if ( (CompoundPixelMap* cpm = dynamic_cast<CompoundPixelMap*> (pm))!=0) {
+    // absorb each dependency:
+    MapElement mel;
+    for (list<PixelMap*>::iterator i = cpm->pmlist.begin();
+	 i != cpm->pmlist.end();
+	 ++i) {
+      if (cpm->getName() == (*i)->getName())
+	throw AstrometryError("PixelMapCollection::absorbMap encountered CompoundPixelMap that "
+			      "has a dependence on PixelMap with the same name: "
+			      + cpm->getName());
+      mel.subordinateMaps.push_back((*i)->getName());
+      absorbMap(*i, duplicateNamesAreExceptions);
+    }
+    // Register this compound map
+    mapElements.insert(std::pair<string,MapElement>(pm->getName(), mel));
+    // Delete the original CompoundPixelMap
+    delete cpm;
+  } else {
+    //  This should be an atomic PixelMap; simply add it to our element list:
+    MapElement mel;
+    mel.atomic = pm;
+    mapElements.insert(std::pair<string,MapElement>(pm->getName(), mel));
+  }
+
+  // re-index everything
+  rebuildParameterVector();
 }
 
 void
@@ -279,7 +344,8 @@ PixelMapCollection::absorb(PixelMapCollection& rhs, bool duplicateNamesAreExcept
     if (mapExists(iMap->first)) {
       // incoming map duplicates and existing name.
       if (duplicateNamesAreExceptions) 
-	throw AstrometryError("...???");
+	throw AstrometryError("PixelMapCollection::absorb with duplicate map name "
+			      + iMap->first);
       // Duplicate will just be ignored.  We want to delete its
       // atom, will check later if it's needed elsewhere though.
       atomsToKill.insert(incoming.atom);
@@ -315,7 +381,8 @@ PixelMapCollection::absorb(PixelMapCollection& rhs, bool duplicateNamesAreExcept
     if (wcsExists(iWcs->first)) {
       // incoming wcs duplicates and existing name.
       if (duplicateNamesAreExceptions) 
-	throw AstrometryError("...???");
+	throw AstrometryError("PixelMapCollection::absorb with duplicate wcs name "
+			      + iWcs->first);
       // Duplicate will just be ignored.  
     } else {
       // A new wcsName for us.  Add its wcsElement to our list.

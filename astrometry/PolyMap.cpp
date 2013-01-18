@@ -176,13 +176,12 @@ LinearMap::makeInv() {
 }
 
 // ??? Implement reads and writes!
-static
 PixelMap*
 LinearMap::create(std::istream& is, string name) {
-  DVector v[6];
+  DVector v(6);
   string buffer;
   getlineNoComment(is, buffer);
-  istringstream& iss;
+  istringstream iss;
   if (!(iss >> v[0] >> v[1] >> v[2])) 
     throw AstrometryError("LinearMap::create has bad x coefficients: " + buffer);
   if (!(iss >> v[3] >> v[4] >> v[5])) 
@@ -196,12 +195,12 @@ LinearMap::write(std::ostream& os) const {
   os << v[3] << " " << v[4] << " " << v[5] << endl;
 }
 
-static
 PixelMap*
 PolyMap::create(std::istream& is, string name) {
+  // ????
 }
 
 void
 PolyMap::write(std::ostream& os) const {
-
+  // ????
 }

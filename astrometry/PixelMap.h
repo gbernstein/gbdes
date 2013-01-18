@@ -26,6 +26,9 @@ namespace astrometry {
   public:
     PixelMap(string name_="");
     virtual ~PixelMap() {}
+    // Return pointer to deep copy of self
+    virtual PixelMap* duplicate() const =0;
+
     // pixel coords to world coords map
     virtual void toWorld(double xpix, double ypix,
 			 double& xworld, double& yworld) const=0;
@@ -80,14 +83,17 @@ namespace astrometry {
   private:
     // PixelMap whose pix - to - world map follows series of transformations in order of list
     // Keeps pointers to elements of compound map; destruction is up to user.
+    // Note that a deep copy using duplicate() will make cleanup difficult!
+    // This class is deprecated; prefer PixelMapCollection::SubMap
+
     list<PixelMap*> pmlist;
-  protected:
-    CompoundPixelMap() {}
   public:
     CompoundPixelMap(PixelMap* pm1, string name_=""): PixelMap(name_) {
       pmlist.push_back(pm1);
     }
     ~CompoundPixelMap() {}
+    virtual PixelMap* duplicate() const;
+
     static string mapType() {return "Compound";}
     // * will not implement a static read from stream since compound must be built in code that is aware of 
     // * the elements to be compounded.
@@ -126,6 +132,7 @@ namespace astrometry {
   class IdentityMap: public PixelMap {
   public:
     IdentityMap(): PixelMap("Identity") {}
+    virtual PixelMap* duplicate() const {return new IdentityMap();}
     static string mapType() {return "Identity";}
     static PixelMap* create(std::istream& is, string name_="") {return new IdentityMap;}
     void toWorld(double xpix, double ypix,
@@ -158,7 +165,11 @@ namespace astrometry {
       scaleFactor(scale_)  {
       setPixelStep(ARCSEC/scale_);
     }
+    ReprojectionMap(const ReprojectionMap& rhs);
+    ReprojectionMap& operator=(const ReprojectionMap& rhs);
     ~ReprojectionMap() {delete pix; delete world;}
+    virtual PixelMap* duplicate() const;
+
     static string mapType() {return "Reprojection";}
     static PixelMap* create(std::istream& is, string name="");
     virtual void write(std::ostream& os) const;

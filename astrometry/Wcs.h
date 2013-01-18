@@ -55,6 +55,12 @@ namespace astrometry {
     virtual double getPixelStep() const {return pm->getPixelStep();}
     virtual void setPixelStep(double p) {pm->setPixelStep(p);}
 
+    PixelMap* getMap() {return pm;}
+    const PixelMap* getMap() const {return pm;}
+    const SphericalCoords* getNativeCoords() const {return nativeCoords;}
+    const SphericalCoords* getTargetCoords() const {return targetCoords;}
+    double getScale() const {return wScale;}
+
   private:
     PixelMap* pm;
     double wScale;

@@ -21,7 +21,8 @@ namespace astrometry {
     PolyMap(int order, double tol_=0.001/3600.):
       xpoly(order), ypoly(order), worldTolerance(tol_) {}
     // Note that default tolerance is set to be 1 mas if world units are degrees.
-
+    virtual PixelMap* duplicate() const {return new PolyMap(*this);}
+      
     ~PolyMap() {}
 
     // Implement all the virtual PixelMap calls that need to be overridden
@@ -64,6 +65,7 @@ namespace astrometry {
   public:
     LinearMap(const DVector& v_): v(v_), vinv(6) {Assert(v.size()==6); makeInv();}
     LinearMap(): v(6,0.), vinv(6, 0.) {}
+    virtual PixelMap* duplicate() const {return new LinearMap(*this);}
     ~LinearMap() {}
 
     // Implement all the virtual PixelMap calls that need to be overridden
