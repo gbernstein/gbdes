@@ -12,18 +12,16 @@ using namespace astrometry;
 SubMap::SubMap(string name): PixelMap(name), totalFreeParameters(0) {}
 
 SubMap::SubMap(const list<PixelMap*>& pixelMaps, 
-	       string name): PixelMap(name), totalFreeParameters(0) {
+	       string name): PixelMap(name), 
+			     vMaps(pixelMaps.begin(), pixelMaps.end()),
+			     totalFreeParameters(0) {
   // set up parameter vectors, making all PixelMap parameters free and consectuve by default
   vNSubParams.clear();
   vStartIndices.clear();
-  vMaps.clear();
-  for (list<PixelMap*>::const_iterator i = pixelMaps.begin();
-       i != pixelMaps.end();
-       ++i) {
-    vMaps.push_back(*i);
+  for (int i=0; i<nMaps(); i++) {
     vStartIndices.push_back(totalFreeParameters);
-    vNSubParams.push_back((*i)->nParams());
-    totalFreeParameters += (*i)->nParams();
+    vNSubParams.push_back(vMaps[i]->nParams());
+    totalFreeParameters += vMaps[i]->nParams();
   }
 }
 
@@ -201,11 +199,6 @@ SubMap::setPixelStep(double ps) {
 double
 SubMap::getPixelStep() const {
   return vMaps.empty() ? 1. : vMaps.front()->getPixelStep();
-}
-
-void
-SubMap::write(ostream& os) const {
-  // ??? anything ???
 }
 
   
