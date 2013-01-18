@@ -228,13 +228,107 @@ PixelMapCollection::allWcsNames() const {
 
 void 
 PixelMapCollection::absorbMap(PixelMap* pm, bool duplicateNamesAreExceptions) {
-  // ???
-  // ??? need to distinguish compound, submaps, and wcs's from atomic types.
+  if (mapExists(pm->getName())) {
+    // throw if flag set
+    // if SubMap or WCS, find all descendents
+    // delete ones not in use
+    delete pm; // ?? if not in use
+    return;
+  }
+  if (SubMap) {
+    // ??? throw if owned
+    // ??? absorb all descendants
+    // ??? create a new compound map from this, unless it's just one of matching name
+  } else if (wcs) {
+    // make a reprojection map
+    // absorb pixelMap
+    // make a new compound map with the reprojection
+  } else if (CompoundMap) {
+    // ??? absorb all elements
+    // define new compound map mapElement
+  } else {
+    // make new mapElement for this
+  }
+  //  delete pm if not in use
+
+  // And re-index everything
+  rebuildParameterVector();
 }
 
 void 
-PixelMapCollection::absorbWcs(Wcs* pm, bool duplicateNamesAreExceptions) {
-  // ???
+PixelMapCollection::absorbWcs(Wcs* w, bool duplicateNamesAreExceptions) {
+  // check for duplicate name
+  // absorb the PixelMap ???
+  // create new wcsElement
+  delete w;
+}
+
+void
+PixelMapCollection::absorb(PixelMapCollection& rhs, bool duplicateNamesAreExceptions) {
+  set<PixelMap*> atomsToKill;
+  for (MapIter iMap = rhs.mapElements.begin();
+       iMap != rhs.mapElements.end();
+       ++iMap) {
+    MapElement& incoming = iMap->second;
+    // Kill any existing realization of incoming map
+    if (incoming.realization) {
+      delete incoming.realization;
+      incoming.realization = 0;
+    }
+
+    if (mapExists(iMap->first)) {
+      // incoming map duplicates and existing name.
+      if (duplicateNamesAreExceptions) 
+	throw AstrometryError("...???");
+      // Duplicate will just be ignored.  We want to delete its
+      // atom, will check later if it's needed elsewhere though.
+      atomsToKill.insert(incoming.atom);
+    } else {
+      // A new mapName for us.  Add its mapElement to our list.
+      mapElements.insert(*iMap);
+    }
+  }
+
+  // Remove from the kill list any duplicate-name atomic PixelMaps that are still in use
+  for (MapIter iMap = mapElements.begin();
+       iMap != mapElements.end();
+       ++iMap)
+    if (iMap->second.atom)
+      atomsToKill.erase(iMap->second.atom);
+  // Then delete all the duplicaate atomic PixelMaps that are no longer in use
+  for (set<PixelMap*>::iterator i = atomsToKill.begin();
+       i != atomsToKill.end();
+       ++i)
+    delete *i;
+
+
+  for (WcsIter iWcs = rhs.wcsElements.begin();
+       iWcs != rhs.wcsElements.end();
+       ++iWcs) {
+    WcsElement& incoming = iWcs->second;
+    // Kill any existing realization of incoming wcs
+    if (incoming.realization) {
+      delete incoming.realization;
+      incoming.realization = 0;
+    }
+
+    if (wcsExists(iWcs->first)) {
+      // incoming wcs duplicates and existing name.
+      if (duplicateNamesAreExceptions) 
+	throw AstrometryError("...???");
+      // Duplicate will just be ignored.  
+    } else {
+      // A new wcsName for us.  Add its wcsElement to our list.
+      wcsElements.insert(*iWcs);
+    }
+  }
+
+  // And re-index everything
+  rebuildParameterVector();
+
+  // Empty out the incoming collection:
+  rhs.mapElements.clear();
+  rhs.wcsElements.clear();
 }
 
 // Define a new pixelMap that is compounding of a list of other PixelMaps.  Order

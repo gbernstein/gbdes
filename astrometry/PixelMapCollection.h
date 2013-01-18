@@ -114,7 +114,7 @@ namespace astrometry {
     // Take all the contents of a source PixelMapCollection and make them part of this collection.
     // The source will no longer be usable as we will have removed its contents.  Everything
     // that the source collection owned will be transferred here.  All its issued
-    // SubMaps are still valid but belong to new PixelMapCollection now.
+    // SubMaps will be destroyed and become invalid.
     void absorb(PixelMapCollection& source, bool duplicateNamesAreExceptions=false);
 
     // Define a new pixelMap that is compounding of a list of other PixelMaps.  Order
@@ -206,13 +206,14 @@ namespace astrometry {
       void operator=(const MapElement& rhs); // hide assignment
     };
 
+    map<string, WcsElement> wcsElements; // all known Wcs's, indexed by name.
+
     // Produce a list giving the atomic transformation sequence needed to implement a
     // specified map (will be called recursively for chains, so ancestors array checks
     // for circular dependence):
     list<string> orderAtoms(string mapName,
 			     const set<string>& ancestors = set<string>()) const;
 
-    map<string, WcsElement> wcsElements; // all known Wcs's, indexed by name.
     typedef map<string, MapElement>::iterator MapIter;
     typedef map<string, WcsElement>::iterator WcsIter;
     typedef map<string, MapElement>::const_iterator ConstMapIter;
