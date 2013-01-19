@@ -13,13 +13,14 @@ namespace astrometry {
   public:
     // Constructor with 1 order has terms with sum of x and y powers up to this order.
     // Constructor with 2 orders has all terms w/ powers of x up to orderx, y to ordery
-    PolyMap(const poly2d::Poly2d& px, const poly2d::Poly2d& py,
+    PolyMap(const poly2d::Poly2d& px, const poly2d::Poly2d& py, 
+	    string name="",
 	    double tol_=0.001/3600.):
-      xpoly(px), ypoly(py), worldTolerance(tol_) {}
-    PolyMap(int orderx, int ordery, double tol_=0.001/3600.):
-      xpoly(orderx,ordery), ypoly(orderx,ordery), worldTolerance(tol_) {}
-    PolyMap(int order, double tol_=0.001/3600.):
-      xpoly(order), ypoly(order), worldTolerance(tol_) {}
+    PixelMap(name), xpoly(px), ypoly(py), worldTolerance(tol_) {}
+    PolyMap(int orderx, int ordery, string name="", double tol_=0.001/3600.):
+      PixelMap(name), xpoly(orderx,ordery), ypoly(orderx,ordery), worldTolerance(tol_) {}
+    PolyMap(int order, string name="", double tol_=0.001/3600.):
+      PixelMap(name), xpoly(order), ypoly(order), worldTolerance(tol_) {}
     // Note that default tolerance is set to be 1 mas if world units are degrees.
     virtual PixelMap* duplicate() const {return new PolyMap(*this);}
       
@@ -63,8 +64,9 @@ namespace astrometry {
 
   class LinearMap: public PixelMap {
   public:
-    LinearMap(const DVector& v_): v(v_), vinv(6) {Assert(v.size()==6); makeInv();}
-    LinearMap(): v(6,0.), vinv(6, 0.) {}
+    LinearMap(const DVector& v_, string name=""): 
+      PixelMap(name), v(v_), vinv(6) {Assert(v.size()==6); makeInv();}
+    LinearMap(string name=""): PixelMap(name), v(6,0.), vinv(6, 0.) {}
     virtual PixelMap* duplicate() const {return new LinearMap(*this);}
     ~LinearMap() {}
 
