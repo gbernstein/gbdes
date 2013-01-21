@@ -9,13 +9,22 @@
 
 using namespace astrometry;
 
-SubMap::SubMap(string name): PixelMap(name), totalFreeParameters(0) {}
-
 SubMap::SubMap(const list<PixelMap*>& pixelMaps, 
-	       string name): PixelMap(name), 
-			     vMaps(pixelMaps.begin(), pixelMaps.end()),
-			     totalFreeParameters(0) {
+	       string name,
+	       bool shareMaps): PixelMap(name), 
+				totalFreeParameters(0),
+				ownMaps(!shareMaps)
+{
   // set up parameter vectors, making all PixelMap parameters free and consectuve by default
+  for (list<PixelMap*>::const_iterator i = pixelMaps.begin();
+       i != pixelMaps.end();
+       ++i) {
+    if (shareMaps) {
+      vMaps.push_back(*i);
+    } else {
+      vMaps.push_back((*i)->duplicate());
+    }
+  }
   vNSubParams.clear();
   vStartIndices.clear();
   for (int i=0; i<nMaps(); i++) {
@@ -23,6 +32,20 @@ SubMap::SubMap(const list<PixelMap*>& pixelMaps,
     vNSubParams.push_back(vMaps[i]->nParams());
     totalFreeParameters += vMaps[i]->nParams();
   }
+}
+
+SubMap::~SubMap() {
+  if (ownMaps) 
+    for (int i=0; i<vMaps.size(); i++)
+      delete vMaps[i];
+}
+
+PixelMap*
+SubMap::duplicate() const {
+  list <PixelMap*> pmlist;
+  for (int i=0; i<nMaps(); i++)
+    pmlist.push_back(vMaps[i]);
+  return new SubMap(pmlist, getName(), !ownMaps);
 }
 
 void

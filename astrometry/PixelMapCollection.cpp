@@ -389,7 +389,7 @@ PixelMapCollection::defineWcs(string wcsName, const SphericalCoords& nativeCoord
 // Return pointer to a SubMap realizing the named coordinate transformation
 SubMap* 
 PixelMapCollection::issueMap(string mapName) {
-  if (!wcsExists(mapName))
+  if (!mapExists(mapName))
     throw AstrometryError("PixelMapCollection::issueMap requested for unknown PixelMap: "
 			  +  mapName);
   MapElement& el = mapElements[mapName];
@@ -429,9 +429,9 @@ PixelMapCollection::issueWcs(string wcsName) {
   WcsElement& el = wcsElements[wcsName];
 
   if (!el.realization) {
-    // Create a realization if one does not exist
+    // Create a realization if one does not exist.  Wcs set to share its PixelMap
     SubMap* sm = issueMap(el.mapName);
-    el.realization = new Wcs(sm, *el.nativeCoords, wcsName, el.wScale);
+    el.realization = new Wcs(sm, *el.nativeCoords, wcsName, el.wScale, true);
   }
   return el.realization;
 }

@@ -16,13 +16,13 @@ namespace astrometry {
     // Pixel coords are mapped to "world" by the PixelMap, then scaled by wScale
     // (defaults to DEGREE) to give the (lon,lat) or (xi,eta) coords
     // of the SphericalCoords object.  SphericalCoords now gives location on the sky.
-    // set ownPM=true if this class owns the PixelMap and should destroy it.
+    // For shareMap=true, a duplicate of the input map is owned by this class and deleted
+    // in destructor.  For shareMap=false, uses the input pointer but does not delete it.
     Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name="", 
-	double wScale_=DEGREE, bool ownPM=false);
+	double wScale_=DEGREE, bool shareMap=false);
     virtual ~Wcs();
-    virtual PixelMap* duplicate() const {
-      throw AstrometryError("Duplication of WCS is a bad idea, name is " + getName());
-    }
+    virtual Wcs* duplicate() const;  // Note that duplicate has same sharing behavior as this.
+
     // Extend the PixelMap interface to include maps to/from true celestial coordinates
     SphericalICRS toSky(double xpix, double ypix) const;
     void fromSky(const SphericalCoords& sky, double& xpix, double& ypix) const;
@@ -65,9 +65,13 @@ namespace astrometry {
   private:
     PixelMap* pm;
     double wScale;
-    bool ownPM;
+    bool ownMap;	// True if we need to delete the PixelMap.
     mutable SphericalCoords* nativeCoords;
     mutable SphericalCoords* targetCoords;
+
+    // Hide these to avoid inadvertent ownership confusion:
+    Wcs(const Wcs& rhs);
+    void operator=(const Wcs& rhs);
   };
 } // namespace astrometry
 #endif // ifndef WCS_H

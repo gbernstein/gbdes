@@ -43,24 +43,28 @@ namespace astrometry {
     // adjusts the vStartIndices to reflect each element's position in a master parameter
     // vector.  
   private:
-    // These two arrays are all that we are adding to PixelMap:
+    // The constituent maps and their indices into a master parameter vector:
+    vector<PixelMap*> vMaps;
     vector<int> vStartIndices;
     vector<int> vNSubParams;
+    bool ownMaps;		// true if we must delete maps on destruction
     int totalFreeParameters;	// Cache this total
     void countFreeParameters(); // update countFreeParameters from vNSubParams
 
-    // Hide:
+    // Hide to avoid inadvertent ownership confusion:
     SubMap(const SubMap& rhs);
     void operator=(const SubMap& rhs);
 
   public:
-    SubMap(string name="");
-    SubMap(const list<PixelMap*>& pixelMaps, string name=""); 
+    // If shareMaps = true, SubMap will make and own duplicates of the input maps.
+    // Otherwise is will just copy pointers and assume external ownership.
+    SubMap(const list<PixelMap*>& pixelMaps, string name="", bool shareMaps=false); 
     virtual ~SubMap();
-    virtual PixelMap* duplicate() const {
-      throw AstrometryError("Duplication of SubMap is a bad idea, name is " + getName());
-    }
-    const vector<PixelMap*> vMaps;    // Make it private??
+    // A duplicate of SubMap will have the same sharing policies as its parent.
+    // Also, any information on start indices / nSubParams is lost in duplicate.
+    virtual PixelMap* duplicate() const;
+
+    const PixelMap* getMap(int i) const {return vMaps[i];}
     int nMaps() const {return vMaps.size();}
     int startIndex(int iMap) const {return vStartIndices[iMap];}
     int nSubParams(int iMap) const {return vNSubParams[iMap];}

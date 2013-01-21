@@ -4,16 +4,29 @@
 using namespace astrometry;
 
 Wcs::Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name, 
-	 double wScale_, bool ownPM): PixelMap(name),pm(pm_), wScale(wScale), 
-				      nativeCoords(0),
-				      targetCoords(0) {
+	 double wScale_, bool shareMap): PixelMap(name), wScale(wScale), 
+					 nativeCoords(0),
+					 targetCoords(0),
+					 ownMap(!shareMap)
+{
   nativeCoords = nativeCoords_.duplicate();
+  if (shareMap) {
+    pm = pm_;
+  } else {
+    pm = pm_->duplicate();
+  }
 }
 
 Wcs::~Wcs() {
   if (nativeCoords) delete nativeCoords;
   if (targetCoords) delete targetCoords;
-  if (ownPM) delete pm;
+  if (ownMap) delete pm;
+}
+
+Wcs*
+Wcs::duplicate() const {
+  Wcs* retval = new Wcs(pm, *nativeCoords, getName(), wScale, !ownMap);
+  retval->targetCoords = targetCoords->duplicate();
 }
 
 SphericalICRS 

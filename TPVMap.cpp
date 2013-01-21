@@ -157,239 +157,9 @@ ReadPV(const Header* h, int ipv) {
   return Poly2d(cm);
 }
 
-Wcs* readTPV(const img::Header& h, string name) {
-  Orientation orientIn;
-  LinearMap* lm = new LinearMap(ReadCD(&h, orientIn, name+"_cd"));
-
-  Gnomonic tp(orientIn.getPole(), orientIn);
-  PixelMap* pv=0;
-  string polyName = name + "_pv";
-  const POLYSTEP = 1./3600.;	// step for derivatives of polynomials is 1 arcsec, in degrees
-
-  Poly2d p1 = ReadPV(&h, 1);
-  Poly2d p2 = ReadPV(&h, 2);
-  if (p1.nCoeffs() > 1) {
-    // Obtained a valid x polynomial.
-    if (p2.nCoeffs() > 1) {
-      // Also have valid y polynomial.  Make the map:
-      pv = new PolyMap(p1, p2, polyName,POLYSTEP);
-    } else {
-      // Did not find PV2's.  Install default:
-      Poly2d p2Identity(1);
-      DVector coeffs = p2Identity.getC();
-      coeffs[p2Identity.vectorIndex(0,1)] = 1.;
-      p2Identity.setC(coeffs);
-      pm = new PolyMap(p1, p2Identity,polyName,POLYSTEP);
-    }
-  } else {
-    // Did not obtain any PV1's.  If there are PV2's, install
-    // identity map for x coeff:
-    if (p2.nCoeffs() > 1) {
-      Poly2d p1Identity(1);
-      DVector coeffs = p1Identity.getC();
-      coeffs[p1Identity.vectorIndex(1,0)] = 1.;
-      p1Identity.setC(coeffs);
-      pm = new PolyMap(p1Identity, p2, polyName, POLYSTEP);
-    }
-  }
-  list<PixelMap*> pmlist;
-  pmlist.push_back(lm);
-  if (pm) pmlist.push_back(pm);
-  SubMap* sm = new SubMap(pmlist, name);
-  // Create the Wcs, which owns the pixel maps.
-  return new Wcs(pmlist, tp, name, DEGREE, true);
-}
-
-//////////////////////////////
-// Now a function that will fit a linear + polynomial + gnomonic deprojection
-// to an arbitrary Wcs
-//////////////////////////////
-Wcs*
-astrometry::FitTPV(Bounds<double> b,
-		   const Wcs& wcsIn,
-		   const SphericalCoords& tpvPole,
-		   double tolerance) {
-  const int startOrder=3;
-  const int maxOrder=5;
-
-  img::Header h;
-  // The linear map from pixels to intermediate world system:
-  double crval1, crval2;
-  double crpix1, crpix2;
-  double cd1_1, cd1_2, cd2_2, cd2_1;
-
-  // TPV system will have orientation aligned to ICRS at desired pole:
-  Orientation TPVorient(pole);
-  ????? continue here ???
-
-  // Make a coordinate projection map that goes from pm's world system
-  // to the tangent-plane projection that we want our SCAMPMap to use
-  ReprojectionMap reproject(TangentPlane(pmOrient.getPole(), pmOrient),
-			    TangentPlane(pole, SCAMPorient),
-			    DEGREE);
-  // First thing is to set the linear map to match the
-  // linearized map at center of bounds, while having
-  // CRVAL at the exposure nominal center
-  pole.getLonLat(crval1, crval2);
-  // Degrees are standard units for FITS WCS:
-  crval1 /= DEGREE;
-  if (crval1<0.) crval1 += 360.;
-  crval2 /= DEGREE;
-  Position<double> center = b.center();
-  // Map chip center to global world coords:
-  double xp = center.x;
-  double yp = center.y;
-  double xcen, ycen;
-  pm.toWorld(xp, yp, xcen, ycen);
-  // Project from input map's native projection to desired projection:
-  Matrix22 dWdP = reproject.dWorlddPix(xcen, ycen) * pm.dWorlddPix(xp, yp);
-  reproject.toWorld(xcen, ycen, xcen, ycen);
-  cd1_1 = dWdP(0,0);
-  cd1_2 = dWdP(0,1);
-  cd2_1 = dWdP(1,0);
-  cd2_2 = dWdP(1,1);
-
-  // CD * (xp - pix1) = xcen
-  // xp - pix1 = CDinv * xcen
-  // pix1 = xp - CDinv * xcen
-  double det=cd1_1*cd2_2-cd1_2*cd2_1;
-  crpix1 = xp - (cd2_2*xcen - cd1_2*ycen)/det;
-  crpix2 = yp - (-cd2_1*xcen + cd1_1*ycen)/det;
-
-  string s="RA---TAN";
-  h.append("CTYPE1", s);
-  s = "DEC--TAN";
-  h.append("CTYPE2", s);
-  s = "deg     ";
-  h.append("CUNIT1",s);
-  h.append("CUNIT2",s);
-  h.append("CRPIX1", crpix1);
-  h.append("CRPIX2", crpix2);
-  h.append("CRVAL1", crval1);
-  h.append("CRVAL2", crval2);
-  h.append("CD1_1", cd1_1);
-  h.append("CD1_2", cd1_2);
-  h.append("CD2_1", cd2_1);
-  h.append("CD2_2", cd2_2);
-
-  // Now construct a set of test points:
-  const int nGridPoints=400;	// Number of test points for map initialization
-  vector<double> vxp;
-  vector<double> vyp;
-  vector<double> vxw;
-  vector<double> vyw;
-
-  double step = sqrt(b.area()/nGridPoints);
-  int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
-  int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
-  double xstep = (b.getXMax()-b.getXMin())/nx;
-  double ystep = (b.getYMax()-b.getYMin())/ny;
-
-  // starting pixel map for the first exposure with this instrument
-  for (int ix=0; ix<=nx; ix++) {
-    double xpix = b.getXMin() + ix*xstep;
-    for (int iy=0; iy<=ny; iy++) {
-      double ypix = b.getYMin() + iy*ystep;
-      double xw, yw;
-      pm.toWorld(xpix, ypix, xw, yw);
-      // Do the change of projections:
-      reproject.toWorld(xw,yw,xw,yw);
-      vxp.push_back( cd1_1*(xpix-crpix1) + cd1_2*(ypix-crpix2));
-      vyp.push_back( cd2_1*(xpix-crpix1) + cd2_2*(ypix-crpix2));
-      vxw.push_back(xw);
-      vyw.push_back(yw);
-    }
-  }
-  // ??? select order
-  int polyOrder = 3;
-  double rms=0.;
-  DMatrix* xcoeffs=0;
-  DMatrix* ycoeffs=0;
-
-  for (polyOrder=startOrder; polyOrder<=maxOrder; polyOrder++) {
-    // Make polynomial map
-    PolyMap poly(polyOrder, tolerance);
-
-    // Fit map to test points
-    int nP = poly.nParams();
-    DVector beta(nP, 0.);
-    tmv::SymMatrix<double> alpha(nP, 0.);
-    DMatrix derivs(2,nP);
-    Assert(vxp.size()==vyp.size());
-    Assert(vxp.size()==vxw.size());
-    Assert(vxp.size()==vyw.size());
-    for (int i=0; i<vxp.size(); i++) {
-      double xmod, ymod;
-      poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
-      xmod = vxw[i] - xmod;
-      ymod = vyw[i] - ymod;
-      for (int j=0; j<nP; j++) {
-	beta[j] += xmod*derivs(0,j) + ymod*derivs(1,j);
-	for (int k=0; k<=j; k++) 
-	  alpha(j,k)+=derivs(0,j)*derivs(0,k) + derivs(1,j)*derivs(1,k);
-      }
-    }
-    beta /= alpha;
-    poly.setParams(beta);
-    rms = 0.;
-    for (int i=0; i<vxp.size(); i++) {
-      double xmod, ymod;
-      poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
-      rms += pow(vxw[i] - xmod, 2.) + pow(vyw[i] - ymod,2.);
-    }
-    rms = sqrt(rms/vxp.size());
-    //**/cerr << " rms " << rms*DEGREE/ARCSEC << " order " << polyOrder << endl;
-
-    xcoeffs = new DMatrix(poly.getXPoly().getM());
-    ycoeffs = new DMatrix(poly.getYPoly().getM());
-    ycoeffs->transposeSelf();
-    if (rms<tolerance) break;
-  }
-
-  if (rms>tolerance) {
-    cerr << "WARNING:  SCAMPMap RMS is " << rms*DEGREE/ARCSEC
-	 << " at maximum order " << polyOrder
-	 << endl;
-  }
-  // Continue even if did not meet tolerance:
-  if (polyOrder>maxOrder) polyOrder=maxOrder;
-
-  Assert(xcoeffs->nrows()==polyOrder+1);
-  Assert(xcoeffs->ncols()==polyOrder+1);
-  Assert(ycoeffs->nrows()==polyOrder+1);
-  Assert(ycoeffs->ncols()==polyOrder+1);
-  int pvcount=0;
-  for (int ord=0; ord<=polyOrder; ord++) {
-    for (int yord=0; yord<=ord; yord++) {
-      int xord = ord - yord;
-      double coeff = (*xcoeffs)(xord, yord);
-      if (coeff != 0.) {
-	ostringstream oss;
-	oss << "PV1_" << pvcount;
-	h.append(oss.str(), coeff, "X Distortion polynomial coefficient");
-      }
-      coeff = (*ycoeffs)(xord, yord);
-      if (coeff != 0.) {
-	ostringstream oss;
-	oss << "PV2_" << pvcount;
-	h.append(oss.str(), coeff, "Y Distortion polynomial coefficient");
-      }
-      pvcount++;
-      // Skip the "missing" coefficients
-      if (pvcount==3) pvcount++;
-      if (pvcount==11) pvcount++;
-      if (pvcount==23) pvcount++;
-      if (pvcount==39) pvcount++;
-    }
-  }
-  if (xcoeffs) delete xcoeffs;
-  if (ycoeffs) delete ycoeffs;
-  return h;
-}
-
 void
 WritePV(const PolyMap& pm,
-	Header& h,
+	 Header& h,
 	int ipv) {
   string prefix;
   DMatrix coeffs;
@@ -432,13 +202,253 @@ WritePV(const PolyMap& pm,
   }
 }
 
-Header 
-SCAMPMap::writeHeader() const {
+/////////////////////////////////////////
+// Now the higher-level read/write from headers to Wcs's.
+/////////////////////////////////////////
+
+// step for derivatives of polynomials is 1 arcsec, in degrees
+const double POLYSTEP = 1./3600.;
+// Suffixes to give for the linear and polynomial maps' names:
+const string linearSuffix = "_cd";
+const string polySuffix = "_pv";
+
+Wcs* 
+astrometry::readTPV(const img::Header& h, string name) {
+  Orientation orientIn;
+  LinearMap lm = ReadCD(&h, orientIn, name+linearSuffix);
+
+  Gnomonic tp(orientIn.getPole(), orientIn);
+  PixelMap* pv=0;
+  string polyName = name + polySuffix;
+
+  Poly2d p1 = ReadPV(&h, 1);
+  Poly2d p2 = ReadPV(&h, 2);
+  if (p1.nCoeffs() > 1) {
+    // Obtained a valid x polynomial.
+    if (p2.nCoeffs() > 1) {
+      // Also have valid y polynomial.  Make the map:
+      pv = new PolyMap(p1, p2, polyName,POLYSTEP);
+    } else {
+      // Did not find PV2's.  Install default:
+      Poly2d p2Identity(1);
+      DVector coeffs = p2Identity.getC();
+      coeffs[p2Identity.vectorIndex(0,1)] = 1.;
+      p2Identity.setC(coeffs);
+      pv = new PolyMap(p1, p2Identity,polyName,POLYSTEP);
+    }
+  } else {
+    // Did not obtain any PV1's.  If there are PV2's, install
+    // identity map for x coeff:
+    if (p2.nCoeffs() > 1) {
+      Poly2d p1Identity(1);
+      DVector coeffs = p1Identity.getC();
+      coeffs[p1Identity.vectorIndex(1,0)] = 1.;
+      p1Identity.setC(coeffs);
+      pv = new PolyMap(p1Identity, p2, polyName, POLYSTEP);
+    }
+  }
+  list<PixelMap*> pmlist;
+  pmlist.push_back(&lm);
+  if (pv) pmlist.push_back(pv);
+  // Create a SubMap that owns a duplicate of these one or two maps (no sharing):
+  SubMap sm(pmlist, name, false);
+  // Delete the polymap if we made it:
+  if (pv) delete pv;
+  // Return the Wcs, which again makes its own copy of the maps (no sharing):
+  return new Wcs(&sm, tp, name, DEGREE, false);
+}
+
+Header
+astrometry::writeTPV(const Wcs& w) {
   Header h;
-  if (!lm) throw AstrometryError("SCAMPMap::writeHeader() with no linear map defied");
-  WriteCD(*lm, orientIn, h);
-  if (pm) WritePV(*pm, h, 1);
-  if (pm) WritePV(*pm, h, 2);
+  const LinearMap* lm=0;
+  const PolyMap* pv=0;
+  const PixelMap* pm = w.getMap();
+  if ( dynamic_cast<const LinearMap*> (pm)) {
+    // The PixelMap is purely linear:
+    lm =  dynamic_cast<const LinearMap*> (pm);
+  } else {
+    const SubMap* sm = dynamic_cast<const SubMap*> (pm);
+    if (!sm)
+      throw AstrometryError("writeTPV(): input Wcs <" + w.getName()
+			    + "> has wrong type of PixelMap <" + sm->getName() + ">");
+    if (sm->nMaps() < 1 || sm->nMaps() > 2)
+      throw AstrometryError("writeTPV(): input Wcs <" + w.getName()
+			    + "> has SubMap <" + sm->getName()
+			    + "> with wrong number of PixelMap components");
+    lm = dynamic_cast<const LinearMap*> (sm->getMap(0));
+    if (!lm)
+      throw AstrometryError("writeTPV(): First component of input Wcs <" + w.getName()
+			    + "> is not LinearMap");
+    if (sm->nMaps()>1) {
+      pv = dynamic_cast<const PolyMap*> (sm->getMap(1));
+      if (!pv)
+	throw AstrometryError("writeTPV(): Second component of input Wcs <" + w.getName()
+			      + "> is not PolyMap");
+    }
+  }
+
+  const Gnomonic* gn = dynamic_cast<const Gnomonic*> (w.getNativeCoords());
+  if (!gn)
+    throw AstrometryError("writeTPV(): input Wcs <" + w.getName() 
+			  + "> does not have Gnomonic projection.");
+  if (gn->getOrient()->getPA() != 0.)
+    throw AstrometryError("writeTPV() Orientation with non-zero PA not implemented");
+
+  WriteCD(*lm, *gn->getOrient(), h);
+  if (pv) WritePV(*pv, h, 1);
+  if (pv) WritePV(*pv, h, 2);
   return h;
 }
+
+//////////////////////////////
+// Now a function that will fit a linear + polynomial + gnomonic deprojection
+// to an arbitrary Wcs
+//////////////////////////////
+Wcs*
+astrometry::fitTPV(Bounds<double> b,
+		   const Wcs& wcsIn,
+		   const Orientation& tpvOrient,
+		   string name,
+		   double tolerance) {
+  const int startOrder=3;
+  const int maxOrder=5;
+
+  const string linearName = name + linearSuffix;
+  const string polyName = name + polySuffix;
+
+  img::Header h;
+  // The linear map from pixels to intermediate world system:
+  double crval1, crval2;
+  double crpix1, crpix2;
+  double cd1_1, cd1_2, cd2_2, cd2_1;
+
+  // Coordinates in the desired TPV gnomonic projection:
+  Gnomonic tpvCoords(tpvOrient);
+
+  // Make the LinearMap that has the same behavior near the center of bounds:
+  //  xworld = v[0] + v[1]*xpix + v[2]*ypix;
+  //  yworld = v[3] + v[4]*xpix + v[5]*ypix;
+  DVector v(6);
+
+  Position<double> center = b.center();
+  // Map chip center and deviates in x and y to coords in the desired gnomonic projection:
+  double xp = center.x;
+  double yp = center.y;
+  tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
+  double x0, y0;
+  tpvCoords.getLonLat(x0,y0);
+  x0 /= DEGREE;  y0 /= DEGREE;
+
+  xp = center.x + wcsIn.getPixelStep();
+  tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
+  double dx, dy;
+  tpvCoords.getLonLat(dx,dy);
+  v[1] = (dx/DEGREE - x0)/wcsIn.getPixelStep();
+  v[2] = (dy/DEGREE - y0)/wcsIn.getPixelStep();
+
+  xp = center.x;
+  yp = center.y + wcsIn.getPixelStep();
+  tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
+  tpvCoords.getLonLat(dx,dy);
+  v[4] = (dx/DEGREE - x0)/wcsIn.getPixelStep();
+  v[5] = (dy/DEGREE - y0)/wcsIn.getPixelStep();
+
+  v[0] = x0 - (v[1]*center.x + v[2]*center.y);
+  v[3] = y0 - (v[4]*center.x + v[5]*center.y);
+
+  LinearMap lm(v, linearName);
+
+  // Now construct a set of test points to which we'll fit polynomial:
+  const int nGridPoints=400;	// Number of test points for map initialization
+  vector<double> vxp;
+  vector<double> vyp;
+  vector<double> vxw;
+  vector<double> vyw;
+
+  double step = sqrt(b.area()/nGridPoints);
+  int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
+  int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
+  double xstep = (b.getXMax()-b.getXMin())/nx;
+  double ystep = (b.getYMax()-b.getYMin())/ny;
+
+  // Find post-linear coords of each test point and desired sky posn in target coords
+  for (int ix=0; ix<=nx; ix++) {
+    double xpix = b.getXMin() + ix*xstep;
+    for (int iy=0; iy<=ny; iy++) {
+      double ypix = b.getYMin() + iy*ystep;
+      double xw, yw;
+      tpvCoords.convertFrom(wcsIn.toSky(xpix, ypix));
+      tpvCoords.getLonLat(xw, yw);
+      xw /= DEGREE;
+      yw /= DEGREE;
+      lm.toWorld(xpix, ypix, xpix, ypix);
+      vxp.push_back(xpix);
+      vyp.push_back(ypix);
+      vxw.push_back(xw);
+      vyw.push_back(yw);
+    }
+  }
+
+  // select order
+  int polyOrder = 3;
+  double rms=0.;
+
+  PolyMap* pv=0;
+  for (polyOrder=startOrder; polyOrder<=maxOrder; polyOrder++) {
+    // Make polynomial map
+    PolyMap poly(polyOrder, polyName, tolerance);
+
+    // Fit map to test points
+    int nP = poly.nParams();
+    DVector beta(nP, 0.);
+    tmv::SymMatrix<double> alpha(nP, 0.);
+    DMatrix derivs(2,nP);
+    Assert(vxp.size()==vyp.size());
+    Assert(vxp.size()==vxw.size());
+    Assert(vxp.size()==vyw.size());
+    for (int i=0; i<vxp.size(); i++) {
+      double xmod, ymod;
+      poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
+      xmod = vxw[i] - xmod;
+      ymod = vyw[i] - ymod;
+      for (int j=0; j<nP; j++) {
+	beta[j] += xmod*derivs(0,j) + ymod*derivs(1,j);
+	for (int k=0; k<=j; k++) 
+	  alpha(j,k)+=derivs(0,j)*derivs(0,k) + derivs(1,j)*derivs(1,k);
+      }
+    }
+    beta /= alpha;
+    poly.setParams(beta);
+    if (pv) delete pv;
+    pv = new PolyMap(poly);
+    rms = 0.;
+    for (int i=0; i<vxp.size(); i++) {
+      double xmod, ymod;
+      poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
+      rms += pow(vxw[i] - xmod, 2.) + pow(vyw[i] - ymod,2.);
+    }
+    rms = sqrt(rms/vxp.size());
+    //**/cerr << " rms " << rms*DEGREE/ARCSEC << " order " << polyOrder << endl;
+    if (rms<tolerance) break;
+  }
+
+  if (rms>tolerance) {
+    cerr << "WARNING:  SCAMPMap RMS is " << rms*DEGREE/ARCSEC
+	 << " at maximum order " << polyOrder
+	 << endl;
+  }
+
+  // Continue even if did not meet tolerance:
+  list<PixelMap*> pmlist;
+  pmlist.push_back(&lm);
+  pmlist.push_back(pv);
+  // Compound the two maps into a SubMap, do not share 
+  SubMap sm(pmlist, name, false);
+  delete pv;
+  // And return a Wcs built from this SubMap (Wcs owns the maps)
+  return new Wcs(&sm, tpvCoords, name, DEGREE, false);
+}
+
+
 

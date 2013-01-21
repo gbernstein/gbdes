@@ -12,13 +12,18 @@
 #include "PolyMap.h"
 #include "Header.h"
 #include "Bounds.h"
+#include "PixelMapCollection.h"
 
 namespace astrometry {
-  Wcs* readTPV(const img::Header& h);
-  img::Header writeTPV(const Wcs& w);
+  // Convert a Wcs expressible as FITS "TPV" WCS standard to/from a list of header key/values
+  // The Wcs will have a Gnomonic sky system, and a PixelMap that is linear followed by
+  // optional polynomial.
+  Wcs* readTPV(const img::Header& h, string name="");
+  img::Header writeTPV(const Wcs& w);   // Will throw exception if Wcs is wrong form
   Wcs* fitTPV(Bounds<double> b,
 	      const Wcs& wcsIn,
-	      const SphericalCoords& tpvPole,
+	      const Orientation& tpvOrient,
+	      string name="",
 	      double tolerance=0.0001*ARCSEC/DEGREE);
 } // namespace astrometry
 #endif
