@@ -4,7 +4,7 @@
 using namespace astrometry;
 
 Wcs::Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name, 
-	 double wScale_, bool shareMap): PixelMap(name), wScale(wScale), 
+	 double wScale_, bool shareMap): PixelMap(name), wScale(wScale_), 
 					 nativeCoords(0),
 					 targetCoords(0),
 					 ownMap(!shareMap)
@@ -154,3 +154,7 @@ Wcs::toPixDerivs( double xworld, double yworld,
 }
 
 /// ???? Read and write
+void
+Wcs::write(std::ostream& os) const {
+  // ?????
+}

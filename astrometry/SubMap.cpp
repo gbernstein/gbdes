@@ -97,8 +97,9 @@ SubMap::toWorld(double xpix, double ypix,
   // Make behavior with zero elements be identity matrix:
   xworld = xpix;
   yworld = ypix;
-  for (int iMap = 0; iMap < nMaps(); iMap++)
+  for (int iMap = 0; iMap < nMaps(); iMap++) {
     vMaps[iMap]->toWorld(xworld, yworld, xworld, yworld);
+  }
 }
 
 void
@@ -109,9 +110,6 @@ SubMap::toPix(double xworld, double yworld,
     vMaps.front()->toPix(xworld, yworld, xpix, ypix);
     return;
   }
-
-  xpix = xworld;
-  ypix = yworld;
 
   // Behave as identity for empty map vector:
   if (nm==0) return;
@@ -127,6 +125,9 @@ SubMap::toPix(double xworld, double yworld,
     vMaps[iMap]->toWorld(xpix,ypix,xpix,ypix);
   }
 
+  xpix = xworld;
+  ypix = yworld;
+
   // Now propagate solution backwards:
   for (int iMap = nm-1; iMap>=0; iMap--) {
     xworld = xpix;
@@ -134,6 +135,7 @@ SubMap::toPix(double xworld, double yworld,
     xpix = xguess[iMap];
     ypix = yguess[iMap];
     vMaps[iMap]->toPix(xworld,yworld,xpix,ypix);
+    cerr << iMap << " " << xworld << "," << yworld << " " << xpix << "," << ypix << endl;
   }
 }
 

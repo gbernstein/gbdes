@@ -330,3 +330,13 @@ CompoundPixelMap::toPixDerivs( double xworld, double yworld,
     }
   }
 }
+
+PixelMap*
+ReprojectionMap::create(std::istream& is, string name) {
+  // ????
+}
+void
+ReprojectionMap::write(std::ostream& os) const {
+  // ????
+}
+

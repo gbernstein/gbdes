@@ -55,6 +55,8 @@ OBJ =  $(SUBOBJ)
 
 all: depend subs
 
+ApplyWCS: ApplyWCS.o TPVMap.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFoF: WCSFoF.o SCAMPMap.o $(OBJ)
