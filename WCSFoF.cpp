@@ -67,17 +67,20 @@ typedef fof::Catalog<Point,2> PointCat;
 
 struct Field {
   string name;
-  astrometry::Orientation orient;
+  // Coordinate system that has lat=lon=0 at field center and does projection to use for matching
+  astrometry::SphericalCoords* projection;
   double extent;
   double matchRadius;
   // Map from affinity name to its catalog of matches:
   typedef map<string, PointCat*> CatMap;
   CatMap catalogs;
+  Field(): projection(0) {}
   ~Field() {
     for (CatMap::iterator i=catalogs.begin();
 	 i != catalogs.end();
 	 ++i) 
       delete i->second;
+    if (projection) delete projection;
   }
   PointCat* catalogFor(const string& affinity) {
     if (catalogs.find(affinity)==catalogs.end()) {
@@ -222,7 +225,8 @@ main(int argc,
 	  }
 	  Field f;
 	  f.name = name;
-	  f.orient = astrometry::Orientation(pole);
+	  astrometry::Orientation orient(pole);
+	  f.projection = new astrometry::Gnomonic(orient);
 	  f.extent = extent;
 	  f.matchRadius = matchRadius;
 	  fields.push_back(f);
@@ -571,11 +575,13 @@ main(int argc,
 	  // Assign exposure to nearest field:
 	  Assert(!fields.empty());
 	  vector<Field>::const_iterator i = fields.begin();
-	  double minDistance = thisRADec.distance(i->orient.getPole());
+	  i->projection->setLonLat(0.,0.);
+	  double minDistance = thisRADec.distance(*i->projection);
 	  thisField = i->name;
 	  for ( ; i != fields.end(); ++i) {
-	    if (thisRADec.distance(i->orient.getPole()) < minDistance) {
-	      minDistance = thisRADec.distance(i->orient.getPole());
+	    i->projection->setLonLat(0.,0.);
+	    if (thisRADec.distance(*i->projection) < minDistance) {
+	      minDistance = thisRADec.distance(*i->projection);
 	      thisField = i->name;
 	    }
 	  }
@@ -642,31 +648,33 @@ main(int argc,
 	}
 
 	// Read in a WCS, from pixel coords to the tangent plane for this Field:
-	astrometry::PixelMap* map = 0;
+	astrometry::Wcs* wcs = 0;
 	if (!xyAreRaDec) {
 	  if (wcsStream.is_open()) {
 	    // Try the WCS file first
 	    try {
-	      map = new astrometry::SCAMPMap(wcsHead, &(fields[fieldNumber].orient));
+	      wcs = astrometry::readTPV(wcsHead);
 	    } catch (astrometry::AstrometryError& m) {
-	      map = 0;
+	      wcs = 0;
 	    }
 	  } 
-	  if (!map) {
+	  if (!wcs) {
 	    // Try the local header if not
 	    try {
-	      map = new astrometry::SCAMPMap(localHeader, &(fields[fieldNumber].orient));
+	      wcs = astrometry::readTPV(localHeader);
 	    } catch (astrometry::AstrometryError& m) {
-	      map = 0;
+	      wcs = 0;
 	    }
 	  }
-	  if (!map) {
+	  if (!wcs) {
 	    // If still nothing, quit.   
 	    cerr << "Could not generate WCS for HDU " << hduNumber
 		 << " in file " << filename
 		 << endl;
 	    exit(1);
 	  }
+
+	  wcs->reprojectTo(*fields[fieldNumber].projection);
 	}
 
 	// Record information about this extension to an output table
@@ -685,16 +693,10 @@ main(int argc,
 
 	{
 	  string wcsDump;
-	  if (!map) {
+	  if (!wcs) {
 	    wcsDump = "ICRS";
 	  } else {
-	    const astrometry::SCAMPMap* sm = dynamic_cast<const astrometry::SCAMPMap*> (map);
-	    if (!sm) {
-	      cerr << "Only know how to serialize SCAMPMap now, file/extn "
-		   << filename << " / " << iFile << endl;
-	      exit(1);
-	    }
-	    img::Header hh = sm->writeHeader();
+	    img::Header hh = astrometry::writeTPV(*wcs);
 	    ostringstream oss;
 	    oss << hh;
 	    wcsDump = oss.str();
@@ -720,15 +722,15 @@ main(int argc,
 	  //  maps coords to field's tangent plane
 	  double xw, yw;
 	  if (xyAreRaDec) {
-	    astrometry::SphericalICRS radec( vx[iObj]*DEGREE, vy[iObj]*DEGREE );
-	    astrometry::TangentPlane tp(radec,  fields[fieldNumber].orient);
-	    tp.getLonLat(xw, yw);
+	    fields[fieldNumber].projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*DEGREE, 
+										  vy[iObj]*DEGREE ));
+	    fields[fieldNumber].projection->getLonLat(xw, yw);
 	    // Matching program will speak degrees, not radians:
 	    xw /= DEGREE;
 	    yw /= DEGREE;
 	  } else {
-	    Assert(map);
-	    map->toWorld(xpix, ypix, xw, yw);
+	    Assert(wcs);
+	    wcs->toWorld(xpix, ypix, xw, yw);
 	  }
 	  // ??? Note that frequent small memory allocations are making memory mgmt and overhead
 	  // exceed the actual Point memory usage.  Also the allPoints list is really superfluous
@@ -741,7 +743,7 @@ main(int argc,
 	    galaxyCatalog->add(allPoints.back());
 	} // end object loop
 
-	if (map) delete map;
+	if (wcs) delete wcs;
 	
 	extensionNumber++;
       } // end input extension loop
@@ -763,7 +765,8 @@ main(int argc,
       vector<double> dec;
       for (int i=0; i<fields.size(); i++) {
 	names.push_back(fields[i].name);
-	astrometry::SphericalICRS pole = fields[i].orient.getPole();
+	fields[i].projection->setLonLat(0.,0.);
+	astrometry::SphericalICRS pole(*fields[i].projection);
 	double r,d;
 	pole.getLonLat(r,d);
 	ra.push_back( r/DEGREE);
