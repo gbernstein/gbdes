@@ -27,9 +27,11 @@ SubMap::SubMap(const list<PixelMap*>& pixelMaps,
   }
   vNSubParams.clear();
   vStartIndices.clear();
+  vMapNumbers.clear();
   for (int i=0; i<nMaps(); i++) {
     vStartIndices.push_back(totalFreeParameters);
     vNSubParams.push_back(vMaps[i]->nParams());
+    vMapNumbers.push_back(i);
     totalFreeParameters += vMaps[i]->nParams();
   }
 }

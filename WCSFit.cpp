@@ -9,7 +9,7 @@
 #include "FitsTable.h"
 #include "StringStuff.h"
 #include "Pset.h"
-#include "SCAMPMap.h"
+#include "TPVMap.h"
 #include "Random.h"
 
 using namespace std;

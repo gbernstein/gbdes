@@ -43,10 +43,13 @@ namespace astrometry {
     // adjusts the vStartIndices to reflect each element's position in a master parameter
     // vector.  
   private:
-    // The constituent maps and their indices into a master parameter vector:
+    // The constituent maps and their indices into a master parameter vector,
+    // plus an ordinal label in the full collection for each map component:
     vector<PixelMap*> vMaps;
     vector<int> vStartIndices;
     vector<int> vNSubParams;
+    vector<int> vMapNumbers;  
+
     bool ownMaps;		// true if we must delete maps on destruction
     int totalFreeParameters;	// Cache this total
     void countFreeParameters(); // update countFreeParameters from vNSubParams
@@ -68,6 +71,7 @@ namespace astrometry {
     int nMaps() const {return vMaps.size();}
     int startIndex(int iMap) const {return vStartIndices[iMap];}
     int nSubParams(int iMap) const {return vNSubParams[iMap];}
+    int mapNumber(int iMap) const {return vMapNumbers[iMap];}
 
     // Implement the full PixelMap interface; parameter getting/setting
     // works with a single contiguous vector of parameters of all components.
@@ -178,12 +182,13 @@ namespace astrometry {
 
     // Structure for every PixelMap that we know about:
     struct MapElement {
-      MapElement(): realization(0), atom(0), isFixed(false) {}
+      MapElement(): realization(0), atom(0), isFixed(false), number(-1) {}
       list<string> subordinateMaps;  // If it's compound, what it will be made from
       SubMap* realization;	     // pointer to its SubMap, if it's been built
       PixelMap* atom;		     // Pointer to the PixelMap itself, if atomic
       int startIndex;		     // Location in the union parameter array
       int nParams;		     // Number of parameters (only atomic is nonzero)
+      int number;		     // sequential index among all maps with free parameters
       bool isFixed;		     // True if its parameters are currently fixed.
     };
 

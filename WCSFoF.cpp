@@ -4,7 +4,7 @@
 #include "FoF.h"
 #include "FitsTable.h"
 #include "Astrometry.h"
-#include "SCAMPMap.h"
+#include "TPVMap.h"
 #include "ReadLdacHeader.h"
 #include "NameIndex.h"
 #include "Pset.h"

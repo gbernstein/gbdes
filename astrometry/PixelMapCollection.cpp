@@ -132,7 +132,8 @@ PixelMapCollection::rebuildParameterVector() {
 
   // Restart the parameter counting:
   parameterCount = 0;
-  for (MapIter i = mapElements.begin(); i!=mapElements.end(); ++i) {
+  int mapNumber = 0;
+  for (MapIter i = mapElements.begin(); i!=mapElements.end(); ++i, ++mapNumber) {
     MapElement& map = i->second;
     // Only atomic map components go into the big parameter vector
     if (!(map.atom)) continue;
@@ -140,10 +141,12 @@ PixelMapCollection::rebuildParameterVector() {
     if (map.isFixed || nMap==0) {
       // No free parameters here.
       map.nParams = 0;
+      map.number = -1;
     } else {
       // Have some parameters; append them to master list.
       map.nParams = nMap;
       map.startIndex = parameterCount;
+      map.number = mapNumber;
       parameterCount += nMap;
     }
   }
@@ -167,6 +170,7 @@ PixelMapCollection::rebuildParameterVector() {
 			      " in rebuildParameterVector.");
       sub->vStartIndices[iElement] = j->second.startIndex;
       sub->vNSubParams[iElement] = j->second.nParams;
+      sub->vMapNumbers[iElement] = j->second.number;
     }
     sub->countFreeParameters();
   }
@@ -399,6 +403,7 @@ PixelMapCollection::issueMap(string mapName) {
     list<string> atomList = orderAtoms(mapName);
     vector<int> startIndices(atomList.size(), 0);
     vector<int> nParams(atomList.size(), 0);
+    vector<int> mapNumbers(atomList.size(), -1);
 
     list<PixelMap*> atoms;
     int index=0;
@@ -410,10 +415,12 @@ PixelMapCollection::issueMap(string mapName) {
       // fill in its indices into master vector:
       startIndices[index] = mapElements[*i].startIndex;
       nParams[index] = mapElements[*i].isFixed ? 0 : mapElements[*i].nParams;
+      mapNumbers[index] = mapElements[*i].number;
     }
     SubMap* sm = new SubMap(atoms, mapName);
     sm->vStartIndices = startIndices;
     sm->vNSubParams = nParams;
+    sm->vMapNumbers = mapNumbers;
     sm->countFreeParameters();
     el.realization = sm;
   }
