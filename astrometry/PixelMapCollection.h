@@ -142,10 +142,12 @@ namespace astrometry {
     Wcs* issueWcs(string wcsName);
     
     // Create and read serializations of all the maps or just one
-    void read(istream& is, string namePrefix=""); // prefix added to names of all elements
     void write(ostream& os) const;
     void writeMap(ostream& os, string name) const;
     void writeWcs(ostream& os, string name) const;
+    // The read returns false if the stream does not begin with the magicWord for
+    // serialized PixelMapCollections. True if success; throws exception for format errors.
+    bool read(istream& is, string namePrefix=""); // prefix added to names of all elements
 
     // Fix or free parameters associated with one or more PixelMap(s).
     // If the chosen map is compound, all components are frozen.
@@ -231,6 +233,9 @@ namespace astrometry {
     // See if the chain of dependence of a map has any cycles.  Throws exception if so.
     void checkCircularDependence(string mapName,
 				 const set<string>& ancestors = set<string>()) const;
+
+    // Check that all referenced names exist, and that there are no circular dependences.
+    void checkCompleteness() const;
 
     // Return list of pointers to all map elements needed to fully specify the target.
     // Includes self.  Assumes no dependence cycles.

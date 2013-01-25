@@ -74,10 +74,10 @@ Poly2d::create(std::istream& is) {
     istringstream iss(buffer);
     do {
       iss >> c;
-      if (iss.fail())
-	throw Poly2dError("Error reading coefficients for Poly2d: " + buffer);
       if (iss.eof()) 
 	break;
+      if (iss.fail())
+	throw Poly2dError("Error reading coefficients for Poly2d: " + buffer);
       coeffs[iCoeff] = c;
       iCoeff++;
     } while (iCoeff < coeffs.size());

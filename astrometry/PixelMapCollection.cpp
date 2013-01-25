@@ -2,8 +2,12 @@
 
 #include "PixelMapCollection.h"
 #include "PolyMap.h"
+#include "StringStuff.h"
 
 using namespace astrometry;
+
+// The word that we expect all serialized collections to have on their first line
+const string magicHeader = "PixelMapCollection";
 
 //////////////////////////////////////////////////////////////
 // Static data
@@ -509,16 +513,29 @@ PixelMapCollection::checkCircularDependence(string mapName,
     checkCircularDependence(*i, ancestorsPlusSelf);
 }
 
+void
+PixelMapCollection::checkCompleteness() const {
+  // Loop through all the (non-atomic) maps, throw exception if the refer to 
+  // non-existent map elements or to themselves
+  for (ConstMapIter i = mapElements.begin();
+       i != mapElements.end();
+       ++i)
+    checkCircularDependence(i->first);
+
+  // Loop through all the Wcs's, making sure their pixelmaps exist.
+  for (ConstWcsIter i = wcsElements.begin();
+       i != wcsElements.end();
+       ++i)
+    if (!mapExists(i->second.mapName))
+      throw AstrometryError("PixelMapCollection Wcs <" + i->first + "> refers to unknown PixelMap <"
+			    + i->second.mapName + ">");
+}
+
 
 //////////////////////////////////////////////////////////////
 // (De-) Serialization
 //////////////////////////////////////////////////////////////
 
-const string magicHeader = "PixelMapCollection";
-void 
-PixelMapCollection::read(istream& is, string namePrefix) {
-  // ???
-}
 
 void
 PixelMapCollection::writeSingleWcs(ostream& os, const WcsElement& wel, string name) const {
@@ -530,7 +547,7 @@ PixelMapCollection::writeSingleWcs(ostream& os, const WcsElement& wel, string na
   if (!gn)
     throw AstrometryError("PixelMapCollection can only serialize Gnomonic projections at Wcs name "
 			  + name);
-  os << *gn->getOrient() << endl;
+  os << "Gnomonic " << *gn->getOrient() << endl;
   os << wel.wScale << endl;
 }
 
@@ -604,3 +621,128 @@ PixelMapCollection::writeWcs(ostream& os, string name) const {
   writeMap(os, j->second.mapName);
   writeSingleWcs(os, j->second, name);
 }
+
+bool
+PixelMapCollection::read(istream& is, string namePrefix) {
+  string buffer;
+  // Check for magic word
+  if (!stringstuff::getlineNoComment(is, buffer)) 
+    throw AstrometryError("PixelMapCollection::read() found no information for " + namePrefix);
+  istringstream iss(buffer);
+  {
+    string word;
+    iss >> word;
+    if (!stringstuff::nocaseEqual(word, magicHeader))
+      return false;
+  }
+  while (stringstuff::getlineNoComment(is, buffer)) {
+    iss.str(buffer);
+    iss.clear();
+    // Read first word to get type of next element and its name
+    string otype;
+    string name;
+    if (!(iss >> otype >> name)) 
+      throw AstrometryError("PixelMapCollection::read() format error at line: " + buffer);
+    name = namePrefix + name;
+    if (stringstuff::nocaseEqual(otype, Wcs::mapType())) {
+      string mapName;
+      if (!(iss >> mapName))
+	throw AstrometryError("PixelMapCollection::read() missing PixelMap name for Wcs at line "
+			      + buffer);
+      mapName = namePrefix + mapName;
+      // read Gnomonic and orientation
+      string coordType;
+      Orientation orient;
+      if (!stringstuff::getlineNoComment(is, buffer)) 
+	throw AstrometryError("PixelMapCollection::read() missing Wcs projection data for "
+			      + name);
+      iss.str(buffer);
+      iss.clear();
+      if ( !(iss >> coordType >> orient) || !stringstuff::nocaseEqual(coordType, "Gnomonic"))
+	throw AstrometryError("PixelMapCollection::read() failed reading gnomonic project from line "
+			      + buffer);
+      Gnomonic* nativeCoords = new Gnomonic(orient);
+
+      // read wscale 
+      double wScale;
+      if (!stringstuff::getlineNoComment(is, buffer))
+	throw AstrometryError("PixelMapCollection::read() missing Wcs scale for "
+			      + name);
+      iss.str(buffer);
+      iss.clear();
+      if ( !(iss >> wScale) || wScale <= 0.)
+	  throw AstrometryError("PixelMapCollection::read() failed read invalid scale from line "
+				+ buffer);
+      
+      // Enter a new WcsElement into our tables:
+      WcsElement wel;
+      wel.mapName = name;
+      wel.nativeCoords = nativeCoords;
+      wel.wScale = wScale;
+      wcsElements.insert(std::pair<string,WcsElement>(name, wel));
+
+    } else if (stringstuff::nocaseEqual(otype, SubMap::mapType())) {
+      int nmaps;
+      if (!(iss >> nmaps)) 
+	throw AstrometryError("PixelMapCollection::read() missing number of SubMap components at line "
+			      + buffer);
+      // Read names of components
+      list<string> submaps;
+      while (submaps.size() < nmaps) {
+	if (!(stringstuff::getlineNoComment(is, buffer)))
+	  throw AstrometryError("PixelMapCollection::read() out of input for SubMap: " + name);
+	string n;
+	iss.str(buffer);
+	iss.clear();
+	do {
+	  iss >> n;
+	  // ???? misses ends of lines???
+	  if (iss.eof()) 
+	    break;
+	  submaps.push_back(n);
+	} while (submaps.size() < nmaps);
+      }
+
+      // Create the MapElement
+      MapElement mel;
+      mel.subordinateMaps = submaps;
+      mapElements.insert(std::pair<string,MapElement>(name, mel));
+
+    } else {
+      // Read the pixelScale
+      double pixScale;
+	if (!(iss >> pixScale)) 
+	  throw AstrometryError("PixelMapCollection::read() missing pixel scale at line "
+				+ buffer);
+      // Access the static arrays of map type names and creators
+      Assert (mapTypeNames.size() == mapCreators.size());
+      PixelMap* atom = 0;
+      // Loop through registered map types
+      for (int iType=0; iType < mapTypeNames.size(); iType++) {
+	if (stringstuff::nocaseEqual(otype, mapTypeNames[iType])) {
+	  // call the create() for the one that matches
+	  atom = (*mapCreators[iType])(is, name);
+	  break;
+	}
+      }
+      // throw for unknown map type
+      if (!atom)
+	throw AstrometryError("PixelMapCollection does not recognize PixelMap type " + otype);
+
+      atom->setPixelStep(pixScale);
+      // create the MapElement
+      MapElement mel;
+      mel.atom = atom;
+      mapElements.insert(std::pair<string,MapElement> (name, mel));
+    }
+  } // end input line loop
+
+  // Check all maps for circular dependence and completeness.
+  checkCompleteness();
+
+  // Recalculate indices
+  rebuildParameterVector();
+
+  return true;
+}
+

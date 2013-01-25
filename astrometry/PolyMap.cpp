@@ -181,9 +181,12 @@ LinearMap::create(std::istream& is, string name) {
   DVector v(6);
   string buffer;
   getlineNoComment(is, buffer);
-  istringstream iss;
-  if (!(iss >> v[0] >> v[1] >> v[2])) 
+  istringstream iss(buffer);
+  if (!(iss >> v[0] >> v[1] >> v[2]))
     throw AstrometryError("LinearMap::create has bad x coefficients: " + buffer);
+  getlineNoComment(is, buffer);
+  iss.str(buffer);
+  iss.clear();
   if (!(iss >> v[3] >> v[4] >> v[5])) 
     throw AstrometryError("LinearMap::create has bad y coefficients: " + buffer);
   return new LinearMap(v);
