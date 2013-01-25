@@ -521,7 +521,7 @@ PixelMapCollection::read(istream& is, string namePrefix) {
 }
 
 void
-PixelMapCollection::writeSingleWcs(const WcsElement& wel, string name, ostream& os) const {
+PixelMapCollection::writeSingleWcs(ostream& os, const WcsElement& wel, string name) const {
   os << Wcs::mapType()
      << " " << name
      << " " << wel.mapName
@@ -535,7 +535,7 @@ PixelMapCollection::writeSingleWcs(const WcsElement& wel, string name, ostream& 
 }
 
 void
-PixelMapCollection::writeSingleMap(const MapElement& mel, string name, ostream& os)  const {
+PixelMapCollection::writeSingleMap(ostream& os, const MapElement& mel, string name)  const {
   if (mel.atom) {
     // Atomic map, give all details:
     os << mel.atom->getType() 
@@ -572,21 +572,35 @@ PixelMapCollection::write(ostream& os) const {
   for (ConstMapIter i = mapElements.begin();
        i != mapElements.end();
        ++i) {
-    writeSingleMap(i->second, i->first, os);
+    writeSingleMap(os, i->second, i->first);
   }
   // Then write the Wcs's:
   for (ConstWcsIter i = wcsElements.begin();
        i != wcsElements.end();
        ++i) {
-    writeSingleWcs(i->second, i->first, os);
+    writeSingleWcs(os, i->second, i->first);
   }
 }
 
 void 
 PixelMapCollection::writeMap(ostream& os, string name) const {
-  // ???
+  if (!mapExists(name))
+    throw AstrometryError("PixelMapCollection::writeMap() for unknown map: " + name);
+  set<string> allmaps = dependencies(name);
+  os << magicHeader << endl;
+  // Write the map elements
+  for (set<string>::const_iterator i = allmaps.begin();
+       i != allmaps.end();
+       ++i) {
+    ConstMapIter j = mapElements.find(*i);
+    writeSingleMap(os, j->second, *i);
+  }
 }
 void 
 PixelMapCollection::writeWcs(ostream& os, string name) const {
-  // ???
+  if (!wcsExists(name))
+    throw AstrometryError("PixelMapCollection::writeWcs() for unknown Wcs: " + name);
+  ConstWcsIter j = wcsElements.find(name);
+  writeMap(os, j->second.mapName);
+  writeSingleWcs(os, j->second, name);
 }
