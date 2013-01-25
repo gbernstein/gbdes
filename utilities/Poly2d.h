@@ -38,6 +38,13 @@ namespace poly2d {
     void setC(const DVector& cv) {fillFromVector(cv);}
     // derivatives w.r.t. coefficient vector:
     DVector derivC(double x, double y) const {return vectorFromMatrix(powers(x,orderX) ^ powers(y,orderY));} 
+    const OrderType getOrderType() const {return otype;}
+    const int getOrderX() const {return orderX;}
+    const int getOrderY() const {return orderY;}
+
+    void write(std::ostream& os) const;  // Serialize polynomial to a string
+    static Poly2d* create(std::istream& is);  // Build polynomial from serialized string
+
     // If you want to know the orders for given coeffient index or vice-versa:
     // Negative indices/powers returned if inputs are negative.  No checks on upper bounds.
     int vectorIndex(int i, int j) const;  // vector index of coefficient of x^i y^j

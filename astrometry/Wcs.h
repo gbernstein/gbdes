@@ -35,6 +35,7 @@ namespace astrometry {
 
     // Now we implement the PixelMap interface:
     static string mapType() {return "WCS";}
+    virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name="");
     virtual void write(std::ostream& os) const;
 

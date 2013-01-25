@@ -55,6 +55,8 @@ OBJ =  $(SUBOBJ)
 
 all: depend subs
 
+testSerialize: testSerialize.o TPVMap.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ApplyWCS: ApplyWCS.o TPVMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 FitsGlue: FitsGlue.o $(OBJ)

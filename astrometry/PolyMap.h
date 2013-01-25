@@ -53,6 +53,7 @@ namespace astrometry {
     void setWorldTolerance(double wt) {worldTolerance=wt;}
 
     static string mapType() {return "Poly";}
+    virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name="");
     void write(std::ostream& os) const;
 
@@ -90,6 +91,7 @@ namespace astrometry {
     int nParams() const {return 6;}
 
     static string mapType() {return "Linear";}
+    virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name="");
     void write(std::ostream& os) const;
 

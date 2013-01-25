@@ -197,10 +197,24 @@ LinearMap::write(std::ostream& os) const {
 
 PixelMap*
 PolyMap::create(std::istream& is, string name) {
-  // ????
+  poly2d::Poly2d* px = poly2d::Poly2d::create(is);
+  poly2d::Poly2d* py = poly2d::Poly2d::create(is);
+  double tol;
+  string buffer;
+  if (!getlineNoComment(is, buffer)) 
+    throw AstrometryError("PolyMap::create() is missing tolerance value at name " + name);
+  istringstream iss(buffer);
+  if (!(iss >> tol))
+    throw AstrometryError("PolyMap::create() has bad tolerance value: " + buffer);
+  PolyMap* pm =  new PolyMap(*px, *py, name, tol);
+  delete px;
+  delete py;
+  return pm;
 }
 
 void
 PolyMap::write(std::ostream& os) const {
-  // ????
+  xpoly.write(os);
+  ypoly.write(os);
+  os << worldTolerance << endl;
 }

@@ -65,6 +65,7 @@ namespace astrometry {
     // For serialization:
     virtual void write(std::ostream& os) const =0;
     string getName() const {return name;}
+    virtual string getType() const =0;
   private:
     string name;
     double pixStep;
@@ -97,8 +98,10 @@ namespace astrometry {
     const list<PixelMap*>& getList() const {return pmlist;}
 
     static string mapType() {return "Compound";}
+    virtual string getType() const {return mapType();}
     // * will not implement a static read from stream since compound must be built in code that is aware of 
     // * the elements to be compounded.
+
     void append(PixelMap* pmnew) {pmlist.push_back(pmnew);}
     void prepend(PixelMap* pmnew) {pmlist.push_front(pmnew);}
     // pixel coords to world coords map
@@ -138,6 +141,7 @@ namespace astrometry {
     IdentityMap(): PixelMap("Identity") {}
     virtual PixelMap* duplicate() const {return new IdentityMap();}
     static string mapType() {return "Identity";}
+    virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name_="") {return new IdentityMap;}
     void toWorld(double xpix, double ypix,
 		 double& xworld, double& yworld) const;
@@ -158,7 +162,7 @@ namespace astrometry {
     // to put them into the native radian units of this class.
     // For instance enter AstronomicalConstants::DEGREE to
     // have coordinates in degrees.
-    // setPixelScale to 1 arcsecond for any numerical derivatives of this projection,
+    // setPixelScale is 1 arcsecond for any numerical derivatives of this projection,
     // although derivatives are done analytically.
     ReprojectionMap(const SphericalCoords& pixCoords,
 		    const SphericalCoords& worldCoords,
@@ -175,6 +179,7 @@ namespace astrometry {
     virtual PixelMap* duplicate() const;
 
     static string mapType() {return "Reprojection";}
+    virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name="");
     virtual void write(std::ostream& os) const;
 

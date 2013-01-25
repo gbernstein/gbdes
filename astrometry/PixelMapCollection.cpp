@@ -514,14 +514,74 @@ PixelMapCollection::checkCircularDependence(string mapName,
 // (De-) Serialization
 //////////////////////////////////////////////////////////////
 
+const string magicHeader = "PixelMapCollection";
 void 
 PixelMapCollection::read(istream& is, string namePrefix) {
   // ???
 }
+
+void
+PixelMapCollection::writeSingleWcs(const WcsElement& wel, string name, ostream& os) const {
+  os << Wcs::mapType()
+     << " " << name
+     << " " << wel.mapName
+     << endl;
+  const Gnomonic* gn = dynamic_cast<const Gnomonic*> (wel.nativeCoords);
+  if (!gn)
+    throw AstrometryError("PixelMapCollection can only serialize Gnomonic projections at Wcs name "
+			  + name);
+  os << *gn->getOrient() << endl;
+  os << wel.wScale << endl;
+}
+
+void
+PixelMapCollection::writeSingleMap(const MapElement& mel, string name, ostream& os)  const {
+  if (mel.atom) {
+    // Atomic map, give all details:
+    os << mel.atom->getType() 
+       << " " << name
+       << " " << mel.atom->getPixelStep()
+       << endl;
+    mel.atom->write(os);
+  } else {
+    // For compound map, just give names of constituents
+    os << SubMap::mapType()
+       << " " << name
+       << " " << mel.subordinateMaps.size()
+       << endl;
+    const int maxOnLine = 5;
+    int iOnLine = 0;
+    for (list<string>::const_iterator i=mel.subordinateMaps.begin();
+	 i != mel.subordinateMaps.end();
+	 ++i) {
+      if (iOnLine >= maxOnLine) {
+	os << endl;
+	iOnLine = 0;
+      }
+      os << *i << " ";
+      iOnLine++;
+    }
+    os << endl;
+  }
+}
+
 void 
 PixelMapCollection::write(ostream& os) const {
-  // ???
+  os << magicHeader << endl;
+  // Write the map elements
+  for (ConstMapIter i = mapElements.begin();
+       i != mapElements.end();
+       ++i) {
+    writeSingleMap(i->second, i->first, os);
+  }
+  // Then write the Wcs's:
+  for (ConstWcsIter i = wcsElements.begin();
+       i != wcsElements.end();
+       ++i) {
+    writeSingleWcs(i->second, i->first, os);
+  }
 }
+
 void 
 PixelMapCollection::writeMap(ostream& os, string name) const {
   // ???

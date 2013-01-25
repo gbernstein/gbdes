@@ -93,6 +93,9 @@ namespace astrometry {
     // Step size for derivatives in "pixel" space - applied to first map in the chain, if any
     double getPixelStep() const;
     void setPixelStep(double ps);
+    static string mapType() {return "Sub";}
+    virtual string getType() const {return mapType();}
+
     void write(ostream& os) const {
       throw AstrometryError("SubMap " + getName() + " should not be getting serialized");
     }
@@ -246,6 +249,8 @@ namespace astrometry {
     // Call to give parser an initial inventory of map types to create:
     static void PixelMapTypeInitialize();
 
+    void writeSingleMap(const MapElement& mel, string name, ostream& os) const;
+    void writeSingleWcs(const WcsElement& wel, string name, ostream& os) const;
   };
 
 
