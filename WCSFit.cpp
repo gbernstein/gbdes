@@ -269,6 +269,7 @@ main(int argc, char *argv[])
       for (list<string>::const_iterator i = ls.begin();
 	   i != ls.end();
 	   ++i) {
+	if (i->empty()) continue;
 	list<string> ls2 = split(*i, '=');
 	if (ls2.size() != 2) {
 	  cerr << "renameInstruments has bad translation spec: " << *i << endl;
@@ -290,6 +291,7 @@ main(int argc, char *argv[])
       for (list<string>::const_iterator i = ls.begin();
 	   i != ls.end();
 	   ++i) {
+	if (i->empty()) continue;
 	list<string> ls2 = split(*i, '@');
 	if (ls2.size() != 2) {
 	  cerr << "existingMaps has bad spec: " << *i << endl;
@@ -307,15 +309,23 @@ main(int argc, char *argv[])
     // have their parameters held fixed.
     list<string> fixMapList = split(fixMaps, listSeperator);
     for (list<string>::iterator i = fixMapList.begin();
-	 i != fixMapList.end();
-	 ++i)
-      stripWhite(*i);
+	 i != fixMapList.end(); ) 
+      if (i->empty()) {
+	i = fixMapList.erase(i);
+      } else {
+	stripWhite(*i);
+	++i;
+      }
 
     list<string> canonicalExposureList = split(canonicalExposures, listSeperator);
     for (list<string>::iterator i = canonicalExposureList.begin();
-	 i != canonicalExposureList.end();
-	 ++i)
-      stripWhite(*i);
+	 i != canonicalExposureList.end(); )
+      if (i->empty()) {
+	i = fixMapList.erase(i);
+      } else {
+	stripWhite(*i);
+	++i;
+      }
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Fields, Instruments, Devices, Exposures
@@ -373,6 +383,7 @@ main(int argc, char *argv[])
 	cerr << "Could not read name and/or number of instrument at extension "
 	     << instrumentHDUs[i] << endl;
       }
+      stripWhite(instrumentName);
       Assert(instrumentNumber < instruments.size());
       Instrument* instptr = new Instrument(instrumentName);
       instruments[instrumentNumber] = instptr;
@@ -545,6 +556,9 @@ main(int argc, char *argv[])
 	       << endl;
 	}
 
+	// Done with this device for now if we have no existing map to read.
+	if (!deviceMapsExist[idev]) continue;
+	  
 	// Load the PixelMap for this device if it is to be extracted from a file.
 	// We will not be throwing exceptions for duplicate names
 	PixelMap* deviceMap;
@@ -653,6 +667,12 @@ main(int argc, char *argv[])
 	       << inst->name << endl;
 	  exit(1);
 	}
+
+	/**/cerr << "noDevicesFixed: " << noDevicesFixed
+		 << " needCanonical: " << needCanonical
+		 << " canonicalExposure: " << canonicalExposure
+		 << endl;
+	
       } // end finding a canonical exposure for the Instrument
 
       // Now we create new PixelMaps for each Device that does not already have one.
@@ -772,6 +792,7 @@ main(int argc, char *argv[])
 	}
 
 	if (iexp == canonicalExposure && noDevicesFixed) {
+	  /**/cerr << "Giving identity map to canonical exposure " << expo.name <<endl;
 	  // Give this canonical exposure identity map to avoid degeneracy with Instrument
 	  expo.mapName = IdentityMap().getName();
 	  continue;
@@ -1266,9 +1287,11 @@ main(int argc, char *argv[])
 	cerr << "...Continuing with program" << endl;
 	continue;
       }
+      // Fit the TPV system to a projection about the field's pointing center:
+      expo.projection->setLonLat(0.,0.);
       Wcs* tpv = fitTPV(inst.domains[extn.device],
 			*extn.wcs,
-			*fieldProjections[expo.field],
+			*expo.projection,
 			"NoName",
 			SCAMPTolerance);
       newHeads << writeTPV(*tpv);
@@ -1276,31 +1299,32 @@ main(int argc, char *argv[])
     }
 
     // If there are reserved Matches, run sigma-clipping on them now.
-    cout << "** Clipping reserved matches: " << endl;
-    oldthresh = 0.;
-    do {
-      // Report number of active Matches / Detections in each iteration:
-      long int mcount=0;
-      long int dcount=0;
-      ca.count(mcount, dcount, true, 2);
-      double max;
-      int dof=0;
-      double chisq= ca.chisqDOF(dof, max, true);
-      cout << "Clipping " << mcount << " matches with " << dcount << " detections "
-	   << " chisq " << chisq << " / " << dof << " dof,  maxdev " << sqrt(max) 
-	   << " sigma" << endl;
+    if (reserveFraction > 0.) {
+      cout << "** Clipping reserved matches: " << endl;
+      oldthresh = 0.;
+      do {
+	// Report number of active Matches / Detections in each iteration:
+	long int mcount=0;
+	long int dcount=0;
+	ca.count(mcount, dcount, true, 2);
+	double max;
+	int dof=0;
+	double chisq= ca.chisqDOF(dof, max, true);
+	cout << "Clipping " << mcount << " matches with " << dcount << " detections "
+	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << sqrt(max) 
+	     << " sigma" << endl;
       
-      double thresh = sqrt(chisq/dof) * clipThresh;
-      cout << "  new clip threshold: " << thresh << " sigma"
-	   << endl;
-      if (thresh >= max) break;
-      if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
-      oldthresh = thresh;
-      nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
-      cout << "Clipped " << nclip
-	   << " matches " << endl;
-    } while (nclip>0);
-
+	double thresh = sqrt(chisq/dof) * clipThresh;
+	cout << "  new clip threshold: " << thresh << " sigma"
+	     << endl;
+	if (thresh >= max) break;
+	if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
+	oldthresh = thresh;
+	nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
+	cout << "Clipped " << nclip
+	     << " matches " << endl;
+      } while (nclip>0);
+    }
 
     //////////////////////////////////////
     // Output data and calculate some statistics

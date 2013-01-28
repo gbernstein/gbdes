@@ -22,7 +22,7 @@ namespace astrometry {
   img::Header writeTPV(const Wcs& w);   // Will throw exception if Wcs is wrong form
   Wcs* fitTPV(Bounds<double> b,
 	      const Wcs& wcsIn,
-	      const Orientation& tpvOrient,
+	      const SphericalCoords& tpvPole,
 	      string name="",
 	      double tolerance=0.0001*ARCSEC/DEGREE);
 } // namespace astrometry

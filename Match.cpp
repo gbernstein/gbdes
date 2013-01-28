@@ -334,7 +334,7 @@ Match::accumulateChisq(double& chisq,
       updater.rankOneUpdate(map2, i2, dx2,
 			    map1, i1, dx1, -1./xW);
       updater.rankOneUpdate(map2, i2, dy2,
-			    map1, i1, dy1, -1./xW);
+			    map1, i1, dy1, -1./yW);
     }
   }
 
@@ -499,6 +499,30 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   chisq = newChisq;
   timer.stop();
   cerr << "# Done accumulating CoordAlign info, seconds: " << timer << endl;
+  {
+    /*****/
+    for (int i = 0; i<alpha.nrows(); i++) {
+      bool blank = true;
+      for (int j=0; j<alpha.ncols(); j++)
+	if (alpha(i,j)!=0.) {
+	  blank = false;
+	  break;
+	}
+      if (blank) 
+	cerr << "***No constraints on row " << i << endl;
+    }
+    for (int j=0; j<alpha.ncols(); j++) {
+      bool blank = true;
+      for (int i = 0; i<alpha.nrows(); i++) 
+	if (alpha(i,j)!=0.) {
+	  blank = false;
+	  break;
+	}
+      if (blank) 
+	cerr << "***No constraints on col " << j << endl;
+    }
+  }
+  //**/cerr << alpha;
 }
 
 double

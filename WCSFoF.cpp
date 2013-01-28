@@ -94,6 +94,10 @@ struct Field {
     }
     return catalogs[affinity];
   }
+private:
+  // Hide:
+  Field(const Field& rhs);
+  void operator=(const Field& rhs);
 };
 
 // Right now an device is just a region of pixel coordinates, plus a name
@@ -199,7 +203,7 @@ main(int argc,
     // Read in fields and save away orientations of tangent plane systems for each
     ////////////////////////////////////////////////
     NameIndex fieldNames;
-    vector<Field> fields;
+    vector<Field*> fields;
 
     {
       ifstream ifs(fieldSpecs.c_str());
@@ -224,12 +228,12 @@ main(int argc,
 	    cerr << "Duplicate field name: " << name << endl;
 	    exit(1);
 	  }
-	  Field f;
-	  f.name = name;
+	  Field* f = new Field;
+	  f->name = name;
 	  astrometry::Orientation orient(pole);
-	  f.projection = new astrometry::Gnomonic(orient);
-	  f.extent = extent;
-	  f.matchRadius = matchRadius;
+	  f->projection = new astrometry::Gnomonic(orient);
+	  f->extent = extent;
+	  f->matchRadius = matchRadius;
 	  fields.push_back(f);
 	  fieldNames.append(name);
 	  Assert(fields.size()==fieldNames.size());
@@ -421,6 +425,8 @@ main(int argc,
 	}
       }
 
+      /**/cerr << "got wcsStream" << endl;
+
       int firstHdu = extension >= 0 ? extension : 1;
       int lastHdu = extension;
       if (extension < 0) {
@@ -432,6 +438,8 @@ main(int argc,
       for (int hduNumber = firstHdu; 
 	   hduNumber<=lastHdu;
 	   hduNumber++) {
+
+	/**/cerr << "Start HDU number " << hduNumber << endl;
 
 	bool haveLDACHeader = false;
 	Header localHeader = primaryHeader;
@@ -570,20 +578,23 @@ main(int argc,
 	  }
 	}
 
+	/**/ cerr << "Got RA and Dec: " << thisRADec << endl;
+
 	// Assign a field:
 	string thisField;
+	/**/ cerr << "fieldName: " << fieldName << endl;
 	if (stringstuff::nocaseEqual(fieldName, "@_NEAREST")) {
 	  // Assign exposure to nearest field:
 	  Assert(!fields.empty());
-	  vector<Field>::const_iterator i = fields.begin();
-	  i->projection->setLonLat(0.,0.);
-	  double minDistance = thisRADec.distance(*i->projection);
-	  thisField = i->name;
+	  vector<Field*>::const_iterator i = fields.begin();
+	  (*i)->projection->setLonLat(0.,0.);
+	  double minDistance = thisRADec.distance(*(*i)->projection);
+	  thisField = (*i)->name;
 	  for ( ; i != fields.end(); ++i) {
-	    i->projection->setLonLat(0.,0.);
-	    if (thisRADec.distance(*i->projection) < minDistance) {
-	      minDistance = thisRADec.distance(*i->projection);
-	      thisField = i->name;
+	    (*i)->projection->setLonLat(0.,0.);
+	    if (thisRADec.distance(*(*i)->projection) < minDistance) {
+	      minDistance = thisRADec.distance(*(*i)->projection);
+	      thisField = (*i)->name;
 	    }
 	  }
 	} else {
@@ -595,6 +606,7 @@ main(int argc,
 	  exit(1);
 	}
 
+	/**/cerr << "field number: " << fieldNumber << endl;
 
 	// Assign an instrument, new one if not yet existent:
 	string thisInstrument = maybeFromHeader(instrumentName, localHeader);
@@ -611,6 +623,8 @@ main(int argc,
 	  instrumentNumber = instrumentNames.indexOf(thisInstrument);
 	  Assert(instrumentNumber >= 0);
 	}
+
+	/**/cerr << "Instrument number: " << instrumentNumber << endl;
 
 	// Assign an exposure number:
 	string thisExposure = maybeFromHeader(exposureName, localHeader);
@@ -635,6 +649,8 @@ main(int argc,
 	  exit(1);
 	}
 
+	/**/cerr << "Exposure number " << exposureNumber << endl;
+
 	// Henceforth should use RA/Dec from the exposure.
 
 	// Assign a device
@@ -648,6 +664,8 @@ main(int argc,
 	  Assert(deviceNumber >= 0);
 	}
 
+	/**/cerr << "Ready to read wcs" << endl;
+
 	// Read in a WCS, from pixel coords to the tangent plane for this Field:
 	astrometry::Wcs* wcs = 0;
 	if (!xyAreRaDec) {
@@ -659,6 +677,8 @@ main(int argc,
 	      wcs = 0;
 	    }
 	  } 
+	  /**/ cerr << "wcs after readTPV from file: " << wcs << endl;
+
 	  if (!wcs) {
 	    // Try the local header if not
 	    try {
@@ -667,6 +687,7 @@ main(int argc,
 	      wcs = 0;
 	    }
 	  }
+	  /**/ cerr << "wcs after readTPV from local header: " << wcs << endl;
 	  if (!wcs) {
 	    // If still nothing, quit.   
 	    cerr << "Could not generate WCS for HDU " << hduNumber
@@ -675,8 +696,11 @@ main(int argc,
 	    exit(1);
 	  }
 
-	  wcs->reprojectTo(*fields[fieldNumber].projection);
+	  /**/cerr << "ready to project to fieldNumber " << fieldNumber << endl;
+	  wcs->reprojectTo(*fields[fieldNumber]->projection);
 	}
+
+	  /**/ cerr << "wcs after readTPV from file: " << wcs << endl;
 
 	// Record information about this extension to an output table
 
@@ -697,21 +721,23 @@ main(int argc,
 	  if (!wcs) {
 	    wcsDump = "ICRS";
 	  } else {
+	    /**/cerr << "writing wcs" << endl;
 	    astrometry::PixelMapCollection pmc;
 	    pmc.learnWcs(*wcs);
 	    ostringstream oss;
 	    pmc.writeWcs(oss,wcs->getName());
 	    wcsDump = oss.str();
+	    /**/cerr << "Result***:\n" << wcsDump << endl;
 	  }
 	  extensionTable.writeCell(wcsDump, "WCS", extensionNumber);
 	}
 	
 	// Select the Catalog(s) to which points from this extension will be added
-	PointCat* starCatalog = fields[fieldNumber].catalogFor(globalAffinity);
+	PointCat* starCatalog = fields[fieldNumber]->catalogFor(globalAffinity);
 	PointCat* galaxyCatalog = (stringstuff::nocaseEqual(globalAffinity,
 							    thisAffinity) ?
 				   starCatalog : 
-				   fields[fieldNumber].catalogFor(thisAffinity));
+				   fields[fieldNumber]->catalogFor(thisAffinity));
 	
 	// Now loops over objects in the catalog
 	for (int iObj = 0; iObj < vx.size(); iObj++) {
@@ -724,9 +750,9 @@ main(int argc,
 	  //  maps coords to field's tangent plane
 	  double xw, yw;
 	  if (xyAreRaDec) {
-	    fields[fieldNumber].projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*DEGREE, 
+	    fields[fieldNumber]->projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*DEGREE, 
 										  vy[iObj]*DEGREE ));
-	    fields[fieldNumber].projection->getLonLat(xw, yw);
+	    fields[fieldNumber]->projection->getLonLat(xw, yw);
 	    // Matching program will speak degrees, not radians:
 	    xw /= DEGREE;
 	    yw /= DEGREE;
@@ -766,9 +792,9 @@ main(int argc,
       vector<double> ra;
       vector<double> dec;
       for (int i=0; i<fields.size(); i++) {
-	names.push_back(fields[i].name);
-	fields[i].projection->setLonLat(0.,0.);
-	astrometry::SphericalICRS pole(*fields[i].projection);
+	names.push_back(fields[i]->name);
+	fields[i]->projection->setLonLat(0.,0.);
+	astrometry::SphericalICRS pole(*fields[i]->projection);
 	double r,d;
 	pole.getLonLat(r,d);
 	ra.push_back( r/DEGREE);
@@ -842,11 +868,11 @@ main(int argc,
     //  Loop over fields
     for (int iField=0; iField<fields.size(); iField++) {
       //  loop over affinities per field
-      for (Field::CatMap::iterator iAffinity=fields[iField].catalogs.begin();
-	   iAffinity != fields[iField].catalogs.end();
+      for (Field::CatMap::iterator iAffinity=fields[iField]->catalogs.begin();
+	   iAffinity != fields[iField]->catalogs.end();
 	   ++iAffinity) {
 	const PointCat* pcat= iAffinity->second;
-	cerr << "Catalog for field " << fields[iField].name
+	cerr << "Catalog for field " << fields[iField]->name
 	     << " affinity " << iAffinity->first
 	     << " with " << pcat->size() << " matches "
 	     << endl;
@@ -854,7 +880,7 @@ main(int argc,
 	FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
 	ft.setName("MatchCatalog");
 	FTable ff=ft.use();
-	ff.header()->replace("Field", fields[iField].name, "Field name");
+	ff.header()->replace("Field", fields[iField]->name, "Field name");
 	ff.header()->replace("FieldNum", iField, "Field number");
 	ff.header()->replace("Affinity", iAffinity->first, "Affinity name");
 
@@ -905,6 +931,10 @@ main(int argc,
     cerr << "Total of " << matchCount
 	 << " matches with " << pointCount
 	 << " points." << endl;
+
+    // Clean up
+    for (int i=0; i<fields.size(); i++)
+      delete fields[i];
 
   } catch (std::runtime_error &m) {
     quit(m,1);

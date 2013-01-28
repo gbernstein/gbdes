@@ -308,7 +308,7 @@ astrometry::writeTPV(const Wcs& w) {
 Wcs*
 astrometry::fitTPV(Bounds<double> b,
 		   const Wcs& wcsIn,
-		   const Orientation& tpvOrient,
+		   const SphericalCoords& tpvPole,
 		   string name,
 		   double tolerance) {
   const int startOrder=3;
@@ -324,6 +324,7 @@ astrometry::fitTPV(Bounds<double> b,
   double cd1_1, cd1_2, cd2_2, cd2_1;
 
   // Coordinates in the desired TPV gnomonic projection:
+  Orientation tpvOrient(tpvPole);
   Gnomonic tpvCoords(tpvOrient);
 
   // Make the LinearMap that has the same behavior near the center of bounds:
@@ -339,19 +340,18 @@ astrometry::fitTPV(Bounds<double> b,
   double x0, y0;
   tpvCoords.getLonLat(x0,y0);
   x0 /= DEGREE;  y0 /= DEGREE;
-
   xp = center.x + wcsIn.getPixelStep();
   tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
   double dx, dy;
   tpvCoords.getLonLat(dx,dy);
   v[1] = (dx/DEGREE - x0)/wcsIn.getPixelStep();
-  v[2] = (dy/DEGREE - y0)/wcsIn.getPixelStep();
+  v[4] = (dy/DEGREE - y0)/wcsIn.getPixelStep();
 
   xp = center.x;
   yp = center.y + wcsIn.getPixelStep();
   tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
   tpvCoords.getLonLat(dx,dy);
-  v[4] = (dx/DEGREE - x0)/wcsIn.getPixelStep();
+  v[2] = (dx/DEGREE - x0)/wcsIn.getPixelStep();
   v[5] = (dy/DEGREE - y0)/wcsIn.getPixelStep();
 
   v[0] = x0 - (v[1]*center.x + v[2]*center.y);
@@ -374,8 +374,8 @@ astrometry::fitTPV(Bounds<double> b,
 
   // Find post-linear coords of each test point and desired sky posn in target coords
   for (int ix=0; ix<=nx; ix++) {
-    double xpix = b.getXMin() + ix*xstep;
     for (int iy=0; iy<=ny; iy++) {
+      double xpix = b.getXMin() + ix*xstep;
       double ypix = b.getYMin() + iy*ystep;
       double xw, yw;
       tpvCoords.convertFrom(wcsIn.toSky(xpix, ypix));
@@ -436,6 +436,7 @@ astrometry::fitTPV(Bounds<double> b,
   if (rms>tolerance) {
     cerr << "WARNING:  SCAMPMap RMS is " << rms*DEGREE/ARCSEC
 	 << " at maximum order " << polyOrder
+	 << " fitting Wcs " << wcsIn.getName()
 	 << endl;
   }
 

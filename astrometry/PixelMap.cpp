@@ -3,6 +3,7 @@
 #include <cctype>
 #include "PixelMap.h"
 #include "StringStuff.h"
+#include "SerializeProjection.h"
 
 using namespace astrometry;
 
@@ -14,10 +15,6 @@ PixelMap::PixelMap(string name_): name(name_), pixStep(1.) {
     std::ostringstream oss;
     oss << "map_" << anonymousCounter++;
     name = oss.str();
-  } else {
-    // Replace white space with underscores in PixelMap names:
-    for (string::iterator i=name.begin(); i!=name.end(); ++i)
-      if (std::isspace(*i)) *i='_';
   }
 }
 
@@ -335,20 +332,12 @@ CompoundPixelMap::toPixDerivs( double xworld, double yworld,
 PixelMap*
 ReprojectionMap::create(std::istream& is, string name) {
   string buffer;
-  vector<Orientation> orients(2);  // Will read input and output projections
-  for (int i=0; i<orients.size(); i++) {
+  vector<SphericalCoords*> coords(2);  // Will read input and output projections
+  for (int i=0; i<coords.size(); i++) {
     if (!stringstuff::getlineNoComment(is, buffer)) 
       throw AstrometryError("Stream input failure in ReprojectionMap::create() for name " + name);
-    istringstream iss(buffer);
-    string s;
-    if (!(iss >> s >> orients[i]))
-      throw AstrometryError("Bad input to ReprojectionMap::create(): " + buffer);
-    if (!stringstuff::nocaseEqual(s, "Gnomonic")) 
-      throw AstrometryError("ReprojectionMap::create() can only parse Gnomonic projections"
-			    " for input name " + name);
+    coords[i] = deserializeProjection(buffer);
   }
-  Gnomonic pix(orients[0]);
-  Gnomonic world(orients[1]);
 
   // Now read the scale factor:
   if (!stringstuff::getlineNoComment(is, buffer)) 
@@ -358,18 +347,16 @@ ReprojectionMap::create(std::istream& is, string name) {
   if (!(iss >> scale))
     throw AstrometryError("Bad scale input to ReprojectionMap::create(): " + buffer);
 
-  return new ReprojectionMap(pix, world, scale, name);
+  ReprojectionMap* out = new ReprojectionMap(*coords[0], *coords[1], scale, name);
+  delete coords[0];
+  delete coords[1];
+  return out;
 }
 
 void
 ReprojectionMap::write(std::ostream& os) const {
-  const Gnomonic* gnPix = dynamic_cast<const Gnomonic*> (pix);
-  const Gnomonic* gnWorld = dynamic_cast<const Gnomonic*> (world);
-  if (!gnPix || !gnWorld)
-    throw AstrometryError("ReprojectionMap::write is only implemented for Gnomonic coordinates, fails"
-			  " at name " + getName());
-  os << "Gnomonic " << *gnPix->getOrient() << endl;
-  os << "Gnomonic " << *gnWorld->getOrient() << endl;
+  os << serializeProjection(pix) << endl;
+  os << serializeProjection(world) << endl;
   os << scaleFactor << endl;
 }
 

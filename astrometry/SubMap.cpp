@@ -137,7 +137,6 @@ SubMap::toPix(double xworld, double yworld,
     xpix = xguess[iMap];
     ypix = yguess[iMap];
     vMaps[iMap]->toPix(xworld,yworld,xpix,ypix);
-    cerr << iMap << " " << xworld << "," << yworld << " " << xpix << "," << ypix << endl;
   }
 }
 

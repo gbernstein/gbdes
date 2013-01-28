@@ -3,6 +3,7 @@
 #include "PixelMapCollection.h"
 #include "PolyMap.h"
 #include "StringStuff.h"
+#include "SerializeProjection.h"
 
 using namespace astrometry;
 
@@ -97,6 +98,7 @@ PixelMapCollection::getParams() const {
     if (map.isFixed) continue;
     int nSub = map.nParams;
     if (nSub<=0) continue;
+    if (!map.atom) cerr << "mapElement is not atomic: " << i->first << " params: " << nSub << endl;
     Assert(map.atom);
     p.subVector(map.startIndex, map.startIndex+nSub) = 
       map.atom->getParams().subVector(0,nSub);
@@ -140,13 +142,11 @@ PixelMapCollection::rebuildParameterVector() {
   for (MapIter i = mapElements.begin(); i!=mapElements.end(); ++i, ++mapNumber) {
     MapElement& map = i->second;
     // Only atomic map components go into the big parameter vector
+    map.nParams = 0;
+    map.number = -1;
     if (!(map.atom)) continue;
     int nMap = map.atom->nParams();
-    if (map.isFixed || nMap==0) {
-      // No free parameters here.
-      map.nParams = 0;
-      map.number = -1;
-    } else {
+    if (nMap>0 && !map.isFixed) {
       // Have some parameters; append them to master list.
       map.nParams = nMap;
       map.startIndex = parameterCount;
@@ -234,7 +234,6 @@ PixelMapCollection::learnMap(const PixelMap& pm, bool duplicateNamesAreException
     }
     // Register this compound map
     mapElements.insert(std::pair<string,MapElement>(pm.getName(), mel));
-
   } else if (cpm) {
     // learn each dependency
     MapElement mel;
@@ -573,11 +572,7 @@ PixelMapCollection::writeSingleWcs(ostream& os, const WcsElement& wel, string na
      << " " << name
      << " " << wel.mapName
      << endl;
-  const Gnomonic* gn = dynamic_cast<const Gnomonic*> (wel.nativeCoords);
-  if (!gn)
-    throw AstrometryError("PixelMapCollection can only serialize Gnomonic projections at Wcs name "
-			  + name);
-  os << "Gnomonic " << *gn->getOrient() << endl;
+  os << serializeProjection(wel.nativeCoords) << endl;;
   os << wel.wScale << endl;
 }
 
@@ -619,12 +614,14 @@ PixelMapCollection::write(ostream& os) const {
   for (ConstMapIter i = mapElements.begin();
        i != mapElements.end();
        ++i) {
+    os << "#" << endl;
     writeSingleMap(os, i->second, i->first);
   }
   // Then write the Wcs's:
   for (ConstWcsIter i = wcsElements.begin();
        i != wcsElements.end();
        ++i) {
+    os << "#" << endl;
     writeSingleWcs(os, i->second, i->first);
   }
 }
@@ -680,18 +677,11 @@ PixelMapCollection::read(istream& is, string namePrefix) {
 	throw AstrometryError("PixelMapCollection::read() missing PixelMap name for Wcs at line "
 			      + buffer);
       mapName = namePrefix + mapName;
-      // read Gnomonic and orientation
-      string coordType;
-      Orientation orient;
+      // read the projection
       if (!stringstuff::getlineNoComment(is, buffer)) 
 	throw AstrometryError("PixelMapCollection::read() missing Wcs projection data for "
 			      + name);
-      iss.str(buffer);
-      iss.clear();
-      if ( !(iss >> coordType >> orient) || !stringstuff::nocaseEqual(coordType, "Gnomonic"))
-	throw AstrometryError("PixelMapCollection::read() failed reading gnomonic project from line "
-			      + buffer);
-      Gnomonic* nativeCoords = new Gnomonic(orient);
+      SphericalCoords* nativeCoords = deserializeProjection(buffer);
 
       // read wscale 
       double wScale;
@@ -706,7 +696,7 @@ PixelMapCollection::read(istream& is, string namePrefix) {
       
       // Enter a new WcsElement into our tables:
       WcsElement wel;
-      wel.mapName = name;
+      wel.mapName = mapName;
       wel.nativeCoords = nativeCoords;
       wel.wScale = wScale;
       wcsElements.insert(std::pair<string,WcsElement>(name, wel));

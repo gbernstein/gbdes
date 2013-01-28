@@ -16,7 +16,8 @@ CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
 
 SRC = $(shell ls *.cpp)
 
-OBJ = Astrometry.o Ephemeris.o PixelMap.o PolyMap.o PixelMapCollection.o SubMap.o Wcs.o
+OBJ = Astrometry.o Ephemeris.o PixelMap.o PolyMap.o PixelMapCollection.o SubMap.o Wcs.o \
+      SerializeProjection.o
 
 # LIB_DIRS 
 LIB_DIRS = -L $(TMV_DIR)/lib -L $(BOOST_DIR)/lib
