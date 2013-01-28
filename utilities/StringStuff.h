@@ -37,7 +37,7 @@ namespace stringstuff {
   void stripExtension(string& s);
 
   // Split string at designated character
-  std::list<string> split(string s, char c);
+  std::list<string> split(const string& s, char c);
 
   // Make a string that holds the current time and the command line
   string taggedCommandLine(int argc, char *argv[]);
@@ -45,10 +45,7 @@ namespace stringstuff {
   // Basic regular expression match (wrapping Boost)
   bool regexMatch(const std::string& regex_,
 		  const string& s,
-		  bool caseSensitive=false) {
-    boost::regex e(regex_, boost::regex::basic | (caseSensitive ? 0 : boost::regex::icase));
-    return boost::regex_match(s, e);
-  }
+		  bool caseSensitive=false);
 
   // Match string to any of several regular expressions
   template <class Container>
