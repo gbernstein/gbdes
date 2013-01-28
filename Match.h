@@ -1,4 +1,3 @@
-// $Id: Match.h,v 1.12 2012/08/13 17:54:08 dgru Exp $
 // Match objects from multiple catalogs together
 // And then adjust parameters of their PixelMaps to minimize
 // differences from mean world coordinates.

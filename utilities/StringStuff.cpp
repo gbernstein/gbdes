@@ -53,6 +53,14 @@ namespace stringstuff {
     }
   }
 
+  // Strip leading and trailing white space from a string:
+  void stripWhite(string& s) {
+    while (!s.empty() && std::isspace(s[0]))
+      s.erase(0,1);
+    while (!s.empty() && std::isspace(s[s.size()-1]))
+      s.erase(s.size()-1);
+  }
+
   void stripExtension(string& s) {
     size_t dot=s.find_last_of(".");
     if (dot==string::npos) return;	// No extension

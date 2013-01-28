@@ -1,19 +1,27 @@
+/* ???? TODO: 
+   Allow WCS to come from name of a Wcs in a serialized file.
+   Better yet, separate file for additional FITS keywords.
+   Change so that FITS extensions are not overwritten
+*/
 // Program to match catalogs based on world coordinates.
 
 #include "Std.h"
 #include "FoF.h"
 #include "FitsTable.h"
 #include "Astrometry.h"
-#include "TPVMap.h"
 #include "ReadLdacHeader.h"
 #include "NameIndex.h"
 #include "Pset.h"
 #include <map>
 #include <iostream>
+#include "PixelMapCollection.h"
+#include "TPVMap.h"
+#include "StringStuff.h"
 
 using namespace std;
 using namespace img;
 using namespace FITS;
+using stringstuff::stripWhite;
 
 string usage="WCSFoF: Match objects using FoF algorithm on world coordinate system\n"
              "WCSFoF <field specs> <exposure specs> [parameter file] [parameter file...]\n"
@@ -22,13 +30,6 @@ string usage="WCSFoF: Match objects using FoF algorithm on world coordinate syst
              "                      (in degrees) N, S, E, or W of any point from center.\n"
              "      <exposure specs>: FITS file with binary table of input file info...";
 
-// Strip leading and trailing white space from a string:
-void stripWhite(string& s) {
-  while (!s.empty() && std::isspace(s[0]))
-    s.erase(0,1);
-  while (!s.empty() && std::isspace(s[s.size()-1]))
-    s.erase(s.size()-1);
-}
 // Parse the inValue of string: if it starts with @ sign, specifies to read a value
 // from keyword of a header:
 string maybeFromHeader(const string& inValue, const Header& h) {
@@ -696,9 +697,10 @@ main(int argc,
 	  if (!wcs) {
 	    wcsDump = "ICRS";
 	  } else {
-	    img::Header hh = astrometry::writeTPV(*wcs);
+	    astrometry::PixelMapCollection pmc;
+	    pmc.learnWcs(*wcs);
 	    ostringstream oss;
-	    oss << hh;
+	    pmc.writeWcs(oss,wcs->getName());
 	    wcsDump = oss.str();
 	  }
 	  extensionTable.writeCell(wcsDump, "WCS", extensionNumber);

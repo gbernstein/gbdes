@@ -1,5 +1,3 @@
-// $Id: Marquardt.h,v 1.7 2012/02/12 13:14:38 garyb Exp $
-
 // Implementation of the Marquardt-Levenberg nonlinear fitting algorithm
 // in C++, and using Jarvis TMV
 // The algorithm is taken from Numerical Recipes code, but has been 

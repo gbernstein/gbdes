@@ -431,6 +431,25 @@ PixelMapCollection::issueMap(string mapName) {
   return el.realization;
 }
 
+PixelMap*
+PixelMapCollection::cloneMap(string mapName) const {
+  if (!mapExists(mapName))
+    throw AstrometryError("PixelMapCollection::issueMap requested for unknown PixelMap: "
+			  +  mapName);
+  const MapElement& el = mapElements.find(mapName)->second;
+
+  if (el.atom) 
+    return el.atom->duplicate();
+
+  // A composite one we will create as a SubMap:
+  list<PixelMap*> vMaps;
+  for (list<string>::const_iterator i = el.subordinateMaps.begin();
+	 i != el.subordinateMaps.end();
+	 ++i) 
+    vMaps.push_back(cloneMap(*i));
+  return new SubMap(vMaps, mapName, false);
+}
+
 // Return a pointer to a Wcs built from a SubMap and realizing the named coord system
 Wcs* 
 PixelMapCollection::issueWcs(string wcsName) {
@@ -445,6 +464,17 @@ PixelMapCollection::issueWcs(string wcsName) {
     el.realization = new Wcs(sm, *el.nativeCoords, wcsName, el.wScale, true);
   }
   return el.realization;
+}
+
+// Return a pointer to a Wcs built from a SubMap and realizing the named coord system
+Wcs* 
+PixelMapCollection::cloneWcs(string wcsName) const {
+  if (!wcsExists(wcsName))
+    throw AstrometryError("PixelMapCollection::cloneWcs requested for unknown Wcs: "
+			  +  wcsName);
+  const WcsElement& el = wcsElements.find(wcsName)->second;
+  PixelMap* pm = cloneMap(el.mapName);
+  return new Wcs(pm, *el.nativeCoords, wcsName, el.wScale, false);
 }
 
 set<string>

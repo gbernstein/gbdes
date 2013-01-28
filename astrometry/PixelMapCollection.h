@@ -140,6 +140,13 @@ namespace astrometry {
     SubMap* issueMap(string mapName);
     // Return a pointer to a Wcs built from a SubMap and realizing the named coord system
     Wcs* issueWcs(string wcsName);
+
+    // These two are like the above, except that they return objects that own themselves and
+    // all subcomponents, so this PixelMapCollection can be destroyed while cloned map/wcs remain
+    // useful.  All parameters of the cloned objects are free though, and disconnected from the
+    // PixelMapCollection's master parameter vector.
+    PixelMap* cloneMap(string mapName) const;
+    Wcs* cloneWcs(string wcsName) const;
     
     // Create and read serializations of all the maps or just one
     void write(ostream& os) const;

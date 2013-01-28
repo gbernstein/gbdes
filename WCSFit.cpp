@@ -5,12 +5,13 @@
 
 #include "Std.h"
 #include "Astrometry.h"
-#include "Match.h"
 #include "FitsTable.h"
 #include "StringStuff.h"
 #include "Pset.h"
+#include "PixelMapCollection.h"
 #include "TPVMap.h"
 #include "Random.h"
+#include "Match.h"
 
 using namespace std;
 using namespace astrometry;
@@ -23,6 +24,33 @@ string usage=
   "      <match file>:  FITS file with binary tables produced by WCSFoF\n"
   "     stdin is read as parameters.";
 
+// Temporary documentation:
+// parameter renameInstruments is a string that has format like
+// <instrument name>=<map name>, <instrument name> = <map name>, ...
+// where the Instrument's PixelMap will be given the map name.  Regex allowed.
+// Note that this is assuming that regexes do not include = or , characters.
+// whitespace will be stripped from edges of each name.
+
+// parameter existingMaps is a string with
+// <mapName>@<file name>, ...
+// which says that maps with the mapName should be initially be deserialized from file.
+// Regexes ok; same caveats: no @ or , in names, whitespace stripped.
+
+// parameter fixMaps is a string with
+// <mapName>, ...
+// where any given mapName should have its parameters fixed at initial values during
+// the fitting.  Regexes allowed (no commas!).
+
+// parameter canonicalExposures is a string with
+// <exposureID>, ....
+// where ares are exposures that will be given an identity exposure map.  There must be
+// 0 or 1 of these specified for any instrument that has Instrument Map with free parameters.
+// Default is to find an exposure that has data in all devices and use it.
+// Will have an error if there is more than one constraint on any Instrument.
+
+// Note that pixel maps for devices within instrument will get names <instrument>/<device>.
+// And Wcs's for individual exposures will get names <exposure>/<device>.
+// There will be SubMaps by these names too that include the reprojection to field coordinates.
 
 #include "Instrument.h"
 
@@ -115,9 +143,9 @@ main(int argc, char *argv[])
   bool reFit;	// until we separate the statistics part ???
   double reserveFraction;
   double clipThresh;
-  double minPixError;
   double maxPixError;
-  double minReferenceError;
+  double pixSysError;
+  double referenceSysError;
   int minMatches;
   bool clipEntireMatch;
   int exposureOrder;
@@ -126,6 +154,11 @@ main(int argc, char *argv[])
   string catalogSuffix;
   string newHeadSuffix;
   double chisqTolerance;
+  string renameInstruments;
+  string existingMaps;
+  string fixMaps;
+  string canonicalExposures;
+  string outWcs;
   Pset parameters;
   {
     const int def=PsetMember::hasDefault;
@@ -135,12 +168,12 @@ main(int argc, char *argv[])
     const int upopen = up | PsetMember::openUpperBound;
 
     parameters.addMemberNoValue("INPUTS");
-    parameters.addMember("minPixError",&minPixError, def | low,
-			 "Floor for pixel posn uncertainty", 0.01, 0.);
     parameters.addMember("maxPixError",&maxPixError, def | lowopen,
 			 "Cut objects with pixel posn uncertainty above this", 0.1, 0.);
-    parameters.addMember("minReferenceError",&minReferenceError, def | low,
-			 "Floor for ref. posn uncertainty (arcsec)", 0.003, 0.);
+    parameters.addMember("pixSysError",&pixSysError, def | low,
+			 "Additional systematic error for detections (pixels)", 0.01, 0.);
+    parameters.addMember("referenceSysError",&referenceSysError, def | low,
+			 "Reference object additional error (arcsec)", 0.003, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
     parameters.addMemberNoValue("CLIPPING");
@@ -157,9 +190,23 @@ main(int argc, char *argv[])
 			 "Order of per-extension map", 2, 0);
     parameters.addMember("chisqTolerance",&chisqTolerance, def | lowopen,
 			 "Fractional change in chisq for convergence", 0.001, 0.);
+    parameters.addMember("renameInstruments",&renameInstruments, def,
+			 "list of new names to give to instruments for maps","");
+    parameters.addMember("existingMaps",&existingMaps, def,
+			 "list of astrometric maps to draw from existing files","");
+    parameters.addMember("fixMaps",&fixMaps, def,
+			 "list of map components or instruments to hold fixed","");
+    parameters.addMember("canonicalExposures",&canonicalExposures, def,
+			 "list of exposures that will have identity exposure maps","");
+
     parameters.addMemberNoValue("FILES");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "wcscat.fits");
+    parameters.addMember("outWcs",&outWcs, def,
+			 "Output serialized Wcs systems", "wcsfit.wcs");
+
+    // ?? a grammar to define instrument map forms beyond polynomial?
+    // ?? distinct outputs for each extension's Wcs and TPV fits?
   }
 
   // Positional accuracy (in degrees) demanded of numerical solutions for inversion of 
@@ -205,9 +252,70 @@ main(int argc, char *argv[])
     // List parameters in use
     parameters.dump(cout);
 
-    minReferenceError *= ARCSEC/DEGREE;
+    referenceSysError *= ARCSEC/DEGREE;
 
     // ??? log parameters to output file somehow?
+
+    /////////////////////////////////////////////////////
+    // Parse all the parameters describing maps etc. ????
+    /////////////////////////////////////////////////////
+
+    const char listSeperator=',';
+
+    // First is a regex map from instrument names to the names of their PixelMaps
+    RegexReplacements instrumentTranslator;
+    {
+      list<string> ls = split(renameInstruments, listSeperator);
+      for (list<string>::const_iterator i = ls.begin();
+	   i != ls.end();
+	   ++i) {
+	list<string> ls2 = split(*i, '=');
+	if (ls2.size() != 2) {
+	  cerr << "renameInstruments has bad translation spec: " << *i << endl;
+	  exit(1);
+	}
+	string regex = ls2.front();
+	string replacement = ls2.back();
+	stripWhite(regex);
+	stripWhite(replacement);
+	instrumentTranslator.addRegex(regex, replacement);
+      }
+    }
+
+    // Next is regex map from PixelMap or instrument map names to files 
+    // from which we should de-serialize them
+    RegexReplacements existingMapFinder;
+    {
+      list<string> ls = split(existingMaps, listSeperator);
+      for (list<string>::const_iterator i = ls.begin();
+	   i != ls.end();
+	   ++i) {
+	list<string> ls2 = split(*i, '@');
+	if (ls2.size() != 2) {
+	  cerr << "existingMaps has bad spec: " << *i << endl;
+	  exit(1);
+	}
+	string regex = ls2.front();
+	string replacement = ls2.back();
+	stripWhite(regex);
+	stripWhite(replacement);
+	existingMapFinder.addRegex(regex, replacement);
+      }
+    }
+
+    // This is list of regexes of PixelMap names (or instrument names) that should
+    // have their parameters held fixed.
+    list<string> fixMapList = split(fixMaps, listSeperator);
+    for (list<string>::iterator i = fixMapList.begin();
+	 i != fixMapList.end();
+	 ++i)
+      stripWhite(*i);
+
+    list<string> canonicalExposureList = split(canonicalExposures, listSeperator);
+    for (list<string>::iterator i = canonicalExposureList.begin();
+	 i != canonicalExposureList.end();
+	 ++i)
+      stripWhite(*i);
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Fields, Instruments, Devices, Exposures
@@ -215,7 +323,7 @@ main(int argc, char *argv[])
 
     // All we care about fields are names and orientations:
     NameIndex fieldNames;
-    vector<Orientation> fieldOrients;
+    vector<SphericalCoords*> fieldProjections;
 
     {
       FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
@@ -230,7 +338,8 @@ main(int argc, char *argv[])
       ft.readCells(dec, "Dec");
       for (int i=0; i<name.size(); i++) {
 	fieldNames.append(name[i]);
-	fieldOrients.push_back( Orientation(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE)));
+	Orientation orient(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
+	fieldProjections.push_back( new Gnomonic(orient));
       }
     }
 
@@ -302,9 +411,9 @@ main(int argc, char *argv[])
       ff.readCells(fieldNumber, "fieldNumber");
       ff.readCells(instrumentNumber, "InstrumentNumber");
       for (int i=0; i<names.size(); i++) {
-	Exposure* expo = new Exposure(names[i],
-				      Orientation(SphericalICRS(ra[i]*DEGREE, 
-								dec[i]*DEGREE)));
+	// The projection we will use for this exposure:
+	Gnomonic gn(Orientation(SphericalICRS(ra[i]*DEGREE,dec[i]*DEGREE)));
+	Exposure* expo = new Exposure(names[i],gn);
 	expo->field = fieldNumber[i];
 	expo->instrument = instrumentNumber[i];
 	exposures.push_back(expo);
@@ -340,13 +449,23 @@ main(int argc, char *argv[])
       string s;
       extensionTable.readCell(s, "WCS", i);
       if (stringstuff::nocaseEqual(s, "ICRS")) {
-	// leave startpm null to signal RA/Dec coordinates
+	// Create a Wcs that just takes input as RA and Dec in degrees;
+	IdentityMap identity;
+	SphericalICRS icrs;
+	extn->startWcs = new Wcs(&identity, icrs, "ICRS_degrees", DEGREE);
       } else {
 	istringstream iss(s);
-	img::Header h;
-	iss >> h;
-	extn->startpm = new SCAMPMap(h, &(fieldOrients[exposures[extn->exposure]->field]));
+	PixelMapCollection pmcTemp;
+	if (!pmcTemp.read(iss)) {
+	  cerr << "Did not find Wcs format for ???" << endl;
+	  exit(1);
+	}
+	string wcsName = pmcTemp.allWcsNames().front();
+	extn->startWcs = pmcTemp.cloneWcs(wcsName);
       }
+      // destination projection is field projection:
+      extn->startWcs->reprojectTo(*fieldProjections[exposures[extn->exposure]->field]);
+
       string wcsOutFile;
       extensionTable.readCell(wcsOutFile, "WCSOut", i);
       extn->wcsOutFile = wcsOutFile;
@@ -356,188 +475,329 @@ main(int argc, char *argv[])
     //  Create and initialize all coordinate maps
     /////////////////////////////////////////////////////
 
+    // Logic now for initializing instrument maps:
+    // 1) Assign a name to each instrument map; either it's name of instrument,
+    //    or we have a mapping from input parameters
+    // 2) If the instrument name is something we were told to reuse:
+    //        * get its form and values from the input map libraries for each device
+    // 3) If not reusing, make new maps for each device.
+    //        * Select canonical exposure either from cmd line or finding one
+    //        * set reference exposure's map to identity
+    //        * fit the initial instrument map to starting map.
+    // 4) Fit initial exposure maps for each exposure that is not already canonical.
+    // 5) Freeze parameters of all map elements specified in input.
+
     // Create a PixelMapCollection to hold all the components of the PixelMaps.
     PixelMapCollection mapCollection;
-
     // Create an identity map used by all reference catalogs
-    PixelMapKey identityKey = mapCollection.add(new IdentityMap, "Identity");
-    PixelMapChain nullChain;	// Can use empty chain to also be identity "map"
-    PixelMapChain identityChain; 
-    identityChain.append(identityKey);
-    SubMap* identitySubMap = mapCollection.issue(identityChain);
+    mapCollection.learnMap(IdentityMap());
+
+    // This is list of PixelMaps whose parameters will be held fixed during fitting:
+    list<string> fixedMapNames;
 
     // Set up coordinate maps for each instrument & exposure
     for (int iinst=0; iinst<instruments.size(); iinst++) {
       Instrument* inst = instruments[iinst];
-      // First job is to find an exposure that has all devices for this instrument
-      int iexp1;
-      for (iexp1 = 0; iexp1 < exposures.size(); iexp1++) {
-	if (exposures[iexp1]->instrument != iinst) continue; 
-	// Filter the extension table for this exposure:
-	set<long> vexp;
-	vexp.insert(iexp1);
-	FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
-	// Stop here if this exposure has right number of extensions (exactly 1 per device):
-	if (exts.nrows() == inst->nDevices) break; 
+
+      // (1) choose a name to be used for this Instrument's PixelMap:
+      string mapName = inst->name;
+      instrumentTranslator(mapName);  // Apply any remapping specified.
+
+
+      // (2) See if this instrument has a map that we are re-using, and if params are fixed
+      string loadFile = mapName;
+      bool loadExistingMaps = existingMapFinder(loadFile);
+      bool fixInstrumentParameters = regexMatchAny(fixMapList, mapName);
+
+      // (3) decide for all devices whether they are looked up, or need creating,
+      //     and whether they are fixed
+      vector<bool> deviceMapsExist(inst->nDevices, loadExistingMaps);
+      vector<bool> fixDeviceMaps(inst->nDevices, fixInstrumentParameters);
+
+      PixelMapCollection pmcInstrument;
+      if (loadExistingMaps) {
+	ifstream ifs(loadFile.c_str());
+	if (!ifs) {
+	  cerr << "Could not open file " + loadFile + " holding existing PixelMaps" << endl;
+	  exit(1);
+	}
+	pmcInstrument.read(ifs);
       }
-
-      if (iexp1 >= exposures.size()) {
-	cerr << "Could not find exposure with all devices for intrument "
-	     << inst->name << endl;
-	exit(1);
-      }
-
-      // Used this exposure to initialize the map for each extension
-      Exposure* exp1 = exposures[iexp1];
-      // First exposure of instrument will have identity map
-      exp1->warp = nullChain;
-
-      // Save reprojection map for first exposure with this instrument:
-      // Map from exposure's projection to field's projection
-      {
-	astrometry::Orientation& fOrient = fieldOrients[exp1->field];
-	exp1->reproject = mapCollection.add(new ReprojectionMap( TangentPlane(exp1->orient.getPole(),
-									      exp1->orient),
-								 TangentPlane(fOrient.getPole(),
-									      fOrient),
-								 DEGREE),
-					    exp1->name + "_reprojection");
-      }
-
-      // Create new PolyMap for each device and fit to the starting map of the reference exposure
-      const int nGridPoints=400;	// Number of test points for map initialization
-
-      // Get all Extensions that are part of this exposure
-      list<Extension*> thisExposure;
-      for (int i=0; i<extensions.size(); i++)
-	if (extensions[i]->exposure == iexp1)
-	  thisExposure.push_back(extensions[i]);
-      Assert(thisExposure.size()==inst->nDevices);
 
       for (int idev=0; idev<inst->nDevices; idev++) {
-	// Create coordinate map for each Device, initialize its parameter by fitting to
-	// the input map for this device in the reference exposure of this Instrument.
-	Bounds<double> b=inst->domains[idev];
-	double step = sqrt(b.area()/nGridPoints);
-	int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
-	int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
-	double xstep = (b.getXMax()-b.getXMin())/nx;
-	double ystep = (b.getYMax()-b.getYMin())/ny;
-	list<Detection*> testPoints;
+	string devMapName = mapName + '/' + inst->deviceNames.nameOf(idev);
+	inst->mapNames[idev] = devMapName;
+	// A PixelMap file for Device overrides one for the Instrument
+	string devLoadFile = devMapName;
+	if (existingMapFinder(devLoadFile)) {
+	  deviceMapsExist[idev] = true;
+	} else if (deviceMapsExist[idev]) {
+	  // Already have a map file from the Instrument
+	  devLoadFile = loadFile;
+	}
+	if (regexMatchAny(fixMapList, devMapName))
+	  fixDeviceMaps[idev] = true;
 
-	Extension* extn=0;
-	for (list<Extension*>::iterator i = thisExposure.begin();
-	     i != thisExposure.end();
-	     ++i) 
-	  if ((*i)->device==idev) {
-	    extn = *i;
-	    break;
+	if (fixDeviceMaps[idev] && !deviceMapsExist[idev]) {
+	  cerr << "WARNING: Requested fixed parameters for Device map "
+	       << devMapName
+	       << " that does not have initial values.  Ignoring request to fix params."
+	       << endl;
+	}
+
+	// Load the PixelMap for this device if it is to be extracted from a file.
+	// We will not be throwing exceptions for duplicate names
+	PixelMap* deviceMap;
+	if (devLoadFile==loadFile) {
+	  // Get map from the Instrument's collection:
+	  deviceMap = pmcInstrument.issueMap(devMapName);
+	  mapCollection.learnMap(*deviceMap);
+	} else {
+	  // Device has its own serialized file:
+	  PixelMapCollection pmcDev;
+	  ifstream ifs(devLoadFile.c_str());
+	  if (!ifs) {
+	    cerr << "Could not open file " + devLoadFile + " holding existing PixelMaps" << endl;
+	    exit(1);
 	  }
-	if (!extn) {
-	  cerr << "Could not find Extension for device " << inst->deviceNames.nameOf(idev)
-	       << " in exposure " << exp1->name << endl;
+	  pmcDev.read(ifs);
+	  deviceMap = pmcDev.issueMap(devMapName);
+	  mapCollection.learnMap(*deviceMap);
+	}
+
+	if (fixDeviceMaps[idev])
+	  fixedMapNames.push_back(devMapName);
+      } // end of device loop
+
+      // Canonical exposure will be used to initialize new Device maps.
+      // And its Exposure map will be fixed at identity if none of the Device's maps are
+      // fixed at initial values;  we assume that any single device being fixed will
+      // break degeneracy between Exposure and Instrument models.
+
+      // First find all exposures from this instrument,
+      // and find if one is canonical;
+      long canonicalExposure = -1;
+      list<long> exposuresWithInstrument;
+      for (long iexp = 0; iexp < exposures.size(); iexp++) {
+	if (exposures[iexp]->instrument == iinst) {
+	  exposuresWithInstrument.push_back(iexp);
+	  if (regexMatchAny(canonicalExposureList, exposures[iexp]->name)) {
+	    if (canonicalExposure < 0) {
+	      // This is our canonical exposure
+	      canonicalExposure = iexp;
+	    } else {
+	      // Duplicate canonical exposures is an error
+	      cerr << "More than one canonical exposure for instrument " 
+		   << inst->name << ": " << endl;
+	      cerr << exposures[canonicalExposure]->name
+		   << " and " << exposures[iexp]->name
+		   << endl;
+	      exit(1);
+	    }
+	  }
+	}
+      } // end exposure loop
+
+      // Do we need a canonical exposure? Only if we have an an uninitialized device map
+      bool needCanonical = false;
+      for (int idev=0; idev<deviceMapsExist.size(); idev++)
+	if (!deviceMapsExist[idev]) {
+	  needCanonical = true;
+	  break;
+	}
+
+      // Or if none of the devices have their parameters fixed
+      bool noDevicesFixed = true;
+      for (int idev=0; idev<deviceMapsExist.size(); idev++)
+	if (deviceMapsExist[idev] && fixDeviceMaps[idev]) {
+	  noDevicesFixed = false;
+	  break;
+	}
+
+      if (noDevicesFixed) needCanonical = true;
+
+      if (needCanonical && canonicalExposure > 0) {
+	// Make sure our canonical exposure has all devices:
+	set<long> vexp;
+	vexp.insert(canonicalExposure);
+	FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
+	if (exts.nrows() != inst->nDevices) {
+	  cerr << "Canonical exposure " << exposures[canonicalExposure]->name
+	       << " for Instrument " << inst->name
+	       << " only has " << exts.nrows()
+	       << " devices out of " << inst->nDevices
+	       << endl;
+	  exit(1);
+	}
+      }
+
+      if (needCanonical && canonicalExposure < 0) {
+	// Need canonical but don't have one.  
+	// Find an exposure that has all devices for this Instrument.
+	for (list<long>::const_iterator i = exposuresWithInstrument.begin();
+	     i != exposuresWithInstrument.end();
+	     ++i) {
+	  // Filter the extension table for this exposure:
+	  set<long> vexp;
+	  vexp.insert(*i);
+	  FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
+	  // Stop here if this exposure has right number of extensions (exactly 1 per device):
+	  if (exts.nrows() == inst->nDevices) {
+	    canonicalExposure = *i;
+	    break; 
+	  }
+	}
+
+	if (canonicalExposure < 0) {
+	  cerr << "Could not find exposure with all devices for intrument "
+	       << inst->name << endl;
+	  exit(1);
+	}
+      } // end finding a canonical exposure for the Instrument
+
+      // Now we create new PixelMaps for each Device that does not already have one.
+      for (int idev=0; idev < inst->nDevices; idev++) {
+	if (deviceMapsExist[idev]) continue;
+
+	// Create a new PixelMap for this device. ???? More elaborate choices ???
+	PixelMap* pm = new PolyMap(deviceOrder, inst->mapNames[idev],
+				   worldTolerance);
+
+	// Find extension that has this Device for canonical Exposure:
+	long iextn;
+	for (iextn=0; iextn<extensions.size(); iextn++)
+	  if (extensions[iextn]->exposure == canonicalExposure
+	      && extensions[iextn]->device == idev) break;
+	if (iextn >= extensions.size()) {
+	  cerr << "Did not find extension for canonical exposure " 
+	       << exposures[canonicalExposure]->name
+	       << " and device " << inst->deviceNames.nameOf(idev)
+	       << endl;
 	  exit(1);
 	}
 
-	PixelMap* startpm=extn->startpm;
-	if (!startpm) {
-	  cerr << "Did not read starting WCS for device " << inst->deviceNames.nameOf(idev)
-		 << " in exposure " << exp1->name
-		 << " with instrument " << inst->name
-		 << endl;
-	  exit(1);
-	}
-	const PixelMap* reproject = mapCollection.element(exp1->reproject);
+	Exposure& expo=*exposures[canonicalExposure];
+	Extension& extn = *extensions[iextn];
 
-	for (int ix=0; ix<=nx; ix++) {
-	  for (int iy=0; iy<=ny; iy++) {
-	    double xpix = b.getXMin() + ix*xstep;
-	    double ypix = b.getYMin() + iy*ystep;
-	    double xw, yw;
-	    startpm->toWorld(xpix, ypix, xw, yw);
-	    // Undo the change of projections:
-	    reproject->toPix(xw,yw,xw,yw);
-	    Detection* d = new Detection;
-	    d->xpix = xpix;
-	    d->ypix = ypix;
-	    d->xw = xw;
-	    d->yw = yw;
-	    // Note MapMarq does not use positional uncertainties.
-	    testPoints.push_back(d);
+	// Initialize the new PixelMap so that it is best fit to the canonical exposures'
+	// map from pixel coordinates to world coords=projection in exposure frame
+	extn.startWcs->reprojectTo(*expo.projection);
+
+	// ??? The following should be put into a subroutine and able to do nonlinear fit:
+	{
+	  const int nGridPoints=400;	// Number of test points for map initialization
+
+	  Bounds<double> b=inst->domains[idev];
+	  double step = sqrt(b.area()/nGridPoints);
+	  int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
+	  int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
+	  double xstep = (b.getXMax()-b.getXMin())/nx;
+	  double ystep = (b.getYMax()-b.getYMin())/ny;
+	  list<Detection*> testPoints;
+
+	  for (int ix=0; ix<=nx; ix++) {
+	    for (int iy=0; iy<=ny; iy++) {
+	      double xpix = b.getXMin() + ix*xstep;
+	      double ypix = b.getYMin() + iy*ystep;
+	      double xw, yw;
+	      extn.startWcs->toWorld(xpix, ypix, xw, yw);
+	      Detection* d = new Detection;
+	      d->xpix = xpix;
+	      d->ypix = ypix;
+	      d->xw = xw;
+	      d->yw = yw;
+	      // Note MapMarq does not use positional uncertainties.
+	      testPoints.push_back(d);
+	    }
 	  }
-	}
-	PixelMap* pm = new PolyMap(deviceOrder, worldTolerance);
-	MapMarq mm(testPoints, pm);
-	// Since polynomial fit is linear, should just take one iteration:
-	double var=0.;
-	DVector beta(pm->nParams(), 0.);
-	DVector params(pm->nParams(), 0.);
-	tmv::SymMatrix<double> alpha(pm->nParams(), 0.);
-	mm(params, var, beta, alpha);
-	beta /= alpha;
-	params = beta;
-	beta.setZero();
-	alpha.setZero();
-	var = 0.;
-	mm(params, var, beta, alpha);
-	beta /= alpha;
-	params += beta;
-	pm->setParams(params);
+	  MapMarq mm(testPoints, pm);
+	  // Since polynomial fit is linear, should just take one iteration:
+	  double var=0.;
+	  DVector beta(pm->nParams(), 0.);
+	  DVector params(pm->nParams(), 0.);
+	  tmv::SymMatrix<double> alpha(pm->nParams(), 0.);
+	  mm(params, var, beta, alpha);
+	  beta /= alpha;
+	  params = beta;
+	  beta.setZero();
+	  alpha.setZero();
+	  var = 0.;
+	  mm(params, var, beta, alpha);
+	  beta /= alpha;
+	  params += beta;
+	  pm->setParams(params);
 
-	// Clear out the testPoints:
-	for (list<Detection*>::iterator i = testPoints.begin();
-	     i != testPoints.end();
-	     ++i)
-	  delete *i;
+	  // Clear out the testPoints:
+	  for (list<Detection*>::iterator i = testPoints.begin();
+	       i != testPoints.end();
+	       ++i)
+	    delete *i;
+	} // Done initializing parameters of new PixelMap
 
 	// Save this map into the collection
-	PixelMapKey key = mapCollection.add(pm, inst->name + "_" + inst->deviceNames.nameOf(idev));
-	inst->maps[idev].append(key);
-	inst->pixelMaps[idev] = mapCollection.issue(inst->maps[idev]);
-      } // device loop
+	mapCollection.learnMap(*pm);
+      } // end loop creating PixelMaps for all Devices.
 
-      // Now create an exposure map for all other exposures with this instrument,
+      // Now create an exposure map for all exposures with this instrument,
       // and set initial parameters by fitting to input WCS map.
 
-      int pointsPerDevice = nGridPoints / inst->nDevices + 1;
-      for (int iexp=0; iexp<exposures.size(); iexp++) {
-	if ( exposures[iexp]->instrument != iinst) continue;
-	if (iexp == iexp1) continue;  // Skip the reference exposure
+      for (list<long>::const_iterator i= exposuresWithInstrument.begin();
+	   i != exposuresWithInstrument.end();
+	   ++i) {
+	int iexp = *i;
+	Exposure& expo = *exposures[iexp];
+	PixelMap* warp=0;
+	// First we check to see if we are going to use an existing exposure map:
+	string loadFile = expo.name;
+	if (existingMapFinder(loadFile)) {
+	  // Adopt the existing map for this exposure:
+	  PixelMapCollection pmcExpo;
+	  ifstream ifs(loadFile.c_str());
+	  if (!ifs) {
+	    cerr << "Could not open serialized map file " 
+		 << loadFile
+		 << endl;
+	    exit(1);
+	  }
+	  pmcExpo.read(ifs);
+	  warp = pmcExpo.issueMap(expo.name);
+	  mapCollection.learnMap(*warp);
+	  expo.mapName = warp->getName();
+	  // If this imported map is to be held fixed, add it to the list:
+	  if (regexMatchAny(fixMapList, expo.mapName))
+	    fixedMapNames.push_back(expo.mapName);
 
-	// Each additional exposure needs a warping tranformation
-	Exposure* expo = exposures[iexp];
-	PixelMap* warp;
+	  // We're done with this exposure if we have pre-set map for it.
+	  continue;
+	}
+
+	if (iexp == canonicalExposure && noDevicesFixed) {
+	  // Give this canonical exposure identity map to avoid degeneracy with Instrument
+	  expo.mapName = IdentityMap().getName();
+	  continue;
+	}
+	
+	// We will create a new exposure map and then initialize it
+	// ??? Potentially more sophisticated here
 	if (exposureOrder==1) 
-	  warp = new LinearMap;
+	  warp = new LinearMap(expo.name);
 	else
-	  warp = new PolyMap(exposureOrder, worldTolerance);
-
+	  warp = new PolyMap(exposureOrder, expo.name, worldTolerance);
+	expo.mapName = expo.name;
 	// Set numerical-derivative step to 1 arcsec, polynomial is working in degrees:
 	warp->setPixelStep(ARCSEC/DEGREE);
 
-	// And a reprojection map:
-	astrometry::Orientation& fOrient = fieldOrients[expo->field];
-	expo->reproject = mapCollection.add(new ReprojectionMap( TangentPlane(expo->orient.getPole(),
-									      expo->orient),
-								 TangentPlane(fOrient.getPole(),
-									      fOrient),
-								 DEGREE),
-					    expo->name + "_reprojection");
-	const PixelMap* reproject = mapCollection.element(expo->reproject);
-
-	// Get all Extensions that are part of this exposure
-	thisExposure.clear();
-	for (int i=0; i<extensions.size(); i++)
-	  if (extensions[i]->exposure == iexp)
-	    thisExposure.push_back(extensions[i]);
-
-	// Build new test points
+	// Build test points
 	list<Detection*> testPoints;
-	for (list<Extension*>::iterator j=thisExposure.begin();
-	     j != thisExposure.end();
-	     ++j) {
-	  Extension* extn = *j;
-	  int idev = extn->device;
+
+	const int nGridPoints=400;	// Number of test points for map initialization
+	int pointsPerDevice = nGridPoints / inst->nDevices + 1;
+
+	// Get points from each extension that is part of this exposure
+	for (long iextn=0; iextn<extensions.size(); iextn++) {
+	  if (extensions[iextn]->exposure != iexp) continue;
+	  Extension& extn = *extensions[iextn];
+	  int idev = extn.device;
 	  Bounds<double> b=inst->domains[idev];
 	  double step = sqrt(b.area()/pointsPerDevice);
 	  int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
@@ -545,24 +805,25 @@ main(int argc, char *argv[])
 	  double xstep = (b.getXMax()-b.getXMin())/nx;
 	  double ystep = (b.getYMax()-b.getYMin())/ny;
 	  // starting pixel map for the first exposure with this instrument
-	  PixelMap* startpm=extn->startpm;
-	  if (!startpm) {
-	    cerr << "Failed to get starting PixelMap for device "
+	  if (!extn.startWcs) {
+	    cerr << "Failed to get starting Wcs for device "
 		 << inst->deviceNames.nameOf(idev)
-		 << " in exposure " << expo->name
+		 << " in exposure " << expo.name
 		 << endl;
 	    exit(1);
 	  }
+	  extn.startWcs->reprojectTo(*expo.projection);
+	  PixelMap* devpm = mapCollection.issueMap(inst->mapNames[idev]);
+	
 	  for (int ix=0; ix<=nx; ix++) {
 	    for (int iy=0; iy<=ny; iy++) {
 	      double xpix = b.getXMin() + ix*xstep;
 	      double ypix = b.getYMin() + iy*ystep;
 	      double xw, yw;
-	      startpm->toWorld(xpix, ypix, xw, yw);
-	      // Undo the change of projections:
-	      reproject->toPix(xw,yw,xw,yw);
+	      // Map coordinates into the exposure projection = world:
+	      extn.startWcs->toWorld(xpix, ypix, xw, yw);
 	      // And process the pixel coordinates through Instrument map:
-	      inst->pixelMaps[idev]->toWorld(xpix,ypix,xpix,ypix);
+	      devpm->toWorld(xpix,ypix,xpix,ypix);
 	      Detection* d = new Detection;
 	      d->xpix = xpix;
 	      d->ypix = ypix;
@@ -570,56 +831,96 @@ main(int argc, char *argv[])
 	      d->yw = yw;
 	      testPoints.push_back(d);
 	    }
-	  }
-	} // finish device loop for test points
-
-	MapMarq mm(testPoints, warp);
-	// Since polynomial fit is linear, should just take one iteration:
-	double var=0.;
-	DVector beta(warp->nParams(), 0.);
-	DVector params(warp->nParams(), 0.);
-	tmv::SymMatrix<double> alpha(warp->nParams(), 0.);
-	mm(params, var, beta, alpha);
-	beta /= alpha;
-	params = beta;
-	beta.setZero();
-	alpha.setZero();
-	var = 0.;
-
-	mm(params, var, beta, alpha);
-	beta /= alpha;
-	params += beta;
-	warp->setParams(params);
+	  } // finish collecting test points for this extension
+	} // finish extension loop for this exposure
 	
-	// Save this warp into the collection and save key for exposure
-	expo->warp.append(mapCollection.add(warp, expo->name));
+	{
+	  // Should be able to put this into a subroutine: ????
+	  MapMarq mm(testPoints, warp);
+	  // Since polynomial fit is linear, should just take one iteration:
+	  double var=0.;
+	  DVector beta(warp->nParams(), 0.);
+	  DVector params(warp->nParams(), 0.);
+	  tmv::SymMatrix<double> alpha(warp->nParams(), 0.);
+	  mm(params, var, beta, alpha);
+	  beta /= alpha;
+	  params = beta;
+	  beta.setZero();
+	  alpha.setZero();
+	  var = 0.;
+
+	  mm(params, var, beta, alpha);
+	  beta /= alpha;
+	  params += beta;
+	  warp->setParams(params);
+	}
+	
+	
+	// Insert the Exposure map into the collection
+	mapCollection.learnMap(*warp);
+
+	// Check for fixed maps
+	if (regexMatchAny(fixMapList, warp->getName())) {
+	  cerr << "WARNING: Requested fixed parameters for Exposure map "
+	       << warp->getName()
+	       << " that does not have initial values.  Ignoring request to fix params."
+	       << endl;
+	}
+
+	delete warp;
 
 	// Clear out the testPoints:
 	for (list<Detection*>::iterator i = testPoints.begin();
 	     i != testPoints.end();
 	     ++i)
 	  delete *i;
-      } // End exposure loop for this instrument
-    } // end instrument loop.
+      } // end solution for this exposure map
 
-    // Now construct compound maps for every Extension
+    } // End instrument loop
+
+    // Freeze the parameters of all the fixed maps
+    mapCollection.setFixed(fixedMapNames, true);
+
+    // Now construct Wcs and a reprojected SubMap for every extension
+
     // and save SubMap for it
     for (int iext=0; iext<extensions.size(); iext++) {
-      Extension* extn = extensions[iext];
-      Exposure* expo = exposures[extn->exposure];
-      if ( expo->instrument < 0) {
+      Extension& extn = *extensions[iext];
+      Exposure& expo = *exposures[extn.exposure];
+      int ifield = expo.field;
+      if ( expo.instrument < 0) {
 	// Tag & reference exposures have no instruments and no fitting
 	// being done.  Coordinates are fixed to xpix = xw.
-	extn->extensionMap = identitySubMap;
+	// Build a simple Wcs that takes its name from the field
+	SphericalICRS icrs;
+	mapCollection.defineWcs(fieldNames.nameOf(ifield), icrs, IdentityMap().getName(),
+				DEGREE);
+	extn.wcs = mapCollection.issueWcs(fieldNames.nameOf(ifield));
+	// And have this Wcs reproject into field coordinates, then save as a SubMap
+	// and re-issue for use in this extension.
+	extn.wcs->reprojectTo(*fieldProjections[ifield]);
+	mapCollection.learnMap(*extn.wcs);
+	extn.map = mapCollection.issueMap(fieldNames.nameOf(ifield));
       } else {
-	// Real instrument, make its compounded map:
-	// Start with the instrument map for device:
-	PixelMapChain chain = instruments[expo->instrument]->maps[extn->device];
-	// Then the exposure's warp
-	chain.append(expo->warp);
-	// And exposure's reprojection:
-	chain.append(expo->reproject);
-	extn->extensionMap = mapCollection.issue(chain);
+	// Real instrument, make a map combining its exposure with its Device map:
+	string wcsName = expo.name + "/" 
+	  + instruments[expo.instrument]->deviceNames.nameOf(extn.device);
+	list<string> mapElements;
+	// The map itself is the device map:
+	mapElements.push_back(instruments[expo.instrument]->mapNames[extn.device]);
+	// Followed by the exposure map:
+	mapElements.push_back(expo.mapName);
+	string chainName = wcsName + "_chain";
+	mapCollection.defineChain( chainName, mapElements);
+
+	// Create a Wcs that projects into this exposure's projection:
+	mapCollection.defineWcs(wcsName, *expo.projection, chainName, DEGREE);
+	extn.wcs = mapCollection.issueWcs(wcsName);
+
+	// Reproject this Wcs into the field system and get a SubMap including reprojection:
+	extn.wcs->reprojectTo(*fieldProjections[ifield]);
+	mapCollection.learnMap(*extn.wcs);
+	extn.map = mapCollection.issueMap(wcsName);
       }
     } // Extension loop
 
@@ -712,18 +1013,22 @@ main(int argc, char *argv[])
       extensionTable.readCell(weight, "Weight", iext);
 
       // Relevant structures for this extension
-      Extension* extn = extensions[iext];
-      Exposure* expo = exposures[extn->exposure];
-      astrometry::Orientation& fOrient = fieldOrients[expo->field];
-      Instrument* instr = 0;
-      const SubMap* pixmap=extn->extensionMap;
-      const PixelMap* startMap = extn->startpm;
-      bool isReference = false;
-      bool isTag = false;
-      if (expo->instrument == REF_INSTRUMENT) {
-	isReference = true;
-      } else if (expo->instrument == TAG_INSTRUMENT) {
-	isTag = true;
+      Extension& extn = *extensions[iext];
+      Exposure& expo = *exposures[extn.exposure];
+
+      const SubMap* pixmap=extn.map;
+      bool isReference = (expo.instrument == REF_INSTRUMENT);
+      bool isTag = (expo.instrument == TAG_INSTRUMENT);
+
+      Wcs* startWcs = extn.startWcs;
+      startWcs->reprojectTo(*fieldProjections[expo.field]);
+
+      if (!startWcs) {
+	cerr << "Failed to find initial Wcs for device " 
+	     << instruments[expo.instrument]->deviceNames.nameOf(extn.device)
+	     << " of exposure " << expo.name
+	     << endl;
+	exit(1);
       }
 
       bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
@@ -754,13 +1059,16 @@ main(int argc, char *argv[])
       } catch (img::FTableError& e) {
 	errorColumnIsDouble = false;
       }
+
+      double sysError = isReference ? referenceSysError : pixSysError;
+
       for (long irow = 0; irow < ff.nrows(); irow++) {
-	map<long, Detection*>::iterator pr = extn->keepers.find(id[irow]);
-	if (pr == extn->keepers.end()) continue; // Not a desired object
+	map<long, Detection*>::iterator pr = extn.keepers.find(id[irow]);
+	if (pr == extn.keepers.end()) continue; // Not a desired object
 
 	// Have a desired object now.  Fill its Detection structure
 	Detection* d = pr->second;
-	extn->keepers.erase(pr);
+	extn.keepers.erase(pr);
 
 	d->map = pixmap;
 	ff.readCell(d->xpix, xKey, irow);
@@ -774,41 +1082,20 @@ main(int argc, char *argv[])
 	  sigma = f;
 	}
 
-	if (startMap) {
-	  sigma = std::max(minPixError, sigma);
-	  d->sigmaPix = sigma;
-	  startMap->toWorld(d->xpix, d->ypix, d->xw, d->yw);
-	  Matrix22 dwdp = startMap->dWorlddPix(d->xpix, d->ypix);
-	  d->clipsqx = pow(d->sigmaPix,-2.) / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
-	  d->clipsqy = pow(d->sigmaPix,-2.) / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
-	  d->wtx = d->clipsqx * (isTag ? 0. : weight);
-	  d->wty = d->clipsqy * (isTag ? 0. : weight);
+	sigma = std::sqrt(sysError*sysError + sigma*sigma);
+	d->sigmaPix = sigma;
+	startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);
+	Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
+	// no clips on tags
+	double wt = isTag ? 0. : pow(sigma,-2.);
+	d->clipsqx = wt / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
+	d->clipsqy = wt / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
+	d->wtx = d->clipsqx * weight;
+	d->wty = d->clipsqy * weight;
 	    
-	} else {
-	  // Input coords were degrees RA/Dec; project into Field's tangent plane
-	  TangentPlane tp( SphericalICRS(d->xpix*DEGREE, d->ypix*DEGREE), fOrient);
-	  double xw, yw;
-	  tp.getLonLat(xw,yw);
-	  xw /= DEGREE;
-	  yw /= DEGREE;  // Back to our WCS system of degrees.
-
-	  // Anything that's coming in as RA/Dec gets "reference" floor on errors
-	  sigma = std::max(minReferenceError, sigma);
-
-	  d->xpix = d->xw = xw;
-	  d->ypix = d->yw = yw;
-	  d->sigmaPix = sigma;
-	  // Tags have no weight in fits and don't get clipped:
-	  double wt = isTag ? 0. : pow(sigma,-2.);
-	  d->clipsqx = wt;
-	  d->clipsqy = wt;
-	  wt *= weight;  // optional increase in weight for fitting:
-	  d->wtx = wt;
-	  d->wty = wt;
-	}
       } // End loop over catalog objects
 
-      if (!extn->keepers.empty()) {
+      if (!extn.keepers.empty()) {
 	cerr << "Did not find all desired objects in catalog " << filename
 	     << " extension " << hduNumber
 	     << endl;
@@ -941,38 +1228,51 @@ main(int argc, char *argv[])
       
     } while (coarsePasses || nclip>0);
   
-    // The re-fitting is now complete.  Save the new header files
+    // The re-fitting is now complete.  Serialize all the fitted coordinate systems
+    {
+      ofstream ofs(outWcs.c_str());
+      if (!ofs) {
+	cerr << "Error trying to open output file for fitted Wcs: " << outWcs << endl;
+	// *** will not quit before dumping output ***
+      } else {
+	mapCollection.write(ofs);
+      }
+    }
+
+    // Save the new header files
     
     // Keep track of those we've already written to:
     set<string> alreadyOpened;
 
-    const double SCAMPTolerance=0.0001*ARCSEC/DEGREE;  // accuracy of SCAMP-format fit to real solution
+    // accuracy of SCAMP-format fit to real solution:
+    const double SCAMPTolerance=0.0001*ARCSEC/DEGREE;
+  
     for (int iext=0; iext<extensions.size(); iext++) {
       Extension& extn = *extensions[iext];
       Exposure& expo = *exposures[extn.exposure];
       if (expo.instrument < 0) continue;
       Instrument& inst = *instruments[expo.instrument];
-      // Open file for new ASCII headers  ??? Change the way these are done!!!
+      // Open file for new ASCII headers  ??? Save serialized per exposure too??
       string newHeadName = extn.wcsOutFile;
       bool overwrite = false;
       if ( alreadyOpened.find(newHeadName) == alreadyOpened.end()) {
 	overwrite = true;
 	alreadyOpened.insert(newHeadName);
       }
-      ofstream newHeads(newHeadName.c_str(), overwrite ? ios::out : (ios::out | ios::in | ios::ate));
+      ofstream newHeads(newHeadName.c_str(), overwrite ? 
+			ios::out : (ios::out | ios::in | ios::ate));
       if (!newHeads) {
 	cerr << "WARNING: could not open new header file " << newHeadName << endl;
 	cerr << "...Continuing with program" << endl;
 	continue;
       }
-      PixelMap* thisMap = extn.extensionMap;
-      img::Header h = FitSCAMP(inst.domains[extn.device],
-			       *thisMap,
-			       fieldOrients[expo.field],
-			       expo.orient.getPole(),
-			       SCAMPTolerance);
-      
-      newHeads << h;
+      Wcs* tpv = fitTPV(inst.domains[extn.device],
+			*extn.wcs,
+			*fieldProjections[expo.field],
+			"NoName",
+			SCAMPTolerance);
+      newHeads << writeTPV(*tpv);
+      delete tpv;
     }
 
     // If there are reserved Matches, run sigma-clipping on them now.
@@ -1246,6 +1546,9 @@ main(int argc, char *argv[])
 
     // Cleanup:
 
+    // Get rid of the coordinate systems for each field:
+    for (int i=0; i<fieldProjections.size(); i++)
+      delete fieldProjections[i];
     // Get rid of extensions
     for (int i=0; i<extensions.size(); i++)
       delete extensions[i];

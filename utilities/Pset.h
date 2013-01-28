@@ -32,6 +32,8 @@ using std::list;
 //   the line up to comment delimiter is assumed to be part of string.
 // Trailing white space is stripped from non-quoted strings.
 
+// Lines ending in ContinuationCharacter = '\' are continued to next line.
+
 //********************************************************************
 // Exception classes:
 //********************************************************************
@@ -284,11 +286,19 @@ class Pset {
   // read many lines of specification, glean all useful ones.
   // throw KeywordNotFound only after going through all lines.
   void setStream(istream &is) {
+    const char ContinuationCharacter='\\';
     string line, keyword, value;
     PsetKeywordNotFound ex("none");
     bool thrown=false;
     while (is) {
       getline(is,line);
+      while (!line.empty() && line[line.size()-1]==ContinuationCharacter && is) {
+	// Append next line after stripping continuation character
+	line.erase( --line.end());
+	string line2;
+	getline(is,line2);
+	line += line2;
+      }
       if (read_keyvalue(line, keyword, value)) {
 	try {setKeyValue(keyword,value);}
 	catch (PsetKeywordNotFound e) {ex = e; thrown=true;}
