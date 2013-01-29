@@ -139,7 +139,7 @@ PixelMapCollection::rebuildParameterVector() {
   // Restart the parameter counting:
   parameterCount = 0;
   int mapNumber = 0;
-  for (MapIter i = mapElements.begin(); i!=mapElements.end(); ++i, ++mapNumber) {
+  for (MapIter i = mapElements.begin(); i!=mapElements.end(); ++i) {
     MapElement& map = i->second;
     // Only atomic map components go into the big parameter vector
     map.nParams = 0;
@@ -152,6 +152,7 @@ PixelMapCollection::rebuildParameterVector() {
       map.startIndex = parameterCount;
       map.number = mapNumber;
       parameterCount += nMap;
+      ++mapNumber;
     }
   }
 
@@ -420,7 +421,7 @@ PixelMapCollection::issueMap(string mapName) {
       nParams[index] = mapElements[*i].isFixed ? 0 : mapElements[*i].nParams;
       mapNumbers[index] = mapElements[*i].number;
     }
-    SubMap* sm = new SubMap(atoms, mapName);
+    SubMap* sm = new SubMap(atoms, mapName, true);
     sm->vStartIndices = startIndices;
     sm->vNSubParams = nParams;
     sm->vMapNumbers = mapNumbers;
