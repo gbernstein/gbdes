@@ -71,7 +71,7 @@ public:
   Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates.
   Wcs* startWcs;  // Input Wcs for this extension (owned by this class)
   std::map<long, Detection*> keepers;  // The objects from this catalog that we will use
-  string wcsOutFile;
+  string tpvOutFile;
   ~Extension() {
     if (startWcs) delete startWcs;
   }

@@ -426,8 +426,6 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   alpha.setZero();
   int matchCtr=0;
 
-  Stopwatch timer;
-  timer.start();
   const int NumberOfLocks = 2000;
   AlphaUpdater updater(alpha, pmc, NumberOfLocks);
 
@@ -469,7 +467,8 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   for (int j=0; j<vi.size(); j++) {
     Match* m = vi[j];
 
-    if (j%chunk==0) {
+    //**    if (j%chunk==0) {
+    if (false) {
 #pragma omp critical (output)
       cerr << "# Thread " << omp_get_thread_num()
 	   << "# accumulating chisq at match # " << j 
@@ -497,10 +496,9 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   }
 #endif
   chisq = newChisq;
-  timer.stop();
-  cerr << "# Done accumulating CoordAlign info, seconds: " << timer << endl;
+
   {
-    /*****/
+    //***** Code that will be useful in spotting unconstrained parameters:
     for (int i = 0; i<alpha.nrows(); i++) {
       bool blank = true;
       for (int j=0; j<alpha.ncols(); j++)
@@ -522,16 +520,15 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	cerr << "***No constraints on col " << j << endl;
     }
   }
-  //**/cerr << alpha;
 }
 
 double
-CoordAlign::fitOnce() {
+CoordAlign::fitOnce(bool reportToCerr) {
   DVector p = getParams();
   Marquardt<CoordAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
   marq.setSaveMemory();
-  double chisq = marq.fit(p);
+  double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
   setParams(p);
   remap();
   return chisq;
@@ -549,6 +546,10 @@ int
 CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   int nclip=0;
   // ??? parallelize this loop!
+  cerr << "## Sigma clipping...";
+  Stopwatch timer;
+  timer.start();
+
   for (list<Match*>::const_iterator i=mlist.begin();
        i != mlist.end();
        ++i) {
@@ -560,6 +561,8 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
       if (clipEntireMatch) (*i)->clipAll();
     }
   }
+  timer.stop();
+  cerr << " done in " << timer << " sec" << endl;
   return nclip;
 }
 

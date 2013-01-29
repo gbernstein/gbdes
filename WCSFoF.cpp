@@ -284,7 +284,7 @@ main(int argc,
     const string inSelectCol="SELECT";
     const string starSelectCol="STAR_SELECT";
     const string wcsFileCol="WCSFILE";
-    const string wcsOutFileCol="WCSOUT";
+    const string tpvOutFileCol="TPVOUT";
     const string xkeyCol="XKEY";
     const string ykeyCol="YKEY";
     const string idkeyCol="IDKEY";
@@ -313,7 +313,7 @@ main(int argc,
       extensionTable.addColumn(vs, "idKey");
       extensionTable.addColumn(vs, "errKey");
       extensionTable.addColumn(vd, "Weight");
-      extensionTable.addColumn(vs, "WCSOut");
+      extensionTable.addColumn(vs, "TPVOut");
     }
 
     long extensionNumber = 0; // cumulative counter for all FITS tables read
@@ -357,11 +357,11 @@ main(int argc,
 	errorkey.clear();
       }
 
-      string wcsOut;
+      string tpvOut;
       try {
-	fileTable.readCell(wcsOut, wcsOutFileCol, iFile);
+	fileTable.readCell(tpvOut, tpvOutFileCol, iFile);
       } catch (FTableNonExistentColumn& m) {
-	wcsOut.clear();
+	tpvOut.clear();
       }
 
       string weightString;
@@ -425,8 +425,6 @@ main(int argc,
 	}
       }
 
-      /**/cerr << "got wcsStream" << endl;
-
       int firstHdu = extension >= 0 ? extension : 1;
       int lastHdu = extension;
       if (extension < 0) {
@@ -438,8 +436,6 @@ main(int argc,
       for (int hduNumber = firstHdu; 
 	   hduNumber<=lastHdu;
 	   hduNumber++) {
-
-	/**/cerr << "Start HDU number " << hduNumber << endl;
 
 	bool haveLDACHeader = false;
 	Header localHeader = primaryHeader;
@@ -501,7 +497,7 @@ main(int argc,
 
 	// Couple of things that WCS fitting program will want if they're here:
 	string thisErrorKey = maybeFromHeader(errorkey, localHeader);
-	string thisWcsOutFile = maybeFromHeader(wcsOut, localHeader);
+	string thisTpvOutFile = maybeFromHeader(tpvOut, localHeader);
 
 	// Read catalog's weight: it either defaults to 1. if string is empty,
 	// or it's a header keyword to look up, or it should be a number
@@ -578,11 +574,8 @@ main(int argc,
 	  }
 	}
 
-	/**/ cerr << "Got RA and Dec: " << thisRADec << endl;
-
 	// Assign a field:
 	string thisField;
-	/**/ cerr << "fieldName: " << fieldName << endl;
 	if (stringstuff::nocaseEqual(fieldName, "@_NEAREST")) {
 	  // Assign exposure to nearest field:
 	  Assert(!fields.empty());
@@ -606,8 +599,6 @@ main(int argc,
 	  exit(1);
 	}
 
-	/**/cerr << "field number: " << fieldNumber << endl;
-
 	// Assign an instrument, new one if not yet existent:
 	string thisInstrument = maybeFromHeader(instrumentName, localHeader);
 	int instrumentNumber=NO_INSTRUMENT;
@@ -623,8 +614,6 @@ main(int argc,
 	  instrumentNumber = instrumentNames.indexOf(thisInstrument);
 	  Assert(instrumentNumber >= 0);
 	}
-
-	/**/cerr << "Instrument number: " << instrumentNumber << endl;
 
 	// Assign an exposure number:
 	string thisExposure = maybeFromHeader(exposureName, localHeader);
@@ -649,8 +638,6 @@ main(int argc,
 	  exit(1);
 	}
 
-	/**/cerr << "Exposure number " << exposureNumber << endl;
-
 	// Henceforth should use RA/Dec from the exposure.
 
 	// Assign a device
@@ -664,8 +651,6 @@ main(int argc,
 	  Assert(deviceNumber >= 0);
 	}
 
-	/**/cerr << "Ready to read wcs" << endl;
-
 	// Read in a WCS, from pixel coords to the tangent plane for this Field:
 	astrometry::Wcs* wcs = 0;
 	if (!xyAreRaDec) {
@@ -677,7 +662,6 @@ main(int argc,
 	      wcs = 0;
 	    }
 	  } 
-	  /**/ cerr << "wcs after readTPV from file: " << wcs << endl;
 
 	  if (!wcs) {
 	    // Try the local header if not
@@ -687,7 +671,7 @@ main(int argc,
 	      wcs = 0;
 	    }
 	  }
-	  /**/ cerr << "wcs after readTPV from local header: " << wcs << endl;
+
 	  if (!wcs) {
 	    // If still nothing, quit.   
 	    cerr << "Could not generate WCS for HDU " << hduNumber
@@ -696,11 +680,8 @@ main(int argc,
 	    exit(1);
 	  }
 
-	  /**/cerr << "ready to project to fieldNumber " << fieldNumber << endl;
 	  wcs->reprojectTo(*fields[fieldNumber]->projection);
 	}
-
-	  /**/ cerr << "wcs after readTPV from file: " << wcs << endl;
 
 	// Record information about this extension to an output table
 
@@ -714,20 +695,18 @@ main(int argc,
 	extensionTable.writeCell(thisIdKey, "idKey", extensionNumber);
 	extensionTable.writeCell(thisErrorKey, "errKey", extensionNumber);
 	extensionTable.writeCell(weight, "Weight", extensionNumber);
-	extensionTable.writeCell(thisWcsOutFile, "WCSOut", extensionNumber);
+	extensionTable.writeCell(thisTpvOutFile, "TPVOut", extensionNumber);
 
 	{
 	  string wcsDump;
 	  if (!wcs) {
 	    wcsDump = "ICRS";
 	  } else {
-	    /**/cerr << "writing wcs" << endl;
 	    astrometry::PixelMapCollection pmc;
 	    pmc.learnWcs(*wcs);
 	    ostringstream oss;
 	    pmc.writeWcs(oss,wcs->getName());
 	    wcsDump = oss.str();
-	    /**/cerr << "Result***:\n" << wcsDump << endl;
 	  }
 	  extensionTable.writeCell(wcsDump, "WCS", extensionNumber);
 	}

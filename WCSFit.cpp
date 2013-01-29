@@ -136,7 +136,6 @@ public:
   }
 };
 
-
 int
 main(int argc, char *argv[])
 {
@@ -477,9 +476,9 @@ main(int argc, char *argv[])
       // destination projection is field projection:
       extn->startWcs->reprojectTo(*fieldProjections[exposures[extn->exposure]->field]);
 
-      string wcsOutFile;
-      extensionTable.readCell(wcsOutFile, "WCSOut", i);
-      extn->wcsOutFile = wcsOutFile;
+      string tpvOutFile;
+      extensionTable.readCell(tpvOutFile, "TPVOut", i);
+      extn->tpvOutFile = tpvOutFile;
     }
 
     /////////////////////////////////////////////////////
@@ -1274,7 +1273,7 @@ main(int argc, char *argv[])
       if (expo.instrument < 0) continue;
       Instrument& inst = *instruments[expo.instrument];
       // Open file for new ASCII headers  ??? Save serialized per exposure too??
-      string newHeadName = extn.wcsOutFile;
+      string newHeadName = extn.tpvOutFile;
       bool overwrite = false;
       if ( alreadyOpened.find(newHeadName) == alreadyOpened.end()) {
 	overwrite = true;
