@@ -170,6 +170,10 @@ namespace astrometry {
 
     // Some access to members of the collection of maps:
     int nMaps() const {return mapElements.size();}
+    // Number of atomic maps in the collection:
+    int nAtomicMaps() const {return atomCount;}
+    // Number of maps with free parameters:
+    int nFreeMaps() const {return freeCount;}
     bool mapExists(string name) const {return mapElements.count(name);}
     vector<string> allMapNames() const;
 
@@ -188,6 +192,8 @@ namespace astrometry {
     void operator=(const PixelMapCollection& rhs);
 
     int parameterCount; // Total parameters currently free to vary.
+    int atomCount;	// Number of atomic map components
+    int freeCount;	// Number of atompic components with free parameters
 
     // ***Main data of the class are these two containers of structures listing
     // all the PixelMaps and Wcs's curated by this class:

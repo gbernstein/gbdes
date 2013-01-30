@@ -944,7 +944,7 @@ main(int argc, char *argv[])
       }
     } // Extension loop
 
-    /**/cerr << "Total number of map elements " << mapCollection.nMaps()
+    /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()
 	     << " with " << mapCollection.nParams() << " free parameters."
 	     << endl;
 

@@ -138,21 +138,25 @@ PixelMapCollection::rebuildParameterVector() {
 
   // Restart the parameter counting:
   parameterCount = 0;
-  int mapNumber = 0;
+  // And map counting
+  atomCount = 0;
+  freeCount = 0;
   for (MapIter i = mapElements.begin(); i!=mapElements.end(); ++i) {
     MapElement& map = i->second;
     // Only atomic map components go into the big parameter vector
     map.nParams = 0;
     map.number = -1;
     if (!(map.atom)) continue;
+    atomCount++;
     int nMap = map.atom->nParams();
     if (nMap>0 && !map.isFixed) {
       // Have some parameters; append them to master list.
       map.nParams = nMap;
       map.startIndex = parameterCount;
-      map.number = mapNumber;
+      // Each atom with free parameters gets a serial number.
+      map.number = freeCount;
       parameterCount += nMap;
-      ++mapNumber;
+      ++freeCount;
     }
   }
 

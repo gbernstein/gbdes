@@ -32,7 +32,7 @@ public:
 	       int nLocks=0): alpha(alpha_), pmc(pmc_) {
 #ifdef _OPENMP
     // Decide how many map elements per lock
-    nMaps = pmc.nMaps();
+    nMaps = pmc.nFreeMaps();
     int nBlocks = nMaps*(nMaps+1)/2;
     if (nLocks > nBlocks || nLocks<=0) {
       blockLength = 1;
