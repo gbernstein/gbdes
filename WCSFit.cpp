@@ -54,6 +54,14 @@ string usage=
 
 #include "Instrument.h"
 
+// A helper function that strips white space from front/back of a string and replaces
+// internal white space with underscores:
+void
+spaceReplace(string& s) {
+  stripWhite(s);
+  s = regexReplace("[[:space:]]+","_",s);
+}
+
 class MapMarq {
 public:
   MapMarq(const list<Detection*>& dets_, PixelMap* pm_): dets(dets_), pm(pm_) {}
@@ -330,6 +338,9 @@ main(int argc, char *argv[])
     //  Read in properties of all Fields, Instruments, Devices, Exposures
     /////////////////////////////////////////////////////
 
+    // All the names will be stripped of leading/trailing white space, and internal
+    // white space replaced with single underscore - this keeps PixelMap parsing functional.
+
     // All we care about fields are names and orientations:
     NameIndex fieldNames;
     vector<SphericalCoords*> fieldProjections;
@@ -346,6 +357,7 @@ main(int argc, char *argv[])
       ft.readCells(ra, "RA");
       ft.readCells(dec, "Dec");
       for (int i=0; i<name.size(); i++) {
+	spaceReplace(name[i]);
 	fieldNames.append(name[i]);
 	Orientation orient(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
 	fieldProjections.push_back( new Gnomonic(orient));
@@ -371,7 +383,9 @@ main(int argc, char *argv[])
     vector<Instrument*> instruments(instrumentHDUs.size());
     for (int i=0; i<instrumentHDUs.size(); i++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Instrument");
+      // Append new table to output:
+      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, -1);
+      out.setName("Instrument");
       Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
       FTable ff=ft.extract();
       out.adopt(ff);
@@ -382,7 +396,7 @@ main(int argc, char *argv[])
 	cerr << "Could not read name and/or number of instrument at extension "
 	     << instrumentHDUs[i] << endl;
       }
-      stripWhite(instrumentName);
+      spaceReplace(instrumentName);
       Assert(instrumentNumber < instruments.size());
       Instrument* instptr = new Instrument(instrumentName);
       instruments[instrumentNumber] = instptr;
@@ -398,6 +412,7 @@ main(int argc, char *argv[])
       ff.readCells(vymin, "YMin");
       ff.readCells(vymax, "YMax");
       for (int j=0; j<devnames.size(); j++) {
+	spaceReplace(devnames[j]);
 	instptr->addDevice( devnames[j],
 			    Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
       }
@@ -423,6 +438,7 @@ main(int argc, char *argv[])
       for (int i=0; i<names.size(); i++) {
 	// The projection we will use for this exposure:
 	Gnomonic gn(Orientation(SphericalICRS(ra[i]*DEGREE,dec[i]*DEGREE)));
+	spaceReplace(names[i]);
 	Exposure* expo = new Exposure(names[i],gn);
 	expo->field = fieldNumber[i];
 	expo->instrument = instrumentNumber[i];
@@ -667,11 +683,6 @@ main(int argc, char *argv[])
 	  exit(1);
 	}
 
-	/**/cerr << "noDevicesFixed: " << noDevicesFixed
-		 << " needCanonical: " << needCanonical
-		 << " canonicalExposure: " << canonicalExposure
-		 << endl;
-	
       } // end finding a canonical exposure for the Instrument
 
       // Now we create new PixelMaps for each Device that does not already have one.

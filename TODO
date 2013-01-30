@@ -1,5 +1,6 @@
 * Fix the failure to write multiple INSTRUMENT extensions on output.
-* ApplyWCS should work with serialized wcs's.
+* Fix problem with spaces in the instrment names or other parts of map names (breaks the parser).
+* Note that extra spaces at end of things saved as header string fields, such as instrument NAME.
 * write PixelMap that scales a lookup-table template.
 * Change WCSFit to allow configuring more general instrument (or exposure) maps, including the TemplateMap
 * Photometric fitting: need to ghost PixelMap -> PhotoMap, collections, CoordAlign->PhotoAlign, PhotoDetection, all to go into a PhotoFit.  

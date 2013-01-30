@@ -42,7 +42,8 @@ namespace stringstuff {
   // Make a string that holds the current time and the command line
   string taggedCommandLine(int argc, char *argv[]);
 
-  // Basic regular expression match (wrapping Boost)
+  // Basic regular expression match (wrapping Boost).  Must match entire input string.
+  // Using POSIX extended regular expressions
   bool regexMatch(const std::string& regex_,
 		  const string& s,
 		  bool caseSensitive=false);
@@ -59,8 +60,14 @@ namespace stringstuff {
     return false;
   }
 
+  // Basic regular expression search and replace (wrapping Boost).  
+  // Using POSIX extended regular expression and sed replacement string syntax.
+  string regexReplace(const std::string& regex,
+		      const std::string& replacement,
+		      const string& s);
+
   // Return a set of all strings in container that match a regular expression.
-  // Use POSIX definition of regex.  Use Boost Regex package.
+  // Use POSIX extended definition of regex.  Use Boost Regex package.
   template <class Container>
   std::set<std::string> findMatches(const std::string& regex_,
 				    const Container& c,

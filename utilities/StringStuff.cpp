@@ -105,8 +105,16 @@ namespace stringstuff {
   regexMatch(const std::string& regex_,
 	     const string& s,
 	     bool caseSensitive) {
-    boost::regex e(regex_, boost::regex::basic | (caseSensitive ? 0 : boost::regex::icase));
+    boost::regex e(regex_, boost::regex::extended | (caseSensitive ? 0 : boost::regex::icase));
     return boost::regex_match(s, e);
+  }
+
+  string
+  regexReplace(const string& regex_,
+	       const string& replacement,
+	       const string& s) {
+  boost::regex e(regex_, boost::regex::extended);
+  return boost::regex_replace(s, e, replacement, boost::match_default | boost::format_sed);
   }
 
   void
