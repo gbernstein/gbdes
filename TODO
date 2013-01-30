@@ -1,0 +1,5 @@
+* Fix the failure to write multiple INSTRUMENT extensions on output.
+* ApplyWCS should work with serialized wcs's.
+* write PixelMap that scales a lookup-table template.
+* Change WCSFit to allow configuring more general instrument (or exposure) maps, including the TemplateMap
+* Photometric fitting: need to ghost PixelMap -> PhotoMap, collections, CoordAlign->PhotoAlign, PhotoDetection, all to go into a PhotoFit.  
