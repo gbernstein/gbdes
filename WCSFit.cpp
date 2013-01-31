@@ -1232,9 +1232,9 @@ main(int argc, char *argv[])
 	if (coarsePasses) {
 	  coarsePasses = false;
 	  ca.setRelTolerance(chisqTolerance);
-	  cout << "--Starting strict tolerance passes" << endl;
+	  cout << "--Starting strict tolerance passes, clipping full matches" << endl;
 	  oldthresh = thresh;
-	  nclip = ca.sigmaClip(thresh, false, clipEntireMatch);
+	  nclip = ca.sigmaClip(thresh, false, true);
 	  cout << "Clipped " << nclip
 	       << " matches " << endl;
 	  continue;
@@ -1244,12 +1244,12 @@ main(int argc, char *argv[])
 	}
       }
       oldthresh = thresh;
-      nclip = ca.sigmaClip(thresh, false, clipEntireMatch);
+      nclip = ca.sigmaClip(thresh, false, clipEntireMatch || !coarsePasses);
       if (nclip==0 && coarsePasses) {
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
 	ca.setRelTolerance(chisqTolerance);
-	cout << "No clipping--Starting strict tolerance passes" << endl;
+	cout << "No clipping--Starting strict tolerance passes, clipping full matches" << endl;
 	continue;
       }
       cout << "Clipped " << nclip
