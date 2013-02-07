@@ -74,13 +74,16 @@ Poly2d::create(std::istream& is) {
     istringstream iss(buffer);
     do {
       iss >> c;
-      if (iss.eof()) 
-??? check this logic!!
-	break;
-      if (iss.fail())
-	throw Poly2dError("Error reading coefficients for Poly2d: " + buffer);
-      coeffs[iCoeff] = c;
-      iCoeff++;
+      if (!iss.fail()) {
+	// Successful read
+	coeffs[iCoeff] = c;
+	iCoeff++;
+      } else if (iss.eof()) {
+	break; // just ran out of data on this line, get more
+      } else {
+	// Fail without eof means a true read error:
+	throw Poly2dError("Format error reading coefficientss for Poly2d: " + buffer);
+      }
     } while (iCoeff < coeffs.size());
   }
   poly->setC(coeffs);

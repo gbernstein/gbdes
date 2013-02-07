@@ -174,7 +174,7 @@ TemplateMap1d::reverse_lookup(double val) const {
       index = static_cast<int> (std::floor( (val - scaling*deviations[index] - nodeStart)/nodeStep));
     } else {
       // interpolate and return
-      double f = (val - nodeStart - scaling*deviations[index]) /
+      double f = (val - nodeStart - index*nodeStep - scaling*deviations[index]) /
 	(scaling*(deviations[index+1]-deviations[index])+nodeStep);
       return nodeStart + nodeStep*(index+f);
     }
@@ -237,21 +237,21 @@ TemplateMap1d::create(std::istream& is, string name) {
 
   devs.reserve(nNodes);
   while (devs.size() < nNodes) {
-    /**/cerr << devs.size() << endl;
     if (!(stringstuff::getlineNoComment(is, buffer)))
       throw AstrometryError("Out of input reading nodes for TemplateMap1d: " + buffer);
-    /**/cerr << "read input line <" + buffer + ">" << endl;
     double c;
     istringstream iss(buffer);
     do {
       iss >> c;
-      /**/cerr << "read " << c << endl;
-      if (iss.fail())
-	throw AstrometryError("Error reading nodes for TemplateMap1d: " + buffer);
-      devs.push_back(c);
-      /**/cerr << "pushed" << endl;
-      if (iss.eof()) 
-	break;
+      if (!iss.fail()) {
+	// Successful read
+	devs.push_back(c);
+      } else if (iss.eof()) {
+	break; // just ran out of data on this line, get more
+      } else {
+	// Fail without eof means a true read error:
+	throw AstrometryError("Format error reading nodes for TemplateMap1d: " + buffer);
+      }
     } while (devs.size() < nNodes);
   }
   
