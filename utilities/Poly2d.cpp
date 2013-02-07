@@ -75,6 +75,7 @@ Poly2d::create(std::istream& is) {
     do {
       iss >> c;
       if (iss.eof()) 
+??? check this logic!!
 	break;
       if (iss.fail())
 	throw Poly2dError("Error reading coefficients for Poly2d: " + buffer);

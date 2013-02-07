@@ -47,7 +47,7 @@ SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	images/FTable.o images/FTableExpression.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/SubMap.o astrometry/Wcs.o astrometry/PixelMapCollection.o \
-	astrometry/SerializeProjection.o
+	astrometry/SerializeProjection.o astrometry/TemplateMap.o
 
 #images/FitsTable.o images/Image.o images/FITSImage.o \
 
@@ -57,6 +57,8 @@ OBJ =  $(SUBOBJ)
 all: depend subs
 
 testSerialize: testSerialize.o TPVMap.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+testTemplateMap: testTemplateMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ApplyWCS: ApplyWCS.o TPVMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
