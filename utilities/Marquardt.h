@@ -182,6 +182,7 @@ Marquardt<T,P>::fit(Vector<P>& a, int maxIter, bool progressToCerr) {
       *alpha = *bestAlpha;
       *beta =  *bestBeta;
     }
+
     for (int j=0; j<a.size(); j++)
       (*alpha)(j,j) *= (1+lambda);
 

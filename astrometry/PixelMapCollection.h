@@ -184,8 +184,10 @@ namespace astrometry {
 
     // This routine adds a new type of PixelMap to the parsing dictionary
     template <class MapType>
-    static void registerMapType();
-
+    static void registerMapType() {
+      mapTypeNames.push_back(MapType::mapType());
+      mapCreators.push_back(MapType::create);
+    }
   private:
     // hide:
     PixelMapCollection(const PixelMapCollection& rhs);

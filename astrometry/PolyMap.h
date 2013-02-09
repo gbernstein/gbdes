@@ -51,6 +51,8 @@ namespace astrometry {
 
     // Set tolerance in world coords for soln of inverse
     void setWorldTolerance(double wt) {worldTolerance=wt;}
+    // Set coefficients to give identity transformation:
+    void setToIdentity();
 
     static string mapType() {return "Poly";}
     virtual string getType() const {return mapType();}

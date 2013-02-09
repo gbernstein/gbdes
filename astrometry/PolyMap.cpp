@@ -52,6 +52,15 @@ PolyMap::getParams() const {
   return p;
 }
 
+void
+PolyMap::setToIdentity() {
+  DVector p = getParams();
+  p.setZero();
+  p[xpoly.vectorIndex(1,0)] = 1.;
+  p[xpoly.nCoeffs() + ypoly.vectorIndex(0,1)] = 1.;
+  setParams(p);
+}
+
 void 
 PolyMap::toPixDerivs( double xworld, double yworld,
 		      double &xpix, double &ypix,

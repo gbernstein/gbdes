@@ -166,7 +166,7 @@ SubMap::toWorldDerivs( double xpix, double ypix,
     xpix = xworld;
     ypix = yworld;
     if (index>0) {
-      // transform derives of previous maps into new coords:
+      // transform derivs of previous maps into new coords:
       DMatrix tmp = vMaps[iMap]->dWorlddPix(xpix,ypix) * derivs.colRange(0,index);
       derivs.colRange(0,index) = tmp; 
     }

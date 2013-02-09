@@ -22,13 +22,6 @@ PixelMapCollection::mapCreators;
 bool
 PixelMapCollection::creatorsInitialized=false;
 
-template <class MapType>
-void
-PixelMapCollection::registerMapType() {
-  mapTypeNames.push_back(MapType::mapType());
-  mapCreators.push_back(MapType::create);
-}
-
 void
 PixelMapCollection::PixelMapTypeInitialize() {
   if (creatorsInitialized) return;

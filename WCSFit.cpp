@@ -12,6 +12,7 @@
 #include "TPVMap.h"
 #include "Random.h"
 #include "Match.h"
+#include "TemplateMap.h"
 
 using namespace std;
 using namespace astrometry;
@@ -61,6 +62,9 @@ spaceReplace(string& s) {
   stripWhite(s);
   s = regexReplace("[[:space:]]+","_",s);
 }
+
+// A function to parse strings describing PixelMap models, setting tolerance for inversion of world coords:
+PixelMap* pixelMapDecode(string code, string name, double worldTolerance);
 
 class Accum {
 public:
@@ -146,7 +150,7 @@ main(int argc, char *argv[])
   int minMatches;
   bool clipEntireMatch;
   int exposureOrder;
-  int deviceOrder;
+  string deviceModel;
   string outCatalog;
   string catalogSuffix;
   string newHeadSuffix;
@@ -183,8 +187,8 @@ main(int argc, char *argv[])
 			 "Fraction of matches reserved from re-fit", 0., 0.);
     parameters.addMember("exposureOrder",&exposureOrder, def | low,
 			 "Order of per-exposure map", 1, 0);
-    parameters.addMember("deviceOrder",&deviceOrder, def | low,
-			 "Order of per-extension map", 2, 0);
+    parameters.addMember("deviceModel",&deviceModel, def,
+			 "Form of device map", "Poly 2");
     parameters.addMember("chisqTolerance",&chisqTolerance, def | lowopen,
 			 "Fractional change in chisq for convergence", 0.001, 0.);
     parameters.addMember("renameInstruments",&renameInstruments, def,
@@ -256,6 +260,9 @@ main(int argc, char *argv[])
     /////////////////////////////////////////////////////
     // Parse all the parameters describing maps etc. ????
     /////////////////////////////////////////////////////
+
+    // Teach PixelMapCollection about new kinds of PixelMaps:
+    PixelMapCollection::registerMapType<TemplateMap1d>();
 
     const char listSeperator=',';
 
@@ -519,7 +526,6 @@ main(int argc, char *argv[])
       string mapName = inst->name;
       instrumentTranslator(mapName);  // Apply any remapping specified.
 
-
       // (2) See if this instrument has a map that we are re-using, and if params are fixed
       string loadFile = mapName;
       bool loadExistingMaps = existingMapFinder(loadFile);
@@ -679,9 +685,33 @@ main(int argc, char *argv[])
       for (int idev=0; idev < inst->nDevices; idev++) {
 	if (deviceMapsExist[idev]) continue;
 
-	// Create a new PixelMap for this device. ???? More elaborate choices ???
-	PixelMap* pm = new PolyMap(deviceOrder, inst->mapNames[idev],
-				   worldTolerance);
+	// Create a new PixelMap for this device. 
+	PixelMap* pm=0;
+	list<string> pmCodes = stringstuff::split(deviceModel,'+');
+	if (pmCodes.size() == 1) {
+	  pm = pixelMapDecode(pmCodes.front(),inst->mapNames[idev], worldTolerance);
+	} else if (pmCodes.size() > 1) {
+	  // Build a compound SubMap with desired maps in order:
+	  int index = 0;
+	  list<PixelMap*> pmList;
+	  for (list<string>::const_iterator ipm = pmCodes.begin();
+	       ipm != pmCodes.end();
+	       ++ipm, ++index) {
+	    ostringstream oss;
+	    // Components will have index number appended to device map name:
+	    oss << inst->mapNames[idev] << "_" << index;
+	    pmList.push_back(pixelMapDecode(*ipm, oss.str(), worldTolerance));
+	  }
+	  pm = new SubMap(pmList, inst->mapNames[idev]);
+	  // Delete the original components, which have now been duplicated in SubMap:
+	  for (list<PixelMap*>::iterator ipm=pmList.begin();
+	       ipm != pmList.end();
+	       ++ipm)
+	    delete *ipm;
+	} else {
+	  cerr << "Empty deviceModel specification" << endl;
+	  exit(1);
+	}
 
 	// Find extension that has this Device for canonical Exposure:
 	long iextn;
@@ -1553,4 +1583,52 @@ main(int argc, char *argv[])
   } catch (std::runtime_error& m) {
     quit(m,1);
   }
+}
+
+/////////////////////////////////////////////////////////
+PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
+  istringstream iss(code);
+  string type;
+  iss >> type;
+  PixelMap* pm;
+  if (stringstuff::nocaseEqual(type,"Poly")) {
+    int xOrder, yOrder;
+    if (!(iss >> xOrder)) 
+      throw runtime_error("Could not decode PolyMap spec: <" + code + ">");
+    if ( (iss >> yOrder)) {
+      if (xOrder==1 && yOrder==1) {
+	pm = new LinearMap(name);
+      } else {
+	PolyMap* poly = new PolyMap(xOrder, yOrder,name);
+	poly->setWorldTolerance(worldTolerance);
+	// Set PolyMap to identity for starters to not be degenerate:
+	poly->setToIdentity();
+	pm = poly;
+      }
+    } else {
+      if (xOrder==1) {
+	pm = new LinearMap(name);
+      } else {
+	PolyMap* poly = new PolyMap(xOrder, name);
+	poly->setWorldTolerance(worldTolerance);
+	poly->setToIdentity();
+	pm = poly;
+      }
+    }
+  } else if (stringstuff::nocaseEqual(type,"Linear")) {
+    pm = new LinearMap(name);
+
+  } else if (stringstuff::nocaseEqual(type,"Template")) {
+    string filename;
+    iss >> filename;
+    ifstream ifs(filename.c_str());
+    if (!ifs) 
+      throw runtime_error("Could not open file for building TemplateMap1d <" + filename + ">");
+    pm = TemplateMap1d::create(ifs, name);
+  } else if (stringstuff::nocaseEqual(type,"Identity")) {
+    pm = new IdentityMap;
+  } else {
+    throw runtime_error("Unknown type of PixelMap: <" + type + ">");
+  }
+  return pm;
 }
