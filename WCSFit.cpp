@@ -62,16 +62,6 @@ spaceReplace(string& s) {
   s = regexReplace("[[:space:]]+","_",s);
 }
 
-class MapMarq {
-public:
-  MapMarq(const list<Detection*>& dets_, PixelMap* pm_): dets(dets_), pm(pm_) {}
-  void operator()(const DVector& a, double& chisq, 
-		  DVector& beta, tmv::SymMatrix<double>& alpha);
-private:
-  const list<Detection*>& dets;
-  PixelMap* pm;
-};
-
 class Accum {
 public:
   double sumx;
@@ -736,26 +726,12 @@ main(int argc, char *argv[])
 	      d->ypix = ypix;
 	      d->xw = xw;
 	      d->yw = yw;
-	      // Note MapMarq does not use positional uncertainties.
 	      testPoints.push_back(d);
 	    }
 	  }
-	  MapMarq mm(testPoints, pm);
-	  // Since polynomial fit is linear, should just take one iteration:
-	  double var=0.;
-	  DVector beta(pm->nParams(), 0.);
-	  DVector params(pm->nParams(), 0.);
-	  tmv::SymMatrix<double> alpha(pm->nParams(), 0.);
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params = beta;
-	  beta.setZero();
-	  alpha.setZero();
-	  var = 0.;
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params += beta;
-	  pm->setParams(params);
+
+	  const double testPointSigma = 0.01*ARCSEC/DEGREE; // "errors" on world coords of test points
+	  mapFit(testPoints, pm, testPointSigma);
 
 	  // Clear out the testPoints:
 	  for (list<Detection*>::iterator i = testPoints.begin();
@@ -865,27 +841,8 @@ main(int argc, char *argv[])
 	  } // finish collecting test points for this extension
 	} // finish extension loop for this exposure
 	
-	{
-	  // Should be able to put this into a subroutine: ????
-	  MapMarq mm(testPoints, warp);
-	  // Since polynomial fit is linear, should just take one iteration:
-	  double var=0.;
-	  DVector beta(warp->nParams(), 0.);
-	  DVector params(warp->nParams(), 0.);
-	  tmv::SymMatrix<double> alpha(warp->nParams(), 0.);
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params = beta;
-	  beta.setZero();
-	  alpha.setZero();
-	  var = 0.;
-
-	  mm(params, var, beta, alpha);
-	  beta /= alpha;
-	  params += beta;
-	  warp->setParams(params);
-	}
-	
+	double testPointSigma = 0.01*ARCSEC/DEGREE; // 10 mas scale for "errors" on the test point positions
+	mapFit(testPoints, warp, testPointSigma);
 	
 	// Insert the Exposure map into the collection
 	mapCollection.learnMap(*warp);
@@ -1595,39 +1552,5 @@ main(int argc, char *argv[])
 
   } catch (std::runtime_error& m) {
     quit(m,1);
-  }
-}
-    
-void
-MapMarq::operator()(const DVector& a, 
-		    double& chisq, 
-		    DVector& beta, 
-		    tmv::SymMatrix<double>& alpha) {
-  chisq = 0;
-  beta.setZero();
-  alpha.setZero();
-  int np = a.size();
-  Assert(pm->nParams()==np);
-  Assert(beta.size()==np);
-  Assert(alpha.nrows()==np);
-  DMatrix derivs(2,np);
-  pm->setParams(a);
-
-  for (list<Detection*>::const_iterator i = dets.begin();
-       i != dets.end();
-       ++i) {
-    const Detection* d = *i;
-    if (d->isClipped) continue;
-    double xmod, ymod;
-    pm->toWorldDerivs(d->xpix, d->ypix, xmod, ymod, derivs);
-    xmod = d->xw - xmod;
-    ymod = d->yw - ymod;
-
-    chisq += xmod*xmod + ymod*ymod;
-    for (int i=0; i<np; i++) {
-      beta[i] += xmod*derivs(0,i) + ymod*derivs(1,i);
-      for (int j=0; j<=i; j++) 
-	alpha(i,j)+=derivs(0,i)*derivs(0,j) + derivs(1,i)*derivs(1,j);
-    }
   }
 }

@@ -61,7 +61,7 @@ public:
   ~Marquardt() {
     if (bestAlpha) delete bestAlpha;
     if (bestA) delete bestA;
-}
+  }
 
   // Does the fit starting at a, returns chisq.  Set the flag to get progress/timing to cerr
   P fit(Vector<P>& a, int maxIter=DefaultMaxIterations, bool progressToCerr=false);

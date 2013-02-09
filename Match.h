@@ -137,6 +137,11 @@ namespace astrometry {
     void count(long int& mcount, long int& dcount, bool doReserved, int minMatches, long catalog) const;
   };
 
+  // Function that will execute a Marquardt-Levenberg fit to optimize the
+  // parameters of some model to a simple list of detections.
+  // Assigns equal uncertainty to all test points, given by sigma
+  void mapFit(list<Detection*> testPoints, PixelMap* pm, double sigma=1.);
+
 } // namespace astrometry
 
 #endif

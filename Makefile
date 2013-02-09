@@ -66,7 +66,7 @@ FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFoF: WCSFoF.o TPVMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFit: WCSFit.o TPVMap.o Match.o $(OBJ)
+WCSFit: WCSFit.o TPVMap.o Match.o MapFit.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

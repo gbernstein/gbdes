@@ -184,6 +184,7 @@ TemplateMap1d::reverse_lookup(double val) const {
 
 void
 TemplateMap1d::write(std::ostream& os) const {
+  stringstuff::StreamSaver ss(os);
   os << (applyToX ? "X" : "Y")
      << " " << deviations.size()
      << " " << nodeStart

@@ -108,6 +108,22 @@ namespace stringstuff {
     std::list<string> replacements;
   };
 
+  // This class saves and clears formatting state of a stream on creation, restores on destruction
+  class StreamSaver {
+  public:
+    StreamSaver(std::ostream& os_): os(os_) {
+      oldFormat = os.flags(ios::fmtflags());
+      oldPrecision = os.precision();
+    }
+    ~StreamSaver() {
+      os.flags(oldFormat);
+      os.precision(oldPrecision);
+    }
+  private:
+    std::ostream& os;
+    ios::fmtflags oldFormat;
+    std::streamsize oldPrecision;
+  };
 } // namespace stringstuff
 
 using namespace stringstuff;

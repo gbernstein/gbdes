@@ -194,6 +194,10 @@ LinearMap::create(std::istream& is, string name) {
 
 void
 LinearMap::write(std::ostream& os) const {
+  stringstuff::StreamSaver ss(os);
+  const int DIGITS=8;
+  os.precision(DIGITS);
+  os.setf( ios_base::showpos | ios_base::scientific);
   os << v[0] << " " << v[1] << " " << v[2] << endl;
   os << v[3] << " " << v[4] << " " << v[5] << endl;
 }

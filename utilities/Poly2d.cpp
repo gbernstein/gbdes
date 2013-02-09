@@ -23,12 +23,18 @@ Poly2d::write(std::ostream& os) const {
   const int coeffsPerLine = 5;
   int iOnLine = 0;
   DVector coeffs = getC();
+  // Save precision and format of stream before changing it:
+  StreamSaver ss(os);
+  const int DIGITS=8;
+  os.precision(DIGITS);
+  os.setf( ios_base::showpos | ios_base::scientific);
+
   for (int i=0; i<nCoeffs(); i++) {
     if (iOnLine >= coeffsPerLine) {
       os << endl;
       iOnLine = 0;
     }
-    os << coeffs[i] << " " ;
+    os << setw(DIGITS+7) << coeffs[i] << " " ;
     iOnLine++;
   }
   os << endl;
