@@ -1597,7 +1597,7 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
       throw runtime_error("Could not decode PolyMap spec: <" + code + ">");
     if ( (iss >> yOrder)) {
       if (xOrder==1 && yOrder==1) {
-	LinearMap* lin = LinearMap(name);
+	LinearMap* lin = new LinearMap(name);
 	lin->setToIdentity();
 	pm = lin;
       } else {
@@ -1609,7 +1609,7 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
       }
     } else {
       if (xOrder==1) {
-	LinearMap* lin = LinearMap(name);
+	LinearMap* lin = new LinearMap(name);
 	lin->setToIdentity();
 	pm = lin;
       } else {

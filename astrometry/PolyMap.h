@@ -92,7 +92,7 @@ namespace astrometry {
     DVector getParams() const {return v;}
     int nParams() const {return 6;}
 
-    void setToIdentity() {v=0.; v[1]=1.; v[5]=1.;}
+    void setToIdentity() {v*=0.; v[1]=1.; v[5]=1.;}
 
     static string mapType() {return "Linear";}
     virtual string getType() const {return mapType();}
