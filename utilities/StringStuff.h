@@ -8,6 +8,7 @@
 #include <string>
 #include <set>
 #include <list>
+#include <ios>
 
 // For regular-expression matching:
 #include <boost/regex.hpp>
@@ -112,7 +113,7 @@ namespace stringstuff {
   class StreamSaver {
   public:
     StreamSaver(std::ostream& os_): os(os_) {
-      oldFormat = os.flags(ios::fmtflags());
+      oldFormat = os.flags(std::ios_base::fmtflags());
       oldPrecision = os.precision();
     }
     ~StreamSaver() {
@@ -121,7 +122,7 @@ namespace stringstuff {
     }
   private:
     std::ostream& os;
-    ios::fmtflags oldFormat;
+    std::ios_base::fmtflags oldFormat;
     std::streamsize oldPrecision;
   };
 } // namespace stringstuff
