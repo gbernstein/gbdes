@@ -1,4 +1,3 @@
-% $Id: PixelMap.tex,v 1.5 2011/06/18 23:36:03 garyb Exp $
 \documentclass[11pt,preprint,flushrt]{aastex}
 \def\eqq#1{Equation~(\ref{#1})}
 \newcommand{\bfx}{\mbox{\bf x}}
@@ -6,7 +5,7 @@
 \newcommand{\bfa}{\mbox{\boldmath $\alpha$}}
 \begin{document}
 
-\slugcomment{CVS \$Revision: 1.5 $ $ \$Date: 2011/06/18 23:36:03 $ $}
+\slugcomment{Revised 10 Feb 2013, not up to date yet}
 
 \title{Documentation for PixelMap Classes}
 
@@ -22,14 +21,25 @@ The {\tt PixelMap} classes are placed into the {\tt astrometry} namespace, and m
 2d coordinate space (``pixel'' coords) to another (``world'' coords).
 Methods {\tt toWorld()} and {\tt toPix()} execute the forward and inverse maps, respectively.  Methods {\tt  dWorlddPix}  and {\tt dPixdWorld()} return a $2\times2$ matrix giving the partial derivatives of the forward and inverse maps, respectively, and {\tt pixelArea} returns the world-coordinate area of a unit square in pixel space, {\it i.e.} returns the (absolute value of the) Jacobian determinant of the forward map at a specified point.
 
-Each {\tt PixelMap} can depend upon a vector of controlling parameters.  The current values of the parameter vector are accessed with {\tt setParams()} and {\tt getParams()}.  The number of parameters of the map is returned by {\tt nParams()}.  {\bf Note that the size of the parameter vector returned by {\tt getParams()} is allowed to exceed the number of parameters, so you must consult {\tt nparams()} to know how many parameters there are.}  (In particular if there are no parameters, {\tt getParams()} might return a 1-dimensional vector since some linear algebra routines might not like having zero-dimensional vectors.)
+Each {\tt PixelMap} can depend upon a vector of controlling parameters.  The current values of the parameter vector are accessed with {\tt setParams()} and {\tt getParams()}.  The number of parameters of the map is returned by {\tt nParams()}. 
 
-When calling {\tt toWorld()} one can optionally supply a reference to a $2\times{\tt nparams()}$ matrix that will be filled with the partial derivatives $\partial[x,y]_{\rm world} / \partial {\bf p}$, where ${\bf p}$ is the parameter vector, evaluated at the supplied values of $[x,y]_{\rm pix}$.  Method {\tt toPix()} can also be asked to supply partial derivatives of the inverse map with respect to the map parameters.
+One can call {\tt toWorldDerivs()}, supplying a reference to a $2\times{\tt nparams()}$ matrix that will be filled with the partial derivatives $\partial[x,y]_{\rm world} / \partial {\bf p}$, where ${\bf p}$ is the parameter vector, evaluated at the supplied values of $[x,y]_{\rm pix}$.  Method {\tt toPixDerivs()} also fills a supplied matrix with the derivatives of the {\em world} coordinates with respect to parameters (even though one is requesting the pixel coordinates).
 
-There are no constraints on the nature of the ``pixel'' and ``world'' coordinate systems, despite the names.  No units are assumed.  The only quality of the pixel space assumed is that an interval $\Delta [x,y]_{\rm pix}=1$ is an appropriate step size for calculating numerical derivatives of the map to world coordinates.  But you also have the option to change this default pixel-space step size with {\tt setPixelStep()} or read it with {\tt getPixelStep()}.
+There are no constraints on the nature of the ``pixel'' and ``world'' coordinate systems, despite the names.  No units are assumed.  The only quality of the pixel space assumed is that an interval $\Delta [x,y]_{\rm pix}=1$ is an appropriate step size for calculating numerical derivatives of the map to world coordinates.  But you also have the option to change this default pixel-space step size with {\tt setPixelStep()} or read it with {\tt getPixelStep()}.  Some implementations may choose to ignore {\tt setPixelStep()} if they have some natural scale in pixel space.
+
+Every {\tt PixelMap} also has a name string that is accessed with {\tt getName()}.  The base class has a default such that if no (or null) {\tt name} string is provided, a name {\tt map\_NN} will be assigned, with a running index number  {\tt NN}.  Most derived classes propagate this naming convention.
+
+Other methods that each {\tt PixelMap} implemenation is expected to have, in order to enable complete serialization and deserialization of these classes:
+\begin{itemize}
+\item {\tt duplicate()} returns a {\tt PixelMap*} pointing to a deep copy of itself. An exception is that if you have a {\tt SubMap} or {\tt Wcs} that is created with {\tt shareMaps=true,} then the original and the copy both contain only pointers to component {\tt PixelMaps} that they do not own.
+\item {\tt write(std::ostream\& os)} serializes all information needed to construct the state of the map (except for the name and the pixel step).
+\item {\tt getType()} returns a short string that identifies the implementation being used, e.g. {\tt ``Poly''} for the {\tt PolyMap} class.
+\item {\tt mapType()} is a static member function returning the same class-identifying string as {\tt getType()}.
+\item {\tt create(std::istream\& is, string name)} is a static member function that will return a pointer to a freshly constructed instance of the class that has deserialized information from the {\tt write()} routine.  
+\end{itemize}
 
 \section{Implementing a new {\tt PixelMap}}
-To derive a functioning class from {\tt PixelMap}, the minimial requirement is to implement the two point-mapping methods {\tt toPix()} and {\tt toWorld()}.  All other {\tt PixelMap} methods have default implementations in the base class.
+To derive a functioning class from {\tt PixelMap}, the minimial requirement is to implement the two point-mapping methods {\tt toPix()} and {\tt toWorld()}.  A new implementation also requires the {\tt duplicate()} and (de-)serialization routines listed at the end of the previous section.  All other {\tt PixelMap} methods have default implementations in the base class.
 
 It would be common for the forward map {\tt toWorld(double xpix, double ypix, double\& xworld, double\& yworld)} to be defined by some formula for your map.  Sometimes the inverse map is easily expressed analytically, but if not, the base class defines the protected method
 \begin{verbatim}
@@ -45,7 +55,7 @@ The iteration continues until $|{\bf x}_w - \hat{\bf x}_w|$ is below {\tt worldT
 
 The derivative method {\tt dWorlddPix()} is implemented in the base class by a finite-difference estimate using the {\tt getPixelStep()} value as a step size for the simple numerical derivatives.  {\tt dPixdWorld()} is implemented in the base class by taking the matrix inverse of {\tt dWorlddPix()},  and {\tt pixelArea()} is implemented as the determinant of the numerical forward derivatives.
 
-All of the routines related to map parameters are implemented in the base class to have the proper behavior for a map that has {\em no} free parameters.  If your map does have adjustable free parameters, you will have to implement {\tt nParams(), setParams(), getParams(),} and the versions of {\tt toWorld()} and {\tt toPix()} that return derivatives with respect to parameters.
+All of the routines related to map parameters are implemented in the base class to have the proper behavior for a map that has {\em no} free parameters.  If your map does have adjustable free parameters, you will have to implement {\tt nParams(), setParams(), getParams(),} and the {\tt toWorldDerivs()} and {\tt toPixDerivs()} that return derivatives with respect to parameters.
 
 \section{Derived {\tt PixelMap}s}
 \subsection{{\tt IdentityMap}}
@@ -54,9 +64,10 @@ When you want a map that does nothing.  There are no parameters, and the derivat
 \subsection{{\tt ReprojectionMap}}
 This is a {\tt PixelMap} that embodies any map of the celestial sphere from one coordinate system to another that are both represented by a class derived from {\tt SphericalCoords}.  The {\tt ReprojectionMap} is constructed with
 \begin{verbatim}
-ReprojectionMap(SphericalCoords* pixCoords,
-                SphericalCoords* worldCoords,
-                double scale_=1.);
+ReprojectionMap(const SphericalCoords& pixCoords,
+                const SphericalCoords& worldCoords,
+                double scale_=1.,
+                string name="");
 \end{verbatim}
 The ``pix'' and ``world'' coordinate systems are defined by their respective {\tt SphericalCoords} instances.  The {\tt PixelMap} is then defined via
 \begin{equation}
@@ -67,9 +78,7 @@ x_{\rm world} = {\rm lon}_{\rm world}/{\tt scale} & y_{\rm world} = {\rm lat}_{\
 \end{equation}
 where the (lon,lat) positions mark the same point on the celestial sphere.  
 
-The {\tt ReprojectionMap} class will assume ownership of the two {\tt SphericalCoords} objects that it points to.  It will reset their lon/lat positions in order to effect pixel maps {\bf and it will destroy them when the {\tt ReprojectionMap} is destroyed.  So you point to ``spare'' copies during construction.}
-
-{\bf Note also that if one of the {\tt SphericalCoords} is a {\tt TangentPlane} or {\tt SphericalCustom} object, it will contain a pointer to an {\tt Orientation} object.  You must not alter or destroy that object as long as the {\tt ReprojectionMap} is being used, and you are still responsible for destroying the {\tt Orientation}.}
+The {\tt ReprojectionMap} class will store duplicates of the two input {\tt SphericalCoord} instances.  Be careful if the input coordinate systems have {\tt shareOrient=true.}
 
 \subsubsection{Example}
 Suppose you want a {\tt PixelMap} that treats ecliptic coordinates as the ``pixel'' coordinates and ICRS as the ``world'' system.  And you want the {\tt PixelMap} to work in degree units rather than the radians that are native to the {\tt SphericalCoords} classes.  Here is the code:
@@ -90,6 +99,8 @@ There are no free parameters in a {\tt ReprojectionMap}.  Note that it does not 
 A {\tt CompoundPixelMap} is the chained application of a sequence of $N$ {\tt PixelMap}s.  Let map $i$ treat $(x_{i-1},y_{i-1})$ as its ``pixel'' coordinates and $(x_i,y_i)$ as its ``world'' coordinates.  Then $(x_0,y_0)$ are the ``pixel'' coordinates of the {\tt CompoundPixelMap} and $(x_N,y_N)$ are the ``world'' coordinates of the {\tt CompoundPixelMap}.  The {\tt toWorld()} method of {\tt CompoundPixelMap} simply applies the {\tt toPix()} methods of all component maps in order.  {\tt CompoundPixelMap.toWorld()} applies its consituent {\tt toWorld()} maps in {\em reverse} order.  The overall derivative matrix of the {\tt CompoundPixelMap} is the product of its constituents'.
 
 \subsubsection{Building a {\tt CompoundPixelMap}}
+{\bf DEPRECATED, need a SubMap section.}
+
 You construct {\tt CompoundPixelMap} with no arguments or with a pointer to a single {\tt PixelMap}.  The {\tt append()} and {\tt prepend()} methods take pointers to another {\tt PixelMap} that will be added to the beginning or end of the transformation list.  The {\tt PixelMap} at the front of the list is the one applied first in the {\tt toWorld()} mapping.   {\tt CompoundPixelMap.setPixelStep()} calls the {\tt setPixelStep()} method of the {\tt PixelMap} at the front of its list.
 
 {\bf {\tt CompoundPixelMap} only saves a pointer to each of its component maps.  The user is responsible for keeping the component maps in existence until the {\tt CompoundPixelMap} is no longer in use and for destroying the components thereafter.}
@@ -106,7 +117,10 @@ See the {\tt Poly2d} class documentation for instructions on how to define polyn
 
 The parameters of a {\tt PolyMap} object are the coefficients of the two polynomials ($x$ first, then $y$).  The order of coefficients is defined by {\tt Poly2d}.
 
-{\tt PolyMap::toPix()} uses the {\tt PolyMap::NewtonInverse()} method, and {\em always} uses the pixel coordinates that solved the previous call as the initial guess for the next call.
+{\tt PolyMap::toPix()} uses the {\tt PolyMap::NewtonInverse()} method, and {\em always} uses the values of {\tt xpix} and {\tt ypix} on input as initial guesses for the Newton method.
+
+\subsection{Serialization Format???}
+
 \section{{\tt LinearMap}}
 Also in {\it PolyMap.h} is the class {\tt LinearMap}, with transformation defined by the six-element parameter vector ${\bf p}$ and the formulae:
 \begin{eqnarray}
@@ -114,8 +128,13 @@ x_{\rm world} & = & p_0 + p_1 x_{\rm pix} + p_2 y_{\rm pix} \\
 y_{\rm world} & = & p_3 + p_4 x_{\rm pix} + p_5 y_{\rm pix}.
 \end{eqnarray}
 
-\section{{\tt SCAMPMap}}
-The files {\it shapes/SCAMPMap.h} and {\it shapes/SCAMPMap.cpp} derive from {\tt CompoundPixelMap} a new class, {\tt SCAMPMap}, that implements the pseudo-standard world coordinate system (WCS) maps used by Emmanuel Bertin's {\it SCAMP} program.  These maps follow a proposal for a FITS WCS standard that was never formally adopted, and has some oddities.  But it it widely used and can be specified by a series of FITS keywords.  I have implemented a specific subset of the standard that is used by Emmanuel.
+\subsection{Serialization Format???}
+
+\section{{\tt TPVMap}}
+
+{\bf OUT OF DATE - update ???}
+
+The files {\it shapes/TPVMap.h} and {\it shapes/TPVMap.cpp} derive from {\tt CompoundPixelMap} a new class, {\tt TPVMap}, that implements the pseudo-standard world coordinate system (WCS) maps used by Emmanuel Bertin's {\it SCAMP} program.  These maps follow a proposal for a FITS WCS standard that was never formally adopted, and has some oddities.  But it it widely used and can be specified by a series of FITS keywords.  I have implemented a specific subset of the standard that is used by Emmanuel.
 
 \subsection{The FITS standard}
 The map from $(x_{\rm pix},y_{\rm pix})$ to celestial coordinates has three parts in the FITS WCS standard:
@@ -156,41 +175,46 @@ Note there are no {\tt PV[12]\_3} or {\tt PV[12]\_11} terms (according to the co
 \item A deprojection from the $(\xi,\eta)$ coordinates onto the celestial sphere.  Many projections are in principle possible and specified by the {\tt CTYPE[12]} keywords, but SCAMP always uses the gnomonic projection that is declared by setting {\tt CTYPE1}$=${\tt RA---TAN} and {\tt CTYPE2}$=${\tt DEC--TAN}.  Any other values for these keywords throws an {\tt AstrometryError}.  The projection pole RA and Dec in the ICRS system are given as degree values in the fields {\tt CRVAL1} and {\tt CRVAL2}, respectively.  The gnomonic projection is assumed to have its $\eta$ axis pointing along the north ICRS meridian, {\it i.e.} position angle zero.
 \end{enumerate}
 
-\subsection{{\tt SCAMPMap} implementation}
-The FITS WCS map standard is implemented by making {\tt SCAMPMap} derive from {\tt CompoundPixelMap}.  The basic {\tt SCAMPMap} is defined as the map from $(x_{\rm pix}, y_{\rm pix})$ (in pixel units) to $(\xi,\eta)$ (in {\bf degrees}), with the latter coordinates taken to be in the gnomonic projection about the {\tt CRVAL[12]} pole specified in the FITS header.  Internally, this is a {\tt LinearMap} followed by a {\tt PolyMap} that encode steps (1) and (2) of the WCS definition above.  These maps are created, stored, and destroyed by the {\tt SCAMPMap} class.  The user may obtain {\tt const} pointers to these with the methods {\tt linear()} and {\tt poly()}.  The {\tt Orientation} of the gnomonic projection specified by the FITS header is also constructed, stored, and destroyed by the {\tt SCAMPMap} class.  A reference to it can be obtained by the {\tt orientFITS()} method.
+\subsection{{\tt TPVMap} implementation}
+The FITS WCS map standard is implemented by making {\tt TPVMap} derive from {\tt CompoundPixelMap}.  The basic {\tt TPVMap} is defined as the map from $(x_{\rm pix}, y_{\rm pix})$ (in pixel units) to $(\xi,\eta)$ (in {\bf degrees}), with the latter coordinates taken to be in the gnomonic projection about the {\tt CRVAL[12]} pole specified in the FITS header.  Internally, this is a {\tt LinearMap} followed by a {\tt PolyMap} that encode steps (1) and (2) of the WCS definition above.  These maps are created, stored, and destroyed by the {\tt TPVMap} class.  The user may obtain {\tt const} pointers to these with the methods {\tt linear()} and {\tt poly()}.  The {\tt Orientation} of the gnomonic projection specified by the FITS header is also constructed, stored, and destroyed by the {\tt TPVMap} class.  A reference to it can be obtained by the {\tt orientFITS()} method.
 
 If no {\tt PV} terms are found in the header, the polynomial map is omitted and the linear map is used without it.
 
-Optionally the {\tt SCAMPMap} can create a {\tt ReprojectionMap} and append it to the {\tt PixelMap} chain so that the world coordinates $(\xi,\eta)$ are projected into gnomonic project specified by an {\tt Orientation} of the user's choosing.  This is useful, for instance, if we want to map several exposures' pixels into a common tangent-plane system.  A reference to the {\tt Orientation} in which the {\tt SCAMPMap} world coordinate system is defined can be obtained from the {\tt projection()} method.
+Optionally the {\tt TPVMap} can create a {\tt ReprojectionMap} and append it to the {\tt PixelMap} chain so that the world coordinates $(\xi,\eta)$ are projected into gnomonic project specified by an {\tt Orientation} of the user's choosing.  This is useful, for instance, if we want to map several exposures' pixels into a common tangent-plane system.  A reference to the {\tt Orientation} in which the {\tt TPVMap} world coordinate system is defined can be obtained from the {\tt projection()} method.
 
-\subsection{Constructing a {\tt SCAMPMap}}
-The constructor argument is a reference to an {\tt image::ImageHeader} that must define all of the keywords needed to specify the standard map as described above.  The linear map and the orientation of the WCS gnomonic projection are read using the {\tt ReadCD()} function in {\it SCAMPMap.cpp}.  Another function, {\tt ReadPV()}, is used to read the $\xi$ and $\eta$ polynomial coefficients from an {\tt ImageHeader} and produce {\tt Poly2d} instances from them.
+\subsection{Constructing a {\tt TPVMap}}
+The constructor argument is a reference to an {\tt image::ImageHeader} that must define all of the keywords needed to specify the standard map as described above.  The linear map and the orientation of the WCS gnomonic projection are read using the {\tt ReadCD()} function in {\it TPVMap.cpp}.  Another function, {\tt ReadPV()}, is used to read the $\xi$ and $\eta$ polynomial coefficients from an {\tt ImageHeader} and produce {\tt Poly2d} instances from them.
 
-The constructor will optionally take a pointer to an {\tt Orientation} that will be used to define the {\tt TangentPlane} coordinate system of the output coordinates.  If a zero pointer is passed (the default), then the {\tt Orientation} of the WCS system is used and the {\tt SCAMPMap} world coordinates will coincide with the WCS defined by the keywords.  If a different {\tt Orientation} is passed, then it is copied by the {\tt SCAMPMap}, and the user does {\em not} have to maintain the object whose pointer was given during construction.
+The constructor will optionally take a pointer to an {\tt Orientation} that will be used to define the {\tt TangentPlane} coordinate system of the output coordinates.  If a zero pointer is passed (the default), then the {\tt Orientation} of the WCS system is used and the {\tt TPVMap} world coordinates will coincide with the WCS defined by the keywords.  If a different {\tt Orientation} is passed, then it is copied by the {\tt TPVMap}, and the user does {\em not} have to maintain the object whose pointer was given during construction.
 
-In short: if you construct a {\tt SCAMPMap} from an {\tt ImageHeader}, you have a completely self-contained instance of a {\tt PixelMap} with no free parameters, optionally mapping into any gnomonic projection of the sky that you choose.  All of the elements of the map are stored inside the class and appropriately cleaned up upon its destruction.
+In short: if you construct a {\tt TPVMap} from an {\tt ImageHeader}, you have a completely self-contained instance of a {\tt PixelMap} with no free parameters, optionally mapping into any gnomonic projection of the sky that you choose.  All of the elements of the map are stored inside the class and appropriately cleaned up upon its destruction.
 
 \subsection{Fitting a FITS-style WCS map to a {\tt PixelMap}}
-{\it SCAMPMap.h} declares a function {\tt FitSCAMP()} that creates a SCAMP-style FITS WCS map that is a close fit to the action of any {\tt PixelMap} that you give as input.  The purpose is to create a header that can be installed in a FITS image that will closely approximate the behavior of any {\tt PixelMap} that you have determined to be a good astrometric solution for your image.  The function declaration is
+{\it TPVMap.h} declares a function {\tt FitTPV()} that creates a TPV-style FITS WCS map that is a close fit to the action of any {\tt PixelMap} that you give as input.  The purpose is to create a header that can be installed in a FITS image that will closely approximate the behavior of any {\tt PixelMap} that you have determined to be a good astrometric solution for your image.  The function declaration is
 \begin{verbatim}
 img::ImageHeader 
-astrometry::FitSCAMP(Bounds<double> b,
+astrometry::FitTPV(Bounds<double> b,
                      const PixelMap& pm,
                      const Orientation& pmOrient,
                      const SphericalCoords& pole,
                      double tolerance=0.0001*ARCSEC/DEGREE);
 \end{verbatim}
-The map $M$ returns the $(\xi,\eta)_{\rm SCAMP}$, in degrees, of a gnomonic projection centered at the designate {\tt pole}.  {\bf The input {\tt PixelMap pm} is assumed to be a map from pixel coordinates to a degree-valued $(\xi,\eta)_{\rm pm}$ coordinate in a {\tt TangentPlane} (gnomonic} projection with {\tt Orientation pmOrient.}  The function finds the polynomial coefficients of a SCAMP-style map that brings $(\xi,\eta)_{\rm SCAMP}$ to the same point on the celestial sphere as $(\xi,\eta)_{\rm pm}$ for any pixel coordinate inside the rectangular region described by the {\tt Bounds} object {\tt b} (see the {\it utilities2/Bounds.h} file for info on this class).  
+The map $M$ returns the $(\xi,\eta)_{\rm TPV}$, in degrees, of a gnomonic projection centered at the designate {\tt pole}.  {\bf The input {\tt PixelMap pm} is assumed to be a map from pixel coordinates to a degree-valued $(\xi,\eta)_{\rm pm}$ coordinate in a {\tt TangentPlane} (gnomonic} projection with {\tt Orientation pmOrient.}  The function finds the polynomial coefficients of a TPV-style map that brings $(\xi,\eta)_{\rm TPV}$ to the same point on the celestial sphere as $(\xi,\eta)_{\rm pm}$ for any pixel coordinate inside the rectangular region described by the {\tt Bounds} object {\tt b} (see the {\it utilities2/Bounds.h} file for info on this class).  
 
-The polynomial coefficients of the output {\tt SCAMPMap} are solved to minimize the RMS deviation between the map $M$ and the map {\tt pm} over the rectangular region {\tt b}.   The polynomial order is increased until this RMS deviation is $<{\tt tolerance}$.  There are {\tt startOrder} and {\tt maxOrder} constants defined in {\it SCAMPMap.cpp}, currently 3 and 5, respectively.  Note that the usual convention for FITS WCS systems is to express world coordinates in degrees, so the default {\tt tolerance} is 0.1 milliarcsec.  
+The polynomial coefficients of the output {\tt TPVMap} are solved to minimize the RMS deviation between the map $M$ and the map {\tt pm} over the rectangular region {\tt b}.   The polynomial order is increased until this RMS deviation is $<{\tt tolerance}$.  There are {\tt startOrder} and {\tt maxOrder} constants defined in {\it TPVMap.cpp}, currently 3 and 5, respectively.  Note that the usual convention for FITS WCS systems is to express world coordinates in degrees, so the default {\tt tolerance} is 0.1 milliarcsec.  
 
-The function output is an {\tt ImageHeader} that contains the keywords defining a map conforming to the FITS WCS pseudo-standard and readable by {\it SCAMP}, {\it DS9}, and other common code.  
+The function output is an {\tt ImageHeader} that contains the keywords defining a map conforming to the FITS WCS pseudo-standard and readable by {\it TPV}, {\it DS9}, and other common code.  
 The FITS WCS coordinates will be defined in a gnomonic projection about {\tt pole} supplied to the function.  This means that {\tt CRVAL[12]} will be set to the ICRS RA/Dec of this pole.  The {\tt CRPIX[12]} reference pixel value and the {\tt CD[12]\_[12]} matrix elements will be selected so that the linear part of the WCS map matches the full map to first order at the center of the {\tt Bounds}.
 
 \subsubsection{Implementation}
 A rectangular grid of $\approx{\tt nGridPoints}$ (currently set to 400) is placed spanning the given pixel-space bounds.  Each is mapped to the celestial sphere with {\tt pm} and then remapped into the projection desired for the FITS-style WCS map.  A linear least-squares adjustment to all the polynomial mapping coordinates is made.  If the resulting map is not of sufficient accuracy, the WCS polynomial order is increased, and we try again.  If {\tt maxOrder} is exceeded, an {\tt AstrometryError} is thrown.
 
-\section{\tt MapCollection \& SubMap}
+\section{\tt Wcs}
+{\bf UPDATE ???}
+
+\section{\tt PixelMapCollection \& SubMap}
+{\bf UPDATE ???}
+
 When reconciling world-coordinate maps for a set of data / reference catalogs, it is typical to have a large number of ``building block'' coordinate maps that are put together in different combinations to maps parts of individual exposures.  {\tt MapCollection} is a class that serves as a warehouse for all these building blocks, puts them together into any specified chain to form the complete WCS transformations, and facilitates bookkeeping of the parameters of these building blocks within a global parameter vector during a fitting process.  {\tt SubMap} is derived from {\tt PixelMap} and wraps any {\tt PixelMap} by adding information about where the parameters of that particular {\tt PixelMap} live within the global parameter vector.
 
 The methods for {\tt MapCollection} are:
