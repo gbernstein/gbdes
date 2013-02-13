@@ -58,7 +58,7 @@ namespace photometry {
   // Will have originated from a single bintable HDU that we can access
   class Extension {
   public:
-    Extension(): map(0), wcs(0), startWcs(0) {}
+    Extension(): map(0), startWcs(0) {}
     int exposure;
     int device;
     SubMap* map;	  // The total magnitude transformation for this exposure

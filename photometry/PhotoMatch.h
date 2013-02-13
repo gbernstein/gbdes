@@ -1,7 +1,7 @@
 // Match objects from multiple catalogs together
-// And then adjust parameters of their PixelMaps to minimize
+// And then adjust parameters of their PhotoMaps to minimize
 // differences from mean world coordinates.
-//  Derived from the acs/Match code.
+
 #ifndef MATCH_H
 #define MATCH_H
 
@@ -13,11 +13,9 @@ using std::list;
 #include "UseTMV.h"
 #include "TMV_SymBand.h"
 #include "Bounds.h"
-#include "Astrometry.h"
-#include "PixelMap.h"
-#include "PixelMapCollection.h"
+#include "PhotoMapCollection.h"
 
-namespace astrometry {
+namespace photometry {
 
   class AlphaUpdater; // Used only in Match.cpp ???
 
@@ -27,17 +25,14 @@ namespace astrometry {
   public:
     long catalogNumber;
     long objectNumber;
-    double xpix;
-    double ypix;
-    double sigmaPix;
-    double xw;
-    double yw;
-    // weight, nominally inverse sigma squared in each world coord dimen:
-    double wtx;
-    double wty;
+    double magIn;
+    double sigmaMag;
+    photometry::PhotoArguments args;
+    double magOut;
+    // weight, nominally inverse sigma squared of output mag
+    double wt;
     // Inverse square of the sigma used for sig-clipping:
-    double clipsqx;
-    double clipsqy;
+    double clipsq;
     bool isClipped;
     const Match* itsMatch;
     const SubMap* map;
@@ -64,10 +59,10 @@ namespace astrometry {
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
     void clear(bool deleteDetections=false);
-    void remap();  // Remap each point to world coords with current map
-    void centroid(double& x, double& y) const;
-    void centroid(double& x, double& y, 
-		  double& wtx, double &wty) const;
+    void remap();  // Remap each point, i.e. make new magOut
+    // Mean of un-clipped output mags, optionally with total weight
+    void mean(double& mag) const;
+    void mean(double& mag, double& wt) const;
     int size() const {return elist.size();}
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {return nFit;}
@@ -101,16 +96,14 @@ namespace astrometry {
     const_iterator end() const {return elist.end();}
   };
 
-  typedef list<Match*> MCat;
-
-  // Class that aligns all coordinates
-  class CoordAlign {
+  // Class that fits to make magnitudes agree
+  class PhotoAlign {
   private:
     list<Match*>& mlist;
-    PixelMapCollection& pmc;
+    PhotoMapCollection& pmc;
     double relativeTolerance;
   public:
-    CoordAlign(PixelMapCollection& pmc_,
+    PhotoAlign(PhotoMapCollection& pmc_,
 	       list<Match*>& mlist_): mlist(mlist_),
 				      pmc(pmc_), 
 				      relativeTolerance(0.001)  {}
@@ -136,11 +129,6 @@ namespace astrometry {
     void count(long int& mcount, long int& dcount, bool doReserved=false, int minMatches=2) const;
     void count(long int& mcount, long int& dcount, bool doReserved, int minMatches, long catalog) const;
   };
-
-  // Function that will execute a Marquardt-Levenberg fit to optimize the
-  // parameters of some model to a simple list of detections.
-  // Assigns equal uncertainty to all test points, given by sigma
-  void mapFit(list<Detection*> testPoints, PixelMap* pm, double sigma=1.);
 
 } // namespace astrometry
 

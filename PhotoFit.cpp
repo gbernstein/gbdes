@@ -64,7 +64,7 @@ spaceReplace(string& s) {
 }
 
 // A function to parse strings describing PixelMap models, setting tolerance for inversion of world coords:
-PixelMap* pixelMapDecode(string code, string name, double worldTolerance);
+PixelMap* pixelMapDecode(string code, string name, PolyMap::ArgumentType arg=PolyMap::Device);
 
 class Accum {
 public:
@@ -75,8 +75,8 @@ public:
   int n;
   double xpix;
   double ypix;
-  double xfield;
-  double yfield;
+  double xexpo;
+  double yexpo;
   double sumdof;
   Accum(): summw(0.),
 	   summ(0.), 
@@ -151,6 +151,7 @@ main(int argc, char *argv[])
   string newHeadSuffix;
   double chisqTolerance;
   string renameInstruments;
+  string useInstruments;
   string existingMaps;
   string fixMaps;
   string canonicalExposures;
@@ -188,6 +189,8 @@ main(int argc, char *argv[])
 			 "Fractional change in chisq for convergence", 0.001, 0.);
     parameters.addMember("renameInstruments",&renameInstruments, def,
 			 "list of new names to give to instruments for maps","");
+    parameters.addMember("useInstruments",&useInstruments, def,
+			 "the instruments that are assumed to produce matching mags","");
     parameters.addMember("existingMaps",&existingMaps, def,
 			 "list of astrometric maps to draw from existing files","");
     parameters.addMember("fixMaps",&fixMaps, def,
@@ -318,33 +321,24 @@ main(int argc, char *argv[])
 	++i;
       }
 
+    // The list of instruments that we will be matching together in this run:
+    // have their parameters held fixed.
+    list<string> useInstrumentList = split(useInstruments, listSeperator);
+    for (list<string>::iterator i = useInstrumentList.begin();
+	 i != useInstrumentList.end(); ) 
+      if (i->empty()) {
+	i = useInstrumentList.erase(i);
+      } else {
+	stripWhite(*i);
+	++i;
+      }
+
     /////////////////////////////////////////////////////
-    //  Read in properties of all Fields, Instruments, Devices, Exposures
+    //  Read in properties of all Instruments, Devices, Exposures
     /////////////////////////////////////////////////////
 
     // All the names will be stripped of leading/trailing white space, and internal
     // white space replaced with single underscore - this keeps PixelMap parsing functional.
-
-    // All we care about fields are names and orientations:
-    NameIndex fieldNames;
-
-    // ??? Fields may be completely irrelevant in the code ???
-    {
-      FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite + FITS::OverwriteFile + FITS::Create, "Fields");
-      FTable ft = in.extract();
-      out.adopt(ft);
-      vector<double> ra;
-      vector<double> dec;
-      vector<string> name;
-      ft.readCells(name, "Name");
-      ft.readCells(ra, "RA");
-      ft.readCells(dec, "Dec");
-      for (int i=0; i<name.size(); i++) {
-	spaceReplace(name[i]);
-	fieldNames.append(name[i]);
-      }
-    }
 
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
@@ -354,23 +348,22 @@ main(int argc, char *argv[])
       FITS::FitsFile ff(inputTables);
       for (int i=1; i<ff.HDUCount(); i++) {
 	FITS::Hdu h(inputTables, FITS::HDUAny, i);
-	if (stringstuff::nocaseEqual(h.getName(), "Instrument"))
+	if (stringstuff::nocaseEqual(h.getName(), "Instrument")) {
 	  instrumentHDUs.push_back(i);
-	else if (stringstuff::nocaseEqual(h.getName(), "MatchCatalog"))
+	} else if { (stringstuff::nocaseEqual(h.getName(), "MatchCatalog"))
 	  catalogHDUs.push_back(i);
+	}
       }
     }
     
     // Read in all the instrument extensions and their device info.
-    vector<Instrument*> instruments(instrumentHDUs.size());
+    vector<Instrument*> instruments(instrumentHDUs.size(),0);
     for (int i=0; i<instrumentHDUs.size(); i++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
       // Append new table to output:
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, -1);
-      out.setName("Instrument");
       Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
       FTable ff=ft.extract();
-      out.adopt(ff);
+
       string instrumentName;
       int instrumentNumber;
       if (!ff.header()->getValue("Name", instrumentName)
@@ -379,6 +372,15 @@ main(int argc, char *argv[])
 	     << instrumentHDUs[i] << endl;
       }
       spaceReplace(instrumentName);
+      // Is this an instrument we are going to care about?
+      string name = instrumentName;
+      instrumentTranslator(name);  // Apply any name remapping specified.
+      if (!regexMatchAny(useInstrumentList, name)) 
+	continue;	// Skip this instrument if we aren't using its mags
+
+      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, -1);
+      out.setName("Instrument");
+      out.adopt(ff);
       Assert(instrumentNumber < instruments.size());
       Instrument* instptr = new Instrument(instrumentName);
       instruments[instrumentNumber] = instptr;
@@ -424,17 +426,14 @@ main(int argc, char *argv[])
 	Exposure* expo = new Exposure(names[i],gn);
 	expo->field = fieldNumber[i];
 	expo->instrument = instrumentNumber[i];
+	// Is this exposure in an instrument of interest, or a reference or tag?
+	if (expo->instrument>=0 && !instruments[expo->instrument]) {
+	  // No - don't save info, insert null into exposure list
+	  delete expo;
+	  expo = 0;
+	}
 	exposures.push_back(expo);
       }
-    }
-
-    // Read and keep the table giving instructions for all input files:
-    FTable fileTable;
-    {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Files");
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Files");
-      fileTable = ft.extract();
-      out.copy(fileTable);
     }
 
     // Read info about all Extensions - we will keep the Table around.
@@ -447,10 +446,17 @@ main(int argc, char *argv[])
       out.copy(extensionTable);
     }
     for (int i=0; i<extensionTable.nrows(); i++) {
-      extensions.push_back(new Extension);
-      Extension* extn = extensions.back();
+      Extension* extn = new Extension;
       int j;
       extensionTable.readCell(j, "ExposureNumber", i);
+      if (!exposures[j]) {
+	// This extension is not in an exposure of interest.  Skip it.
+	delete extn;
+	extn = 0;
+	extensions.push_back(extn);
+	continue;
+      }
+      extensions.push_back(extn);
       extn->exposure = j;
       extensionTable.readCell(j, "DeviceNumber", i);
       extn->device = j;
@@ -474,6 +480,7 @@ main(int argc, char *argv[])
       // destination projection is the Exposure projection, whose coords used for any
       // exposure-level magnitude corrections
       extn->startWcs->reprojectTo(*exposures[extn->exposure]->projection);
+      // ??? or use the field center for reference/tag exposures ???
     }
 
     /////////////////////////////////////////////////////
@@ -503,6 +510,7 @@ main(int argc, char *argv[])
     // Set up coordinate maps for each instrument & exposure
     for (int iinst=0; iinst<instruments.size(); iinst++) {
       Instrument* inst = instruments[iinst];
+      if (!inst) continue; // Only using some instruments
 
       // (1) choose a name to be used for this Instrument's PhotoMap:
       string mapName = inst->name;
@@ -586,6 +594,7 @@ main(int argc, char *argv[])
       long canonicalExposure = -1;
       list<long> exposuresWithInstrument;
       for (long iexp = 0; iexp < exposures.size(); iexp++) {
+	if (!exposures[iexp]) continue;  // Not using this exposure or its instrument
 	if (exposures[iexp]->instrument == iinst) {
 	  exposuresWithInstrument.push_back(iexp);
 	  if (regexMatchAny(canonicalExposureList, exposures[iexp]->name)) {
@@ -671,7 +680,7 @@ main(int argc, char *argv[])
 	PhotoMap* pm=0;
 	list<string> pmCodes = stringstuff::split(deviceModel,'+');
 	if (pmCodes.size() == 1) {
-	  pm = pixelMapDecode(pmCodes.front(),inst->mapNames[idev], worldTolerance);
+	  pm = pixelMapDecode(pmCodes.front(),inst->mapNames[idev]);
 	} else if (pmCodes.size() > 1) {
 	  // Build a compound SubMap with desired maps in order:
 	  int index = 0;
@@ -682,7 +691,7 @@ main(int argc, char *argv[])
 	    ostringstream oss;
 	    // Components will have index number appended to device map name:
 	    oss << inst->mapNames[idev] << "_" << index;
-	    pmList.push_back(pixelMapDecode(*ipm, oss.str(), worldTolerance));
+	    pmList.push_back(pixelMapDecode(*ipm, oss.str()));
 	  }
 	  pm = new SubMap(pmList, inst->mapNames[idev]);
 	  // Delete the original components, which have now been duplicated in SubMap:
@@ -741,10 +750,10 @@ main(int argc, char *argv[])
 	}
 	
 	// We will create a new exposure map 
-	expoMap = new PolyMap(exposureOrder, expo.name, worldTolerance);
+	expoMap = new PolyMap(exposureOrder, 
+			      PolyMap::Exposure,	// Use exposure coords as polynomial args
+			      expo.name);
 	expo.mapName = expo.name;
-	// Set numerical-derivative step to 1 arcsec, polynomial is working in degrees:
-	expoMap->setPixelStep(ARCSEC/DEGREE);
 
 	// Insert the Exposure map into the collection
 	mapCollection.learnMap(*expoMap);
@@ -800,9 +809,8 @@ main(int argc, char *argv[])
     // Read in all the data
     //////////////////////////////////////////////////////////
 
-???? continue photo-izing here
     // List of all Matches - they will hold pointers to all Detections too.
-    list<Match*> matches;    // ??? Store objects, not pointers??
+    list<Match*> matches;    
 
     // Start by reading all matched catalogs, creating Detection and Match arrays, and 
     // telling each Extension which objects it should retrieve from its catalog
@@ -821,29 +829,35 @@ main(int argc, char *argv[])
       vector<long> extns;
       vector<long> objs;
       for (int i=0; i<seq.size(); i++) {
-	if (seq[i]==0 && !extns.empty()) {
-	  // Make a match from previous few entries
-	  Detection* d = new Detection;
-	  d->catalogNumber = extns[0];
-	  d->objectNumber = objs[0];
-	  matches.push_back(new Match(d));
-	  extensions[extns[0]]->keepers.insert(std::pair<long, Detection*>(objs[0], d));
-	  for (int j=1; j<extns.size(); j++) {
-	    d = new Detection;
-	    d->catalogNumber = extns[j];
-	    d->objectNumber = objs[j];
-	    matches.back()->add(d);
-	    extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
+	if (seq[i]==0) {
+	  if (extns.size() >= minMatches) {
+	    // Make a match from previous few entries, if there were more than minMatches:
+	    Detection* d = new Detection;
+	    d->catalogNumber = extns[0];
+	    d->objectNumber = objs[0];
+	    matches.push_back(new Match(d));
+	    extensions[extns[0]]->keepers.insert(std::pair<long, Detection*>(objs[0], d));
+	    for (int j=1; j<extns.size(); j++) {
+	      d = new Detection;
+	      d->catalogNumber = extns[j];
+	      d->objectNumber = objs[j];
+	      matches.back()->add(d);
+	      extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
+	    }
 	  }
+	  // Clear out previous Match:
 	  extns.clear();
 	  objs.clear();
 	} // Finished processing previous match
-	extns.push_back(extn[i]);
-	objs.push_back(obj[i]);
+	if (extn[i]<0 || extensions[extn[i]]) {
+	  // Record a Detection in a useful extension:
+	  extns.push_back(extn[i]);
+	  objs.push_back(obj[i]);
+	}
       } // End loop of catalog entries
       
-      // Make a last match out of final entries
-      if (!extns.empty()) {
+      // Make a last match out of final entries, if there are enough
+      if (extns.size() >= minMatches) {
 	Detection* d = new Detection;
 	d->catalogNumber = extns[0];
 	d->objectNumber = objs[0];
@@ -862,6 +876,7 @@ main(int argc, char *argv[])
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
     for (int iext = 0; iext < extensions.size(); iext++) {
+      if (!extensions[iext]) continue; // Skip unused 
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
       /**/cerr << "# Reading object catalog " << iext
@@ -875,21 +890,26 @@ main(int argc, char *argv[])
       extensionTable.readCell(yKey, "yKey", iext);
       string idKey;
       extensionTable.readCell(idKey, "idKey", iext);
-      string errKey;
-      extensionTable.readCell(errKey, "errKey", iext);
+      string magKey;
+      extensionTable.readCell(errKey, "magKey", iext);
+      string magErrKey;
+      extensionTable.readCell(errKey, "magErrKey", iext);
+      string colorKey;
+      extensionTable.readCell(errKey, "colorKey", iext);
       double weight;
-      extensionTable.readCell(weight, "Weight", iext);
+      extensionTable.readCell(weight, "magWeight", iext);
+      double airmass;
+      extensionTable.readCell(airmass, "Airmass", iext);
 
       // Relevant structures for this extension
       Extension& extn = *extensions[iext];
       Exposure& expo = *exposures[extn.exposure];
 
-      const SubMap* pixmap=extn.map;
+      const SubMap* map=extn.map;
       bool isReference = (expo.instrument == REF_INSTRUMENT);
       bool isTag = (expo.instrument == TAG_INSTRUMENT);
 
-      Wcs* startWcs = extn.startWcs;
-      startWcs->reprojectTo(*fieldProjections[expo.field]);
+      astrometry::Wcs* startWcs = extn.startWcs;
 
       if (!startWcs) {
 	cerr << "Failed to find initial Wcs for device " 
@@ -900,13 +920,17 @@ main(int argc, char *argv[])
       }
 
       bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
+      bool useColor = !(colorKey.empty() || stringstuff::nocaseEqual(colorKey, "None"));
       // What we need to read from the FitsTable:
       vector<string> neededColumns;
       if (!useRows)
 	neededColumns.push_back(idKey);
+      if (!useColor)
+	neededColumns.push_back(colorKey);
       neededColumns.push_back(xKey);
       neededColumns.push_back(yKey);
-      neededColumns.push_back(errKey);
+      neededColumns.push_back(magKey);
+      neededColumns.push_back(magErrKey);
 
       FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
       FTable ff = ft.extract(0, -1, neededColumns);
@@ -923,12 +947,12 @@ main(int argc, char *argv[])
       bool errorColumnIsDouble = true;
       try {
 	double d;
-	ff.readCell(d, errKey, 0);
+	ff.readCell(d, magErrKey, 0);
       } catch (img::FTableError& e) {
 	errorColumnIsDouble = false;
       }
 
-      double sysError = isReference ? referenceSysError : pixSysError;
+      double sysError = isReference ? referenceSysError : magSysError;
 
       for (long irow = 0; irow < ff.nrows(); irow++) {
 	map<long, Detection*>::iterator pr = extn.keepers.find(id[irow]);
@@ -937,29 +961,39 @@ main(int argc, char *argv[])
 	// Have a desired object now.  Fill its Detection structure
 	Detection* d = pr->second;
 	extn.keepers.erase(pr);
+	d->map = map;
 
-	d->map = pixmap;
-	ff.readCell(d->xpix, xKey, irow);
-	ff.readCell(d->ypix, yKey, irow);
+	// Read the PhotometryArguments for this Detection:
+	ff.readCell(d->args.xDevice, xKey, irow);
+	ff.readCell(d->args.yDevice, yKey, irow);
+	startWcs->toWorld(d->args.xDevice, d->args.yDevice,
+			  d->args.xExposure, d->args.yExposure);
+
+	if (useColor) ff.readCell(d->args.color, colorKey, irow);
+	d->args.airmass = airmass;
+	
+	// Get the mag input and its error
+	ff.readCell(d->magIn, magKey, irow);
 	double sigma;
 	if (errorColumnIsDouble) {
-	  ff.readCell(sigma, errKey, irow);
+	  ff.readCell(sigma, magErrKey, irow);
 	} else {
 	  float f;
-	  ff.readCell(f, errKey, irow);
+	  ff.readCell(f, magErrKey, irow);
 	  sigma = f;
 	}
 
+	// Map to output and estimate output error
+	// ??? problem for nonlinear mag functions that may not be initialized here ???
+	d->magOut = map->forward(d->magIn, d->args);
+
 	sigma = std::sqrt(sysError*sysError + sigma*sigma);
-	d->sigmaPix = sigma;
-	startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);
-	Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
+	d->sigmaMag = sigma;
+	sigma *= map->derivative(d->magIn, d->args);
 	// no clips on tags
 	double wt = isTag ? 0. : pow(sigma,-2.);
-	d->clipsqx = wt / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
-	d->clipsqy = wt / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
-	d->wtx = d->clipsqx * weight;
-	d->wty = d->clipsqy * weight;
+	d->clipsq = wt;
+	d->wt = wt * weight;
 	    
       } // End loop over catalog objects
 
@@ -989,7 +1023,7 @@ main(int argc, char *argv[])
 	Match::iterator j=(*im)->begin();
 	while (j != (*im)->end()) {
 	  Detection* d = *j;
-	  // Keep it if pixel error is small or if it's from a tag or reference "instrument"
+	  // Keep it if mag error is small or if it's from a tag or reference "instrument"
 	  if ( d->sigmaPix > maxPixError
 	       && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
 	    j = (*im)->erase(j, true);  // will delete the detection too.
@@ -1028,7 +1062,7 @@ main(int argc, char *argv[])
     ///////////////////////////////////////////////////////////
 
     // make CoordAlign class
-    CoordAlign ca(mapCollection, matches);
+    PhotoAlign ca(mapCollection, matches);
 
     int nclip;
     double oldthresh=0.;
@@ -1096,53 +1130,15 @@ main(int argc, char *argv[])
       
     } while (coarsePasses || nclip>0);
   
-    // The re-fitting is now complete.  Serialize all the fitted coordinate systems
+    // The re-fitting is now complete.  Serialize all the fitted magnitude solutions
     {
-      ofstream ofs(outWcs.c_str());
+      ofstream ofs(outPhotFile.c_str());
       if (!ofs) {
-	cerr << "Error trying to open output file for fitted Wcs: " << outWcs << endl;
+	cerr << "Error trying to open output file for fitted photometry: " << outPhotFile << endl;
 	// *** will not quit before dumping output ***
       } else {
 	mapCollection.write(ofs);
       }
-    }
-
-    // Save the new header files
-    
-    // Keep track of those we've already written to:
-    set<string> alreadyOpened;
-
-    // accuracy of SCAMP-format fit to real solution:
-    const double SCAMPTolerance=0.0001*ARCSEC/DEGREE;
-  
-    for (int iext=0; iext<extensions.size(); iext++) {
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
-      if (expo.instrument < 0) continue;
-      Instrument& inst = *instruments[expo.instrument];
-      // Open file for new ASCII headers  ??? Save serialized per exposure too??
-      string newHeadName = extn.tpvOutFile;
-      bool overwrite = false;
-      if ( alreadyOpened.find(newHeadName) == alreadyOpened.end()) {
-	overwrite = true;
-	alreadyOpened.insert(newHeadName);
-      }
-      ofstream newHeads(newHeadName.c_str(), overwrite ? 
-			ios::out : (ios::out | ios::in | ios::ate));
-      if (!newHeads) {
-	cerr << "WARNING: could not open new header file " << newHeadName << endl;
-	cerr << "...Continuing with program" << endl;
-	continue;
-      }
-      // Fit the TPV system to a projection about the field's pointing center:
-      expo.projection->setLonLat(0.,0.);
-      Wcs* tpv = fitTPV(inst.domains[extn.device],
-			*extn.wcs,
-			*expo.projection,
-			"NoName",
-			SCAMPTolerance);
-      newHeads << writeTPV(*tpv);
-      delete tpv;
     }
 
     // If there are reserved Matches, run sigma-clipping on them now.
@@ -1188,7 +1184,7 @@ main(int argc, char *argv[])
     Accum accReserve;
 
     // Open the output bintable
-    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, "WCSOut");
+    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, "PhotoOut");
     FTable outTable = ft.use();;
 
     // Create vectors that will be put into output table
@@ -1206,23 +1202,19 @@ main(int argc, char *argv[])
     outTable.addColumn(xpix, "xPix");
     vector<float> ypix;
     outTable.addColumn(ypix, "yPix");
-    vector<float> sigpix;
-    outTable.addColumn(sigpix, "sigPix");
-    vector<float> xrespix;
-    outTable.addColumn(xrespix, "xresPix");
-    vector<float> yrespix;
-    outTable.addColumn(yrespix, "yresPix");
+    vector<float> xExposure;
+    outTable.addColumn(xExposure, "xExpo");
+    vector<float> yExposure;
+    outTable.addColumn(yExposure, "yExpo");
+    vector<float> color;
+    outTable.addColumn(color, "Color");
 
-    vector<float> xw;
-    outTable.addColumn(xw, "xW");
-    vector<float> yw;
-    outTable.addColumn(yw, "yW");
-    vector<float> sigw;
-    outTable.addColumn(sigw, "sigW");
-    vector<float> xresw;
-    outTable.addColumn(xresw, "xresW");
-    vector<float> yresw;
-    outTable.addColumn(yresw, "yresW");
+    vector<float> magOut;
+    outTable.addColumn(magOut, "magOut");
+    vector<float> sigMag;
+    outTable.addColumn(sigMag, "sigMag");
+    vector<float> magRes;
+    outTable.addColumn(magRes, "magRes");
 
     vector<float> wtFrac;
     outTable.addColumn(wtFrac, "wtFrac");
@@ -1246,14 +1238,12 @@ main(int argc, char *argv[])
 	outTable.writeCells(reserve, "Reserve", pointCount);
 	outTable.writeCells(xpix, "xPix", pointCount);
 	outTable.writeCells(ypix, "yPix", pointCount);
-	outTable.writeCells(xrespix, "xresPix", pointCount);
-	outTable.writeCells(yrespix, "yresPix", pointCount);
-	outTable.writeCells(xw, "xW", pointCount);
-	outTable.writeCells(yw, "yW", pointCount);
-	outTable.writeCells(xresw, "xresW", pointCount);
-	outTable.writeCells(yresw, "yresW", pointCount);
-	outTable.writeCells(sigpix, "sigPix", pointCount);
-	outTable.writeCells(sigw, "sigW", pointCount);
+	outTable.writeCells(xExposure, "xExpo", pointCount);
+	outTable.writeCells(yExposure, "yExpo", pointCount);
+	outTable.writeCells(color, "Color", pointCount);
+	outTable.writeCells(magOut, "magOut", pointCount);
+	outTable.writeCells(magRes, "magRes", pointCount);
+	outTable.writeCells(sigMag, "sigMag", pointCount);
 	outTable.writeCells(wtFrac, "wtFrac", pointCount);
 
 	pointCount += sequence.size();
@@ -1265,21 +1255,19 @@ main(int argc, char *argv[])
 	reserve.clear();
 	xpix.clear();
 	ypix.clear();
-	xrespix.clear();
-	yrespix.clear();
-	xw.clear();
-	yw.clear();
-	xresw.clear();
-	yresw.clear();
-	sigpix.clear();
-	sigw.clear();
+	xExpo.clear();
+	yExpo.clear();
+	color.clear();
+	magOut.clear();
+	magRes.clear();
+	sigMag.clear();
 	wtFrac.clear();
       }	// Done flushing the vectors to Table
 
       Match* m = *im;
-      double xc, yc;
-      double wtotx, wtoty;
-      m->centroid(xc, yc, wtotx, wtoty);
+      double mean;
+      double wtot;
+      m->mean(mean, wtot);
       // Calculate number of DOF per Detection coordinate after
       // allowing for fit to centroid:
       int nFit = m->fitSize();
@@ -1297,69 +1285,51 @@ main(int argc, char *argv[])
 	objectNumber.push_back(d->objectNumber);
 	clip.push_back(d->isClipped);
 	reserve.push_back(m->getReserved());
-	wtFrac.push_back( d->isClipped ? 0. : (d->wtx + d->wty) / (wtotx+wtoty));  //Just take mean of x & y
+	wtFrac.push_back( d->isClipped ? 0. : d->wt / wtot);
 
-	xpix.push_back(d->xpix);
-	ypix.push_back(d->ypix);
-	sigpix.push_back(d->sigmaPix);
+	xpix.push_back(d->arg.xDevice);
+	ypix.push_back(d->arg.yDevice);
+	xExposure.push_back(d->arg.xExposure);
+	yExposure.push_back(d->arg.yExposure);
+	color.push_back(d->arg.color);
 
-	xw.push_back(d->xw);
-	yw.push_back(d->yw);
-	double sigmaWorld=0.5*(d->clipsqx + d->clipsqy);
-	sigmaWorld = (sigmaWorld > 0.) ? 1./sqrt(sigmaWorld) : 0.;
-	sigw.push_back(sigmaWorld);
+	magOut.push_back(d->magOut);
+	// ?it's updated already, right??
+	magRes.push_back( mean==0. ? 0. : d->magOut - mean);
+	double sig=d->clipsq;
+	sig = (sig > 0.) ? 1./sqrt(sig) : 0.;
+	sigMag.push_back(sig);
 
-	// Calculate residuals if we have a centroid for the match:
-	double xcpix=0., ycpix=0.;
-	double xerrw=0., yerrw=0.;
-	double xerrpix=0., yerrpix=0.;
-
-	if (xc!=0. || yc!=0.) {
-	  xcpix = d->xpix;
-	  ycpix = d->ypix;
-	  Assert (d->map);
-	  d->map->toPix(xc, yc, xcpix, ycpix);
-
-	  xerrw = d->xw - xc;
-	  yerrw = d->yw - yc;
-	  xerrpix = d->xpix - xcpix;
-	  yerrpix = d->ypix - ycpix;
-
+	if (mean!=0.) {
 	  // Accumulate statistics for meaningful residuals
 	  if (dofPerPt >= 0. && !d->isClipped) {
 	    int exposureNumber = extensions[d->catalogNumber]->exposure;
 	    Exposure* expo = exposures[exposureNumber];
 	    if (m->getReserved()) {
 	      if (expo->instrument==REF_INSTRUMENT) {
-		refAccReserve.add(d, xc, yc, dofPerPt);
-		vaccReserve[exposureNumber].add(d, xc, yc, dofPerPt);
+		refAccReserve.add(d, mean, dofPerPt);
+		vaccReserve[exposureNumber].add(d, mean, dofPerPt);
 	      } else if (expo->instrument==TAG_INSTRUMENT) {
 		// do nothing
 	      } else {
-		accReserve.add(d, xc, yc, dofPerPt);
-		vaccReserve[exposureNumber].add(d, xc, yc, dofPerPt);
+		accReserve.add(d, mean, dofPerPt);
+		vaccReserve[exposureNumber].add(d, mean, dofPerPt);
 	      }
 	    } else {
 	      // Not a reserved object:
 	      if (expo->instrument==REF_INSTRUMENT) {
-		refAccFit.add(d, xc, yc, dofPerPt);
-		vaccFit[exposureNumber].add(d, xc, yc, dofPerPt);
+		refAccFit.add(d, mean, dofPerPt);
+		vaccFit[exposureNumber].add(d, mean, dofPerPt);
 	      } else if (expo->instrument==TAG_INSTRUMENT) {
 		// do nothing
 	      } else {
-		accFit.add(d, xc, yc, dofPerPt);
-		vaccFit[exposureNumber].add(d, xc, yc, dofPerPt);
+		accFit.add(d, mean, dofPerPt);
+		vaccFit[exposureNumber].add(d, mean, dofPerPt);
 	      }
 	    }
 	  } // end statistics accumulation
 
 	} // End residuals calculation
-
-	// Put world residuals into milliarcsec
-	xrespix.push_back(xerrpix);
-	yrespix.push_back(yerrpix);
-	xresw.push_back(xerrw*1000.*DEGREE/ARCSEC);
-	yresw.push_back(yerrw*1000.*DEGREE/ARCSEC);
 
       } // End detection loop
 
@@ -1377,20 +1347,18 @@ main(int argc, char *argv[])
     outTable.writeCells(reserve, "Reserve", pointCount);
     outTable.writeCells(xpix, "xPix", pointCount);
     outTable.writeCells(ypix, "yPix", pointCount);
-    outTable.writeCells(xrespix, "xresPix", pointCount);
-    outTable.writeCells(yrespix, "yresPix", pointCount);
-    outTable.writeCells(xw, "xW", pointCount);
-    outTable.writeCells(yw, "yW", pointCount);
-    outTable.writeCells(xresw, "xresW", pointCount);
-    outTable.writeCells(yresw, "yresW", pointCount);
-    outTable.writeCells(sigpix, "sigPix", pointCount);
-    outTable.writeCells(sigw, "sigW", pointCount);
+    outTable.writeCells(xExposure, "xExpo", pointCount);
+    outTable.writeCells(yExposure, "yExpo", pointCount);
+    outTable.writeCells(color, "Color", pointCount);
+    outTable.writeCells(magOut, "magOut", pointCount);
+    outTable.writeCells(magRes, "magRes", pointCount);
+    outTable.writeCells(sigMag, "sigMag", pointCount);
     outTable.writeCells(wtFrac, "wtFrac", pointCount);
 
     // Print summary statistics for each exposure
-    cout << "#    Exp    N    DOF    dx    +-    dy    +-   RMS chi_red  "
-      "xpix  ypix      xw       yw \n"
-	 << "#                     |.....milliarcsec...........|                     |....degrees....|"
+    cout << "#    Exp    N    DOF    dmag    +-    RMS chi_red  "
+      "xpix  ypix      xExposure    yExposure \n"
+	 << "# "
 	 << endl;
     for (int iexp=0; iexp<exposures.size(); iexp++) {
       cout << "Fit     " << setw(3) << iexp
@@ -1404,8 +1372,8 @@ main(int argc, char *argv[])
     
     // Output summary data for reference catalog and detections
     cout << "# " << endl;
-    cout << "#                   N    DOF    dx    +-    dy    +-   RMS chi_red  \n"
-	 << "#                             |.....milliarcsec...........|         "
+    cout << "#                   N    DOF    dmag    +-   RMS chi_red  \n"
+	 << "# "
 	 << endl;
     cout << "Reference fit     " << refAccFit.summary() << endl;
     if (reserveFraction>0. && refAccReserve.n>0)
@@ -1417,18 +1385,15 @@ main(int argc, char *argv[])
 
     // Cleanup:
 
-    // Get rid of the coordinate systems for each field:
-    for (int i=0; i<fieldProjections.size(); i++)
-      delete fieldProjections[i];
     // Get rid of extensions
     for (int i=0; i<extensions.size(); i++)
-      delete extensions[i];
+      if (extensions[i]) delete extensions[i];
     // Get rid of exposures
     for (int i=0; i<exposures.size(); i++)
-      delete exposures[i];
+      if (exposures[i]) delete exposures[i];
     // Get rid of instruments
     for (int i=0; i<instruments.size(); i++)
-      delete instruments[i];
+      if (instruments[i]) delete instruments[i];
 
   } catch (std::runtime_error& m) {
     quit(m,1);
@@ -1436,7 +1401,7 @@ main(int argc, char *argv[])
 }
 
 /////////////////////////////////////////////////////////
-PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
+PhotoMap* photoMapDecode(string code, string name, PolyMap::Arguments arg) {
   istringstream iss(code);
   string type;
   iss >> type;
@@ -1446,32 +1411,16 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
     if (!(iss >> xOrder)) 
       throw runtime_error("Could not decode PolyMap spec: <" + code + ">");
     if ( (iss >> yOrder)) {
-      if (xOrder==1 && yOrder==1) {
-	LinearMap* lin = new LinearMap(name);
-	lin->setToIdentity();
-	pm = lin;
-      } else {
-	PolyMap* poly = new PolyMap(xOrder, yOrder,name);
-	poly->setWorldTolerance(worldTolerance);
-	// Set PolyMap to identity for starters to not be degenerate:
-	poly->setToIdentity();
-	pm = poly;
-      }
+      PolyMap* poly = new PolyMap(xOrder, yOrder,name);
+      // Set PolyMap to identity for starters to not be degenerate:
+      poly->setToIdentity();
+      pm = poly;
     } else {
-      if (xOrder==1) {
-	LinearMap* lin = new LinearMap(name);
-	lin->setToIdentity();
-	pm = lin;
-      } else {
-	PolyMap* poly = new PolyMap(xOrder, name);
-	poly->setWorldTolerance(worldTolerance);
-	poly->setToIdentity();
-	pm = poly;
-      }
+      PolyMap* poly = new PolyMap(xOrder, name);
+      poly->setToIdentity();
+      pm = poly;
     }
-  } else if (stringstuff::nocaseEqual(type,"Linear")) {
-    pm = new LinearMap(name);
-
+    /** Not in place yet:
   } else if (stringstuff::nocaseEqual(type,"Template")) {
     string filename;
     iss >> filename;

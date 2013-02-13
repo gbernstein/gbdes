@@ -46,8 +46,8 @@ namespace photometry {
 
     // forward and inverse magnitude transformations:
     virtual double forward(double magIn, const PhotoArguments& args) const=0;
-    // d(magOut)/d(magIn); base implementation is a finite-difference estimate:
-    virtual double derivative(double magIn, const PhotoArguments& args) const;
+    // d(magOut)/d(magIn); base implementation is unity
+    virtual double derivative(double magIn, const PhotoArguments& args) const {return 1.;}
 
     // Get parameters of the mapping.  Note default behavior of derived classes
     // is to ignore anything to do with map parameters.
@@ -80,8 +80,6 @@ namespace photometry {
     virtual string getType() const {return mapType();}
     static PhotoMap* create(std::istream& is, string name_="") {return new IdentityMap;}
     virtual double forward(double magIn, const PhotoArguments& args) const {return magIn;}
-    virtual double derivative(double magIn, const PhotoArguments& args) const {return 1.;}
-
     virtual void write(std::ostream& os) const {} // Nothing to write
   };
 
@@ -95,27 +93,23 @@ namespace photometry {
     PolyMap(const poly2d::Poly2d& p,
 	    ArgumentType argType,
 	    string name="",
-	    bool isColorTerm=false,
-	    double tol_=0.0001);
+	    bool isColorTerm=false);
     // Constructor with 1 order has terms with sum of x and y powers up to this order.
     // Constructor with 2 orders has all terms w/ powers of x up to orderx, y to ordery
     PolyMap(int orderx, int ordery,
 	    ArgumentType argType,
 	    string name="",
-	    bool isColorTerm=false,
-	    double tol_=0.0001);
+	    bool isColorTerm=false);
     PolyMap(int order, 
 	    ArgumentType argType,
 	    string name="",
-	    bool isColorTerm=false,
-	    double tol_=0.0001);
+	    bool isColorTerm=false);
     // Note that default tolerance is set to be 1 mas if world units are degrees.
     virtual PhotoMap* duplicate() const {return new PolyMap(*this);}
       
     ~PolyMap() {}
 
     virtual double forward(double magIn, const PhotoArguments& args) const;
-    virtual double derivative(double magIn, const PhotoArguments& args) const;
     virtual double forwardDerivs(double magIn, const PhotoArguments& args,
 				 DVector& derivs) const;
 
@@ -127,9 +121,6 @@ namespace photometry {
     // Access routines for this derived class:
     poly2d::Poly2d getPoly() const {return poly;}
 
-    // Set tolerance in world coords for soln of inverse
-    void setWorldTolerance(double wt) {worldTolerance=wt;}
-
     static string mapType() {return "Poly";}
     virtual string getType() const {return mapType();}
     static PhotoMap* create(std::istream& is, string name="");
@@ -137,7 +128,6 @@ namespace photometry {
 
   private:
     poly2d::Poly2d poly;
-    double worldTolerance;
     bool useExposureCoords;
     bool useColor;
   };
