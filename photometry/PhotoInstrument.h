@@ -1,11 +1,11 @@
 #ifndef INSTRUMENT_H
 #define INSTRUMENT_H
-#include "Std.h"
-#include "Astrometry.h"
-#include "Match.h"
 #include <map>
+#include "Std.h"
 #include "NameIndex.h"
-#include "PixelMap.h"
+#include "Astrometry.h"
+#include "Wcs.h"
+#include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
 
 namespace photometry {
@@ -40,11 +40,11 @@ namespace photometry {
 
   class Exposure {
   public:
-    Exposure(const string& name_, const SphericalCoords& coords): 
+    Exposure(const string& name_, const astrometry::SphericalCoords& coords): 
       name(name_), projection(coords.duplicate()) {}
     ~Exposure() {delete projection;}
     string name;
-    SphericalCoords* projection;	// Projection relating world coords to sky for this exposure
+    astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for this exposure
     int  field;
     int  instrument;
     string mapName;	// name of PhotoMap for this Exposure

@@ -1554,8 +1554,8 @@ main(int argc, char *argv[])
     
     // Output summary data for reference catalog and detections
     cout << "# " << endl;
-    cout << "#                   N    DOF    dx    +-    dy    +-   RMS chi_red  \n"
-	 << "#                             |.....milliarcsec...........|         "
+    cout << "#                   N    DOF    dm    +-    RMS chi_red  \n"
+	 << "#                             |.....millimag......|         "
 	 << endl;
     cout << "Reference fit     " << refAccFit.summary() << endl;
     if (reserveFraction>0. && refAccReserve.n>0)

@@ -35,7 +35,7 @@ namespace photometry {
     double yExposure;
     double color;
     double airmass; // ??
-  }
+  };
 
   class PhotoMap {
   public:

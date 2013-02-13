@@ -33,7 +33,7 @@ TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
 SUBDIRS = utilities images astrometry
 
 # INCLUDES can be relative paths, and will not be exported to subdirectory makes.
-INCLUDES = -I utilities -I images -I astrometry
+INCLUDES = -I utilities -I images -I astrometry -I photometry
 
 CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
 SRC = $(shell ls *.cpp)
