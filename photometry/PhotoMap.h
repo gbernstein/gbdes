@@ -16,8 +16,7 @@
 #include <iostream>
 #include "Std.h"
 #include "UseTMV.h"
-
-//??? need setPixelStep back for maps???
+#include "Poly2d.h"
 
 namespace photometry {
 
@@ -115,7 +114,7 @@ namespace photometry {
 
 
     void setParams(const DVector& p);
-    DVector getParams() const;
+    DVector getParams() const {return poly.getC();}
     int nParams() const {return poly.nCoeffs();}
 
     // Access routines for this derived class:
@@ -130,6 +129,7 @@ namespace photometry {
     poly2d::Poly2d poly;
     bool useExposureCoords;
     bool useColor;
+    void setArgumentType(ArgumentType argType);
   };
 
 } // namespace photometry
