@@ -714,10 +714,15 @@ PixelMapCollection::read(istream& is, string namePrefix) {
 	iss.clear();
 	do {
 	  iss >> n;
-	  // ???? misses ends of lines???
-	  if (iss.eof()) 
+	  if (!iss.fail()) {
+	    submaps.push_back(n);
+	  } else if (iss.eof()) {
 	    break;
-	  submaps.push_back(n);
+	  } else {
+	    // Failure other than eof:
+	    throw AstrometryError("PixelMapCollection::read() error getting SubMaps at <" 
+				  + buffer + ">");
+	  }
 	} while (submaps.size() < nmaps);
       }
 
