@@ -61,8 +61,8 @@ namespace photometry {
     void clear(bool deleteDetections=false);
     void remap();  // Remap each point, i.e. make new magOut
     // Mean of un-clipped output mags, optionally with total weight
-    void mean(double& mag) const;
-    void mean(double& mag, double& wt) const;
+    void getMean(double& mag) const;
+    void getMean(double& mag, double& wt) const;
     int size() const {return elist.size();}
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {return nFit;}

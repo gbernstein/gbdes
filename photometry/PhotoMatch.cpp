@@ -1,6 +1,6 @@
-// Astrometric matching and fitting classes.
+// Photometric matching and fitting classes.
 
-#include "Match.h"
+#include "PhotoMatch.h"
 #include <list>
 using std::list;
 #include <set>
@@ -18,17 +18,17 @@ using std::set;
 // #define DEBUG
 #include "Marquardt.h"
 
-using namespace astrometry;
+using namespace photometry;
 
 
 /////////////////////////////////////////////////////////////
 ///// Class that regulates rank-one updates to small portions of
 ///// the giant alpha symmetric matrix, allowing finer-grained locking
 /////////////////////////////////////////////////////////////
-class astrometry::AlphaUpdater {
+class photometry::AlphaUpdater {
 public:
   AlphaUpdater(tmv::SymMatrix<double>& alpha_,
-	       const PixelMapCollection& pmc_,
+	       const PhotoMapCollection& pmc_,
 	       int nLocks=0): alpha(alpha_), pmc(pmc_) {
 #ifdef _OPENMP
     // Decide how many map elements per lock
@@ -87,7 +87,7 @@ public:
   }
 private:
   tmv::SymMatrix<double>& alpha;
-  const PixelMapCollection& pmc;
+  const PhotoMapCollection& pmc;
 #ifdef _OPENMP
   int nLocks;
   int blockLength;
@@ -146,41 +146,35 @@ Match::countFit() {
   for (list<Detection*>::iterator i=elist.begin();
        i!=elist.end();
        ++i) 
-    if ( !(*i)->isClipped && !((*i)->wtx==0. && (*i)->wty==0.)) nFit++;
+    if ( !(*i)->isClipped && !(*i)->wt==0.) nFit++;
   return nFit;
 }
 
 void
-Match::centroid(double& x, double& y) const {
-  double wtx, wty;
-  centroid(x,y,wtx,wty);
+Match::getMean(double& m) const {
+  double wt;
+  getMean(m,wt);
 }
 
 void
-Match::centroid(double& x, double& y,
-		double& wtx, double& wty) const {
+Match::getMean(double& m, double& wt) const {
   if (nFit<1) {
-    wtx=wty=x=y=0.;
+    wt=m=0.;
     return;
   }
-  double swx, swy;
-  swx = swy =0.;
-  wtx = wty = 0.;
+  double sum_mw=0.;
+  double sum_w =0.;
   for (list<Detection*>::const_iterator i=elist.begin();
        i!=elist.end();
        ++i) {
     if ((*i)->isClipped) continue;
-    double xx = (*i)->xw;
-    double yy = (*i)->yw;
-    double wx = (*i)->wtx;
-    double wy = (*i)->wty;
-    swx += xx*wx;
-    wtx += wx;
-    swy += yy*wy;
-    wty += wy;
+    double m = (*i)->magOut;
+    double w = (*i)->wt;
+    sum_mw += m*w;
+    sum_w += w;
   }
-  x = swx/wtx;
-  y = swy/wty;
+  m = sum_mw/sum_w;
+  wt = sum_w;
 }
 
 
@@ -193,8 +187,7 @@ Match::remap() {
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i) 
-    (*i)->map->toWorld((*i)->xpix, (*i)->ypix,
-		       (*i)->xw, (*i)->yw);
+    (*i)->magOut = (*i)->map->forward((*i)->magIn, (*i)->args);
 }
 
 // A structure that describes a range of parameters
@@ -209,39 +202,34 @@ Match::accumulateChisq(double& chisq,
 		       DVector& beta,
 		       AlphaUpdater& updater) {
 		       //**		       tmv::SymMatrix<double>& alpha) {
-  double xmean, ymean;
-  double xW, yW;
+  double mean;
+  double wt;
   int nP = beta.size();
-  //**  Assert(alpha.nrows()==nP);
 
   // No contributions to fit for <2 detections:
   if (nFit<=1) return 0;
 
   // Update mapping and save derivatives for each detection:
-  vector<DMatrix*> dxyi(elist.size(), 0);
+  vector<DVector*> di(elist.size());
   int ipt=0;
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
     if ((*i)->isClipped) continue;
     int npi = (*i)->map->nParams();
-    double xw, yw;
+    double magOut;
     if (npi>0) {
-      dxyi[ipt] = new DMatrix(2,npi);
-      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
-			       xw, yw,
-			       *dxyi[ipt]);
+      di[ipt] = new DVector(npi);
+      magOut = (*i)->map->forwardDerivs((*i)->magIn, (*i)->args,
+					*di[ipt]);
     } else {
-      (*i)->map->toWorld((*i)->xpix, (*i)->ypix, xw, yw);
+      magOut = (*i)->map->forward((*i)->magIn, (*i)->args);
     }
-    (*i)->xw = xw;
-    (*i)->yw = yw;
+    (*i)->magOut = magOut;
   }
 
-  centroid(xmean,ymean, xW, yW);
-  DVector dxmean(nP, 0.);
-  DVector dymean(nP, 0.);
-
+  getMean(mean,wt);
+  DVector dmean(nP, 0.);
 
   map<int, iRange> mapsTouched;
   ipt = 0;
@@ -249,14 +237,10 @@ Match::accumulateChisq(double& chisq,
        i!=elist.end(); 
        ++i, ipt++) {
     if ((*i)->isClipped) continue;
-    double wxi=(*i)->wtx;
-    double wyi=(*i)->wty;
-    double xi=(*i)->xw;
-    double yi=(*i)->yw;
+    double wti=(*i)->wt;
+    double mi=(*i)->magOut;
 
-    chisq += 
-      (xi-xmean)*(xi-xmean)*wxi
-      + (yi-ymean)*(yi-ymean)*wyi;
+    chisq += (mi-mean)*(mi-mean)*wti;
 
     // Accumulate derivatives:
     int istart=0;
@@ -267,22 +251,16 @@ Match::accumulateChisq(double& chisq,
       int mapNumber = (*i)->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
-      tmv::VectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
-      tmv::VectorView<double> dy=dxyi[ipt]->row(1,istart,istart+np);
-      beta.subVector(ip, ip+np) -= wxi*(xi-xmean)*dx;
-      beta.subVector(ip, ip+np) -= wyi*(yi-ymean)*dy;
+      tmv::VectorView<double> dm=di[ipt]->subVector(istart,istart+np);
+      beta.subVector(ip, ip+np) -= wti*(mi-mean)*dm;
 
       // Derivatives of the mean position:
-      dxmean.subVector(ip, ip+np) += wxi*dx;
-      dymean.subVector(ip, ip+np) += wyi*dy;
+      dmean.subVector(ip, ip+np) += wti*dm;
 
       // The alpha matrix: a little messy because of symmetry
-      //**      alpha.subSymMatrix(ip, ip+np) += wxi*(dx ^ dx));
-      //**      alpha.subSymMatrix(ip, ip+np) += wxi*(dy ^ dy));
-      updater.rankOneUpdate(mapNumber, ip, dx, 
-			    mapNumber, ip, dx, wxi);
-      updater.rankOneUpdate(mapNumber, ip, dy, 
-			    mapNumber, ip, dy, wyi);
+      //**      alpha.subSymMatrix(ip, ip+np) += wti*(dm ^ dm));
+      updater.rankOneUpdate(mapNumber, ip, dm, 
+			    mapNumber, ip, dm, wti);
 
       int istart2 = istart+np;
       for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
@@ -290,26 +268,21 @@ Match::accumulateChisq(double& chisq,
 	int np2=(*i)->map->nSubParams(iMap2);
 	int mapNumber2 = (*i)->map->mapNumber(iMap2);
 	if (np2==0) continue;
-	tmv::VectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
-	tmv::VectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
+	tmv::VectorView<double> dm2=di[ipt]->subVector(istart2,istart2+np2);
 	// Note that subMatrix here will not cross diagonal:
-	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wxi*(dx ^ dx2);
-	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wyi*(dy ^ dy2);
-	updater.rankOneUpdate(mapNumber2, ip2, dx2, 
-			      mapNumber,  ip,  dx, wxi);
-	updater.rankOneUpdate(mapNumber2, ip2, dy2, 
-			      mapNumber,  ip,  dy, wyi);
+	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wti*(dm ^ dm2);
+	updater.rankOneUpdate(mapNumber2, ip2, dm2, 
+			      mapNumber,  ip,  dm, wti);
 	istart2+=np2;
       }
       istart+=np;
     } // outer parameter segment loop
-    if (dxyi[ipt]) {delete dxyi[ipt]; dxyi[ipt]=0;}
+    if (di[ipt]) {delete di[ipt]; di[ipt]=0;}
   } // object loop
 
   // Subtract effects of derivatives on mean
   /*  We want to do this, but without touching the entire alpha matrix every time:
-  alpha -=  (dxmean ^ dxmean)/xW;
-  alpha -=  (dymean ^ dymean)/yW;
+  alpha -=  (dmean ^ dmean)/wt;
   */
 
   // Do updates parameter block by parameter block
@@ -327,38 +300,31 @@ Match::accumulateChisq(double& chisq,
       int i2 = m2->second.startIndex;
       int n2 = m2->second.nParams;
       if (n2<=0) continue;
-      tmv::VectorView<double> dx1 = dxmean.subVector(i1, i1+n1);
-      tmv::VectorView<double> dx2 = dxmean.subVector(i2, i2+n2);
-      tmv::VectorView<double> dy1 = dymean.subVector(i1, i1+n1);
-      tmv::VectorView<double> dy2 = dymean.subVector(i2, i2+n2);
-      updater.rankOneUpdate(map2, i2, dx2,
-			    map1, i1, dx1, -1./xW);
-      updater.rankOneUpdate(map2, i2, dy2,
-			    map1, i1, dy1, -1./yW);
+      tmv::VectorView<double> dm1 = dmean.subVector(i1, i1+n1);
+      tmv::VectorView<double> dm2 = dmean.subVector(i2, i2+n2);
+      updater.rankOneUpdate(map2, i2, dm2,
+			    map1, i1, dm1, -1./wt);
     }
   }
 
-  return 2*(nFit-1);
+  return nFit-1;
 }
 
 bool
 Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
   // ??? Only clip the worst outlier at most
-  double xmean, ymean;
+  double mean;
   if (nFit<=1) return false;
   double maxSq=0.;
   list<Detection*>::iterator worst=elist.end();
-  centroid(xmean,ymean);
+  getMean(mean);
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); ++i) {
     if ((*i)->isClipped) continue;
-    double xi = (*i)->xw;
-    double yi = (*i)->yw;
-    double clipx = (*i)->clipsqx;
-    double clipy = (*i)->clipsqy;
-    double devSq = (xi-xmean)*(xi-xmean)*clipx
-      + (yi-ymean)*(yi-ymean)*clipy;
+    double mi = (*i)->magOut;
+    double clipsq = (*i)->clipsq;
+    double devSq = (mi-mean)*(mi-mean)*clipsq;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
       worst = i;
@@ -370,10 +336,9 @@ Match::sigmaClip(double sigThresh,
 #ifdef DEBUG
     cerr << "clipped " << (*worst)->catalogNumber
 	 << " / " << (*worst)->objectNumber 
-	 << " at " << (*worst)->xw << "," << (*worst)->yw 
-	 << " resid " << setw(6) << ((*worst)->xw-xmean)*DEGREE/ARCSEC
-	 << " " << setw(6) << ((*worst)->yw-ymean)*DEGREE/ARCSEC
-	 << " sigma " << DEGREE/ARCSEC/sqrt((*worst)->clipsqx)
+	 << " at " << (*worst)->magOut
+	 << " resid " << setw(6) << ((*worst)->magOut-mean)
+	 << " sigma " << 1./sqrt((*worst)->clipsqx)
 	 << endl;
 #endif
       if (deleteDetection) {
@@ -392,29 +357,26 @@ Match::sigmaClip(double sigThresh,
 
 double
 Match::chisq(int& dof, double& maxDeviateSq) const {
-  double xmean, ymean;
+  double mean;
   double chi=0.;
   if (nFit<=1) return chi;
-  centroid(xmean,ymean);
+  getMean(mean);
   for (list<Detection*>::const_iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i) {
     if ((*i)->isClipped) continue;
-    double xi = (*i)->xw;
-    double yi = (*i)->yw;
-    double wxi = (*i)->wtx;
-    double wyi = (*i)->wty;
-    double cc = (xi-xmean)*(xi-xmean)*wxi
-      + (yi-ymean)*(yi-ymean)*wyi;
+    double mi = (*i)->magOut;
+    double wti = (*i)->wt;
+    double cc = (mi-mean)*(mi-mean)*wti;
     maxDeviateSq = MAX(cc , maxDeviateSq);
     chi += cc;
   }
-  dof += 2*(nFit-1);
+  dof += nFit-1;
   return chi;
 }
 
 void
-CoordAlign::operator()(const DVector& p, double& chisq,
+PhotoAlign::operator()(const DVector& p, double& chisq,
 		       DVector& beta, tmv::SymMatrix<double>& alpha) {
   int nP = pmc.nParams();
   Assert(p.size()==nP);
@@ -523,9 +485,9 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 }
 
 double
-CoordAlign::fitOnce(bool reportToCerr) {
+PhotoAlign::fitOnce(bool reportToCerr) {
   DVector p = getParams();
-  Marquardt<CoordAlign> marq(*this);
+  Marquardt<PhotoAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
   marq.setSaveMemory();
   double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
@@ -535,7 +497,7 @@ CoordAlign::fitOnce(bool reportToCerr) {
 }
 
 void
-CoordAlign::remap() {
+PhotoAlign::remap() {
   for (list<Match*>::const_iterator i=mlist.begin();
        i != mlist.end();
        ++i)
@@ -543,7 +505,7 @@ CoordAlign::remap() {
 }
 
 int
-CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
+PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   int nclip=0;
   // ??? parallelize this loop!
   cerr << "## Sigma clipping...";
@@ -567,7 +529,7 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
 }
 
 double
-CoordAlign::chisqDOF(int& dof, double& maxDeviate, 
+PhotoAlign::chisqDOF(int& dof, double& maxDeviate, 
 		     bool doReserved) const {
   dof=0;
   maxDeviate=0.;
@@ -587,7 +549,7 @@ CoordAlign::chisqDOF(int& dof, double& maxDeviate,
 }
 
 void 
-CoordAlign::count(long int& mcount, long int& dcount, 
+PhotoAlign::count(long int& mcount, long int& dcount, 
 		  bool doReserved, int minMatches) const {
   mcount = 0;
   dcount = 0;
@@ -601,7 +563,7 @@ CoordAlign::count(long int& mcount, long int& dcount,
   }
 }
 void
-CoordAlign::count(long int& mcount, long int& dcount,
+PhotoAlign::count(long int& mcount, long int& dcount,
                   bool doReserved, int minMatches, long catalog) const {
   mcount = 0;
   dcount = 0;
