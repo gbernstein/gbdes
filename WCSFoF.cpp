@@ -17,6 +17,7 @@
 #include "PixelMapCollection.h"
 #include "TPVMap.h"
 #include "StringStuff.h"
+#include "ExtensionAttribute.h"
 
 using namespace std;
 using namespace img;
@@ -30,65 +31,7 @@ string usage="WCSFoF: Match objects using FoF algorithm on world coordinate syst
              "                      (in degrees) N, S, E, or W of any point from center.\n"
              "      <exposure specs>: FITS file with binary table of input file info...";
 
-
-class ExtensionAttributeBase {
-public:
-  enum Status {ReadOnly, WriteOnly, ReadWrite};
-  ExtensionAttributeBase(string columnName_, Status s);
-  virtual ~ExtensionAttributeBase() {}
-  // Get input value for an attribute, return value is whether its column exists
-  virtual bool readInputTable(const FTable& inTable, int row)=0;
-  // Add an appropriate column to output table
-  virtual void makeOutputColumn(FTable& outTable) const =0;
-  // Search header, if needed, for value of attribute
-  // Returns false if header keyword is missing (in which case default value is assigned)
-  virtual bool checkHeader(const Header& h)=0;
-  // Save value into output table
-  virtual void writeOutputTable(FTable& outTable, int row) const =0;
-protected:
-  string columnName;
-  bool isInput;
-  bool isOutput;
-};
-
-template <class T>
-class ExtensionAttribute: public ExtensionAttributeBase {
-public:
-  ExtensionAttribute(string columnName_, ExtensionAttributeBase::Status s, const T& defaultValue_=T());
-  bool readInputTable(const FTable& inTable, int row);
-  void makeOutputColumn(FTable& outTable) const;
-  bool checkHeader(const Header& h);
-  T getValue() const {return value;}
-  void setValue(const T& v) {value=v;}
-  void writeOutputTable(FTable& outTable, int row) const;
-private:
-  T defaultValue;
-  T value;
-  bool inputColumnExists;
-  bool lookupInHeader;
-  string headerKeyword;
-};
   
-
-// Parse the inValue of string: if it starts with @ sign, specifies to read a value
-// from keyword of a header:
-string maybeFromHeader(const string& inValue, const Header& h) {
-  if (inValue.empty() || inValue[0]!='@') return inValue;
-  string result;
-  if (!h.getValue(inValue.substr(1), result)) {
-    // Try reading an integer and convering to a string
-    int i;
-    if (!h.getValue(inValue.substr(1), i)) {
-      throw std::runtime_error("Could not find string-valued header keyword " + 
-			       inValue.substr(1));
-    }
-    ostringstream oss;
-    oss << i;
-    result = oss.str();
-  }
-  return result;
-}
-
 // Struct that will hold the info about each point that matcher (and subsequent progs)
 // will need
 struct Point {
@@ -215,6 +158,9 @@ main(int argc,
 
   if (argc<3) {
     cerr << usage << endl;
+    cerr << "--------- Default Parameters: ---------" << endl;
+    parameters.setDefault();
+    parameters.dump(cerr);
     exit(1);
   }
   string fieldSpecs = argv[1];

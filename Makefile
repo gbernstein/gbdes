@@ -66,7 +66,7 @@ ApplyWCS: ApplyWCS.o TPVMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFoF: WCSFoF.o TPVMap.o $(OBJ)
+WCSFoF: WCSFoF.o TPVMap.o ExtensionAttribute.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFit: WCSFit.o TPVMap.o Match.o MapFit.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
