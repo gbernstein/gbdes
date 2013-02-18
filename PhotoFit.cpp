@@ -1259,7 +1259,7 @@ main(int argc, char *argv[])
       Match* m = *im;
       double mean;
       double wtot;
-      m->mean(mean, wtot);
+      m->getMean(mean, wtot);
       // Calculate number of DOF per Detection coordinate after
       // allowing for fit to centroid:
       int nFit = m->fitSize();
