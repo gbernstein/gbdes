@@ -76,7 +76,7 @@ DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testPrep: testPrep.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-test: test.o $(OBJ)
+test: test.o ExtensionAttribute.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT: testFT.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

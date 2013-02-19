@@ -284,12 +284,14 @@ main(int argc,
     const int TAG_INSTRUMENT=-2;
     const int NO_INSTRUMENT=-3;
 
+    /**/cerr << "A" << endl;
     // And the exposures
     NameIndex exposureNames;
     vector<astrometry::SphericalICRS> exposurePointings;
     vector<int> exposureFields; // Record one field per exposure
     vector<int> exposureInstruments; // Record one instrument per exposure
 
+    /**/cerr << "B" << endl;
     // And a list holding all Points being matched
     list<Point> allPoints;
 
@@ -302,8 +304,11 @@ main(int argc,
     // Now assemble all of the catalog attributes we will read from input and/or write to output:
     list<ExtensionAttributeBase*> attributes;
 
+    /**/cerr << "C" << endl;
+
     ExtensionAttribute<string>* filenameAttr = 
       new ExtensionAttribute<string>("Filename", ExtensionAttributeBase::ReadWrite);
+    /**/cerr << "D" << endl;
     attributes.push_back(filenameAttr);
 
     ExtensionAttribute<int>* extensionAttr = 
@@ -385,6 +390,8 @@ main(int argc,
       new ExtensionAttribute<string>("WCS", ExtensionAttributeBase::WriteOnly);
     attributes.push_back(wcsAttr);
 
+    /**/cerr << "***made attributes ***" << endl;
+
     // Now create ExtensionAttributes for any requested optional columns to be passed along
     {
       list<string> names = stringstuff::split(stringAttributes, listSeperator);
@@ -417,11 +424,15 @@ main(int argc,
       }
     }
 
+    /**/cerr << "***made output attributes ***" << endl;
+
     // Create necessary columns in the Extension table:
     for (list<ExtensionAttributeBase*>::const_iterator i = attributes.begin();
 	 i != attributes.end();
 	 ++i) 
       (*i)->makeOutputColumn(extensionTable);
+
+    /**/cerr << "***created columns ***" << endl;
 
     long extensionNumber = 0; // cumulative counter for all FITS tables read
 
@@ -558,34 +569,11 @@ main(int argc,
 	  ft.addColumn(vi, "_ROW");
 	}
 
-
-
 	// Assign an exposure number:
 	string thisExposure = exposureAttr->getValue();
 	if (!exposureNames.has(thisExposure)) {
 	  // Create a new Exposure upon first encounter of it:
 	  exposureNames.append(thisExposure);
-
-	  // Get center coordinates of this extension as center of exposure:
-	  string thisRA = raAttr->getValue();
-	  string thisDec = decAttr->getValue();
-	  stripWhite(thisRA);
-	  stripWhite(thisDec);
-	  if (thisRA.empty() || thisDec.empty() ) {
-	    cerr << "Missing RA/Dec for exposure " << thisExposure
-		 << " from file " << filename
-		 << endl;
-	    exit(1);
-	  }
-	  string coords = thisRA + " " + thisDec;
-	  astrometry::SphericalICRS thisRADec;
-	  istringstream iss(coords);
-	  if (!(iss >> thisRADec)) {
-	    cerr << "Error reading RA & Dec for file " << filename
-		 << " from string <" << coords << ">" << endl;
-	    exit(1);
-	  }
-	  exposurePointings.push_back(thisRADec);
 
 	  // Assign an instrument, new one if not yet existent:
 	  string thisInstrument = instrumentAttr->getValue();
@@ -607,6 +595,33 @@ main(int argc,
 	    Assert(instrumentNumber >= 0);
 	  }
 	  exposureInstruments.push_back(instrumentNumber);
+
+	  // Get center coordinates of this extension as center of exposure:
+	  string thisRA = raAttr->getValue();
+	  string thisDec = decAttr->getValue();
+	  stripWhite(thisRA);
+	  stripWhite(thisDec);
+	  if (thisRA.empty() || thisDec.empty() ) {
+	    if (xyAreRaDec) {
+	      // OK to not have "exposure" coordinates, put in dummy:
+	      thisRA = "00:00:00";
+	      thisDec= "+00:00:00";
+	    } else {
+	      cerr << "Missing RA/Dec for exposure " << thisExposure
+		   << " from file " << filename
+		   << endl;
+	      exit(1);
+	    }
+	  }
+	  string coords = thisRA + " " + thisDec;
+	  astrometry::SphericalICRS thisRADec;
+	  istringstream iss(coords);
+	  if (!(iss >> thisRADec)) {
+	    cerr << "Error reading RA & Dec for file " << filename
+		 << " from string <" << coords << ">" << endl;
+	    exit(1);
+	  }
+	  exposurePointings.push_back(thisRADec);
 
 	  // Assign a field to this exposure:
 	  string thisField = fieldAttr->getValue();
@@ -643,7 +658,7 @@ main(int argc,
 	int exposureNumber = exposureNames.indexOf(thisExposure);
 
 	// Get field and instrument from the exposure:
-	int fieldNumber =exposureFields[exposureNumber];
+	int fieldNumber = exposureFields[exposureNumber];
 	int instrumentNumber = exposureInstruments[exposureNumber];
 
 	// Error if different extensions put same exposure in different fields or instruments:
@@ -661,21 +676,21 @@ main(int argc,
 	{
 	  string instrument = instrumentAttr->getValue();
 	  if ( !instrument.empty()) {
-	    if ( stringstuff::nocaseEqual(instrument, "REFERENCE") &&
-		 instrumentNumber != REFERENCE_INSTRUMENT ) {
-	      cerr << "Conflicting instrument assignments in file " << filename 
-		   << ":\n extension is REFERENCE but exposure is not"
-		   << endl;
-	      exit(1);
-	    }
-	    if (stringstuff::nocaseEqual(instrument, "TAG") &&
-		instrumentNumber != TAG_INSTRUMENT) {
-	      cerr << "Conflicting instrument assignments in file " << filename 
-		   << ":\n extension is TAG but exposure is not"
-		   << endl;
-	      exit(1);
-	    }
-	    if (!stringstuff::nocaseEqual(instrument, instrumentNames.nameOf(instrumentNumber))) {
+	    if ( stringstuff::nocaseEqual(instrument, "REFERENCE")) {
+	      if (instrumentNumber != REFERENCE_INSTRUMENT ) {
+		cerr << "Conflicting instrument assignments in file " << filename 
+		     << ":\n extension is REFERENCE but exposure is not"
+		     << endl;
+		exit(1);
+	      }
+	    } else if (stringstuff::nocaseEqual(instrument, "TAG")) {
+	      if (instrumentNumber != TAG_INSTRUMENT) {
+		cerr << "Conflicting instrument assignments in file " << filename 
+		     << ":\n extension is TAG but exposure is not"
+		     << endl;
+		exit(1);
+	      }
+	    } else if (!stringstuff::nocaseEqual(instrument, instrumentNames.nameOf(instrumentNumber))) {
 	      cerr << "Conflicting instrument assignments in file " << filename 
 		   << ":\n exposure has <" << instrumentNames.nameOf(instrumentNumber) 
 		   << ">\n extension has <" << instrument << ">"
@@ -688,13 +703,14 @@ main(int argc,
 	// Assign a device
 	int deviceNumber = -1;
 	if (instrumentNumber >= 0) {
-	  string thisDevice = instrumentAttr->getValue();
+	  string thisDevice = deviceAttr->getValue();
 	  if (thisDevice.empty()) {
 	    cerr << "Empty device field for " << filename << endl;
 	    exit(1);
 	  }
-	  if (!instruments[instrumentNumber].has(thisDevice)) 
+	  if (!instruments[instrumentNumber].has(thisDevice)) {
 	    instruments[instrumentNumber].newDevice(thisDevice);
+	  }
 	  deviceNumber = instruments[instrumentNumber].indexOf(thisDevice);
 	  Assert(deviceNumber >= 0);
 	}
@@ -765,6 +781,7 @@ main(int argc,
 	// Go ahead and filter the input rows and get the columns we want
 	{
 	  string selectionExpression = selectAttr->getValue();
+	  stripWhite(selectionExpression);
 	  if (!selectionExpression.empty())
 	    ft.filterRows(selectionExpression);
 	}
@@ -804,6 +821,7 @@ main(int argc,
 	vector<bool> isStar(ft.nrows(), true);
 	{
 	  string starExpression = star_selectAttr->getValue();
+	  stripWhite(starExpression);
 	  if (!starExpression.empty())
 	    ft.evaluate(isStar, starExpression);
 	}

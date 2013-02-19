@@ -3,7 +3,7 @@
 using namespace img;
 
 ExtensionAttributeBase::ExtensionAttributeBase(string columnName_, Status s): 
-  columnName(columnName), isInput(false), isOutput(false) {
+  columnName(columnName_), isInput(false), isOutput(false) {
   switch (s) {
   case ReadOnly:
     isInput = true;
@@ -22,8 +22,8 @@ ExtensionAttributeBase::ExtensionAttributeBase(string columnName_, Status s):
     
 template <class T>
 ExtensionAttribute<T>::ExtensionAttribute(string columnName_, 
-					  ExtensionAttributeBase::Status s, 
-					  const T& defaultValue_): 
+					  ExtensionAttributeBase::Status s,
+					  const T& defaultValue_):
   ExtensionAttributeBase(columnName_, s), defaultValue(defaultValue_) {
   value = defaultValue;
 }
@@ -33,6 +33,7 @@ ExtensionAttribute<T>::ExtensionAttribute(string columnName_,
 template <>
 bool
 ExtensionAttribute<string>::readInputTable(const FTable& inTable, long row) {
+  if (!isInput) return false;
   lookupInHeader = false;
   try {
     inTable.readCell(value, columnName, row);
@@ -40,6 +41,7 @@ ExtensionAttribute<string>::readInputTable(const FTable& inTable, long row) {
       value = defaultValue;
       return true;
     } else if (value[0]=='@') {
+      lookupInHeader = true;
       headerKeyword = value.substr(1);
       value = defaultValue;
     }
@@ -53,6 +55,7 @@ ExtensionAttribute<string>::readInputTable(const FTable& inTable, long row) {
 template <>
 bool
 ExtensionAttribute<int>::readInputTable(const FTable& inTable, long row) {
+  if (!isInput) return false;
   string vstring;
   lookupInHeader = false;
   try {
@@ -77,6 +80,7 @@ ExtensionAttribute<int>::readInputTable(const FTable& inTable, long row) {
   if (vstring.empty()) {
     value = defaultValue;
   } else if (vstring[0]=='@') {
+    lookupInHeader = true;
     headerKeyword = vstring.substr(1);
     value = defaultValue;
   } else {
@@ -91,6 +95,7 @@ ExtensionAttribute<int>::readInputTable(const FTable& inTable, long row) {
 template <>
 bool
 ExtensionAttribute<double>::readInputTable(const FTable& inTable, long row) {
+  if (!isInput) return false;
   string vstring;
   lookupInHeader = false;
   try {
@@ -115,6 +120,7 @@ ExtensionAttribute<double>::readInputTable(const FTable& inTable, long row) {
   if (vstring.empty()) {
     value = defaultValue;
   } else if (vstring[0]=='@') {
+    lookupInHeader = true;
     headerKeyword = vstring.substr(1);
     value = defaultValue;
   } else {
@@ -129,12 +135,14 @@ ExtensionAttribute<double>::readInputTable(const FTable& inTable, long row) {
 template <class T>
 void
 ExtensionAttribute<T>::makeOutputColumn(FTable& outTable) const {
+  if (!isOutput) return;
   vector<T> v;
   outTable.addColumn(v, columnName);
 }
 template <class T>
 void
 ExtensionAttribute<T>::writeOutputTable(FTable& outTable, long row) const {
+  if (!isOutput) return;
   outTable.writeCell(value, columnName, row);
 }
 
@@ -142,11 +150,12 @@ ExtensionAttribute<T>::writeOutputTable(FTable& outTable, long row) const {
 template <class T>
 bool
 ExtensionAttribute<T>::checkHeader(const Header& h) {
+  if (!isInput) return false;
   if (!lookupInHeader) return true;
   // Return true if a keyword of the correct type exists.
-  if (h.getValue(headerKeyword, value))
+  if (h.getValue(headerKeyword, value)) {
     return true;
-  else {
+  } else {
     value = defaultValue;
     return false;
   }
@@ -156,9 +165,11 @@ ExtensionAttribute<T>::checkHeader(const Header& h) {
 template <>
 bool
 ExtensionAttribute<string>::checkHeader(const Header& h) {
+  if (!isInput) return false;
   if (!lookupInHeader) return true;
-  if (h.getValue(headerKeyword, value))
+  if (h.getValue(headerKeyword, value)) {
     return true;
+  }
   // Try once more, reading an integer and converting to a string
   int i;
   if (!h.getValue(headerKeyword, i)) {
@@ -175,6 +186,7 @@ ExtensionAttribute<string>::checkHeader(const Header& h) {
 template <>
 bool
 ExtensionAttribute<double>::checkHeader(const Header& h) {
+  if (!isInput) return false;
   if (!lookupInHeader) return true;
   if (h.getValue(headerKeyword, value))
     return true;

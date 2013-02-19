@@ -223,6 +223,9 @@ main(int argc, char *argv[])
     // Read parameters
     if (argc<2) {
       cerr << usage << endl;
+      cerr << "--------- Default Parameters: ---------" << endl;
+      parameters.setDefault();
+      parameters.dump(cerr);
       exit(1);
     }
     string inputTables = argv[1];
