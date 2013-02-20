@@ -137,6 +137,7 @@ void
 ExtensionAttribute<T>::makeOutputColumn(FTable& outTable) const {
   if (!isOutput) return;
   vector<T> v;
+  /**/cerr << "Making output column for <" << columnName << ">" << endl;
   outTable.addColumn(v, columnName);
 }
 template <class T>

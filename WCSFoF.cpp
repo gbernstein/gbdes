@@ -275,8 +275,6 @@ main(int argc,
       fileTable = ft.extract();
     }
 
-    /**/cerr << "Read fileTable " << fileTable.ncols() << endl;
-
     // Start a list of the instruments
     NameIndex instrumentNames;
     vector<Instrument> instruments;
@@ -284,14 +282,12 @@ main(int argc,
     const int TAG_INSTRUMENT=-2;
     const int NO_INSTRUMENT=-3;
 
-    /**/cerr << "A" << endl;
     // And the exposures
     NameIndex exposureNames;
     vector<astrometry::SphericalICRS> exposurePointings;
     vector<int> exposureFields; // Record one field per exposure
     vector<int> exposureInstruments; // Record one instrument per exposure
 
-    /**/cerr << "B" << endl;
     // And a list holding all Points being matched
     list<Point> allPoints;
 
@@ -304,11 +300,8 @@ main(int argc,
     // Now assemble all of the catalog attributes we will read from input and/or write to output:
     list<ExtensionAttributeBase*> attributes;
 
-    /**/cerr << "C" << endl;
-
     ExtensionAttribute<string>* filenameAttr = 
       new ExtensionAttribute<string>("Filename", ExtensionAttributeBase::ReadWrite);
-    /**/cerr << "D" << endl;
     attributes.push_back(filenameAttr);
 
     ExtensionAttribute<int>* extensionAttr = 
@@ -390,8 +383,6 @@ main(int argc,
       new ExtensionAttribute<string>("WCS", ExtensionAttributeBase::WriteOnly);
     attributes.push_back(wcsAttr);
 
-    /**/cerr << "***made attributes ***" << endl;
-
     // Now create ExtensionAttributes for any requested optional columns to be passed along
     {
       list<string> names = stringstuff::split(stringAttributes, listSeperator);
@@ -400,6 +391,7 @@ main(int argc,
 	   ++i) {
 	string colName = *i;
 	stringstuff::stripWhite(colName);
+	if (colName.empty()) continue;
 	attributes.push_back(new ExtensionAttribute<string>(colName, ExtensionAttributeBase::ReadWrite));
       }
     }
@@ -410,6 +402,7 @@ main(int argc,
 	   ++i) {
 	string colName = *i;
 	stringstuff::stripWhite(colName);
+	if (colName.empty()) continue;
 	attributes.push_back(new ExtensionAttribute<int>(colName, ExtensionAttributeBase::ReadWrite));
       }
     }
@@ -420,19 +413,16 @@ main(int argc,
 	   ++i) {
 	string colName = *i;
 	stringstuff::stripWhite(colName);
+	if (colName.empty()) continue;
 	attributes.push_back(new ExtensionAttribute<double>(colName, ExtensionAttributeBase::ReadWrite));
       }
     }
-
-    /**/cerr << "***made output attributes ***" << endl;
 
     // Create necessary columns in the Extension table:
     for (list<ExtensionAttributeBase*>::const_iterator i = attributes.begin();
 	 i != attributes.end();
 	 ++i) 
       (*i)->makeOutputColumn(extensionTable);
-
-    /**/cerr << "***created columns ***" << endl;
 
     long extensionNumber = 0; // cumulative counter for all FITS tables read
 
