@@ -16,7 +16,7 @@ All routines described here are placed in the {\tt astrometry} namespace.  All e
 
 The coordinate routines involve frequent manipulation of 2- and 3-dimensional vectors and matrices.  These are implemented by use of the ``{\tt Small}'' feature of Mike Jarvis's {\it TMV} linear algebra package, which uses templates to hard-wire the dimensionality and avoid a lot of overhead.  {\it Astrometry.h} starts with {\tt typedef}'s to give local type names {\tt Vector2, Vector3, Matrix22, Matrix23,} etc., to vectors and matrices of the given types.  Moving to another vector/matrix package should just involve changing these typedefs, as long as the package has properly implemented multiplication operators and element access with the same syntax as {\it TMV}.  Also the {\it TMV} routine {\tt setToIdentity()} is used a lot.
 
-[{\bf Note:} There is one gotcha in the {\tt TMV::SmallMatrix} class, which is that there is no checking for aliasing, so expressions like {\tt v = m * v} can fail.
+[{\bf Note:} There is one gotcha in the {\tt TMV::SmallMatrix} class, which is that there is no checking for aliasing, so expressions like {\tt v = m * v} can fail.]
 
 The utility file {\tt AstronomicalConstants.h} is included by {\tt Astrometry.h} to define many constants used in astrometry and ephemeris programs.  Of particular interest:
 \begin{itemize}
@@ -73,7 +73,7 @@ The {\tt distance} method gives the great-circle distance between any two {\tt S
 Every {\tt SphericalCoords} must implement the {\tt duplicate()} method, which returns a pointer to a new object with the same meaning as itself.  The duplicate is a deep copy.\footnote{An exception is when classes such as {\tt Gnomonic} are created with {\tt shareOrient=true.}  In this case the duplicate and the original, share a pointer to an {\tt Orientation} that neither owns.}
 
 \subsection{Coordinate transformations}
-Coordinate transformations never have to be done explicitly! One merely has to construct an instance of a derived class in the new coordinate system from a {\tt SphericalCoords} in the old system.  For example, to convert ecliptic coordinates into :
+Coordinate transformations never have to be done explicitly! One merely has to construct an instance of a derived class in the new coordinate system from a {\tt SphericalCoords} in the old system.  For example, to convert ecliptic coordinates into ICRS:
 \begin{verbatim}
 double eclipticLon=0.33;
 double eclipticLat=-0.55;
@@ -103,7 +103,7 @@ In the last two lines, we use another generic feature of {\tt convertFrom}: it c
 \subsection{Unit-vector representations}
 {\tt SphericalCoords} do not store the longitude/latitude representation, they store the position in the selected coordinate system as a unit-length 3-dimensional {\tt Vector3} object.  Coordinate conversions are much faster and singularity-free when coordinates are stored this way.  The {\tt getUnitVector()} and {\tt setUnitVector()} methods allow you access this representation of the coordinates.  The meaning of the three-vector depends on the type of the derived class, just as the lon/lat values do, {\it i.e.} are they ecliptic, Galactic, ICRS, etc.?
 
-You can also obtain the partial derivatives of the 3-dimensional representation with respect to the 2d ones, or vice-versa, with the {\tt derivsTo2d()} and {\tt derivsFrom2d} methods, respectively.  The partial derivatives of a transformation between coordinate systems that are obtained from the {\tt convertFrom()} method can be between the 2d or 3d representations of both systems.  The dimension of the matrix that you give the method will signal the kind of derivatives that you want.  For example if you hand the routine a reference to a {\tt Matrix23}, you will get the partial derivatives of the new lon/lat coordinates with respect to the 3d direction cosines in the old coordinate system.
+You can also obtain the partial derivatives of the 3-dimensional representation with respect to the 2d ones, or vice-versa, with the {\tt derivsTo2d()} and {\tt derivsFrom2d()} methods, respectively.  The partial derivatives of a transformation between coordinate systems that are obtained from the {\tt convertFrom()} method can be between the 2d or 3d representations of both systems.  The dimension of the matrix that you give the method will signal the kind of derivatives that you want.  For example if you hand the routine a reference to a {\tt Matrix23}, you will get the partial derivatives of the new lon/lat coordinates with respect to the 3d direction cosines in the old coordinate system.
 
 Note that a request for partial derivatives to/from a lon/lat system can generate an {\tt AstrometryErrror} exception if the coordinates are at the pole, since there is a singularity.  Other coordinate systems might throw exceptions if venturing to singular points or undefined regions.
 
