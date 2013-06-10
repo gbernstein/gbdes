@@ -1,6 +1,7 @@
 // Class that mirrors the FITS header data structure.
 
 #include "Header.h"
+#include "StringStuff.h"
 #include <cstring>
 #include <cstdio>
 #include <cctype>
@@ -193,7 +194,7 @@ namespace img {
   istream& 
   operator>>(istream& is, Header& h) {
     string buffer;
-    while (std::getline(is, buffer)) {
+    while (stringstuff::getlineNoComment(is, buffer)) {
       HdrRecordBase* hrb = ReadASCIIHeader(buffer);
       if (!hrb) {
 	is.setstate(ios::failbit);  // ??? do we want to throw here?

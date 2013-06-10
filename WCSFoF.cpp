@@ -371,12 +371,17 @@ main(int argc,
 	selectionExpression.clear();
       }
       string affinityName;
-      try {
-	fileTable.readCell(affinityName, affinityCol, iFile);
-	stripWhite(affinityName);
-      } catch (FTableNonExistentColumn& m) {
+      if (useAffinities) {
+	try {
+	  fileTable.readCell(affinityName, affinityCol, iFile);
+	  stripWhite(affinityName);
+	} catch (FTableNonExistentColumn& m) {
+	  affinityName = globalAffinity;
+	}
+      } else {
 	affinityName = globalAffinity;
       }
+	
       string starExpression;
       try {
 	fileTable.readCell(starExpression,starSelectCol, iFile);
