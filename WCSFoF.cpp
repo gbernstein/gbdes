@@ -582,6 +582,7 @@ main(int argc,
 	  else if (stringstuff::nocaseEqual(thisInstrument, "TAG"))
 	    instrumentNumber = TAG_INSTRUMENT;
 	  else {
+	    instrumentTranslator(thisInstrument);
 	    if (!instrumentNames.has(thisInstrument)) {
 	      instrumentNames.append(thisInstrument);
 	      instruments.push_back(Instrument(thisInstrument));
@@ -685,12 +686,16 @@ main(int argc,
 		     << endl;
 		exit(1);
 	      }
-	    } else if (!stringstuff::nocaseEqual(instrument, instrumentNames.nameOf(instrumentNumber))) {
-	      cerr << "Conflicting instrument assignments in file " << filename 
-		   << ":\n exposure has <" << instrumentNames.nameOf(instrumentNumber) 
-		   << ">\n extension has <" << instrument << ">"
-		   << endl;
-	      exit(1);
+	    } else {
+	      instrumentTranslator(instrument);
+	      if (!stringstuff::nocaseEqual(instrument, 
+					    instrumentNames.nameOf(instrumentNumber))) {
+		cerr << "Conflicting instrument assignments in file " << filename 
+		     << ":\n exposure has <" << instrumentNames.nameOf(instrumentNumber) 
+		     << ">\n extension has <" << instrument << ">"
+		     << endl;
+		exit(1);
+	      }
 	    }
 	  }
 	}  // Done checking instrument agreement
