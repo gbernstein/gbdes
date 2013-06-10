@@ -1,12 +1,9 @@
-% $Id: Astrometry.tex,v 1.1 2011/04/13 03:36:23 garyb Exp $
 \documentclass[11pt,preprint,flushrt]{aastex}
 \def\eqq#1{Equation~(\ref{#1})}
 \newcommand{\bfx}{\mbox{\bf x}}
 \newcommand{\bfu}{\mbox{\bf u}}
 \newcommand{\bfa}{\mbox{\boldmath $\alpha$}}
 \begin{document}
-
-\slugcomment{CVS \$Revision: 1.1 $ $ \$Date: 2011/04/13 03:36:23 $ $}
 
 \title{Documentation for Astrometry Classes}
 
@@ -64,7 +61,7 @@ Writing can be requested into either of the last two string formats, using the c
 The functions {\tt dmsdeg} and {\tt hmsdeg} return double-value numbers of degrees from input strings with the formats {\it dd:mm:ss.sss} or {\it hh:mm:ss.sss} respectively.  
 Colons or spaces can separate the 3 fields.  Leading whitespace is skipped.  Any fields can be an integer or have fractional parts after a decimal point.  Number of digits per field is not constrained.  Seconds can be omitted, or minutes and seconds can be omitted.  A leading minus sign will negate the entire value, no signs are allowed beyond the first field.  There is no range checking on any of the values.
 
-The functions {\tt degdms} and {\tt deghms} return formatted string representation of input degree-valued double-precision numbers.  The output format of {\tt degdms}  is {\it $[+-]$ddd:mm:ss.sss} or {\it $[+-]$dd:mm:ss.sss} depending on whether there are $\ge100$ degrees on input. The output format of {\tt deghms}  is {\it $[-]$hh:mm:ss.sss} or {\it $[+-]$dd:mm:ss.sss} depending on whether there are $\ge100$ degrees on input.  The function call includes a specification of the number of decimal places in the seconds argument.
+The functions {\tt degdms} and {\tt deghms} return formatted string representation of input degree-valued double-precision numbers.  The output format of {\tt degdms}  is {\it $[+-]$ddd:mm:ss.sss} or {\it $[+-]$dd:mm:ss.sss} depending on whether there are $\ge100$ degrees on input. The output format of {\tt deghms}  is {\it $[-]$hh:mm:ss.sss}.  The function call includes a specification of the number of decimal places in the seconds argument.
 
 \section{Spherical coordinate systems}
 {\tt SphericalCoords} is an abstract base class for representing a location on the celestial sphere.  Every instance of the base class represents a well-defined position on the sky independent of coordinate systems.
@@ -72,6 +69,8 @@ The functions {\tt degdms} and {\tt deghms} return formatted string representati
 There are many derived classes, each tied to a specific 2-dimensional coordinate system on the sky, {\it e.g.} {\tt SphericalICRS} for RA/dec coordinates in the ICRS system, {\tt SphericalEcliptic} for ecliptic lon/lat coordinates.  Every derived class instance can be initialized or set using a pair of (longitude, latitude) values (or a {\tt Vector2} containing the 2 coordinates).  {\bf Coordinates are always assumed to be in radians, and the $x$ or longitude coordinate comes first.  However the conversions to/from strings and the overloaded stream operators will use units that depend on the coordinate system.}  For example the lon (lat) will be printed out in sexagesimal hours(degrees) by the base-class implementation, to follow tradition in representing RA and declination.
 
 The {\tt distance} method gives the great-circle distance between any two {\tt SphericalCoords} instances.  This is well defined regardless of the coordinate systems of the two operands, since every {\tt SphericalCoords} represents a definitive position on the celestial sphere.
+
+Every {\tt SphericalCoords} must implement the {\tt duplicate()} method, which returns a pointer to a new object with the same meaning as itself.  The duplicate is a deep copy.\footnote{An exception is when classes such as {\tt Gnomonic} are created with {\tt shareOrient=true.}  In this case the duplicate and the original, share a pointer to an {\tt Orientation} that neither owns.}
 
 \subsection{Coordinate transformations}
 Coordinate transformations never have to be done explicitly! One merely has to construct an instance of a derived class in the new coordinate system from a {\tt SphericalCoords} in the old system.  For example, to convert ecliptic coordinates into :
@@ -115,6 +114,8 @@ Two other protected methods both called {\tt projectIt} specify the maps in both
 
 Hence to define a new coordinate system, one derives a class from {\tt SphericalCoords} and implements, at the least, the two ICRS conversion methods.  The {\tt projectIt} methods can optionally be implemented to have 2d coordinates that are not simply the lon/lat values with respect to the 3d system.
 
+A new coordinate system must also implement the {\tt duplicate()} method, usually simply by {\tt return new XCoords(*this)} for some {\tt XCoords} system.
+
 \subsection{Implemented coordinate systems}
 \subsubsection{{\tt SphericalICRS}}
 Coordinates are in the ICRS system.  The {\tt convertToICRS} and {\tt convertFromICRS} are simply identity functions and the partial-derivative matrices are identity matrices.  Latitudes and longitudes have their standard meanings, with longitude increasing westward.  The implementation contains the {\tt getRADec} and {\tt setRADec} methods that simply alias the {\tt LonLat} functions, so the user does not have to remember that RA is the longitude and declination is the latitude in this system.
@@ -127,20 +128,18 @@ Because rotation to a new pole is a very common coordinate transformation, there
 \subsubsection{\tt SphericalCustom}
 This is a latitude/longitude system with an orientation on the celestial sphere that is specified at the time of construction of the object.  The constructor for {\tt SphericalCustom} requires a reference to an instance of the {\tt Orientation} class.  This class is described in more detail below: it specifies the location of the system's coordinate origin on the sky, and the rotation angle of its axes.  
 
-{\bf Each {\tt SphericalCustom} coordinate saves only a {\tt const} pointer to its {\tt Orientation}.  This means that the {\tt Orientation} used during construction should not be altered or destroyed during the lifetime of all {\tt SphericalCustom} coordinates that refer to it.}
+{\bf On construction, if the default {\tt shareOrient=false} is taken, the {\tt SphericalCustom} instance saves its own copy of the {\tt Orientation}.  If you select {\tt shareOrient=true}, only a pointer is saved, so the {\tt Orientation} used during construction should not be altered or destroyed during the lifetime of all {\tt SphericalCustom} coordinates that refer to it.  This can save space and computation if you are manipulating many {\tt SphericalCustom} instances with the same {\tt Orientation.}}
 
-\subsubsection{\tt TangentPlane}
-The coordinate system is a tangent-plane (gnomonic) projection of the sphere about a reference point specified at the construction of each instance.  As with {\tt SphericalCustom}, the coordinate origin and the orientation of the tangent plane axes are specified by reference to an {\tt Orientation} object.   The difference is that the 2d coordinates are not actually longitude and latitude, but rather the Cartesian coordinates $(\xi,\eta)$ of the projection of the point onto the tangent plane.  In terms of the direction cosines $\{x,y,z\}$ of the point on the celestial sphere, the 2d coordinates are $\xi=x/z$, $\eta=y/z$.  Note that the tangent plane 2d coordinates make sense only within 90\arcdeg\ of the tangent point.
+\subsubsection{\tt Gnomonic}
+The coordinate system is a tangent-plane (gnomonic) projection of the sphere about a reference point specified at the construction of each instance.  As with {\tt SphericalCustom}, the coordinate origin and the orientation of the tangent plane axes are specified by reference to an {\tt Orientation} object.  The {\tt shareOrient} flag on construction has the same effect as for {\tt SphericalCustom}.
+ The difference is that the 2d coordinates are not actually longitude and latitude, but rather the Cartesian coordinates $(\xi,\eta)$ of the projection of the point onto the tangent plane from the center of the sphere.  In terms of the direction cosines $\{x,y,z\}$ of the point on the celestial sphere, the 2d coordinates are $\xi=x/z$, $\eta=y/z$.  Note that the tangent plane 2d coordinates make sense only within 90\arcdeg\ of the tangent point.
 
-Like the {\tt SphericalCustom}, 
-{\bf each {\tt TangentPlane} coordinate saves only a {\tt const} pointer to its {\tt Orientation}.  This means that the {\tt Orientation} used during construction should not be altered or destroyed during the lifetime of all {\tt TangentPlane} coordinates that refer to it.}
-
-The {\tt read} and {\tt write} methods of {\tt TangentPlane} override the base class such that both coordinates are input or output in degrees.
+The {\tt read} and {\tt write} methods of {\tt Gnomonic} override the base class such that both coordinates are input or output in degrees.
 
 \subsection{{\tt Orientation} class}
 {\tt Orientation} defines a new point of view of the celestial sphere, {\it i.e.} a rotation of the sphere.  On construction one must specify a {\tt SphericalCoords} that will be the $z$ axis of the new viewpoint (the pole), and a double-valued position angle that will give the rotation angle of the $(x,y)$ coordinate system with respect to the local ICRS meridian at the pole.  ``Position angle'' or ``PA'' arguments are always in radians and give the angle of the y axis measured from north through east.  Since east corresponds to increasing RA, this convention means that PA is the negative of the usual mathematical convention of a rotation as being positive as the $x$ axis is rotated toward $y$.  The {\tt zrot} quantity stored by the class and accessible via {\tt getZRot} and {\tt setZRot} is the negation of the PA.
 
-The methods {\tt alignToEcliptic(), alignToICRS(),} and [\tt alignToInvariable()} are provided to set the $y$ axis to have the specified position angle (in radians, default$=0$) with respect to the local north directions in the respective coordinate systems.  {\tt alignToICRS()}.
+The methods {\tt alignToEcliptic(), alignToICRS(),} and {\tt alignToInvariable()} are provided to set the $y$ axis to have the specified position angle (in radians, default$=0$) with respect to the local north directions in the respective coordinate systems.  {\tt alignToICRS()}.
 
 \subsubsection{Coordinate transformation}
 Each instance of {\tt Orientation} defines a new 3d coordinate system with new axes.  The method {\tt m()} returns a reference to a {\tt Matrix33} that converts a {\tt Vector3} in the ICRS system to a {\tt Vector3} in the newly oriented coordinate system (a rotation matrix).  This works, in particular, for unit vectors that represent directions on the celestial sphere.  In other words, if {\tt xICRS} is a {\tt Vector3} giving the ICRS direction cosines of a point on the celestial sphere, then {\tt orient.m()*xICRS} will be a {\tt Vector3} giving the direction cosines in the coordinate system described by {\tt orient}.
@@ -153,9 +152,9 @@ Suppose you have an image that is a tangent-plane projection of the sky about so
 SphericalICRS pole(projRA, projDec);  // Projection pole: coordinates in radians
 Orientation orient(pole);             // Specify orientation: default PA is zero
 
-// Create a TangentPlane instance representing star's location on the sky,
+// Create a Gnomonic instance representing star's location on the sky,
 // with constructor including the Orientation of the coordinate system
-TangentPlane tp(xStar*DEGREE, yStar*DEGREE, orient);
+Gnomonic tp(xStar*DEGREE, yStar*DEGREE, orient);
 
 SphericalICRS icrs(tp);               // Create ICRS coordinates for same location
 
@@ -163,7 +162,7 @@ SphericalICRS icrs(tp);               // Create ICRS coordinates for same locati
 double raStar, decStar;
 icrs.getLonLat(raStar, decStar);
 \end{verbatim}
-If you wanted to transform coordinate in the other direction, you create the {\tt icrs} object first, then create {\tt TangentPlane tp(icrs,orient)} to effect the conversion.  {\tt tp.getLonLat(xi,eta)} would put the tangent-plane coordinates (in radians) into variables {\tt xi} and {\tt eta}.
+If you wanted to transform coordinate in the other direction, you create the {\tt icrs} object first, then create {\tt Gnomonic tp(icrs,orient)} to effect the conversion.  {\tt tp.getLonLat(xi,eta)} would put the tangent-plane coordinates (in radians) into variables {\tt xi} and {\tt eta}.
 
 \section{Cartesian coordinates}
 Locations in 3d space are represented as instances of the abstract base class {\tt CartesianCoords}. Every instance of the base class represents a definitive point in space, but the coordinate system used depends upon the type of derived class for the instance, in the same way the {\tt SphericalCoords} works for locations on the celestial sphere.  The method {\tt getVector()} returns a 3-vector giving the position in the system specified by the derived class.  The distance units for {\tt CartesianCoords} are not specified in the code, so the user needs to maintain consistency.  All of the orbital-mechanics code will assume units of AU.

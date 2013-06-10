@@ -1,4 +1,3 @@
-// $Id: Match.h,v 1.12 2012/08/13 17:54:08 dgru Exp $
 // Match objects from multiple catalogs together
 // And then adjust parameters of their PixelMaps to minimize
 // differences from mean world coordinates.
@@ -117,7 +116,7 @@ namespace astrometry {
 				      relativeTolerance(0.001)  {}
 
     void remap();	// Re-map all Detections using current params
-    double fitOnce();	// Returns chisq of previous fit, updates params.
+    double fitOnce(bool reportToCerr=true);	// Returns chisq of previous fit, updates params.
     // Conduct one round of sigma-clipping.  If doReserved=true, 
     // then only clip reserved Matches.  If =false, then
     // only clip non-reserved Matches.
@@ -137,6 +136,11 @@ namespace astrometry {
     void count(long int& mcount, long int& dcount, bool doReserved=false, int minMatches=2) const;
     void count(long int& mcount, long int& dcount, bool doReserved, int minMatches, long catalog) const;
   };
+
+  // Function that will execute a Marquardt-Levenberg fit to optimize the
+  // parameters of some model to a simple list of detections.
+  // Assigns equal uncertainty to all test points, given by sigma
+  void mapFit(list<Detection*> testPoints, PixelMap* pm, double sigma=1.);
 
 } // namespace astrometry
 

@@ -1,0 +1,4 @@
+* Photometric fitting: need to ghost PixelMap -> PhotoMap, collections, CoordAlign->PhotoAlign, PhotoDetection, all to go into a PhotoFit.  
+* write a TemplateMap2d
+* Allow something other than polynomial Exposure map.
+* Update documentation: PixelMap.tex and the fitting classes.

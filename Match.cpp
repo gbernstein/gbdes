@@ -1,4 +1,4 @@
-// $Id: Match.cpp,v 1.18 2012/08/13 17:54:08 dgru Exp $
+// Astrometric matching and fitting classes.
 
 #include "Match.h"
 #include <list>
@@ -16,7 +16,7 @@ using std::set;
 #endif
 
 // #define DEBUG
-#include <Marquardt.h>
+#include "Marquardt.h"
 
 using namespace astrometry;
 
@@ -32,7 +32,7 @@ public:
 	       int nLocks=0): alpha(alpha_), pmc(pmc_) {
 #ifdef _OPENMP
     // Decide how many map elements per lock
-    nMaps = pmc.nMaps();
+    nMaps = pmc.nFreeMaps();
     int nBlocks = nMaps*(nMaps+1)/2;
     if (nLocks > nBlocks || nLocks<=0) {
       blockLength = 1;
@@ -53,48 +53,38 @@ public:
       omp_destroy_lock(&locks[i]);
 #endif
   }
-  // Update submatrix corresponding to (m1,m2) parameters with += scalar * v1 ^ v2
-  void rankOneUpdate(astrometry::PixelMapKey m1, tmv::VectorView<double>& v1, 
-		     astrometry::PixelMapKey m2, tmv::VectorView<double>& v2,
+  // Update submatrix with corner at (startIndex1,startIndex2) with += scalar * v1 ^ v2
+  // map[12] are sequence numbers of map components in the PixelMapCollection, used
+  // to divide the matrix into blocks for locking in multithreaded case
+  void rankOneUpdate(int map1, int startIndex1, tmv::VectorView<double>& v1, 
+		     int map2, int startIndex2, tmv::VectorView<double>& v2,
 		     double scalar=1.) {
-    bool diagonal = m1==m2;
-    bool swapVectors = false;
-    if (m1 < m2) {
-      swapVectors = true;
-      SWAP(m1,m2);
-    }
-    int i1 = pmc.startIndex(m1);
-    int n1 = pmc.nParams(m1);
-    if (n1<=0) return;
-    int i2 = pmc.startIndex(m2);
-    int n2 = pmc.nParams(m2);
-    if (n2<=0) return;
+    if (v1.size() <= 0 || v2.size() <=0) return;	// Nothing to add.
+    bool diagonal = (map1 == map2);
+    bool swapVectors = (map1 < map2);
+
 #ifdef _OPENMP
     // Get the block index corresponding to these 2 keys
-    int block = (m1*(m1+1)/2 + m2) / blockLength;
+    int block = (swapVectors ? (map2*(map2+1)/2 + map1) : (map1*(map1+1)/2 + map2))
+      / blockLength;
     Assert(block < locks.size());
     // Set lock for its region - will wait here if busy!
     omp_set_lock(&locks[block]);
     // Pre-multiply the vectors?
 #endif
     if (diagonal) {
-      Assert(v1.size()==n1);
-      alpha.subSymMatrix(i1, i1+n1) += scalar * v1 ^ v1;
+      alpha.subSymMatrix(startIndex1, startIndex1 + v1.size()) += scalar * v1 ^ v1;
     } else if (swapVectors) {
-      Assert(v2.size()==n1);
-      Assert(v1.size()==n2);
-      alpha.subMatrix(i1, i1+n1, i2, i2+n2) += scalar * v2 ^ v1;
+      alpha.subMatrix(startIndex2, startIndex2+v2.size(),
+		      startIndex1, startIndex1+v1.size()) += scalar * v2 ^ v1;
     } else {
-      Assert(v1.size()==n1);
-      Assert(v2.size()==n2);
-      alpha.subMatrix(i1, i1+n1, i2, i2+n2) += scalar * v1 ^ v2;
+      alpha.subMatrix(startIndex1, startIndex1+v1.size(),
+		      startIndex2, startIndex2+v2.size()) += scalar * v1 ^ v2;
     }
 #ifdef _OPENMP
     omp_unset_lock(&locks[block]);
 #endif
   }
-  int startIndex(astrometry::PixelMapKey k) const {return pmc.startIndex(k);}
-  int nParams(astrometry::PixelMapKey k) const {return pmc.nParams(k);}
 private:
   tmv::SymMatrix<double>& alpha;
   const PixelMapCollection& pmc;
@@ -207,11 +197,18 @@ Match::remap() {
 		       (*i)->xw, (*i)->yw);
 }
 
+// A structure that describes a range of parameters
+struct iRange {
+  iRange(int i=0, int n=0): startIndex(i), nParams(n) {}
+  int startIndex;
+  int nParams;
+};
+
 int
 Match::accumulateChisq(double& chisq,
 		       DVector& beta,
-		       //**		       tmv::SymMatrix<double>& alpha) {
 		       AlphaUpdater& updater) {
+		       //**		       tmv::SymMatrix<double>& alpha) {
   double xmean, ymean;
   double xW, yW;
   int nP = beta.size();
@@ -231,9 +228,9 @@ Match::accumulateChisq(double& chisq,
     double xw, yw;
     if (npi>0) {
       dxyi[ipt] = new DMatrix(2,npi);
-      (*i)->map->toWorld((*i)->xpix, (*i)->ypix,
-			 xw, yw,
-			 *dxyi[ipt]);
+      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
+			       xw, yw,
+			       *dxyi[ipt]);
     } else {
       (*i)->map->toWorld((*i)->xpix, (*i)->ypix, xw, yw);
     }
@@ -245,8 +242,9 @@ Match::accumulateChisq(double& chisq,
   DVector dxmean(nP, 0.);
   DVector dymean(nP, 0.);
 
+
+  map<int, iRange> mapsTouched;
   ipt = 0;
-  set<PixelMapKey> keysTouched;
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
@@ -262,13 +260,13 @@ Match::accumulateChisq(double& chisq,
 
     // Accumulate derivatives:
     int istart=0;
-    PixelMapChain::const_iterator ikey = (*i)->map->chain.begin();
-    for (int iseg=0; iseg<(*i)->map->startIndices.size(); iseg++, ++ikey) {
-      int ip=(*i)->map->startIndices[iseg];
-      int np=(*i)->map->nSubParams[iseg];
+    for (int iMap=0; iMap<(*i)->map->nMaps(); iMap++) {
+      int ip=(*i)->map->startIndex(iMap);
+      int np=(*i)->map->nSubParams(iMap);
       if (np==0) continue;
-      PixelMapKey key = *ikey;
-      keysTouched.insert(key);
+      int mapNumber = (*i)->map->mapNumber(iMap);
+      // Keep track of parameter ranges we've messed with:
+      mapsTouched[mapNumber] = iRange(ip,np);
       tmv::VectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
       tmv::VectorView<double> dy=dxyi[ipt]->row(1,istart,istart+np);
       beta.subVector(ip, ip+np) -= wxi*(xi-xmean)*dx;
@@ -281,24 +279,26 @@ Match::accumulateChisq(double& chisq,
       // The alpha matrix: a little messy because of symmetry
       //**      alpha.subSymMatrix(ip, ip+np) += wxi*(dx ^ dx));
       //**      alpha.subSymMatrix(ip, ip+np) += wxi*(dy ^ dy));
-      updater.rankOneUpdate(key, dx, key, dx, wxi);
-      updater.rankOneUpdate(key, dy, key, dy, wyi);
+      updater.rankOneUpdate(mapNumber, ip, dx, 
+			    mapNumber, ip, dx, wxi);
+      updater.rankOneUpdate(mapNumber, ip, dy, 
+			    mapNumber, ip, dy, wyi);
 
       int istart2 = istart+np;
-      PixelMapChain::const_iterator ikey2 = ikey;
-      ikey2++;
-      for (int iseg2=iseg+1; iseg2<(*i)->map->startIndices.size(); iseg2++, ++ikey2) {
-	int ip2=(*i)->map->startIndices[iseg2];
-	int np2=(*i)->map->nSubParams[iseg2];
+      for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
+	int ip2=(*i)->map->startIndex(iMap2);
+	int np2=(*i)->map->nSubParams(iMap2);
+	int mapNumber2 = (*i)->map->mapNumber(iMap2);
 	if (np2==0) continue;
-	PixelMapKey key2 = *ikey2;
 	tmv::VectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
 	tmv::VectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
 	// Note that subMatrix here will not cross diagonal:
 	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wxi*(dx ^ dx2);
 	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wyi*(dy ^ dy2);
-	updater.rankOneUpdate(key2, dx2, key, dx, wxi);
-	updater.rankOneUpdate(key2, dy2, key, dy, wyi);
+	updater.rankOneUpdate(mapNumber2, ip2, dx2, 
+			      mapNumber,  ip,  dx, wxi);
+	updater.rankOneUpdate(mapNumber2, ip2, dy2, 
+			      mapNumber,  ip,  dy, wyi);
 	istart2+=np2;
       }
       istart+=np;
@@ -313,28 +313,28 @@ Match::accumulateChisq(double& chisq,
   */
 
   // Do updates parameter block by parameter block
-  for (set<PixelMapKey>::iterator k1=keysTouched.begin();
-       k1 != keysTouched.end();
-       ++k1) {
-    int i1 = updater.startIndex(*k1);
-    int n1 = updater.nParams(*k1);
+  for (map<int,iRange>::iterator m1=mapsTouched.begin();
+       m1 != mapsTouched.end();
+       ++m1) {
+    int map1 = m1->first;
+    int i1 = m1->second.startIndex;
+    int n1 = m1->second.nParams;
     if (n1<=0) continue;
-    for (set<PixelMapKey>::iterator k2=k1;
-	 k2 != keysTouched.end();
-	 ++k2) {
-    int i2 = updater.startIndex(*k2);
-    int n2 = updater.nParams(*k2);
-    if (n1<=0) continue;
-    tmv::VectorView<double> dx1 = dxmean.subVector(i1, i1+n1);
-    tmv::VectorView<double> dx2 = dxmean.subVector(i2, i2+n2);
-    tmv::VectorView<double> dy1 = dymean.subVector(i1, i1+n1);
-    tmv::VectorView<double> dy2 = dymean.subVector(i2, i2+n2);
-    updater.rankOneUpdate(*k2, dx2,
-			  *k1, dx1,
-			  -1./xW);
-    updater.rankOneUpdate(*k2, dy2,
-			  *k1, dy1,
-			  -1./yW);
+    for (map<int, iRange>::iterator m2=m1;
+	 m2 != mapsTouched.end();
+	 ++m2) {
+      int map2 = m2->first;
+      int i2 = m2->second.startIndex;
+      int n2 = m2->second.nParams;
+      if (n2<=0) continue;
+      tmv::VectorView<double> dx1 = dxmean.subVector(i1, i1+n1);
+      tmv::VectorView<double> dx2 = dxmean.subVector(i2, i2+n2);
+      tmv::VectorView<double> dy1 = dymean.subVector(i1, i1+n1);
+      tmv::VectorView<double> dy2 = dymean.subVector(i2, i2+n2);
+      updater.rankOneUpdate(map2, i2, dx2,
+			    map1, i1, dx1, -1./xW);
+      updater.rankOneUpdate(map2, i2, dy2,
+			    map1, i1, dy1, -1./yW);
     }
   }
 
@@ -426,8 +426,6 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   alpha.setZero();
   int matchCtr=0;
 
-  Stopwatch timer;
-  timer.start();
   const int NumberOfLocks = 2000;
   AlphaUpdater updater(alpha, pmc, NumberOfLocks);
 
@@ -469,7 +467,8 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   for (int j=0; j<vi.size(); j++) {
     Match* m = vi[j];
 
-    if (j%chunk==0) {
+    //**    if (j%chunk==0) {
+    if (false) {
 #pragma omp critical (output)
       cerr << "# Thread " << omp_get_thread_num()
 	   << "# accumulating chisq at match # " << j 
@@ -497,17 +496,39 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   }
 #endif
   chisq = newChisq;
-  timer.stop();
-  cerr << "# Done accumulating CoordAlign info, seconds: " << timer << endl;
+
+  {
+    //***** Code that will be useful in spotting unconstrained parameters:
+    for (int i = 0; i<alpha.nrows(); i++) {
+      bool blank = true;
+      for (int j=0; j<alpha.ncols(); j++)
+	if (alpha(i,j)!=0.) {
+	  blank = false;
+	  break;
+	}
+      if (blank) 
+	cerr << "***No constraints on row " << i << endl;
+    }
+    for (int j=0; j<alpha.ncols(); j++) {
+      bool blank = true;
+      for (int i = 0; i<alpha.nrows(); i++) 
+	if (alpha(i,j)!=0.) {
+	  blank = false;
+	  break;
+	}
+      if (blank) 
+	cerr << "***No constraints on col " << j << endl;
+    }
+  }
 }
 
 double
-CoordAlign::fitOnce() {
+CoordAlign::fitOnce(bool reportToCerr) {
   DVector p = getParams();
   Marquardt<CoordAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
   marq.setSaveMemory();
-  double chisq = marq.fit(p);
+  double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
   setParams(p);
   remap();
   return chisq;
@@ -524,6 +545,11 @@ CoordAlign::remap() {
 int
 CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   int nclip=0;
+  // ??? parallelize this loop!
+  cerr << "## Sigma clipping...";
+  Stopwatch timer;
+  timer.start();
+
   for (list<Match*>::const_iterator i=mlist.begin();
        i != mlist.end();
        ++i) {
@@ -535,6 +561,8 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
       if (clipEntireMatch) (*i)->clipAll();
     }
   }
+  timer.stop();
+  cerr << " done in " << timer << " sec" << endl;
   return nclip;
 }
 
@@ -544,6 +572,7 @@ CoordAlign::chisqDOF(int& dof, double& maxDeviate,
   dof=0;
   maxDeviate=0.;
   double chisq=0.;
+  // ??? parallelize this loop!
   for (list<Match*>::const_iterator i=mlist.begin();
        i != mlist.end();
        ++i) {

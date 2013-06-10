@@ -1,4 +1,3 @@
-// $Id: Astrometry.h,v 1.9 2012/02/02 00:13:58 garyb Exp $
 // Routines for the manipulation of astronomical coordinates and times.
 #ifndef ASTROMETRY_H
 #define ASTROMETRY_H
@@ -100,11 +99,15 @@ namespace astrometry {
 
   ///////////////////////////////////////////////////////////////////////////
   // Spherical coordinate systems
-  //  The internal format be 3d unit
-  // vectors, to simplify conversions.  The class's external appearance will be
+  // The internal format for spherical coordinates is a 3d unit
+  // vector, to simplify conversions.  The class's external appearance will be
   // as some 2d representation, either lat/lon or projected coordinates.  
-  // The dxdl matrix will give partial derivs of the unit vectors w.r.t.
-  // the nominal 2d coordinates.
+  // The derivs[To|From]3d matrix will give partial derivs of the unit vectors w.r.t.
+  // the nominal 2d coordinates or vice-versa
+  //
+  // Coordinate conversions occur simply by casting one kind of SphericalCoordinate
+  // to another.  Internally this is handled by every derived type being able
+  // to convert its 3d unit vector to/from the ICRS system.
   ///////////////////////////////////////////////////////////////////////////
 
   class CartesianCoords;
@@ -270,57 +273,120 @@ namespace astrometry {
   std::istream& operator>>(std::istream& is, Orientation& o);
 
 
-  // ??? for SphericalCustom and TangentPlane,
-  // ???? Should be possible to store copy of orient, not pointer,
-  // ???? which would clean up ownership but mean copying
-  // ???? 2 coords + orient=(2 coords + rot + 3x3 matrix) each
-  // ???? time a coordinate is made.
-  class SphericalCustom: public SphericalCoords {
+  // The SphericalCustom and Gnomonic are defined
+  // by an Orientation object giving its pole and the position angle of the coord
+  // system about this pole.
+  //
+  // On creation, if shareOrient=false, a private duplicate of the Orientation
+  // will be created (and destroyed along with this object).
+  // But means copying 2 coords + orient=(2 coords + rot + 3x3 matrix) each
+  // time a coordinate is made, which may be slow for processing many coordinates.
+  //
+  // Use shareOrient=true if you are creating many SphericalCustom objects with 
+  // the same orientation and want to reduce copying overhead.  In this case,
+  // a pointer to the input Orientation is stored.  You are then responsible for
+  // keeping the input Orientation in existence as long as the SphericalCustom is
+  // in use, then deleting the Orientation.
+
+  // SphericalCustom and Gnomonic share everything except lat/lon calculation so
+  // both will be derived from SphericalCustomBase
+  class SphericalCustomBase: public SphericalCoords {
   private:
     const Orientation* orient;
+    bool ownOrient;
     virtual Vector3 convertToICRS(Matrix33* partials=0) const;
     virtual void convertFromICRS(const Vector3& xeq, Matrix33* partials=0);
   public:
-    SphericalCustom(const Orientation& o): orient(&o) {}
-    SphericalCustom(double lon, double lat, const Orientation& o):
-      SphericalCoords(lon, lat), orient(&o) {}
+    SphericalCustomBase(const Orientation& o, bool shareOrient);
+    SphericalCustomBase(double xi, double eta, const Orientation& o, bool shareOrient) ;
+    virtual ~SphericalCustomBase() {if (ownOrient) delete orient;}
+    explicit SphericalCustomBase(const SphericalCustomBase& rhs);
+    SphericalCustomBase& operator=(const SphericalCustomBase& rhs);
+
+    // Conversions & projection: 
+    explicit SphericalCustomBase(const SphericalCoords& rhs,
+				 const Orientation& o,
+				 bool shareOrient);
+    explicit SphericalCustomBase(const SphericalCoords& rhs, 
+				 const Orientation& o,
+				 Matrix33& partials,
+				 bool shareOrient);
+    // For now, conversion from CartesianCustom will share the ReferenceFrame's Orientation:
+    explicit SphericalCustomBase(const CartesianCustom& rhs);
+    explicit SphericalCustomBase(const CartesianCustom& rhs, Matrix33& partials);
+
+    const Orientation* getOrient() const {return orient;}
+  };
+
+  class SphericalCustom: public SphericalCustomBase {
+  public:
+    SphericalCustom(const Orientation& o, bool shareOrient=false):
+      SphericalCustomBase(o, shareOrient) {}
+    SphericalCustom(double xi, double eta, const Orientation& o, bool shareOrient=false):
+      SphericalCustomBase(xi, eta, o, shareOrient) {}
+    virtual ~SphericalCustom() {}
+    SphericalCustom(const SphericalCustom& rhs): SphericalCustomBase(rhs) {}
+    SphericalCustom& operator=(const SphericalCustom& rhs) {
+      SphericalCustomBase::operator=(rhs);
+      return *this;
+    }
     virtual SphericalCoords* duplicate() const {
       return new SphericalCustom(*this);
     }
 
     // Conversions & projection: 
     explicit SphericalCustom(const SphericalCoords& rhs,
-			     const Orientation& o);
+			     const Orientation& o,
+			     bool shareOrient = false): 
+      SphericalCustomBase(rhs, o, shareOrient) {}
     explicit SphericalCustom(const SphericalCoords& rhs, 
 			     const Orientation& o,
-			     Matrix33& partials);
-    explicit SphericalCustom(const CartesianCustom& rhs);
-    explicit SphericalCustom(const CartesianCustom& rhs, Matrix33& partials);
-
-    const Orientation* getOrient() const {return orient;}
+			     Matrix33& partials,
+			     bool shareOrient = false): 
+      SphericalCustomBase(rhs, o, partials, shareOrient) {}
+    // For now, conversion from CartesianCustom will share the ReferenceFrame's Orientation:
+    explicit SphericalCustom(const CartesianCustom& rhs):
+      SphericalCustomBase(rhs) {}
+    explicit SphericalCustom(const CartesianCustom& rhs, Matrix33& partials):
+      SphericalCustomBase(rhs) {}
   };
 
-  class TangentPlane: public SphericalCoords {
-  private:
-    const Orientation* orient;
-    virtual Vector3 convertToICRS(Matrix33* partials=0) const;
-    virtual void convertFromICRS(const Vector3& xeq, Matrix33* partials=0);
+  // The Gnomonic class is gnomonic projection at specified orientation.
+  // Differs from SphericalCustom only in projecting from center of sphere
+  // onto the tangent plane to get the x/y (=lon/lat) coordinates.
+  // So this class overrides only the Lon/Lat-related methods of SphericalCustomBase.
+  // Gnomonic project is valid only on the hemisphere nearest the pole.
+  class Gnomonic: public SphericalCustomBase {
   public:
-    TangentPlane(const Orientation& o): orient(&o) {}
-    TangentPlane(double xi, double eta, const Orientation& o) ;
-    virtual SphericalCoords* duplicate() const {
-      return new TangentPlane(*this);
+    Gnomonic(const Orientation& o, bool shareOrient=false):
+      SphericalCustomBase(o, shareOrient) {}
+    Gnomonic(double xi, double eta, const Orientation& o, bool shareOrient=false):
+      SphericalCustomBase(xi, eta, o, shareOrient) {}
+    virtual ~Gnomonic() {}
+    Gnomonic(const Gnomonic& rhs): SphericalCustomBase(rhs) {}
+    Gnomonic& operator=(const Gnomonic& rhs) {
+      SphericalCustomBase::operator=(rhs);
+      return *this;
     }
-    // Conversions & projection: 
-    explicit TangentPlane(const SphericalCoords& rhs,
-			  const Orientation& o);
-    explicit TangentPlane(const SphericalCoords& rhs,
-			  const Orientation& o, 
-			  Matrix33& partials);
-    explicit TangentPlane(const CartesianCustom& rhs);
-    explicit TangentPlane(const CartesianCustom& rhs, Matrix33& partials);
+    virtual SphericalCoords* duplicate() const {
+      return new Gnomonic(*this);
+    }
 
-    const Orientation* getOrient() const {return orient;}
+    // Conversions & projection: 
+    explicit Gnomonic(const SphericalCoords& rhs,
+		      const Orientation& o,
+		      bool shareOrient = false): 
+      SphericalCustomBase(rhs, o, shareOrient) {}
+    explicit Gnomonic(const SphericalCoords& rhs, 
+		      const Orientation& o,
+		      Matrix33& partials,
+		      bool shareOrient = false): 
+      SphericalCustomBase(rhs, o, partials, shareOrient) {}
+    // For now, conversion from CartesianCustom will share the ReferenceFrame's Orientation:
+    explicit Gnomonic(const CartesianCustom& rhs):
+      SphericalCustomBase(rhs) {}
+    explicit Gnomonic(const CartesianCustom& rhs, Matrix33& partials):
+      SphericalCustomBase(rhs) {}
 
     // Since TangentPlane is not a lat/lon system, need to override
     // some operations:
@@ -482,6 +548,7 @@ namespace astrometry {
   std::ostream& operator<<(std::ostream& os, const ReferenceFrame& rhs);
   std::istream& operator>>(std::istream& is, ReferenceFrame& rhs);
 
+  // ??? Reference Frame ownership needs to be clarified
   class CartesianCustom: public CartesianCoords {
   private:
     const ReferenceFrame* ref;

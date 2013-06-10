@@ -971,56 +971,117 @@ namespace astrometry {
   }
 
 
-
+  ///////////////////////////////////////////////////////////////////////
+  // Base class of systems with arbitrary pole:
+  ///////////////////////////////////////////////////////////////////////
 
   void
-  SphericalCustom::convertFromICRS(const Vector3& xeq, 
-				   Matrix33* partials) {
+  SphericalCustomBase::convertFromICRS(const Vector3& xeq, 
+				       Matrix33* partials) {
     setUnitVector( orient->fromICRS(xeq));
     if (partials) *partials=orient->m();
   }
   Vector3
-  SphericalCustom::convertToICRS(Matrix33* partials) const {
-    if (partials) *partials=orient->m().transpose();
-    return( orient->toICRS(getUnitVector()));
-  }
-
-  void
-  TangentPlane::convertFromICRS(const Vector3& xeq, 
-				   Matrix33* partials) {
-    setUnitVector( orient->fromICRS(xeq));
-    if (partials) *partials=orient->m();
-  }
-  Vector3
-  TangentPlane::convertToICRS(Matrix33* partials) const {
+  SphericalCustomBase::convertToICRS(Matrix33* partials) const {
     if (partials) *partials=orient->m().transpose();
     return( orient->toICRS(getUnitVector()));
   }
   
-  TangentPlane::TangentPlane(double xi, double eta, 
-			     const Orientation& o): orient(&o) {
+
+  SphericalCustomBase::SphericalCustomBase(const Orientation& o,
+					   bool shareOrient): orient(&o), ownOrient(false) {
+    if (!shareOrient) {
+      orient = new Orientation(o);
+      ownOrient = true;
+    } 
+  }
+
+  SphericalCustomBase::SphericalCustomBase(double xi, double eta, 
+					   const Orientation& o,
+					   bool shareOrient): orient(&o), ownOrient(false) {
+    if (!shareOrient) {
+      orient = new Orientation(o);
+      ownOrient = true;
+    } 
     setLonLat(xi,eta);
   }
 
+  SphericalCustomBase::SphericalCustomBase(const SphericalCustomBase& rhs): 
+    SphericalCoords(rhs),
+    orient(rhs.orient),
+    ownOrient(false) {
+    if (rhs.ownOrient) {
+      orient = new Orientation(*rhs.orient);
+      ownOrient = true;
+    } 
+  }
+
+  SphericalCustomBase& 
+  SphericalCustomBase::operator=(const SphericalCustomBase& rhs) {
+    if (this == &rhs) return *this; // Self-assignment
+    x = rhs.x;
+    if (ownOrient) delete orient;
+    if (rhs.ownOrient) {
+      orient = new Orientation(*rhs.orient);
+      ownOrient = true;
+    } else {
+      orient = rhs.orient;
+      ownOrient = false;
+    }
+    return *this;
+  }
+
+  SphericalCustomBase::SphericalCustomBase(const SphericalCoords& rhs,
+					   const Orientation& o,
+					   bool shareOrient): orient(&o), ownOrient(false) {
+    if (!shareOrient) {
+      orient = new Orientation(o);
+      ownOrient = true;
+    }
+    convertFrom(rhs);
+  }
+  SphericalCustomBase::SphericalCustomBase(const SphericalCoords& rhs, 
+					   const Orientation& o,
+					   Matrix33& partials,
+					   bool shareOrient): orient(&o), ownOrient(false) {
+    if (!shareOrient) {
+      orient = new Orientation(o);
+      ownOrient = true;
+    }
+    convertFrom(rhs, partials);
+  }
+
+  SphericalCustomBase::SphericalCustomBase(const CartesianCustom& rhs):
+    orient(&(rhs.getFrame()->orient)),
+    ownOrient(false) {
+    projectIt(rhs);
+  }
+  SphericalCustomBase::SphericalCustomBase(const CartesianCustom& rhs,
+				   Matrix33& partials):
+    orient(&(rhs.getFrame()->orient)),
+    ownOrient(false) {
+    projectIt(rhs, &partials);
+  }
+
   void
-  TangentPlane::setLonLat(double xi, double eta) {
+  Gnomonic::setLonLat(double xi, double eta) {
     x[2] = pow(1.+xi*xi+eta*eta , -0.5);
     x[0] = xi*x[2];
     x[1] = eta*x[2];
   }
   void
-  TangentPlane::getLonLat(double& xi, double& eta) const {
+  Gnomonic::getLonLat(double& xi, double& eta) const {
     if (x[2]<=0.) 
-      throw AstrometryError("Tangent projection invalid for z<=0.");
+      throw AstrometryError("Gnomonic projection invalid for z<=0.");
     xi = x[0]/x[2];
     eta= x[1]/x[2];
   }
 
   Matrix23
-  TangentPlane::derivsTo2d() const {
+  Gnomonic::derivsTo2d() const {
     Matrix23 project(0.);
     if (x[2]<=0.)
-      throw AstrometryError("Tangent projection derivs invalid for z<=0.");
+      throw AstrometryError("Gnomonic projection derivs invalid for z<=0.");
     double invz=1./x[2];
     project(0,0) = invz;
     project(0,2) = -x[0]*invz*invz;
@@ -1029,7 +1090,7 @@ namespace astrometry {
     return project;
   }
   Matrix32
-  TangentPlane::derivsFrom2d() const {
+  Gnomonic::derivsFrom2d() const {
     Matrix32 project;
     project(0,0) = 1 - x[0]*x[0];
     project(0,1) =   - x[0]*x[1];
@@ -1042,7 +1103,7 @@ namespace astrometry {
 
   // Tangent-plane I/O will use degrees, degrees
   void
-  TangentPlane::write(std::ostream& os, int decimalPlaces) const {
+  Gnomonic::write(std::ostream& os, int decimalPlaces) const {
     double lon, lat;
     getLonLat(lon,lat);
     string buffer = degdms(lon/DEGREE, decimalPlaces);
@@ -1051,7 +1112,7 @@ namespace astrometry {
     os << " " << buffer;
   }
   void
-  TangentPlane::read(std::istream& is) {
+  Gnomonic::read(std::istream& is) {
     double lon, lat;
     string buffer;
     double deg;
@@ -1076,6 +1137,8 @@ namespace astrometry {
     lat = deg*DEGREE;
     setLonLat(lon,lat);
   }
+
+  ///////////////////////////////////////////////////////////////////////
 
   // Projection from 3d down to 2d.  Dimension of partials says whether
   // desired derivs are to the unit vectors or to the 2d representation.
@@ -1162,43 +1225,7 @@ namespace astrometry {
     projectIt(rhs, &partials);
   }
 
-  SphericalCustom::SphericalCustom(const SphericalCoords& rhs,
-				   const Orientation& o): orient(&o) {
-    convertFrom(rhs);
-  }
-  SphericalCustom::SphericalCustom(const SphericalCoords& rhs, 
-				   const Orientation& o,
-				   Matrix33& partials): orient(&o) {
-    convertFrom(rhs, partials);
-  }
-  SphericalCustom::SphericalCustom(const CartesianCustom& rhs):
-    orient(&(rhs.getFrame()->orient)) {
-    projectIt(rhs);
-  }
-  SphericalCustom::SphericalCustom(const CartesianCustom& rhs,
-				   Matrix33& partials):
-    orient(&(rhs.getFrame()->orient)) {
-    projectIt(rhs, &partials);
-  }
 
-  TangentPlane::TangentPlane(const SphericalCoords& rhs,
-				   const Orientation& o): orient(&o) {
-    convertFrom(rhs);
-  }
-  TangentPlane::TangentPlane(const SphericalCoords& rhs, 
-				   const Orientation& o,
-				   Matrix33& partials): orient(&o) {
-    convertFrom(rhs, partials);
-  }
-  TangentPlane::TangentPlane(const CartesianCustom& rhs):
-    orient(&(rhs.getFrame()->orient)) {
-    projectIt(rhs);
-  }
-  TangentPlane::TangentPlane(const CartesianCustom& rhs,
-				   Matrix33& partials):
-    orient(&(rhs.getFrame()->orient)) {
-    projectIt(rhs, &partials);
-  }
 
 
 } // namespace astrometry

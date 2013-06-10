@@ -1,19 +1,27 @@
+/* ???? TODO: 
+   Allow WCS to come from name of a Wcs in a serialized file.
+   Better yet, separate file for additional FITS keywords.
+   Change so that FITS extensions are not overwritten
+*/
 // Program to match catalogs based on world coordinates.
 
 #include "Std.h"
 #include "FoF.h"
 #include "FitsTable.h"
 #include "Astrometry.h"
-#include "SCAMPMap.h"
 #include "ReadLdacHeader.h"
 #include "NameIndex.h"
 #include "Pset.h"
 #include <map>
 #include <iostream>
+#include "PixelMapCollection.h"
+#include "TPVMap.h"
+#include "StringStuff.h"
 
 using namespace std;
 using namespace img;
 using namespace FITS;
+using stringstuff::stripWhite;
 
 string usage="WCSFoF: Match objects using FoF algorithm on world coordinate system\n"
              "WCSFoF <field specs> <exposure specs> [parameter file] [parameter file...]\n"
@@ -22,13 +30,6 @@ string usage="WCSFoF: Match objects using FoF algorithm on world coordinate syst
              "                      (in degrees) N, S, E, or W of any point from center.\n"
              "      <exposure specs>: FITS file with binary table of input file info...";
 
-// Strip leading and trailing white space from a string:
-void stripWhite(string& s) {
-  while (!s.empty() && std::isspace(s[0]))
-    s.erase(0,1);
-  while (!s.empty() && std::isspace(s[s.size()-1]))
-    s.erase(s.size()-1);
-}
 // Parse the inValue of string: if it starts with @ sign, specifies to read a value
 // from keyword of a header:
 string maybeFromHeader(const string& inValue, const Header& h) {
@@ -67,17 +68,20 @@ typedef fof::Catalog<Point,2> PointCat;
 
 struct Field {
   string name;
-  astrometry::Orientation orient;
+  // Coordinate system that has lat=lon=0 at field center and does projection to use for matching
+  astrometry::SphericalCoords* projection;
   double extent;
   double matchRadius;
   // Map from affinity name to its catalog of matches:
   typedef map<string, PointCat*> CatMap;
   CatMap catalogs;
+  Field(): projection(0) {}
   ~Field() {
     for (CatMap::iterator i=catalogs.begin();
 	 i != catalogs.end();
 	 ++i) 
       delete i->second;
+    if (projection) delete projection;
   }
   PointCat* catalogFor(const string& affinity) {
     if (catalogs.find(affinity)==catalogs.end()) {
@@ -90,6 +94,10 @@ struct Field {
     }
     return catalogs[affinity];
   }
+private:
+  // Hide:
+  Field(const Field& rhs);
+  void operator=(const Field& rhs);
 };
 
 // Right now an device is just a region of pixel coordinates, plus a name
@@ -195,7 +203,7 @@ main(int argc,
     // Read in fields and save away orientations of tangent plane systems for each
     ////////////////////////////////////////////////
     NameIndex fieldNames;
-    vector<Field> fields;
+    vector<Field*> fields;
 
     {
       ifstream ifs(fieldSpecs.c_str());
@@ -220,11 +228,12 @@ main(int argc,
 	    cerr << "Duplicate field name: " << name << endl;
 	    exit(1);
 	  }
-	  Field f;
-	  f.name = name;
-	  f.orient = astrometry::Orientation(pole);
-	  f.extent = extent;
-	  f.matchRadius = matchRadius;
+	  Field* f = new Field;
+	  f->name = name;
+	  astrometry::Orientation orient(pole);
+	  f->projection = new astrometry::Gnomonic(orient);
+	  f->extent = extent;
+	  f->matchRadius = matchRadius;
 	  fields.push_back(f);
 	  fieldNames.append(name);
 	  Assert(fields.size()==fieldNames.size());
@@ -275,7 +284,7 @@ main(int argc,
     const string inSelectCol="SELECT";
     const string starSelectCol="STAR_SELECT";
     const string wcsFileCol="WCSFILE";
-    const string wcsOutFileCol="WCSOUT";
+    const string tpvOutFileCol="TPVOUT";
     const string xkeyCol="XKEY";
     const string ykeyCol="YKEY";
     const string idkeyCol="IDKEY";
@@ -304,7 +313,7 @@ main(int argc,
       extensionTable.addColumn(vs, "idKey");
       extensionTable.addColumn(vs, "errKey");
       extensionTable.addColumn(vd, "Weight");
-      extensionTable.addColumn(vs, "WCSOut");
+      extensionTable.addColumn(vs, "TPVOut");
     }
 
     long extensionNumber = 0; // cumulative counter for all FITS tables read
@@ -348,11 +357,11 @@ main(int argc,
 	errorkey.clear();
       }
 
-      string wcsOut;
+      string tpvOut;
       try {
-	fileTable.readCell(wcsOut, wcsOutFileCol, iFile);
+	fileTable.readCell(tpvOut, tpvOutFileCol, iFile);
       } catch (FTableNonExistentColumn& m) {
-	wcsOut.clear();
+	tpvOut.clear();
       }
 
       string weightString;
@@ -493,7 +502,7 @@ main(int argc,
 
 	// Couple of things that WCS fitting program will want if they're here:
 	string thisErrorKey = maybeFromHeader(errorkey, localHeader);
-	string thisWcsOutFile = maybeFromHeader(wcsOut, localHeader);
+	string thisTpvOutFile = maybeFromHeader(tpvOut, localHeader);
 
 	// Read catalog's weight: it either defaults to 1. if string is empty,
 	// or it's a header keyword to look up, or it should be a number
@@ -575,13 +584,15 @@ main(int argc,
 	if (stringstuff::nocaseEqual(fieldName, "@_NEAREST")) {
 	  // Assign exposure to nearest field:
 	  Assert(!fields.empty());
-	  vector<Field>::const_iterator i = fields.begin();
-	  double minDistance = thisRADec.distance(i->orient.getPole());
-	  thisField = i->name;
+	  vector<Field*>::const_iterator i = fields.begin();
+	  (*i)->projection->setLonLat(0.,0.);
+	  double minDistance = thisRADec.distance(*(*i)->projection);
+	  thisField = (*i)->name;
 	  for ( ; i != fields.end(); ++i) {
-	    if (thisRADec.distance(i->orient.getPole()) < minDistance) {
-	      minDistance = thisRADec.distance(i->orient.getPole());
-	      thisField = i->name;
+	    (*i)->projection->setLonLat(0.,0.);
+	    if (thisRADec.distance(*(*i)->projection) < minDistance) {
+	      minDistance = thisRADec.distance(*(*i)->projection);
+	      thisField = (*i)->name;
 	    }
 	  }
 	} else {
@@ -592,7 +603,6 @@ main(int argc,
 	  cerr << "Did not find information for field <" << thisField << ">" << endl;
 	  exit(1);
 	}
-
 
 	// Assign an instrument, new one if not yet existent:
 	string thisInstrument = maybeFromHeader(instrumentName, localHeader);
@@ -647,31 +657,35 @@ main(int argc,
 	}
 
 	// Read in a WCS, from pixel coords to the tangent plane for this Field:
-	astrometry::PixelMap* map = 0;
+	astrometry::Wcs* wcs = 0;
 	if (!xyAreRaDec) {
 	  if (wcsStream.is_open()) {
 	    // Try the WCS file first
 	    try {
-	      map = new astrometry::SCAMPMap(wcsHead, &(fields[fieldNumber].orient));
+	      wcs = astrometry::readTPV(wcsHead);
 	    } catch (astrometry::AstrometryError& m) {
-	      map = 0;
+	      wcs = 0;
 	    }
 	  } 
-	  if (!map) {
+
+	  if (!wcs) {
 	    // Try the local header if not
 	    try {
-	      map = new astrometry::SCAMPMap(localHeader, &(fields[fieldNumber].orient));
+	      wcs = astrometry::readTPV(localHeader);
 	    } catch (astrometry::AstrometryError& m) {
-	      map = 0;
+	      wcs = 0;
 	    }
 	  }
-	  if (!map) {
+
+	  if (!wcs) {
 	    // If still nothing, quit.   
 	    cerr << "Could not generate WCS for HDU " << hduNumber
 		 << " in file " << filename
 		 << endl;
 	    exit(1);
 	  }
+
+	  wcs->reprojectTo(*fields[fieldNumber]->projection);
 	}
 
 	// Record information about this extension to an output table
@@ -686,33 +700,28 @@ main(int argc,
 	extensionTable.writeCell(thisIdKey, "idKey", extensionNumber);
 	extensionTable.writeCell(thisErrorKey, "errKey", extensionNumber);
 	extensionTable.writeCell(weight, "Weight", extensionNumber);
-	extensionTable.writeCell(thisWcsOutFile, "WCSOut", extensionNumber);
+	extensionTable.writeCell(thisTpvOutFile, "TPVOut", extensionNumber);
 
 	{
 	  string wcsDump;
-	  if (!map) {
+	  if (!wcs) {
 	    wcsDump = "ICRS";
 	  } else {
-	    const astrometry::SCAMPMap* sm = dynamic_cast<const astrometry::SCAMPMap*> (map);
-	    if (!sm) {
-	      cerr << "Only know how to serialize SCAMPMap now, file/extn "
-		   << filename << " / " << iFile << endl;
-	      exit(1);
-	    }
-	    img::Header hh = sm->writeHeader();
+	    astrometry::PixelMapCollection pmc;
+	    pmc.learnWcs(*wcs);
 	    ostringstream oss;
-	    oss << hh;
+	    pmc.writeWcs(oss,wcs->getName());
 	    wcsDump = oss.str();
 	  }
 	  extensionTable.writeCell(wcsDump, "WCS", extensionNumber);
 	}
 	
 	// Select the Catalog(s) to which points from this extension will be added
-	PointCat* starCatalog = fields[fieldNumber].catalogFor(globalAffinity);
+	PointCat* starCatalog = fields[fieldNumber]->catalogFor(globalAffinity);
 	PointCat* galaxyCatalog = (stringstuff::nocaseEqual(globalAffinity,
 							    thisAffinity) ?
 				   starCatalog : 
-				   fields[fieldNumber].catalogFor(thisAffinity));
+				   fields[fieldNumber]->catalogFor(thisAffinity));
 	
 	// Now loops over objects in the catalog
 	for (int iObj = 0; iObj < vx.size(); iObj++) {
@@ -725,15 +734,15 @@ main(int argc,
 	  //  maps coords to field's tangent plane
 	  double xw, yw;
 	  if (xyAreRaDec) {
-	    astrometry::SphericalICRS radec( vx[iObj]*DEGREE, vy[iObj]*DEGREE );
-	    astrometry::TangentPlane tp(radec,  fields[fieldNumber].orient);
-	    tp.getLonLat(xw, yw);
+	    fields[fieldNumber]->projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*DEGREE, 
+										  vy[iObj]*DEGREE ));
+	    fields[fieldNumber]->projection->getLonLat(xw, yw);
 	    // Matching program will speak degrees, not radians:
 	    xw /= DEGREE;
 	    yw /= DEGREE;
 	  } else {
-	    Assert(map);
-	    map->toWorld(xpix, ypix, xw, yw);
+	    Assert(wcs);
+	    wcs->toWorld(xpix, ypix, xw, yw);
 	  }
 	  // ??? Note that frequent small memory allocations are making memory mgmt and overhead
 	  // exceed the actual Point memory usage.  Also the allPoints list is really superfluous
@@ -746,7 +755,7 @@ main(int argc,
 	    galaxyCatalog->add(allPoints.back());
 	} // end object loop
 
-	if (map) delete map;
+	if (wcs) delete wcs;
 	
 	extensionNumber++;
       } // end input extension loop
@@ -767,8 +776,9 @@ main(int argc,
       vector<double> ra;
       vector<double> dec;
       for (int i=0; i<fields.size(); i++) {
-	names.push_back(fields[i].name);
-	astrometry::SphericalICRS pole = fields[i].orient.getPole();
+	names.push_back(fields[i]->name);
+	fields[i]->projection->setLonLat(0.,0.);
+	astrometry::SphericalICRS pole(*fields[i]->projection);
 	double r,d;
 	pole.getLonLat(r,d);
 	ra.push_back( r/DEGREE);
@@ -842,11 +852,11 @@ main(int argc,
     //  Loop over fields
     for (int iField=0; iField<fields.size(); iField++) {
       //  loop over affinities per field
-      for (Field::CatMap::iterator iAffinity=fields[iField].catalogs.begin();
-	   iAffinity != fields[iField].catalogs.end();
+      for (Field::CatMap::iterator iAffinity=fields[iField]->catalogs.begin();
+	   iAffinity != fields[iField]->catalogs.end();
 	   ++iAffinity) {
 	const PointCat* pcat= iAffinity->second;
-	cerr << "Catalog for field " << fields[iField].name
+	cerr << "Catalog for field " << fields[iField]->name
 	     << " affinity " << iAffinity->first
 	     << " with " << pcat->size() << " matches "
 	     << endl;
@@ -854,7 +864,7 @@ main(int argc,
 	FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
 	ft.setName("MatchCatalog");
 	FTable ff=ft.use();
-	ff.header()->replace("Field", fields[iField].name, "Field name");
+	ff.header()->replace("Field", fields[iField]->name, "Field name");
 	ff.header()->replace("FieldNum", iField, "Field number");
 	ff.header()->replace("Affinity", iAffinity->first, "Affinity name");
 
@@ -905,6 +915,10 @@ main(int argc,
     cerr << "Total of " << matchCount
 	 << " matches with " << pointCount
 	 << " points." << endl;
+
+    // Clean up
+    for (int i=0; i<fields.size(); i++)
+      delete fields[i];
 
   } catch (std::runtime_error &m) {
     quit(m,1);

@@ -16,9 +16,18 @@ CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
 
 SRC = $(shell ls *.cpp)
 
-OBJ = Astrometry.o Ephemeris.o PixelMap.o PolyMap.o PixelMapCollection.o
+OBJ = Astrometry.o Ephemeris.o PixelMap.o PolyMap.o PixelMapCollection.o SubMap.o Wcs.o \
+      SerializeProjection.o TemplateMap.o
+
+# LIB_DIRS 
+LIB_DIRS = -L $(TMV_DIR)/lib -L $(BOOST_DIR)/lib
+TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
+LIBS = -lm $(LIB_DIRS) -lboost_regex -ltmv_symband $(TMV_LINK)
 
 all:  $(OBJ)
+
+testPMWrite: testPMWrite.o ../utilities/StringStuff.o ../utilities/Poly2d.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 
 ###############################################################
 ## Standard stuff:

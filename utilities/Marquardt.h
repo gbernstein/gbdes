@@ -1,5 +1,3 @@
-// $Id: Marquardt.h,v 1.7 2012/02/12 13:14:38 garyb Exp $
-
 // Implementation of the Marquardt-Levenberg nonlinear fitting algorithm
 // in C++, and using Jarvis TMV
 // The algorithm is taken from Numerical Recipes code, but has been 
@@ -21,6 +19,7 @@
 #include "UseTMV.h"
 #include "Std.h"
 #include "TMV_Sym.h"
+#include "Stopwatch.h"
 
 using tmv::Vector;
 using tmv::Matrix;
@@ -62,10 +61,10 @@ public:
   ~Marquardt() {
     if (bestAlpha) delete bestAlpha;
     if (bestA) delete bestA;
-}
+  }
 
-  // Does the fit starting at a, returns chisq
-  P fit(Vector<P>& a, int maxIter=DefaultMaxIterations);
+  // Does the fit starting at a, returns chisq.  Set the flag to get progress/timing to cerr
+  P fit(Vector<P>& a, int maxIter=DefaultMaxIterations, bool progressToCerr=false);
   void setSaveMemory(bool saveMemory_=true) {saveMemory=saveMemory_;}
 
   //Return (pointer to) inverse covariance matrix at last fit
@@ -119,9 +118,11 @@ Marquardt<T,P>::getAlpha() {
 
 template <class T, class P>
 P
-Marquardt<T,P>::fit(Vector<P>& a, int maxIter) {
+Marquardt<T,P>::fit(Vector<P>& a, int maxIter, bool progressToCerr) {
   P lambda;
   int nparam = a.size();
+
+  Stopwatch timer;
 
   // These are used temporarily during fit():
   P chisq;
@@ -145,10 +146,20 @@ Marquardt<T,P>::fit(Vector<P>& a, int maxIter) {
   lastDropWasSmall=false;
 
   //Make normal matrices first time through:
+  if (progressToCerr) {
+    timer.start();
+    cerr << "## Marquart iteration 0 derivatives...";
+  }
   if (saveMemory) 
     derivs(a,bestChisq,*beta,*alpha);
   else
     derivs(a,bestChisq,*bestBeta,*bestAlpha);	//build all the matrices
+  if (progressToCerr) {
+    timer.stop();
+    cerr << "done in " << timer << " sec" 
+	 << " chisq=" << bestChisq 
+	 << endl;
+  }
 
   lambda = 0.001;
 
@@ -171,10 +182,22 @@ Marquardt<T,P>::fit(Vector<P>& a, int maxIter) {
       *alpha = *bestAlpha;
       *beta =  *bestBeta;
     }
+
     for (int j=0; j<a.size(); j++)
       (*alpha)(j,j) *= (1+lambda);
 
+    if (progressToCerr) {
+      timer.reset();
+      timer.start();
+      cerr << "## Marquart iteration " << i << " inversion...";
+    }
+
     *beta /= *alpha;
+
+    if (progressToCerr) {
+      timer.stop();
+      cerr << "done in " << timer << " sec" << endl;
+    }
 
     // Seems necessary for TMV to work:
     if (saveMemory)  alpha->unsetDiv();
@@ -182,7 +205,21 @@ Marquardt<T,P>::fit(Vector<P>& a, int maxIter) {
     a = *bestA + *beta;
 
     // Get chisq and derivs at the new spot
+    if (progressToCerr) {
+      timer.reset();
+      timer.start();
+      cerr << "## Marquart iteration " << i+1 << " derivatives...";
+    }
+
     derivs(a,chisq,*beta,*alpha);
+
+    if (progressToCerr) {
+      timer.stop();
+      cerr << "done in " << timer << " sec" 
+	   << " lambda=" << lambda 
+	   << " chisq=" << chisq 
+	   << endl;
+    }
 
 #ifdef DEBUG
     cerr << "Marquardt Trial " << i 

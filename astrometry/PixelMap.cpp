@@ -1,8 +1,22 @@
 // $Id: PixelMap.cpp,v 1.12 2012/02/02 02:23:31 garyb Exp $
 
+#include <cctype>
 #include "PixelMap.h"
+#include "StringStuff.h"
+#include "SerializeProjection.h"
 
 using namespace astrometry;
+
+int 
+PixelMap::anonymousCounter=0;
+
+PixelMap::PixelMap(string name_): name(name_), pixStep(1.) {
+  if (name.empty()) {
+    std::ostringstream oss;
+    oss << "map_" << anonymousCounter++;
+    name = oss.str();
+  }
+}
 
 double
 PixelMap::pixelArea(double xpix, double ypix) const {
@@ -85,6 +99,30 @@ IdentityMap::dPixdWorld(double xworld, double yworld) const {
   return Matrix22().setToIdentity();
 }
 
+ReprojectionMap::ReprojectionMap(const ReprojectionMap& rhs): PixelMap(rhs),
+							      pix(rhs.pix->duplicate()), 
+							      world(rhs.world->duplicate()), 
+							      scaleFactor(rhs.scaleFactor)  {
+  setPixelStep(rhs.getPixelStep());
+}
+
+ReprojectionMap&
+ReprojectionMap::operator=(const ReprojectionMap& rhs) {
+  if (this == &rhs) return *this;  // self-assignment
+  delete pix;
+  delete world;
+  PixelMap::operator=(rhs);
+  pix = rhs.pix->duplicate(); 
+  world = rhs.world->duplicate(); 
+  scaleFactor = rhs.scaleFactor;
+  setPixelStep(rhs.getPixelStep());
+}
+
+PixelMap*
+ReprojectionMap::duplicate() const {
+  return new ReprojectionMap(*this);
+}
+  
 void 
 ReprojectionMap::toWorld(double xpix, double ypix,
 			 double& xworld, double& yworld) const {
@@ -131,7 +169,21 @@ ReprojectionMap::dPixdWorld(double xworld, double yworld) const {
 }
 
 
-// Chain together some maps:
+///////////////////////////
+// CompoundMap
+///////////////////////////
+
+// Deep copy
+PixelMap*
+CompoundPixelMap::duplicate() const {
+  // Note possibility of endless recursion from circular dependence here!
+  CompoundPixelMap* retval = new CompoundPixelMap(pmlist.front()->duplicate(), getName());
+  list<PixelMap*>::const_iterator i = pmlist.begin();
+  for ( ++i; i != pmlist.end(); ++i)
+    retval->append((*i)->duplicate());
+  return retval;
+}
+
 void
 CompoundPixelMap::toWorld(double xpix, double ypix,
 			  double& xworld, double& yworld) const {
@@ -146,7 +198,6 @@ CompoundPixelMap::toWorld(double xpix, double ypix,
   yworld = y;
 }
 
-// Chain together some maps:
 void
 CompoundPixelMap::toPix(double xworld, double yworld,
 			double& xpix, double& ypix) const {
@@ -217,9 +268,9 @@ CompoundPixelMap::setParams(const DVector& p) {
 }
 
 void 
-CompoundPixelMap::toWorld( double xpix, double ypix,
-		      double &xworld, double &yworld,
-		      DMatrix& derivs) const {
+CompoundPixelMap::toWorldDerivs( double xpix, double ypix,
+				 double &xworld, double &yworld,
+				 DMatrix& derivs) const {
   double x=xpix;
   double y=ypix;
   Assert(derivs.nrows()==2 && derivs.ncols()==nParams());
@@ -236,7 +287,7 @@ CompoundPixelMap::toWorld( double xpix, double ypix,
     int nNext = (*i)->nParams();
     if (nNext>0) {
       DMatrix dd(2,nNext);
-      (*i)->toWorld(x,y,x,y,dd);
+      (*i)->toWorldDerivs(x,y,x,y,dd);
       derivs.colRange(index, index+nNext) += dd;
       index += nNext;
     } else {
@@ -247,9 +298,9 @@ CompoundPixelMap::toWorld( double xpix, double ypix,
 }
 
 void 
-CompoundPixelMap::toPix( double xworld, double yworld,
-		    double &xpix, double &ypix,
-		    DMatrix& derivs) const {
+CompoundPixelMap::toPixDerivs( double xworld, double yworld,
+			       double &xpix, double &ypix,
+			       DMatrix& derivs) const {
   toPix(xworld,yworld,xpix,ypix);
   double x=xpix;
   double y=ypix;
@@ -269,7 +320,7 @@ CompoundPixelMap::toPix( double xworld, double yworld,
     int nNext = (*i)->nParams();
     if (nNext>0) {
       DMatrix dd(2,nNext);
-      (*i)->toWorld(x,y,x,y,dd);
+      (*i)->toWorldDerivs(x,y,x,y,dd);
       derivs.colRange(index, index+nNext) += dd;
       index += nNext;
     } else {
@@ -277,3 +328,35 @@ CompoundPixelMap::toPix( double xworld, double yworld,
     }
   }
 }
+
+PixelMap*
+ReprojectionMap::create(std::istream& is, string name) {
+  string buffer;
+  vector<SphericalCoords*> coords(2);  // Will read input and output projections
+  for (int i=0; i<coords.size(); i++) {
+    if (!stringstuff::getlineNoComment(is, buffer)) 
+      throw AstrometryError("Stream input failure in ReprojectionMap::create() for name " + name);
+    coords[i] = deserializeProjection(buffer);
+  }
+
+  // Now read the scale factor:
+  if (!stringstuff::getlineNoComment(is, buffer)) 
+    throw AstrometryError("Stream input failure in ReprojectionMap::create() for name " + name);
+  istringstream iss(buffer);
+  double scale;
+  if (!(iss >> scale))
+    throw AstrometryError("Bad scale input to ReprojectionMap::create(): " + buffer);
+
+  ReprojectionMap* out = new ReprojectionMap(*coords[0], *coords[1], scale, name);
+  delete coords[0];
+  delete coords[1];
+  return out;
+}
+
+void
+ReprojectionMap::write(std::ostream& os) const {
+  os << serializeProjection(pix) << endl;
+  os << serializeProjection(world) << endl;
+  os << scaleFactor << endl;
+}
+

@@ -1,6 +1,104 @@
 // $Id: Poly2d.cpp,v 1.4 2012/02/02 02:20:04 garyb Exp $
 #include "Poly2d.h"
+#include "StringStuff.h"
+
 using namespace poly2d;
+
+
+/////////////////////////////////////////////////////////////////////
+// Serialization
+/////////////////////////////////////////////////////////////////////
+void
+Poly2d::write(std::ostream& os) const {
+  switch (otype) {
+  case Sum:
+    os << "Sum " << orderX << endl;
+    break;
+  case Each:
+    os << "Each " << orderX << " " << orderY << endl;
+    break;
+  default:
+    throw Poly2dError("Bad Poly2d OrderType in Poly2d::write()");
+  }
+  const int coeffsPerLine = 5;
+  int iOnLine = 0;
+  DVector coeffs = getC();
+  // Save precision and format of stream before changing it:
+  StreamSaver ss(os);
+  const int DIGITS=8;
+  os.precision(DIGITS);
+  os.setf( ios_base::showpos | ios_base::scientific);
+
+  for (int i=0; i<nCoeffs(); i++) {
+    if (iOnLine >= coeffsPerLine) {
+      os << endl;
+      iOnLine = 0;
+    }
+    os << setw(DIGITS+7) << coeffs[i] << " " ;
+    iOnLine++;
+  }
+  os << endl;
+}
+
+Poly2d*
+Poly2d::create(std::istream& is) {
+  string buffer;
+  if (!stringstuff::getlineNoComment(is, buffer))
+    throw Poly2dError("Missing data reading Poly2d::create()");
+  string otypeString;
+  bool orderTypeEach = false; // false means otype=Sum
+  int ordX;
+  int ordY;
+  {
+    bool badFormat=false;
+    istringstream iss(buffer);
+    if (!(iss >> otypeString)) {
+      badFormat = true;
+    } else if (stringstuff::nocaseEqual(otypeString,"Sum")) {
+      if (! (iss >> ordX))
+	badFormat = true;
+    } else if (stringstuff::nocaseEqual(otypeString,"Each")) {
+      if (! (iss >> ordX >> ordY))
+	badFormat = true;
+      else 
+	orderTypeEach=true;
+    } else {
+      badFormat = true;
+    }
+    if (badFormat)
+      throw Poly2dError("Bad order format for Poly2d::create: " + buffer);
+  }
+  Poly2d* poly = orderTypeEach ? new Poly2d(ordX, ordY) : new Poly2d(ordX);
+
+  // Read coefficients:
+  int iCoeff=0;
+  DVector coeffs(poly->nCoeffs());
+  while (iCoeff < coeffs.size()) {
+    if (!(stringstuff::getlineNoComment(is, buffer)))
+      throw Poly2dError("Out of input reading coefficients for Poly2d: " + buffer);
+    double c;
+    istringstream iss(buffer);
+    do {
+      iss >> c;
+      if (!iss.fail()) {
+	// Successful read
+	coeffs[iCoeff] = c;
+	iCoeff++;
+      } else if (iss.eof()) {
+	break; // just ran out of data on this line, get more
+      } else {
+	// Fail without eof means a true read error:
+	throw Poly2dError("Format error reading coefficientss for Poly2d: " + buffer);
+      }
+    } while (iCoeff < coeffs.size());
+  }
+  poly->setC(coeffs);
+  return poly;
+}
+
+/////////////////////////////////////////////////////////////////////
+// Computations:
+/////////////////////////////////////////////////////////////////////
 
 DVector
 Poly2d::powers(double z, int order) const {
@@ -148,3 +246,4 @@ Poly2d::fillFromVector(const DVector& v) {
     cm(i,j)=v[n];
   }
 }
+

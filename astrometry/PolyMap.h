@@ -1,11 +1,5 @@
-// $Id: PolyMap.h,v 1.3 2010/07/03 23:03:26 garyb Exp $ 
-// PixelMap that is affine transformation followed by 
-// polynomial distortion, encoded into FITS headers
-// as per SCAMP and the never-adopted standard for
-// WCS polynomial distortions.
-// Note that the "World" system is defined to be a gnomonic
-// (tangent-plane) projection about the CRVAL[12] location,
-// which is available via the getOrientation() method.
+// Implementations of PixelMap that are Linear and higher-order 2d polynomial
+// functions of coordinates.
 
 #ifndef POLYMAP_H
 #define POLYMAP_H
@@ -17,15 +11,19 @@ namespace astrometry {
 
   class PolyMap: public PixelMap {
   public:
-    PolyMap(const poly2d::Poly2d& px, const poly2d::Poly2d& py,
+    // Constructor with 1 order has terms with sum of x and y powers up to this order.
+    // Constructor with 2 orders has all terms w/ powers of x up to orderx, y to ordery
+    PolyMap(const poly2d::Poly2d& px, const poly2d::Poly2d& py, 
+	    string name="",
 	    double tol_=0.001/3600.):
-      xpoly(px), ypoly(py), worldTolerance(tol_) {}
-    PolyMap(int orderx, int ordery, double tol_=0.001/3600.):
-      xpoly(orderx,ordery), ypoly(orderx,ordery), worldTolerance(tol_) {}
-    PolyMap(int order, double tol_=0.001/3600.):
-      xpoly(order), ypoly(order), worldTolerance(tol_) {}
+    PixelMap(name), xpoly(px), ypoly(py), worldTolerance(tol_) {}
+    PolyMap(int orderx, int ordery, string name="", double tol_=0.001/3600.):
+      PixelMap(name), xpoly(orderx,ordery), ypoly(orderx,ordery), worldTolerance(tol_) {}
+    PolyMap(int order, string name="", double tol_=0.001/3600.):
+      PixelMap(name), xpoly(order), ypoly(order), worldTolerance(tol_) {}
     // Note that default tolerance is set to be 1 mas if world units are degrees.
-
+    virtual PixelMap* duplicate() const {return new PolyMap(*this);}
+      
     ~PolyMap() {}
 
     // Implement all the virtual PixelMap calls that need to be overridden
@@ -35,12 +33,12 @@ namespace astrometry {
     void toPix( double xworld, double yworld,
 		double &xpix, double &ypix) const;
     Matrix22 dWorlddPix(double xpix, double ypix) const;
-    void toPix( double xworld, double yworld,
-		double &xpix, double &ypix,
-		DMatrix& derivs) const;
-    void toWorld(double xpix, double ypix,
-		 double& xworld, double& yworld,
-		 DMatrix& derivs) const;
+    void toPixDerivs( double xworld, double yworld,
+		      double &xpix, double &ypix,
+		      DMatrix& derivs) const;
+    void toWorldDerivs(double xpix, double ypix,
+		       double& xworld, double& yworld,
+		       DMatrix& derivs) const;
 
     void setParams(const DVector& p);
     DVector getParams() const;
@@ -53,6 +51,13 @@ namespace astrometry {
 
     // Set tolerance in world coords for soln of inverse
     void setWorldTolerance(double wt) {worldTolerance=wt;}
+    // Set coefficients to give identity transformation:
+    void setToIdentity();
+
+    static string mapType() {return "Poly";}
+    virtual string getType() const {return mapType();}
+    static PixelMap* create(std::istream& is, string name="");
+    void write(std::ostream& os) const;
 
   private:
     poly2d::Poly2d xpoly;
@@ -62,8 +67,10 @@ namespace astrometry {
 
   class LinearMap: public PixelMap {
   public:
-    LinearMap(const DVector& v_): v(v_), vinv(6) {Assert(v.size()==6); makeInv();}
-    LinearMap(): v(6,0.), vinv(6, 0.) {}
+    LinearMap(const DVector& v_, string name=""): 
+      PixelMap(name), v(v_), vinv(6) {Assert(v.size()==6); makeInv();}
+    LinearMap(string name=""): PixelMap(name), v(6,0.), vinv(6, 0.) {}
+    virtual PixelMap* duplicate() const {return new LinearMap(*this);}
     ~LinearMap() {}
 
     // Implement all the virtual PixelMap calls that need to be overridden
@@ -74,16 +81,23 @@ namespace astrometry {
 		double &xpix, double &ypix) const;
     Matrix22 dWorlddPix(double xpix, double ypix) const;
     Matrix22 dPixdWorld(double xpix, double ypix) const;
-    void toPix( double xworld, double yworld,
-		double &xpix, double &ypix,
-		DMatrix& derivs) const;
-    void toWorld(double xpix, double ypix,
-		 double& xworld, double& yworld,
-		 DMatrix& derivs) const;
+    void toPixDerivs( double xworld, double yworld,
+		      double &xpix, double &ypix,
+		      DMatrix& derivs) const;
+    void toWorldDerivs(double xpix, double ypix,
+		       double& xworld, double& yworld,
+		       DMatrix& derivs) const;
 
     void setParams(const DVector& p) {Assert(p.size()==6); v=p; makeInv();}
     DVector getParams() const {return v;}
     int nParams() const {return 6;}
+
+    void setToIdentity() {v*=0.; v[1]=1.; v[5]=1.;}
+
+    static string mapType() {return "Linear";}
+    virtual string getType() const {return mapType();}
+    static PixelMap* create(std::istream& is, string name="");
+    void write(std::ostream& os) const;
 
   private:
     // Forward and inverse transformations
