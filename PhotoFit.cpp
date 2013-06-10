@@ -204,6 +204,8 @@ main(int argc, char *argv[])
   const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting) ??? color terms???
   const int TAG_INSTRUMENT=-2;	// Exposure number for tag objects (no fitting nor contrib to stats)
 
+  const string stellarAffinity="STELLAR";
+
   try {
     
     // Read parameters
@@ -811,6 +813,18 @@ main(int argc, char *argv[])
       /**/cerr << "# Reading catalog extension " << catalogHDUs[icat] << endl;
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
       FTable ff = ft.use();
+      {
+	// Only do photometric fitting on the stellar objects:
+	string affinity;
+	if (!ff.getHdrValue("Affinity", affinity)) {
+	  cerr << "Could not find affinity keyword in header of extension " 
+	       << catalogHDUs[icat] 
+	       << endl;
+	  exit(1);
+	}
+	if (!stringstuff::nocaseEqual(affinity, stellarAffinity))
+	  continue;
+      }
       vector<int> seq;
       vector<LONGLONG> extn;
       vector<LONGLONG> obj;

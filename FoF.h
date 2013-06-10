@@ -210,7 +210,7 @@ namespace fof {
     Catalog(vector<double> lower, vector<double> upper, double radius_):
       radius(radius_), root(lower,upper,this) {}
     ~Catalog() {
-      // Kill all matches:
+      // Kill all matches: (but note that killing matches does NOT delete points)
       for (typename set<Match<P,DIM>*>::iterator i= set<Match<P,DIM>*>::begin();
 	   i!=set<Match<P,DIM>*>::end();
 	   i++) {delete *i;}

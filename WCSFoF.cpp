@@ -29,24 +29,27 @@ string usage="WCSFoF: Match objects using FoF algorithm on world coordinate syst
 	     "      <field specs>:  file holding <field name> <central coords> <extent>\n"
 	     "                      one field per line, where extent is max distance   \n"
              "                      (in degrees) N, S, E, or W of any point from center.\n"
-             "      <exposure specs>: FITS file with binary table of input file info...";
-
+             "      <exposure specs>: FITS file with binary table of input file info...\n"
+             "Program will look for additional parameters at stdin";
   
-// Struct that will hold the info about each point that matcher (and subsequent progs)
-// will need
+/// Struct that will hold the info about each point that matcher (and subsequent programs)
+/// will need
 struct Point {
   Point(double x_, double y_, long ext, long obj, long expo):
     x(2), extensionNumber(ext), objectNumber(obj), exposureNumber(expo) {
     x[0]=x_; x[1]=y_;
   }
   vector<double> x;
-  long extensionNumber;
-  long objectNumber;
-  long exposureNumber;
+  long extensionNumber;  // "extension" is an individual input FITS bintable.
+  long objectNumber;     // gives the object number of this Point in its input catalog
+  long exposureNumber;   // Which exposure the catalog is from.
   const vector<double> getX() const {return x;}
 };
 
 
+// *** Here is the typedef that says we'll be collecting & matching Points
+// *** using the Catalog template class in FoF.h.  Change this typedef if
+// *** a better 2d matching structure is desired!
 typedef fof::Catalog<Point,2> PointCat;
 
 struct Field {
@@ -70,6 +73,8 @@ struct Field {
     if (catalogs.find(affinity)==catalogs.end()) {
       vector<double> lower(2, -extent);
       vector<double> upper(2, extent);
+      // *** This line creates new point catalogs.  Might need to be changed if
+      // *** we decide to use a different catalog structure.
       catalogs.insert( std::pair<string, PointCat*>(affinity,
 						    new PointCat(lower,
 								 upper,
@@ -83,7 +88,7 @@ private:
   void operator=(const Field& rhs);
 };
 
-// Right now an device is just a region of pixel coordinates, plus a name
+// Right now a device is just a region of pixel coordinates, plus a name
 struct Device: public Bounds<double> {
   string name;
 };
@@ -295,7 +300,7 @@ main(int argc,
     // of every catalog file we read:
     FTable extensionTable;
 
-    const string globalAffinity="GLOBAL";
+    const string stellarAffinity="STELLAR";
 
     // Now assemble all of the catalog attributes we will read from input and/or write to output:
     list<ExtensionAttributeBase*> attributes;
@@ -334,7 +339,7 @@ main(int argc,
 
     ExtensionAttribute<string>* affinityAttr = 
       new ExtensionAttribute<string>("Affinity", ExtensionAttributeBase::ReadOnly,
-				     globalAffinity);
+				     stellarAffinity);
     attributes.push_back(affinityAttr);
 
     ExtensionAttribute<string>* selectAttr = 
@@ -823,8 +828,8 @@ main(int argc,
 	  cerr << "Missing affinity for " << filename << endl;
 	  exit(1);
 	}
-	PointCat* starCatalog = fields[fieldNumber]->catalogFor(globalAffinity);
-	PointCat* galaxyCatalog = (stringstuff::nocaseEqual(globalAffinity,
+	PointCat* starCatalog = fields[fieldNumber]->catalogFor(stellarAffinity);
+	PointCat* galaxyCatalog = (stringstuff::nocaseEqual(stellarAffinity,
 							    thisAffinity) ?
 				   starCatalog : 
 				   fields[fieldNumber]->catalogFor(thisAffinity));
@@ -868,6 +873,11 @@ main(int argc,
     } // end input file loop
 
     if (inputPmc) delete inputPmc;
+    // Delete all the ExtensionAttributes:
+    for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
+	 i != attributes.end();
+	 ++i) 
+      delete *i;
 
     cerr << "*** Read " << allPoints.size() << " objects" << endl;
 
