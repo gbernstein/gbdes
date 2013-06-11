@@ -200,9 +200,12 @@ main(int argc,
   // Convert matching radius to our system units for world coords (degrees)
   matchRadius *= ARCSEC/DEGREE;
 
+  try {
+
     const char listSeperator=',';
 
-    // First is a regex map from instrument names to the names of their PixelMaps
+    // First build the regular expression structure used to translate instrument names
+    // into shorter forms.
     RegexReplacements instrumentTranslator;
     {
       list<string> ls = split(renameInstruments, listSeperator);
@@ -222,8 +225,6 @@ main(int argc,
 	instrumentTranslator.addRegex(regex, replacement);
       }
     }
-
-  try {
 
     ////////////////////////////////////////////////
     // Read in fields and save away orientations of tangent plane systems for each
@@ -283,6 +284,7 @@ main(int argc,
     // Start a list of the instruments
     NameIndex instrumentNames;
     vector<Instrument> instruments;
+    // ??? Should put these somewhere they are shared with the fitting programs
     const int REFERENCE_INSTRUMENT=-1;
     const int TAG_INSTRUMENT=-2;
     const int NO_INSTRUMENT=-3;
@@ -293,7 +295,10 @@ main(int argc,
     vector<int> exposureFields; // Record one field per exposure
     vector<int> exposureInstruments; // Record one instrument per exposure
 
-    // And a list holding all Points being matched
+    // And a list holding all Points being matched.  Note that catalogs do not make copies
+    // of the Points, they just hold pointers to them.  So this is a warehouse.
+    // If we wanted to save the memory of the list links we could just let all the Points
+    // be zombies that are destroyed when the program ends.
     list<Point> allPoints;
 
     // Make a table into which we will stuff info about every extension 
@@ -346,9 +351,9 @@ main(int argc,
       new ExtensionAttribute<string>("Select", ExtensionAttributeBase::ReadOnly);
     attributes.push_back(selectAttr);
 
-    ExtensionAttribute<string>* star_selectAttr = 
-      new ExtensionAttribute<string>("Star_select", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(star_selectAttr);
+    ExtensionAttribute<string>* starSelectAttr = 
+      new ExtensionAttribute<string>("StarSelect", ExtensionAttributeBase::ReadOnly);
+    attributes.push_back(starSelectAttr);
 
     ExtensionAttribute<string>* xKeyAttr = 
       new ExtensionAttribute<string>("xKey", ExtensionAttributeBase::ReadWrite);
@@ -440,11 +445,14 @@ main(int argc,
     // Loop over input files
     for (int iFile = 0; iFile < fileTable.nrows(); iFile++) {
 
-      // First read in everything of interest from the fileTable
+      // First read in everything of interest from the fileTable for this file
       for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
 	   i != attributes.end();
 	   ++i) 
-	(*i)->readInputTable(fileTable, iFile);
+	if (!(*i)->readInputTable(fileTable, iFile)) {
+	  cerr << "Input filetable is missing attribute column " << (*i)->getName() << endl;
+	  exit(1);
+	}
 
       string filename = filenameAttr->getValue();
       stripWhite(filename);
@@ -467,14 +475,14 @@ main(int argc,
       }
       
 
-      // Open the WCS file that holds additional keywords, if any
+      // Open the file that holds the WCS info for this file, if any
       string wcsFile = wcsfileAttr->getValue();
       stripWhite(wcsFile);
 	
       bool usePixelMapCollection = false;   // True if we have a serialized PMC as input
       bool useTPVInput = false;	// True if might have serialized FITS Header with TPV as input
       bool xyAreRaDec = stringstuff::nocaseEqual(wcsFile, "ICRS")
-	|| stringstuff::nocaseEqual(wcsFile, "@_ICRS");
+	|| stringstuff::nocaseEqual(wcsFile, "@_ICRS"); // 2nd form for backwards compatibility
       ifstream wcsStream;
       if (! (wcsFile.empty() || xyAreRaDec)) {
 	// See if input file is a serialized PixelMapCollection
@@ -555,6 +563,9 @@ main(int argc,
 	for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
 	     i != attributes.end();
 	     ++i) 
+	  // ??? Note we are accepting default values if keyword is not in header,
+	  // ??? and the fate of values when keyword is in primary+extension header
+	  // ??? more than once is undefined.
 	  (*i)->checkHeader(localHeader);
 	
 	if (stringstuff::nocaseEqual(idKeyAttr->getValue(), "_ROW")) {
@@ -582,6 +593,7 @@ main(int argc,
 	  else if (stringstuff::nocaseEqual(thisInstrument, "TAG"))
 	    instrumentNumber = TAG_INSTRUMENT;
 	  else {
+	    // Apply regular expression translation table to instrument name before lookups.
 	    instrumentTranslator(thisInstrument);
 	    if (!instrumentNames.has(thisInstrument)) {
 	      instrumentNames.append(thisInstrument);
@@ -602,6 +614,7 @@ main(int argc,
 	      // OK to not have "exposure" coordinates, put in dummy:
 	      thisRA = "00:00:00";
 	      thisDec= "+00:00:00";
+	      // ??? But notice that this is trouble if trying _NEAREST field selection
 	    } else {
 	      cerr << "Missing RA/Dec for exposure " << thisExposure
 		   << " from file " << filename
@@ -657,7 +670,7 @@ main(int argc,
 	int fieldNumber = exposureFields[exposureNumber];
 	int instrumentNumber = exposureInstruments[exposureNumber];
 
-	// Error if different extensions put same exposure in different fields or instruments:
+	// Error if different extensions put same exposure in different fields:
 	{
 	  string field = fieldAttr->getValue();
 	  if ( !field.empty() && !stringstuff::nocaseEqual(field, "_NEAREST")
@@ -670,6 +683,7 @@ main(int argc,
 	  }
 	} // done checking field agreement
 	{
+	  // Now check if this extension has different instrument than its exposure
 	  string instrument = instrumentAttr->getValue();
 	  if ( !instrument.empty()) {
 	    if ( stringstuff::nocaseEqual(instrument, "REFERENCE")) {
@@ -687,6 +701,7 @@ main(int argc,
 		exit(1);
 	      }
 	    } else {
+	      // Run instrument name through the translator, then check
 	      instrumentTranslator(instrument);
 	      if (!stringstuff::nocaseEqual(instrument, 
 					    instrumentNames.nameOf(instrumentNumber))) {
@@ -790,7 +805,7 @@ main(int argc,
 	try {
 	  ft.readCells(vx, key);
 	} catch (FTableError& m) {
-	  // Trap for using float column in source file instead of long:
+	  // Trap for using float column in source file instead of double:
 	  vector<float> vf;
 	  ft.readCells(vf, key);
 	  vx.resize(vf.size());
@@ -801,7 +816,7 @@ main(int argc,
 	try {
 	  ft.readCells(vy, key);
 	} catch (FTableError& m) {
-	  // Trap for using float column in source file instead of long:
+	  // Trap for using float column in source file instead of double:
 	  vector<float> vf;
 	  ft.readCells(vf, key);
 	  vy.resize(vf.size());
@@ -820,7 +835,7 @@ main(int argc,
 	}
 	vector<bool> isStar(ft.nrows(), true);
 	{
-	  string starExpression = star_selectAttr->getValue();
+	  string starExpression = starSelectAttr->getValue();
 	  stripWhite(starExpression);
 	  if (!starExpression.empty())
 	    ft.evaluate(isStar, starExpression);
@@ -860,10 +875,7 @@ main(int argc,
 	    Assert(wcs);
 	    wcs->toWorld(xpix, ypix, xw, yw);
 	  }
-	  // ??? Note that frequent small memory allocations are making memory mgmt and overhead
-	  // exceed the actual Point memory usage.  Also the allPoints list is really superfluous
-	  // (just extra link pointers), 16B per Point.  Probably a good deal of overhead
-	  // in the Catalog structures too.  In fact up to ~300 B per Point now!
+
 	  allPoints.push_back(Point(xw, yw, extensionNumber, vid[iObj], exposureNumber));
 	  if (isStar[iObj])
 	    starCatalog->add(allPoints.back());

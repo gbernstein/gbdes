@@ -19,6 +19,7 @@ public:
   virtual bool checkHeader(const img::Header& h)=0;
   // Save value into output table
   virtual void writeOutputTable(img::FTable& outTable, long row) const =0;
+  string getName() const {return columnName;}
 protected:
   string columnName;
   bool isInput;
@@ -29,7 +30,7 @@ template <class T>
 class ExtensionAttribute: public ExtensionAttributeBase {
 public:
   ExtensionAttribute(string columnName_, ExtensionAttributeBase::Status s, const T& defaultValue_=T());
-  ~ExtensionAttribute() {}
+  virtual ~ExtensionAttribute() {}
   bool readInputTable(const img::FTable& inTable, long row);
   void makeOutputColumn(img::FTable& outTable) const;
   bool checkHeader(const img::Header& h);
