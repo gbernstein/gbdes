@@ -6,12 +6,12 @@ PolyMap.h - done 6/12
 PolyMap.cpp - done 6/12
 TemplateMap.h - done 6/12 
 TemplateMap.cpp - done 6/12
-Wcs.h
-Wcs.cpp
+Wcs.h   - done 6/12
+Wcs.cpp - done 6/12
 TPVMap.h
 TPVMap.cpp
-SerializeProjection.h
-SerializeProjection.cpp
+SerializeProjection.h - done 6/12
+SerializeProjection.cpp - done 6/12
 
 PixelMapCollection.h
 SubMap.cpp

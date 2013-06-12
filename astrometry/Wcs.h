@@ -19,7 +19,7 @@ namespace astrometry {
     // For shareMap=false, a duplicate of the input map is owned by this class and deleted
     // in destructor.  For shareMap=true, uses the input pointer but does not delete it.
     Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name="", 
-	double wScale_=DEGREE, bool shareMap=false);
+	double wScale_=DEGREE, bool shareMap_=false);
     virtual ~Wcs();
     virtual Wcs* duplicate() const;  // Note that duplicate has same sharing behavior as this.
 
@@ -36,8 +36,11 @@ namespace astrometry {
     // Now we implement the PixelMap interface:
     static string mapType() {return "WCS";}
     virtual string getType() const {return mapType();}
-    static PixelMap* create(std::istream& is, string name="");
-    virtual void write(std::ostream& os) const;
+    // No implementation for serialization (write) or deserialization (create) as
+    // these will be handled via PixelMapCollection.
+    virtual void write(std::ostream& os, int precision) const {
+      throw AstrometryError("PixelMap::write() not implemented for Wcs class");
+    }
 
     virtual void toWorld(double xpix, double ypix,
 			 double& xworld, double& yworld) const;
@@ -66,9 +69,9 @@ namespace astrometry {
   private:
     PixelMap* pm;
     double wScale;
-    bool ownMap;	// True if we need to delete the PixelMap.
-    mutable SphericalCoords* nativeCoords;
-    mutable SphericalCoords* targetCoords;
+    bool shareMap;	// True if the pm is owned by someone else
+    SphericalCoords* nativeCoords;
+    SphericalCoords* targetCoords;
 
     // Hide these to avoid inadvertent ownership confusion:
     Wcs(const Wcs& rhs);

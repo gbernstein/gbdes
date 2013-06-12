@@ -4,10 +4,10 @@
 using namespace astrometry;
 
 Wcs::Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name, 
-	 double wScale_, bool shareMap): PixelMap(name), wScale(wScale_), 
+	 double wScale_, bool shareMap_): PixelMap(name), wScale(wScale_), 
 					 nativeCoords(0),
 					 targetCoords(0),
-					 ownMap(!shareMap)
+					 shareMap(shareMap_)
 {
   nativeCoords = nativeCoords_.duplicate();
   if (shareMap) {
@@ -20,12 +20,12 @@ Wcs::Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name,
 Wcs::~Wcs() {
   if (nativeCoords) delete nativeCoords;
   if (targetCoords) delete targetCoords;
-  if (ownMap) delete pm;
+  if (!shareMap) delete pm;
 }
 
 Wcs*
 Wcs::duplicate() const {
-  Wcs* retval = new Wcs(pm, *nativeCoords, getName(), wScale, !ownMap);
+  Wcs* retval = new Wcs(pm, *nativeCoords, getName(), wScale, shareMap);
   retval->targetCoords = targetCoords->duplicate();
 }
 
@@ -33,18 +33,25 @@ SphericalICRS
 Wcs::toSky(double xpix, double ypix) const {
   double xw,yw;
   pm->toWorld(xpix, ypix, xw, yw);
-  nativeCoords->setLonLat(xw*wScale, yw*wScale);
-  return SphericalICRS( *nativeCoords);
+  // Create duplicate coordinates for thread safety:
+  SphericalCoords* nc = nativeCoords->duplicate();
+  nc->setLonLat(xw*wScale, yw*wScale);
+  SphericalICRS retval(*nativeCoords);
+  delete nc;
+  return retval;
 }
 
 void 
 Wcs::fromSky(const SphericalCoords& sky, double& xpix, double& ypix) const {
-  nativeCoords->convertFrom(sky);
+  // Create duplicate coordinates for thread safety:
+  SphericalCoords* nc = nativeCoords->duplicate();
+  nc->convertFrom(sky);
   double xw, yw;
-  nativeCoords->getLonLat(xw, yw);
+  nc->getLonLat(xw, yw);
   xw /= wScale;
   yw /= wScale;
   pm->toPix(xw, yw, xpix, ypix);
+  delete nc;
 }
 
 void
@@ -71,11 +78,16 @@ Wcs::toWorld(double xpix, double ypix,
 	     double& xworld, double& yworld) const {
   pm->toWorld(xpix, ypix, xworld, yworld);
   if (targetCoords) {
-    nativeCoords->setLonLat(xworld * wScale, yworld * wScale);
-    targetCoords->convertFrom(*nativeCoords);
-    targetCoords->getLonLat(xworld, yworld);
+    // Create duplicates for thread safety:
+    SphericalCoords* nc = nativeCoords->duplicate();
+    SphericalCoords* tc = targetCoords->duplicate();
+    nc->setLonLat(xworld * wScale, yworld * wScale);
+    tc->convertFrom(*nc);
+    tc->getLonLat(xworld, yworld);
     xworld /= wScale;
     yworld /= wScale;
+    delete tc;
+    delete nc;
   }
 }
 
@@ -83,11 +95,16 @@ void
 Wcs::toPix( double xworld, double yworld,
 	    double &xpix, double &ypix) const {
   if (targetCoords) {
-    targetCoords->setLonLat(xworld*wScale, yworld*wScale);
-    nativeCoords->convertFrom(*targetCoords);
-    nativeCoords->getLonLat(xworld, yworld);
+    // Create duplicates for thread safety:
+    SphericalCoords* nc = nativeCoords->duplicate();
+    SphericalCoords* tc = targetCoords->duplicate();
+    tc->setLonLat(xworld*wScale, yworld*wScale);
+    nc->convertFrom(*nc);
+    nc->getLonLat(xworld, yworld);
     xworld /= wScale;
     yworld /= wScale;
+    delete tc;
+    delete nc;
   }
   pm->toPix(xworld, yworld, xpix, ypix);
 }
@@ -96,21 +113,33 @@ Matrix22
 Wcs::dWorlddPix(double xpix, double ypix) const {
   Matrix22 m1 = pm->dWorlddPix(xpix, ypix);
   if (!targetCoords) return m1;
+
+  // Create duplicates for thread safety:
+  SphericalCoords* nc = nativeCoords->duplicate();
+  SphericalCoords* tc = targetCoords->duplicate();
   Matrix22 mReproject;
   double xw, yw;
   pm->toWorld(xpix, ypix, xw, yw);
-  nativeCoords->setLonLat(xw * wScale, yw * wScale);
-  targetCoords->convertFrom(*nativeCoords, mReproject);
+  nc->setLonLat(xw * wScale, yw * wScale);
+  tc->convertFrom(*nc, mReproject);
+  delete tc;
+  delete nc;
   return mReproject*m1;
 }
 
 Matrix22 
 Wcs::dPixdWorld(double xworld, double yworld) const {
   if (!targetCoords) return pm->dPixdWorld(xworld, yworld);
+
+  // Create duplicates for thread safety:
+  SphericalCoords* nc = nativeCoords->duplicate();
+  SphericalCoords* tc = targetCoords->duplicate();
   Matrix22 mReproject;
-  targetCoords->setLonLat(xworld*wScale, yworld*wScale);
-  nativeCoords->convertFrom(*targetCoords, mReproject);
-  nativeCoords->getLonLat(xworld, yworld);
+  tc->setLonLat(xworld*wScale, yworld*wScale);
+  nc->convertFrom(*tc, mReproject);
+  nc->getLonLat(xworld, yworld);
+  delete tc;
+  delete nc;
   return pm->dPixdWorld(xworld/wScale, yworld/wScale) * mReproject;
 }
 
@@ -120,10 +149,13 @@ Wcs::toWorldDerivs(double xpix, double ypix,
 		   DMatrix& derivs) const {
   pm->toWorldDerivs(xpix, ypix, xworld, yworld, derivs);
   if (targetCoords) {
+    // Create duplicates for thread safety:
+    SphericalCoords* nc = nativeCoords->duplicate();
+    SphericalCoords* tc = targetCoords->duplicate();
     Matrix22 mReproject;
-    nativeCoords->setLonLat(xworld * wScale, yworld * wScale);
-    targetCoords->convertFrom(*nativeCoords, mReproject);
-    targetCoords->getLonLat(xworld, yworld);
+    nc->setLonLat(xworld * wScale, yworld * wScale);
+    tc->convertFrom(*nc, mReproject);
+    tc->getLonLat(xworld, yworld);
     xworld /= wScale;
     yworld /= wScale;
     if (pm->nParams()>0) {
@@ -131,6 +163,8 @@ Wcs::toWorldDerivs(double xpix, double ypix,
       DMatrix tmp = mReproject * derivs;
       derivs = tmp;  
     }
+    delete tc;
+    delete nc;
   }
 }
 
@@ -139,22 +173,22 @@ Wcs::toPixDerivs( double xworld, double yworld,
 		  double &xpix, double &ypix,
 		  DMatrix& derivs) const {
   if (!targetCoords) pm->toPixDerivs(xworld, yworld, xpix, ypix, derivs);
-  targetCoords->setLonLat(xworld*wScale, yworld*wScale);
-  nativeCoords->convertFrom(*targetCoords);
-  nativeCoords->getLonLat(xworld, yworld);
+
+  // Create duplicates for thread safety:
+  SphericalCoords* nc = nativeCoords->duplicate();
+  SphericalCoords* tc = targetCoords->duplicate();
+  tc->setLonLat(xworld*wScale, yworld*wScale);
+  nc->convertFrom(*tc);
+  nc->getLonLat(xworld, yworld);
   pm->toPixDerivs(xworld, yworld, xpix, ypix, derivs);
   if (pm->nParams()>0) {
     Matrix22 mReproject;
     // We need the derivative dW/dP for the reprojection here:
-    targetCoords->convertFrom(*nativeCoords, mReproject);
+    tc->convertFrom(*nc, mReproject);
     // Avoid possible aliasing:
     DMatrix tmp = mReproject * derivs;
     derivs = tmp;  
   }
-}
-
-/// ???? Read and write
-void
-Wcs::write(std::ostream& os) const {
-  // ?????
+  delete tc;
+  delete nc;
 }
