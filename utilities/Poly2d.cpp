@@ -9,7 +9,7 @@ using namespace poly2d;
 // Serialization
 /////////////////////////////////////////////////////////////////////
 void
-Poly2d::write(std::ostream& os) const {
+Poly2d::write(std::ostream& os, int precision) const {
   switch (otype) {
   case Sum:
     os << "Sum " << orderX << endl;
@@ -25,8 +25,7 @@ Poly2d::write(std::ostream& os) const {
   DVector coeffs = getC();
   // Save precision and format of stream before changing it:
   StreamSaver ss(os);
-  const int DIGITS=8;
-  os.precision(DIGITS);
+  os.precision(precision);
   os.setf( ios_base::showpos | ios_base::scientific);
 
   for (int i=0; i<nCoeffs(); i++) {

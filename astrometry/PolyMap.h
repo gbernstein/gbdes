@@ -13,14 +13,18 @@ namespace astrometry {
   public:
     // Constructor with 1 order has terms with sum of x and y powers up to this order.
     // Constructor with 2 orders has all terms w/ powers of x up to orderx, y to ordery
+    // Maps set to identity on construction unless polynomial coefficients are given
     PolyMap(const poly2d::Poly2d& px, const poly2d::Poly2d& py, 
 	    string name="",
 	    double tol_=0.001/3600.):
     PixelMap(name), xpoly(px), ypoly(py), worldTolerance(tol_) {}
     PolyMap(int orderx, int ordery, string name="", double tol_=0.001/3600.):
-      PixelMap(name), xpoly(orderx,ordery), ypoly(orderx,ordery), worldTolerance(tol_) {}
+      PixelMap(name), xpoly(orderx,ordery), ypoly(orderx,ordery), worldTolerance(tol_) {
+	setToIdentity();}
     PolyMap(int order, string name="", double tol_=0.001/3600.):
-      PixelMap(name), xpoly(order), ypoly(order), worldTolerance(tol_) {}
+      PixelMap(name), xpoly(order), ypoly(order), worldTolerance(tol_) {
+	setToIdentity();
+      }
     // Note that default tolerance is set to be 1 mas if world units are degrees.
     virtual PixelMap* duplicate() const {return new PolyMap(*this);}
       
@@ -68,8 +72,9 @@ namespace astrometry {
   class LinearMap: public PixelMap {
   public:
     LinearMap(const DVector& v_, string name=""): 
-      PixelMap(name), v(v_), vinv(6) {Assert(v.size()==6); makeInv();}
-    LinearMap(string name=""): PixelMap(name), v(6,0.), vinv(6, 0.) {}
+      PixelMap(name), v(v_), vinv(DIM) {Assert(v.size()==DIM); makeInv();}
+    // The default constructor sets the transformation to identity
+    LinearMap(string name=""): PixelMap(name), v(DIM,0.), vinv(DIM, 0.) {setToIdentity();}
     virtual PixelMap* duplicate() const {return new LinearMap(*this);}
     ~LinearMap() {}
 
@@ -80,7 +85,7 @@ namespace astrometry {
     void toPix( double xworld, double yworld,
 		double &xpix, double &ypix) const;
     Matrix22 dWorlddPix(double xpix, double ypix) const;
-    Matrix22 dPixdWorld(double xpix, double ypix) const;
+    Matrix22 dPixdWorld(double xworld, double yworld) const;
     void toPixDerivs( double xworld, double yworld,
 		      double &xpix, double &ypix,
 		      DMatrix& derivs) const;
@@ -88,11 +93,11 @@ namespace astrometry {
 		       double& xworld, double& yworld,
 		       DMatrix& derivs) const;
 
-    void setParams(const DVector& p) {Assert(p.size()==6); v=p; makeInv();}
+    void setParams(const DVector& p) {Assert(p.size()==DIM); v=p; makeInv();}
     DVector getParams() const {return v;}
-    int nParams() const {return 6;}
+    int nParams() const {return DIM;}
 
-    void setToIdentity() {v*=0.; v[1]=1.; v[5]=1.;}
+    void setToIdentity() {v.setZero(); v[1]=1.; v[5]=1.; vinv.setZero(); vinv[1]=1.; vinv[5]=1.;}
 
     static string mapType() {return "Linear";}
     virtual string getType() const {return mapType();}
@@ -100,7 +105,8 @@ namespace astrometry {
     void write(std::ostream& os) const;
 
   private:
-    // Forward and inverse transformations
+    // Forward and inverse transformations are always kept in sync
+    const static int DIM=6;
     DVector v;
     DVector vinv;
     void makeInv();

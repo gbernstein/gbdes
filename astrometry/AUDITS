@@ -1,0 +1,18 @@
+Files for June 2013 code audit:
+
+PixelMap.h  - done 6/12
+PixelMap.cpp - done 6/12
+PolyMap.h - done 6/12
+PolyMap.cpp - done 6/12
+TemplateMap.h
+TemplateMap.cpp
+Wcs.h
+Wcs.cpp
+TPVMap.h
+TPVMap.cpp
+SerializeProjection.h
+SerializeProjection.cpp
+
+PixelMapCollection.h
+SubMap.cpp
+PixelMapCollection.cpp

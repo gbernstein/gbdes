@@ -1,4 +1,5 @@
-// $Id: PolyMap.cpp,v 1.7 2012/02/02 02:23:32 garyb Exp $
+// Definitions for 2d polynomial PixelMap
+
 #include "PolyMap.h"
 #include "StringStuff.h"
 #include <sstream>
@@ -8,11 +9,8 @@ using namespace astrometry;
 void 
 PolyMap::toWorld(double xpix, double ypix,
 		 double& xworld, double& yworld) const {
-  //#pragma omp critical (maps) 
-  {
   xworld = xpoly(xpix,ypix);
   yworld = ypoly(xpix,ypix);
-  }
 }
 
 void 
@@ -25,13 +23,10 @@ PolyMap::toPix( double xworld, double yworld,
 Matrix22 
 PolyMap::dWorlddPix(double xpix, double ypix) const {
   Matrix22 d;
-  //#pragma omp critical (maps)
-  {
   d(0,0) = xpoly.derivx(xpix,ypix);
   d(0,1) = xpoly.derivy(xpix,ypix);
   d(1,0) = ypoly.derivx(xpix,ypix);
   d(1,1) = ypoly.derivy(xpix,ypix);
-  }
   return d;
 }
 
@@ -54,6 +49,8 @@ PolyMap::getParams() const {
 
 void
 PolyMap::setToIdentity() {
+  if (xpoly.getOrderX()<1 || ypoly.getOrderY()<1)
+    throw AstrometryError("PolyMap " + getName() + " has insufficient order to setToIdentity");
   DVector p = getParams();
   p.setZero();
   p[xpoly.vectorIndex(1,0)] = 1.;
@@ -66,15 +63,12 @@ PolyMap::toPixDerivs( double xworld, double yworld,
 		      double &xpix, double &ypix,
 		      DMatrix& derivs) const {
   toPix(xworld, yworld, xpix, ypix);
-  //#pragma omp critical (maps)
-  {
   DVector dx = xpoly.derivC(xpix, ypix);
   DVector dy = ypoly.derivC(xpix, ypix);
   Assert(derivs.ncols()==2 && derivs.nrows()==(dx.size()+dy.size()));
   derivs.setZero();
   derivs.row(0,0,dx.size()) = dx;
   derivs.row(1,dx.size(), dx.size()+dy.size()) = dy;
-  }
 }
 
 void 
@@ -82,58 +76,43 @@ PolyMap::toWorldDerivs(double xpix, double ypix,
 		       double& xworld, double& yworld,
 		       DMatrix& derivs) const {
   toWorld(xpix,ypix,xworld, yworld);
-  //#pragma omp critical (maps)
-  {
   DVector dx = xpoly.derivC(xpix, ypix);
   DVector dy = ypoly.derivC(xpix, ypix);
   Assert(derivs.nrows()==2 && derivs.ncols()==(dx.size()+dy.size()));
   derivs.setZero();
   derivs.row(0,0,dx.size()) = dx;
   derivs.row(1,dx.size(), dx.size()+dy.size()) = dy;
-  }
 }
 
 // A linear map too
 void
 LinearMap::toWorld(double xpix, double ypix,
 		   double& xworld, double& yworld) const {
-  //#pragma omp critical (maps)
-  {
   xworld = v[0] + v[1]*xpix + v[2]*ypix;
   yworld = v[3] + v[4]*xpix + v[5]*ypix;
-  }
 }
 void 
 LinearMap::toPix( double xworld, double yworld,
 		  double &xpix, double &ypix) const {
-  //#pragma omp critical (maps)
-  {
   xpix = vinv[0] + vinv[1]*xworld + vinv[2]*yworld;
   ypix = vinv[3] + vinv[4]*xworld + vinv[5]*yworld;
-  }
 }
 Matrix22 
 LinearMap::dWorlddPix(double xpix, double ypix) const {
   Matrix22 m;
-  //#pragma omp critical (maps)
-  {
   m(0,0)=v[1];
   m(0,1)=v[2];
   m(1,0)=v[4];
   m(1,1)=v[5];
-  }
   return m;
 }
 Matrix22 
-LinearMap::dPixdWorld(double xpix, double ypix) const {
+LinearMap::dPixdWorld(double xworld, double yworld) const {
   Matrix22 m;
-  //#pragma omp critical (maps)
-  {
   m(0,0)=vinv[1];
   m(0,1)=vinv[2];
   m(1,0)=vinv[4];
   m(1,1)=vinv[5];
-  }
   return m;
 }
 
@@ -142,8 +121,6 @@ LinearMap::toPixDerivs( double xworld, double yworld,
 			double &xpix, double &ypix,
 			DMatrix& derivs) const {
   toPix(xworld, yworld, xpix, ypix);
-  //#pragma omp critical (maps)
-  {
   Assert(derivs.ncols()==6 && derivs.nrows()==2);
   derivs.setZero();
   derivs(0,0) = 1.;
@@ -152,7 +129,6 @@ LinearMap::toPixDerivs( double xworld, double yworld,
   derivs(1,3) = 1.;
   derivs(1,4) = xpix;
   derivs(1,5) = ypix;
-  }
 }
 
 void 
@@ -160,8 +136,6 @@ LinearMap::toWorldDerivs(double xpix, double ypix,
 			 double& xworld, double& yworld,
 			 DMatrix& derivs) const {
   toWorld(xpix, ypix, xworld, yworld);
-  //#pragma omp critical (maps)
-  {
   Assert(derivs.ncols()==6 && derivs.nrows()==2);
   derivs.setZero();
   derivs(0,0) = 1.;
@@ -170,7 +144,6 @@ LinearMap::toWorldDerivs(double xpix, double ypix,
   derivs(1,3) = 1.;
   derivs(1,4) = xpix;
   derivs(1,5) = ypix;
-  }
 }
 
 void
@@ -184,7 +157,6 @@ LinearMap::makeInv() {
   vinv[3] = -(vinv[4]*v[0]+vinv[5]*v[3]);
 }
 
-// ??? Implement reads and writes!
 PixelMap*
 LinearMap::create(std::istream& is, string name) {
   DVector v(6);
@@ -201,14 +173,23 @@ LinearMap::create(std::istream& is, string name) {
   return new LinearMap(v);
 }
 
+// Number of digits to print for coefficients:
+const int DIGITS=8;
+
 void
 LinearMap::write(std::ostream& os) const {
   stringstuff::StreamSaver ss(os);
-  const int DIGITS=8;
   os.precision(DIGITS);
   os.setf( ios_base::showpos | ios_base::scientific);
   os << v[0] << " " << v[1] << " " << v[2] << endl;
   os << v[3] << " " << v[4] << " " << v[5] << endl;
+}
+
+void
+PolyMap::write(std::ostream& os) const {
+  xpoly.write(os, DIGITS);
+  ypoly.write(os, DIGITS);
+  os << worldTolerance << endl;
 }
 
 PixelMap*
@@ -228,9 +209,3 @@ PolyMap::create(std::istream& is, string name) {
   return pm;
 }
 
-void
-PolyMap::write(std::ostream& os) const {
-  xpoly.write(os);
-  ypoly.write(os);
-  os << worldTolerance << endl;
-}

@@ -42,7 +42,10 @@ namespace poly2d {
     int getOrderX() const {return orderX;}
     int getOrderY() const {return orderY;}
 
-    void write(std::ostream& os) const;  // Serialize polynomial to a string
+    // Serialize polynomial to a string:
+    // Number of digits to write:
+    static const int DEFAULT_PRECISION=8;
+    void write(std::ostream& os, int precision=DEFAULT_PRECISION) const;  
     static Poly2d* create(std::istream& is);  // Build polynomial from serialized string
 
     // If you want to know the orders for given coeffient index or vice-versa:
