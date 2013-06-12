@@ -194,7 +194,8 @@ ReprojectionMap::create(std::istream& is, string name) {
 }
 
 void
-ReprojectionMap::write(std::ostream& os) const {
+ReprojectionMap::write(std::ostream& os, int precision) const {
+  // ??? Worry about precision on these outputs ??
   os << serializeProjection(pix) << endl;
   os << serializeProjection(world) << endl;
   os << scaleFactor << endl;

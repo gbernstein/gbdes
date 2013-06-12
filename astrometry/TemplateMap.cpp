@@ -6,7 +6,6 @@
 using namespace astrometry;
 using stringstuff::getlineNoComment;
 
-const double DefaultPixelStep = 1.;
 const double DefaultScaling = 1.;
 TemplateMap1d::TemplateMap1d(Coordinate c, 
 			     double nodeStart_, double nodeStep_, 
@@ -14,7 +13,6 @@ TemplateMap1d::TemplateMap1d(Coordinate c,
 			     string name):  PixelMap(name),
 					    nodeStart(nodeStart_), nodeStep(nodeStep_), 
 					    deviations(deviations_),
-					    pixelStep(DefaultPixelStep),
 					    scaling(DefaultScaling)
 {
   switch (c) {
@@ -27,6 +25,9 @@ TemplateMap1d::TemplateMap1d(Coordinate c,
   default:
     throw AstrometryError("Unknown TemplateMap1d::Coordinate value");
   }
+  if (nodeStep <= 0.)
+    throw AstrometryError("TemplateMap1d with name " 
+			  + getName() + " received non-positive nodeStep");
 }
 
 TemplateMap1d*
@@ -160,22 +161,24 @@ TemplateMap1d::reverse_lookup(double val) const {
   if (val >= nodeStart + nodeStep*(deviations.size()-1)+ scaling * deviations.back())
     return val - scaling * deviations.back();
 
-  // Need to localize the nodes bounding
+  // Need to localize the interval in which results bound val.
   int index = static_cast<int> (std::floor( (val - scaling*lookup(val) - nodeStart)/nodeStep));
   const int MAX_ITERATIONS = 5;
   for (int i = 0; i < MAX_ITERATIONS; i++) {
     if (index < 0 || index > deviations.size()-2)
       throw AstrometryError("Logic problem in TemplateMap1d::reverse_lookup()");
-    if ( val - nodeStart > nodeStep*(index+1) + scaling*deviations[index+1]) {
-      // move index up...
-      index = static_cast<int> (std::floor( (val - scaling*deviations[index+1] - nodeStart)/nodeStep));
-    } else if ( val - nodeStart < nodeStep*(index) + scaling*deviations[index]) {
+    double lowerVal = nodeStart + nodeStep*index + scaling*deviations[index];
+    double deltaVal = nodeStep + scaling*(deviations[index+1]-deviations[index]);
+    // Compute fraction of the way between ends of interval:
+    double f = (val - lowerVal) / deltaVal; 
+    if ( f < 0. ) {
       // move index down...
-      index = static_cast<int> (std::floor( (val - scaling*deviations[index] - nodeStart)/nodeStep));
+      index += static_cast<int> (std::floor( (val - lowerVal)/nodeStep ));
+    } else if ( f > 1. ) {
+      // move index up...
+      index += 1 + static_cast<int> (std::floor( (val - (lowerVal+deltaVal))/nodeStep));
     } else {
       // interpolate and return
-      double f = (val - nodeStart - index*nodeStep - scaling*deviations[index]) /
-	(scaling*(deviations[index+1]-deviations[index])+nodeStep);
       return nodeStart + nodeStep*(index+f);
     }
   }
@@ -183,11 +186,15 @@ TemplateMap1d::reverse_lookup(double val) const {
 }
 
 void
-TemplateMap1d::write(std::ostream& os) const {
+TemplateMap1d::write(std::ostream& os, int precision) const {
   stringstuff::StreamSaver ss(os);
   os << (applyToX ? "X" : "Y")
-     << " " << deviations.size()
-     << " " << nodeStart
+     << " " << deviations.size();
+
+    os.precision(precision);
+    os.setf( ios_base::showpos | ios_base::scientific);
+
+    os << " " << nodeStart
      << " " << nodeStep
      << endl;
   os << scaling << endl;
@@ -224,7 +231,7 @@ TemplateMap1d::create(std::istream& is, string name) {
     if (axis=="X" || axis=="x")
       c = X;
     else if (axis=="Y" || axis=="y")
-      c = X;
+      c = Y;
     else
       throw AstrometryError("Input to Template1d::create must be X or Y axis, have <" + axis + "<");
   }

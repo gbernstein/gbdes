@@ -173,22 +173,20 @@ LinearMap::create(std::istream& is, string name) {
   return new LinearMap(v);
 }
 
-// Number of digits to print for coefficients:
-const int DIGITS=8;
-
 void
-LinearMap::write(std::ostream& os) const {
+LinearMap::write(std::ostream& os, int precision) const {
   stringstuff::StreamSaver ss(os);
-  os.precision(DIGITS);
+  os.precision(precision);
   os.setf( ios_base::showpos | ios_base::scientific);
   os << v[0] << " " << v[1] << " " << v[2] << endl;
   os << v[3] << " " << v[4] << " " << v[5] << endl;
 }
 
 void
-PolyMap::write(std::ostream& os) const {
-  xpoly.write(os, DIGITS);
-  ypoly.write(os, DIGITS);
+PolyMap::write(std::ostream& os, int precision) const {
+  xpoly.write(os, precision);
+  ypoly.write(os, precision);
+  // ??? Worry about precision on the tolerance line
   os << worldTolerance << endl;
 }
 

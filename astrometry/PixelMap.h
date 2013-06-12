@@ -61,8 +61,10 @@ namespace astrometry {
     virtual double getPixelStep() const {return pixStep;}
     virtual void setPixelStep(double ps) {pixStep=ps;}
 
-    // For serialization:
-    virtual void write(std::ostream& os) const =0;
+    // For serialization:  the precision is going to be a suggestion to derived
+    // classes about number of digits to use in outputs.
+    static const int DEFAULT_PRECISION=8;
+    virtual void write(std::ostream& os, int precision=DEFAULT_PRECISION) const =0;
     string getName() const {return name;}
     virtual string getType() const =0;
   private:
@@ -92,7 +94,7 @@ namespace astrometry {
 		double &xpix, double &ypix) const;
     Matrix22 dPixdWorld(double xworld, double yworld) const;    
     Matrix22 dWorlddPix(double xpix, double ypix) const;    
-    virtual void write(std::ostream& os) const {} // Nothing to write
+    virtual void write(std::ostream& os, int precision) const {} // Nothing to write
   };
 
   // PixelMap that takes coordinates in one projection
@@ -124,7 +126,7 @@ namespace astrometry {
     static string mapType() {return "Reprojection";}
     virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name="");
-    virtual void write(std::ostream& os) const;
+    virtual void write(std::ostream& os, int precision=PixelMap::DEFAULT_PRECISION) const;
 
     void toWorld(double xpix, double ypix,
 		 double& xworld, double& yworld) const;

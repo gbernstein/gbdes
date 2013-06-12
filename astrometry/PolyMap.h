@@ -61,7 +61,7 @@ namespace astrometry {
     static string mapType() {return "Poly";}
     virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name="");
-    void write(std::ostream& os) const;
+    void write(std::ostream& os, int precision=PixelMap::DEFAULT_PRECISION) const;
 
   private:
     poly2d::Poly2d xpoly;
@@ -102,7 +102,7 @@ namespace astrometry {
     static string mapType() {return "Linear";}
     virtual string getType() const {return mapType();}
     static PixelMap* create(std::istream& is, string name="");
-    void write(std::ostream& os) const;
+    void write(std::ostream& os, int precision=PixelMap::DEFAULT_PRECISION) const;
 
   private:
     // Forward and inverse transformations are always kept in sync
