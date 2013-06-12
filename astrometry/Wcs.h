@@ -16,8 +16,8 @@ namespace astrometry {
     // Pixel coords are mapped to "world" by the PixelMap, then scaled by wScale
     // (defaults to DEGREE) to give the (lon,lat) or (xi,eta) coords
     // of the SphericalCoords object.  SphericalCoords now gives location on the sky.
-    // For shareMap=true, a duplicate of the input map is owned by this class and deleted
-    // in destructor.  For shareMap=false, uses the input pointer but does not delete it.
+    // For shareMap=false, a duplicate of the input map is owned by this class and deleted
+    // in destructor.  For shareMap=true, uses the input pointer but does not delete it.
     Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name="", 
 	double wScale_=DEGREE, bool shareMap=false);
     virtual ~Wcs();
