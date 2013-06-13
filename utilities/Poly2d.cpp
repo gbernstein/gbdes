@@ -33,7 +33,7 @@ Poly2d::write(std::ostream& os, int precision) const {
       os << endl;
       iOnLine = 0;
     }
-    os << setw(DIGITS+7) << coeffs[i] << " " ;
+    os << setw(precision+7) << coeffs[i] << " " ;
     iOnLine++;
   }
   os << endl;

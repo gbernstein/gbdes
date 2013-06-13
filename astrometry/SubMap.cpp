@@ -58,7 +58,9 @@ SubMap::countFreeParameters() {
 }
 
 // When get/setParams are called from here directly, we just concatenate the free
-// parameters of our components in order:
+// parameters of our components in order.
+// If nSubParams[i] has been set to zero, then parameters of map i are considered fixed
+// and do not appear in parameter vectors.
 DVector
 SubMap::getParams() const {
   if (nParams()==0) return DVector(0);
@@ -114,23 +116,32 @@ SubMap::toPix(double xworld, double yworld,
   }
 
   // Behave as identity for empty map vector:
-  if (nm==0) return;
+  if (nm==0) {
+    xpix = xworld;
+    ypix = yworld;
+    return;
+  }
+
+  // Could consider doing the whole thing by Newton iteration ????
+  // ??? A problem with current method is that tolerances on inverses
+  // will build up to larger errors than perhaps desired.
 
   // xpix and ypix on input are supposed to be guesses at the
   // answer.  Propagate them forward to create a list of guesses
   // of "pixel" coords for all the intermediate steps.
   vector<double> xguess(nm);
   vector<double> yguess(nm);
+  xguess[0] = xpix;
+  yguess[0] = ypix;
   for (int iMap=0; iMap<nm-1; iMap++) {
-    xguess[iMap] = xpix;
-    yguess[iMap] = ypix;
     vMaps[iMap]->toWorld(xpix,ypix,xpix,ypix);
+    xguess[iMap+1] = xpix;
+    yguess[iMap+1] = ypix;
   }
 
+  // Now propagate solution backwards:
   xpix = xworld;
   ypix = yworld;
-
-  // Now propagate solution backwards:
   for (int iMap = nm-1; iMap>=0; iMap--) {
     xworld = xpix;
     yworld = ypix;
@@ -141,7 +152,7 @@ SubMap::toPix(double xworld, double yworld,
 }
 
 // In derivatives vectors, parameters of map components are concatenated, skipping
-// those whose params are fixed:
+// those whose params are fixed.
 void 
 SubMap::toWorldDerivs( double xpix, double ypix,
 		       double &xworld, double &yworld,

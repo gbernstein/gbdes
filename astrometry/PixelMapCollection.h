@@ -60,7 +60,7 @@ namespace astrometry {
 
   public:
     // If shareMaps = true, SubMap will make and own duplicates of the input maps.
-    // Otherwise is will just copy pointers and assume external ownership.
+    // Otherwise it will just copy pointers and assume external ownership.
     SubMap(const list<PixelMap*>& pixelMaps, string name="", bool shareMaps=false); 
     virtual ~SubMap();
     // A duplicate of SubMap will have the same sharing policies as its parent.
@@ -77,7 +77,7 @@ namespace astrometry {
     // works with a single contiguous vector of parameters of all components.
     void setParams(const DVector& p);
     DVector getParams() const;
-    int nParams() const {return totalFreeParameters;} // ??? need nSubParams too ???
+    int nParams() const {return totalFreeParameters;}
     void toWorld(double xpix, double ypix,
 		 double& xworld, double& yworld) const;
     void toPix( double xworld, double yworld,
@@ -91,17 +91,15 @@ namespace astrometry {
     Matrix22 dPixdWorld(double xworld, double yworld) const;
     Matrix22 dWorlddPix(double xpix, double ypix) const;
     // Step size for derivatives in "pixel" space - applied to first map in the chain, if any
-    double getPixelStep() const;
-    void setPixelStep(double ps);
+    virtual double getPixelStep() const;
+    virtual void setPixelStep(double ps);
     static string mapType() {return "Composite";}
     virtual string getType() const {return mapType();}
 
-    void write(ostream& os) const {
+    void write(ostream& os, int precision) const {
       throw AstrometryError("SubMap " + getName() + " should not be getting serialized");
     }
   };
-
-  // ?? Implement the PixelMap and/or Wcs interfaces by selecting a member to use??
 
   class PixelMapCollection {
   public:
@@ -195,7 +193,7 @@ namespace astrometry {
 
     int parameterCount; // Total parameters currently free to vary.
     int atomCount;	// Number of atomic map components
-    int freeCount;	// Number of atompic components with free parameters
+    int freeCount;	// Number of atomic components with free parameters
 
     // ***Main data of the class are these two containers of structures listing
     // all the PixelMaps and Wcs's curated by this class:

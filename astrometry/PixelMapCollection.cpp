@@ -36,8 +36,9 @@ PixelMapCollection::PixelMapTypeInitialize() {
 // Construction / destruction
 //////////////////////////////////////////////////////////////
 
-PixelMapCollection::PixelMapCollection(): parameterCount(0) {
+PixelMapCollection::PixelMapCollection() {
   PixelMapTypeInitialize();
+  rebuildParameterVector(); // Sets the various counts to zero
 }
 
 PixelMapCollection::~PixelMapCollection() {
@@ -213,7 +214,6 @@ PixelMapCollection::learnMap(const PixelMap& pm, bool duplicateNamesAreException
     return;
   }
   const SubMap* sm = dynamic_cast<const SubMap*> (&pm);
-  const CompoundPixelMap* cpm = dynamic_cast<const CompoundPixelMap*> (&pm);
   if (sm) {
     if (sm->vMaps.size()==1 && pm.getName()==sm->vMaps.front()->getName()) {
       // If this is a single-element SubMap that has same name as its dependent, then we'll
@@ -229,22 +229,6 @@ PixelMapCollection::learnMap(const PixelMap& pm, bool duplicateNamesAreException
 			      "a dependence on PixelMap with the same name: " + sm->getName());
       mel.subordinateMaps.push_back(sm->vMaps[i]->getName());
       learnMap(*sm->vMaps[i], duplicateNamesAreExceptions);
-    }
-    // Register this compound map
-    mapElements.insert(std::pair<string,MapElement>(pm.getName(), mel));
-  } else if (cpm) {
-    // learn each dependency
-    MapElement mel;
-    const list<PixelMap*>& pmlist = cpm->getList();
-    for (list<PixelMap*>::const_iterator i = pmlist.begin();
-	 i != pmlist.end();
-	 ++i) {
-      if (cpm->getName() == (*i)->getName())
-	throw AstrometryError("PixelMapCollection::learnMap encountered CompoundPixelMap that "
-			      "has a dependence on PixelMap with the same name: "
-			      + cpm->getName());
-      mel.subordinateMaps.push_back((*i)->getName());
-      learnMap(**i, duplicateNamesAreExceptions);
     }
     // Register this compound map
     mapElements.insert(std::pair<string,MapElement>(pm.getName(), mel));
@@ -307,6 +291,7 @@ PixelMapCollection::learnWcs(const Wcs& wcs, bool duplicateNamesAreExceptions) {
 
 void
 PixelMapCollection::learn(PixelMapCollection& rhs, bool duplicateNamesAreExceptions) {
+  if (&rhs == this) return;	// No need to learn self
   for (ConstMapIter iMap = rhs.mapElements.begin();
        iMap != rhs.mapElements.end();
        ++iMap) {
@@ -320,7 +305,7 @@ PixelMapCollection::learn(PixelMapCollection& rhs, bool duplicateNamesAreExcepti
     } else {
       // A new mapName for us.  Add its mapElement to our list.
       MapElement mel;
-      mel.atom = iMap->second.atom->duplicate();
+      if (iMap->second.atom) mel.atom = iMap->second.atom->duplicate();
       mel.isFixed = iMap->second.isFixed;
       mel.subordinateMaps = iMap->second.subordinateMaps;
       mapElements.insert(std::pair<string,MapElement>(iMap->first, mel));
@@ -444,7 +429,13 @@ PixelMapCollection::cloneMap(string mapName) const {
 	 i != el.subordinateMaps.end();
 	 ++i) 
     vMaps.push_back(cloneMap(*i));
-  return new SubMap(vMaps, mapName, false);
+  SubMap* retval = new SubMap(vMaps, mapName, false);
+  // Clean up the stray clones since they've been duplicated by SubMap:
+  for (list<PixelMap*>::iterator i = vMaps.begin();
+       i != vMaps.end();
+       ++i)
+    delete *i;
+  return retval;
 }
 
 // Return a pointer to a Wcs built from a SubMap and realizing the named coord system
@@ -471,7 +462,9 @@ PixelMapCollection::cloneWcs(string wcsName) const {
 			  +  wcsName);
   const WcsElement& el = wcsElements.find(wcsName)->second;
   PixelMap* pm = cloneMap(el.mapName);
-  return new Wcs(pm, *el.nativeCoords, wcsName, el.wScale, false);
+  Wcs* retval = new Wcs(pm, *el.nativeCoords, wcsName, el.wScale, false);
+  delete pm;
+  return retval;
 }
 
 set<string>
@@ -542,7 +535,7 @@ PixelMapCollection::checkCircularDependence(string mapName,
 
 void
 PixelMapCollection::checkCompleteness() const {
-  // Loop through all the (non-atomic) maps, throw exception if the refer to 
+  // Loop through all the (non-atomic) maps, throw exception if they refer to 
   // non-existent map elements or to themselves
   for (ConstMapIter i = mapElements.begin();
        i != mapElements.end();
@@ -689,7 +682,7 @@ PixelMapCollection::read(istream& is, string namePrefix) {
       iss.str(buffer);
       iss.clear();
       if ( !(iss >> wScale) || wScale <= 0.)
-	  throw AstrometryError("PixelMapCollection::read() failed read invalid scale from line "
+	  throw AstrometryError("PixelMapCollection::read() failed, invalid scale from line "
 				+ buffer);
       
       // Enter a new WcsElement into our tables:
@@ -715,7 +708,7 @@ PixelMapCollection::read(istream& is, string namePrefix) {
 	do {
 	  iss >> n;
 	  if (!iss.fail()) {
-	    submaps.push_back(n);
+	    submaps.push_back(namePrefix + n);
 	  } else if (iss.eof()) {
 	    break;
 	  } else {
