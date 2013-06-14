@@ -39,7 +39,7 @@ public:
       nLocks = nBlocks;
     } else {
       blockLength = nBlocks / nLocks;
-      nLocks = (nBlocks+blockLength+-1) / blockLength;
+      nLocks = (nBlocks+blockLength-1) / blockLength;
     }
     locks.resize(nLocks);
     // build array of locks
@@ -97,7 +97,14 @@ private:
 #endif
 };
 
-Match::Match(Detection *e): elist(1,e), nFit(1), isReserved(false) {
+bool
+Match::isFit(const Detection* e) {
+  // A Detection will contribute to fit if it has nonzero weight and is not clipped.
+  return !(e->isClipped) && !( e->wtx==0. && e->wty==0.);
+}
+
+Match::Match(Detection *e): elist(1,e), nFit(0), isReserved(false) {
+  if (isFit(e)) nFit++;
   e->itsMatch = this;
 }
 void
@@ -105,16 +112,24 @@ Match::add(Detection *e) {
   elist.push_back(e);
   e->itsMatch = this;
   e->isClipped = false;
-  nFit++;
+  if ( isFit(e)) nFit++;
 }
 
 void
 Match::remove(Detection* e) {
   elist.remove(e);  
   e->itsMatch = 0;
-  // Recount fittable objects
-  countFit();
+  if ( isFit(e) ) nFit--;
 }
+
+list<Detection*>::iterator 
+Match::erase(list<Detection*>::iterator i,
+	     bool deleteDetection) {
+  if (isFit(*i)) nFit--;
+  if (deleteDetection) delete *i;
+  return elist.erase(i);
+}
+
 
 void
 Match::clear(bool deleteDetections) {
@@ -139,17 +154,6 @@ Match::clipAll() {
   nFit = 0;
 }
 
-// Update and return count of fittable objects:
-int
-Match::countFit() {
-  nFit = 0;
-  for (list<Detection*>::iterator i=elist.begin();
-       i!=elist.end();
-       ++i) 
-    if ( !(*i)->isClipped && !((*i)->wtx==0. && (*i)->wty==0.)) nFit++;
-  return nFit;
-}
-
 void
 Match::centroid(double& x, double& y) const {
   double wtx, wty;
@@ -169,7 +173,7 @@ Match::centroid(double& x, double& y,
   for (list<Detection*>::const_iterator i=elist.begin();
        i!=elist.end();
        ++i) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     double xx = (*i)->xw;
     double yy = (*i)->yw;
     double wx = (*i)->wtx;
@@ -223,7 +227,7 @@ Match::accumulateChisq(double& chisq,
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     int npi = (*i)->map->nParams();
     double xw, yw;
     if (npi>0) {
@@ -248,7 +252,7 @@ Match::accumulateChisq(double& chisq,
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     double wxi=(*i)->wtx;
     double wyi=(*i)->wty;
     double xi=(*i)->xw;
@@ -344,7 +348,7 @@ Match::accumulateChisq(double& chisq,
 bool
 Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
-  // ??? Only clip the worst outlier at most
+  // Only clip the worst outlier at most
   double xmean, ymean;
   if (nFit<=1) return false;
   double maxSq=0.;
@@ -352,7 +356,7 @@ Match::sigmaClip(double sigThresh,
   centroid(xmean,ymean);
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); ++i) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     double xi = (*i)->xw;
     double yi = (*i)->yw;
     double clipx = (*i)->clipsqx;
@@ -399,7 +403,7 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
   for (list<Detection*>::const_iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     double xi = (*i)->xw;
     double yi = (*i)->yw;
     double wxi = (*i)->wtx;
@@ -437,8 +441,15 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   {
 #pragma omp single
     {
-      // Distribute the matches in chunks that are scattered
-      // around the array to discourage parameter collisions
+      // Each thread will be handed chunk matches to process.
+      // It will take nRounds chunks per thread, plus possibly a
+      // further chunk for some of the threads, to complete.
+      // I will reorder the matches in the vi vector that is
+      // to be split into threads, because we want the threads
+      // working on widely separated parts of the match list
+      // to make it less likely they are working on the same catalogs
+      // concurrently which would result in collisions writing to the
+      // alpha array.
       const int nThreads=omp_get_num_threads();
       int nRounds = mlist.size()/chunk/nThreads;
       int iThread=0;
@@ -451,11 +462,20 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	vi[j] = *i;
 	j++;
 	if (j%chunk==0 && iRound < nRounds) {
+	  // We have just finished writing a chunk's worth of
+	  // matches to the array.  Next chunk will be for a different
+	  // thread.
+
+	  // Note that if we have advanced to the last (partial) round,
+	  // we just assign the matches consecutively.
 	  iThread++;
 	  if (iThread >= nThreads) {
+	    // Now on to the next round of threads
 	    iRound++;
 	    iThread=0;
 	  }
+	  // Next thread will get matches that are nRounds*chunk removed
+	  // from previous one.
 	  if (iRound<nRounds) j = (iThread*nRounds+iRound)*chunk;
 	}
       }
@@ -508,16 +528,6 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	}
       if (blank) 
 	cerr << "***No constraints on row " << i << endl;
-    }
-    for (int j=0; j<alpha.ncols(); j++) {
-      bool blank = true;
-      for (int i = 0; i<alpha.nrows(); i++) 
-	if (alpha(i,j)!=0.) {
-	  blank = false;
-	  break;
-	}
-      if (blank) 
-	cerr << "***No constraints on col " << j << endl;
     }
   }
 }

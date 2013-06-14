@@ -49,48 +49,49 @@ namespace astrometry {
     list<Detection*> elist;
     int nFit;	// Number of un-clipped points with non-zero weight in fit
     bool isReserved;	// Do not contribute to re-fitting if true
+    // True if a Detection will contribute to chisq:
+    static bool isFit(const Detection* e);
   public:
     Match(Detection* e);
     // Add and remove automatically update itsMatch of the Detection
     void add(Detection* e);
     void remove(Detection* e);
-    // Mark all members of match as unmatched, or optionally delete them,
-    // then empty the list:
+    // Remove a Detection from the match given an iterator to it,
+    // optionally deleting the Detection:
     list<Detection*>::iterator erase(list<Detection*>::iterator i,
-				     bool deleteDetection=false) {
-      if (deleteDetection) delete *i;
-      return elist.erase(i);
-    }
+				     bool deleteDetection=false);
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
     void clear(bool deleteDetections=false);
-    void remap();  // Remap each point to world coords with current map
-    void centroid(double& x, double& y) const;
-    void centroid(double& x, double& y, 
-		  double& wtx, double &wty) const;
     int size() const {return elist.size();}
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {return nFit;}
-    // Update and return count of above:
-    int countFit(); 
 
     // Is this object to be reserved from re-fitting?
     bool getReserved() const {return isReserved;}
     void setReserved(bool b) {isReserved = b;}
 
-    // Returned integer is the DOF count
+    void remap();  // Remap *all* points to world coords with current map
+    // Get centroids - these do *not* recalculate xw,yw 
+    void centroid(double& x, double& y) const;
+    void centroid(double& x, double& y, 
+		  double& wtx, double &wty) const;
+    // Returned integer is the DOF count.  This *does* remap points being fitted.
     int accumulateChisq(double& chisq,
 			 DVector& beta,
 			//**tmv::SymMatrix<double>& alpha);
 			AlphaUpdater& updater);
-    // sigmaClip returns true if clipped, and deletes the clipped guy
-    // if 2nd arg is true.
+   
+    // sigmaClip returns true if clipped, 
+    // and deletes the clipped guy if 2nd arg is true.  
+    // Does *not* remap the points, but does call centroid()
     bool sigmaClip(double sigThresh,
 		   bool deleteDetection=false); 
     void clipAll(); // Mark all detections as clipped
 
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
+    // Does *not* remap the points.
     double chisq(int& dof, double& maxDeviateSq) const;
 
     typedef list<Detection*>::iterator iterator;

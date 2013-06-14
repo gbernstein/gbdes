@@ -1150,7 +1150,7 @@ main(int argc, char *argv[])
 	    ++j;
 	  }
 	}
-	int nFit = (*im)->countFit();
+	int nFit = (*im)->fitSize();
 	if ( nFit < minMatches) {
 	  // Remove entire match if it's too small, and kill its Detections too
 	  (*im)->clear(true);
