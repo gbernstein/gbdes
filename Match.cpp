@@ -103,10 +103,10 @@ Match::isFit(const Detection* e) {
   return !(e->isClipped) && !( e->wtx==0. && e->wty==0.);
 }
 
-Match::Match(Detection *e): elist(1,e), nFit(0), isReserved(false) {
-  if (isFit(e)) nFit++;
-  e->itsMatch = this;
+Match::Match(Detection *e): elist(), nFit(0), isReserved(false) {
+  add(e);
 }
+
 void
 Match::add(Detection *e) {
   elist.push_back(e);
@@ -143,6 +143,15 @@ Match::clear(bool deleteDetections) {
   }
   elist.clear();
   nFit = 0;
+}
+
+void
+Match::countFit() {
+  nFit = 0;
+  for (list<Detection*>::iterator i=elist.begin();
+       i!=elist.end();
+       ++i)
+    if (isFit(*i)) nFit++;
 }
 
 void

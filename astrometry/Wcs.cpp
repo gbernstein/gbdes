@@ -27,6 +27,7 @@ Wcs*
 Wcs::duplicate() const {
   Wcs* retval = new Wcs(pm, *nativeCoords, getName(), wScale, shareMap);
   retval->targetCoords = targetCoords->duplicate();
+  return retval;
 }
 
 SphericalICRS 
@@ -36,7 +37,7 @@ Wcs::toSky(double xpix, double ypix) const {
   // Create duplicate coordinates for thread safety:
   SphericalCoords* nc = nativeCoords->duplicate();
   nc->setLonLat(xw*wScale, yw*wScale);
-  SphericalICRS retval(*nativeCoords);
+  SphericalICRS retval(*nc);
   delete nc;
   return retval;
 }

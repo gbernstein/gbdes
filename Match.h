@@ -66,6 +66,9 @@ namespace astrometry {
     int size() const {return elist.size();}
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {return nFit;}
+    // Recount the number of objects contributing to fit (e.g. after
+    // meddling with object weights)
+    void countFit();
 
     // Is this object to be reserved from re-fitting?
     bool getReserved() const {return isReserved;}

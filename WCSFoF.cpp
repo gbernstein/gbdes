@@ -449,8 +449,10 @@ main(int argc,
       for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
 	   i != attributes.end();
 	   ++i) 
-	if (!(*i)->readInputTable(fileTable, iFile)) {
-	  cerr << "Input filetable is missing attribute column " << (*i)->getName() << endl;
+	if (!(*i)->readInputTable(fileTable, iFile)
+	    && (*i)->doRead()) {
+	  cerr << "Input filetable is missing attribute column " 
+	       << (*i)->getName() << endl;
 	  exit(1);
 	}
 
