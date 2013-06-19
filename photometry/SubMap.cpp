@@ -104,6 +104,17 @@ SubMap::forward(double magIn, const PhotoArguments& args) const {
   return magOut;
 }
 
+double
+SubMap::inverse(double magOut, const PhotoArguments& args) const {
+  // Make behavior with zero elements be identity matrix:
+  double magIn = magOut;
+  for (int iMap = nMaps()-1; iMap >= 0; iMap--) {
+    magOut = magIn;
+    magIn = vMaps[iMap]->inverse(magOut, args);
+  }
+  return magIn;
+}
+
 
 // In derivatives vectors, parameters of map components are concatenated, skipping
 // those whose params are fixed:
@@ -134,7 +145,7 @@ SubMap::forwardDerivs( double magIn, const PhotoArguments& args,
       Assert(nNext == vMaps[iMap]->nParams());
       DVector dd(nNext);
       magOut = vMaps[iMap]->forwardDerivs(magIn, args, dd);
-      derivs.subVector(index, index+nNext) = dd;  // Could just set =, not += here??
+      derivs.subVector(index, index+nNext) += dd; 
       index += nNext;
     } else {
       // No parameters to worry about for this map:

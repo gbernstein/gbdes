@@ -4,6 +4,7 @@
 
 using namespace photometry;
 
+// Counter used to assign names to PhotoMaps created without specified name
 int 
 PhotoMap::anonymousCounter=0;
 
@@ -15,6 +16,33 @@ PhotoMap::PhotoMap(string name_): name(name_) {
   }
 }
 
+// Default implement of inverse will assume we have an additive forward
+// transform that is independent of the input mag.
+double
+PhotoMap::inverse(double magOut, const PhotoArguments& args) const {
+  double dMag = forward(magOut, args) - magOut;
+  return magOut - dMag;
+}
+
+void
+PhotoMap::NewtonInverse(double magOut,
+			double& magIn,
+			const PhotoArguments& args,
+			double magTolerance) const {
+  // Iterate Newton's method to invert magnitude map
+  // Use the input magIn as the initial guess
+  int nIter=0;
+  const int maxIterations=10;
+  while (nIter < maxIterations) {
+    double outTrial = forward(magIn, args);
+    outTrial -= magOut;
+    if ( abs(outTrial)<magTolerance) return;
+    magIn -= outTrial / derivative(magIn,args);
+    nIter++;
+  }
+  throw PhotometryError("NewtonInverse did not converge");
+}
+
 double
 PolyMap::forward(double magIn, const PhotoArguments& args) const {
   double dMag;
@@ -22,9 +50,6 @@ PolyMap::forward(double magIn, const PhotoArguments& args) const {
     dMag += poly(args.xExposure, args.yExposure);
   else
     dMag += poly(args.xDevice, args.yDevice);
-
-  if (useColor) 
-    dMag *= args.color;
   return magIn + dMag;
 }
 
@@ -36,8 +61,6 @@ PolyMap::forwardDerivs(double magIn,
     derivs = poly.derivC(args.xExposure,args.yExposure);
   else
     derivs = poly.derivC(args.xDevice, args.yDevice);
-  if (useColor)
-    derivs *= args.color;
   return forward(magIn, args);
 }
 
@@ -49,22 +72,19 @@ PolyMap::setParams(const DVector& p) {
 
 PolyMap::PolyMap(const poly2d::Poly2d& p,
 		 ArgumentType argType,
-		 string name,
-		 bool isColorTerm): PhotoMap(name), poly(p), useColor(isColorTerm) {
+		 string name): PhotoMap(name), poly(p) {
   setArgumentType(argType);
 }
 
 PolyMap::PolyMap(int orderx, int ordery,
 		 ArgumentType argType,
-		 string name,
-		 bool isColorTerm): PhotoMap(name), poly(orderx,ordery), useColor(isColorTerm) {
+		 string name): PhotoMap(name), poly(orderx,ordery) {
   setArgumentType(argType);
 }
 
 PolyMap::PolyMap(int order, 
 		 ArgumentType argType,
-		 string name,
-		 bool isColorTerm): PhotoMap(name), poly(order), useColor(isColorTerm) {
+		 string name): PhotoMap(name), poly(order) {
   setArgumentType(argType);
 }
 
@@ -100,27 +120,14 @@ PolyMap::create(std::istream& is, string name) {
   else
     throw PhotometryError("PolyMap::create() does not know argument type <" + coordType + ">");
 
-  // Use color term?
-  string s;
-  bool ifColor=false;
-  if ( iss >> s ) {
-    if (stringstuff::nocaseEqual(s, "color"))
-      ifColor = true;
-    else 
-      throw PhotometryError("PolyMap::create() expected to be told color term but got <" 
-			    + s + ">");
-  }
   poly2d::Poly2d* p = poly2d::Poly2d::create(is);
-  PolyMap* pm =  new PolyMap(*p, argType, name, ifColor);
+  PolyMap* pm =  new PolyMap(*p, argType, name);
   delete p;
   return pm;
 }
 
 void
-PolyMap::write(std::ostream& os) const {
-  os << (useExposureCoords ? "Exposure" : "Device");
-  if (useColor)
-    os << " Color";
-  os << endl;
-  poly.write(os);
+PolyMap::write(std::ostream& os, int precision) const {
+  os << (useExposureCoords ? "Exposure" : "Device") << endl;
+  poly.write(os, precision);
 }

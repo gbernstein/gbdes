@@ -32,8 +32,9 @@ PhotoMapCollection::PhotoMapTypeInitialize() {
 // Construction / destruction
 //////////////////////////////////////////////////////////////
 
-PhotoMapCollection::PhotoMapCollection(): parameterCount(0) {
+PhotoMapCollection::PhotoMapCollection() {
   PhotoMapTypeInitialize();
+  rebuildParameterVector();
 }
 
 PhotoMapCollection::~PhotoMapCollection() {
@@ -224,6 +225,7 @@ PhotoMapCollection::learnMap(const PhotoMap& pm, bool duplicateNamesAreException
 
 void
 PhotoMapCollection::learn(PhotoMapCollection& rhs, bool duplicateNamesAreExceptions) {
+  if (&rhs == this) return;	// No need to learn self
   for (ConstMapIter iMap = rhs.mapElements.begin();
        iMap != rhs.mapElements.end();
        ++iMap) {
@@ -237,7 +239,7 @@ PhotoMapCollection::learn(PhotoMapCollection& rhs, bool duplicateNamesAreExcepti
     } else {
       // A new mapName for us.  Add its mapElement to our list.
       MapElement mel;
-      mel.atom = iMap->second.atom->duplicate();
+      if (iMap->second.atom) mel.atom = iMap->second.atom->duplicate();
       mel.isFixed = iMap->second.isFixed;
       mel.subordinateMaps = iMap->second.subordinateMaps;
       mapElements.insert(std::pair<string,MapElement>(iMap->first, mel));
@@ -322,7 +324,13 @@ PhotoMapCollection::cloneMap(string mapName) const {
 	 i != el.subordinateMaps.end();
 	 ++i) 
     vMaps.push_back(cloneMap(*i));
-  return new SubMap(vMaps, mapName, false);
+  SubMap* retval = new SubMap(vMaps, mapName, false);
+  // Clean up the stray clones since they've been duplicated by SubMap:
+  for (list<PhotoMap*>::iterator i = vMaps.begin();
+       i != vMaps.end();
+       ++i)
+    delete *i;
+  return retval;
 }
 
 set<string>
@@ -410,10 +418,19 @@ void
 PhotoMapCollection::writeSingleMap(ostream& os, const MapElement& mel, string name)  const {
   if (mel.atom) {
     // Atomic map, give all details:
-    os << mel.atom->getType() 
-       << " " << name
-       << endl;
-    mel.atom->write(os);
+    const PhotoMap* writer = mel.atom;
+    // Write map type and name on first line
+    os << mel.atom->getType() << " " 
+       << " " << name;
+    const ColorTerm* ct = dynamic_cast<const ColorTerm*> (mel.atom);
+    if (ct) {
+      // We have a color term which is wrapping another map.
+      // Give the type of the wrapped PhotoMap then print its specs
+      writer = ct->map();
+      os << " " << writer->getType();
+    }
+    os << endl;
+    writer->write(os);
   } else {
     // For compound map, just give names of constituents
     os << SubMap::mapType()
@@ -486,7 +503,19 @@ PhotoMapCollection::read(istream& is, string namePrefix) {
       throw PhotometryError("PhotoMapCollection::read() format error at line: " + buffer);
     name = namePrefix + name;
 
+    // First see if this is a color term wrapping another map
+    bool isColorTerm = stringstuff::nocaseEqual(otype, ColorTerm::mapType());
+    
+    if (isColorTerm) {
+      if (!(iss >> otype)) 
+	throw PhotometryError("PhotoMapCollection::read() missing wrapped type for ColorTerm at line: "
+			      + buffer);
+    }
+
     if (stringstuff::nocaseEqual(otype, SubMap::mapType())) {
+      if (isColorTerm)
+	throw PhotometryError("Not configured to deserialize a ColorTerm wrapping a SubMap, "
+			      "for name " + name);
       int nmaps;
       if (!(iss >> nmaps)) 
 	throw PhotometryError("PhotoMapCollection::read() missing number of SubMap components at line "
@@ -526,7 +555,13 @@ PhotoMapCollection::read(istream& is, string namePrefix) {
       for (int iType=0; iType < mapTypeNames.size(); iType++) {
 	if (stringstuff::nocaseEqual(otype, mapTypeNames[iType])) {
 	  // call the create() for the one that matches
-	  atom = (*mapCreators[iType])(is, name);
+	  if (isColorTerm) {
+	    // Our atom is a color term wrapping an anonymous PhotoMap
+	    // ColorTerm assumes ownership of the created PhotoMap
+	    atom = new ColorTerm((*mapCreators[iType])(is,""), name);
+	  } else {
+	    atom = (*mapCreators[iType])(is, name);
+	  }
 	  break;
 	}
       }

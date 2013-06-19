@@ -148,6 +148,8 @@ main(int argc, char *argv[])
   string fixMaps;
   string canonicalExposures;
   string outPhotFile;
+  string priorFile;
+  string outPriorFile;
   Pset parameters;
   {
     const int def=PsetMember::hasDefault;
@@ -189,13 +191,16 @@ main(int argc, char *argv[])
 			 "list of map components or instruments to hold fixed","");
     parameters.addMember("canonicalExposures",&canonicalExposures, def,
 			 "list of exposures that will have identity exposure maps","");
+    parameters.addMember("priorFile", &priorFile, def,
+			 "File specifying any priors to apply to zeropoints and colors", "");
 
     parameters.addMemberNoValue("FILES");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "wcscat.fits");
     parameters.addMember("outPhotFile",&outPhotFile, def,
 			 "Output serialized photometric solutions", "photfit.phot");
-
+    parameters.addMember("outPriorFile",&outPriorFile, def,
+			 "Output listing of zeropoints etc of exposures tied by priors","");
     // ?? distinct outputs for each extension's photometric fits?
   }
 

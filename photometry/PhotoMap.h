@@ -33,7 +33,6 @@ namespace photometry {
     double xExposure;
     double yExposure;
     double color;
-    double airmass; // ??
   };
 
   class PhotoMap {
@@ -43,8 +42,11 @@ namespace photometry {
     // Return pointer to deep copy of self
     virtual PhotoMap* duplicate() const =0;
 
-    // forward and inverse magnitude transformations:
+    // forward transformations:
     virtual double forward(double magIn, const PhotoArguments& args) const=0;
+    // There will be a default inverse which assumes that transform is an additive quantity
+    // independent of the input mag:
+    virtual double inverse(double magOut, const PhotoArguments& args) const;
     // d(magOut)/d(magIn); base implementation is unity
     virtual double derivative(double magIn, const PhotoArguments& args) const {return 1.;}
 
@@ -60,10 +62,21 @@ namespace photometry {
     virtual double forwardDerivs(double magIn, const PhotoArguments& args,
 				 DVector& derivs) const {return forward(magIn, args);}
 
+    // Does the transform require object colors?  Default is no.
+    virtual bool needsColor() const {return false;}
+
     // For serialization:
-    virtual void write(std::ostream& os) const =0;
+    static const int DEFAULT_PRECISION=8;
+    virtual void write(std::ostream& os, int precision=DEFAULT_PRECISION) const =0;
     string getName() const {return name;}
     virtual string getType() const =0;
+  protected:
+    // This can be used by derived classes to do inversion if they are nonlinear in magnitude:
+    // Notice 1 mmag default tolerance.
+    void NewtonInverse(double magOut,
+		       double& magIn,
+		       const PhotoArguments& args,
+		       double magTolerance=0.001) const;
   private:
     string name;
     static int anonymousCounter;
@@ -79,7 +92,55 @@ namespace photometry {
     virtual string getType() const {return mapType();}
     static PhotoMap* create(std::istream& is, string name_="") {return new IdentityMap;}
     virtual double forward(double magIn, const PhotoArguments& args) const {return magIn;}
-    virtual void write(std::ostream& os) const {} // Nothing to write
+    virtual void write(std::ostream& os, int precision) const {} // Nothing to write
+  };
+
+  // A ColorTerm will take any other kind of PhotoMap and multiply its shift by the color given
+  // in the PhotoArguments.
+  // The ColorTerm will assume ownership of the PhotoMap that it wraps and will delete it.  
+  class ColorTerm: public PhotoMap {
+  public:
+    ColorTerm(PhotoMap* pm_, string name=""): PhotoMap(name),
+					      pm(pm_) {
+      /* ??? possibly check not wrapping another ColorMap */
+    }
+    virtual ~ColorTerm() {delete pm;}
+    // Access the wrapped PhotoMap:
+    const PhotoMap* map() const {return pm;}
+
+    virtual PhotoMap* duplicate() const {return new ColorTerm(pm->duplicate(), getName());}
+    static string mapType() {return "Color";}
+    virtual string getType() const {return mapType();}
+    /* will not have Create() call since color maps will be built by PhotoMapCollection */
+    virtual void write(std::ostream& os, int precision) const {
+      throw PhotometryError("ColorTerm " + getName() + " should not be getting serialized");
+    }
+    bool needsColor() const {return true;}
+
+    double forward(double magIn, const PhotoArguments& args) const {
+      return magIn + args.color * (pm->forward(magIn,args)-magIn);
+    }
+
+    double derivative(double magIn, const PhotoArguments& args) const {
+	return 1. + args.color * (pm->derivative(magIn,args)-1.);
+    }
+
+    double forwardDerivs(double magIn, const PhotoArguments& args, 
+			 DVector& derivs) const {
+      double magOut = pm->forwardDerivs(magIn, args, derivs);
+      derivs *= args.color;
+      return magIn + args.color*(magOut-magIn);
+    }
+
+    int nParams() const {return pm->nParams();}
+    void setParams(const DVector& p) {pm->setParams(p);}
+    DVector getParams() const {return pm->getParams();}
+    
+  private:
+    PhotoMap* pm;
+    /*Hide - do not want confused ownership*/
+    ColorTerm(const ColorTerm& rhs);
+    void operator=(const ColorTerm& rhs);
   };
 
   // Class adds a polynomial function of coordinates to the magnitude. 
@@ -91,22 +152,18 @@ namespace photometry {
     enum ArgumentType {Device, Exposure};
     PolyMap(const poly2d::Poly2d& p,
 	    ArgumentType argType,
-	    string name="",
-	    bool isColorTerm=false);
+	    string name="");
     // Constructor with 1 order has terms with sum of x and y powers up to this order.
     // Constructor with 2 orders has all terms w/ powers of x up to orderx, y to ordery
     PolyMap(int orderx, int ordery,
 	    ArgumentType argType,
-	    string name="",
-	    bool isColorTerm=false);
+	    string name="");
     PolyMap(int order, 
 	    ArgumentType argType,
-	    string name="",
-	    bool isColorTerm=false);
-    // Note that default tolerance is set to be 1 mas if world units are degrees.
+	    string name="");
     virtual PhotoMap* duplicate() const {return new PolyMap(*this);}
       
-    ~PolyMap() {}
+    virtual ~PolyMap() {}
 
     virtual double forward(double magIn, const PhotoArguments& args) const;
     virtual double forwardDerivs(double magIn, const PhotoArguments& args,
@@ -123,12 +180,11 @@ namespace photometry {
     static string mapType() {return "Poly";}
     virtual string getType() const {return mapType();}
     static PhotoMap* create(std::istream& is, string name="");
-    void write(std::ostream& os) const;
+    void write(std::ostream& os, int precision=PhotoMap::DEFAULT_PRECISION) const;
 
   private:
     poly2d::Poly2d poly;
     bool useExposureCoords;
-    bool useColor;
     void setArgumentType(ArgumentType argType);
   };
 

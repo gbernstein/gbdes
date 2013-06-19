@@ -1,7 +1,8 @@
 // PhotoMapCollection is a storage area for many PhotoMap components that are going to be 
-// chained together in different combinations to consitute the astrometric maps
-// for different regions of a dataset.  It also stores and creates Wcs's from these maps.
-//    Use PhotoMapCollection to store all the components and produce all the CompoundMaps
+// chained together in different combinations to constitute the photometric maps.
+// Also enables global fitting of the parameters of these maps, including the use of
+// priors relating the zeropoints of different exposures.
+//    Use PhotoMapCollection to store all the components and produce all the SubMaps
 // that represent the chains; this class will then do the bookkeeping and destruction of
 // them all.
 //    PhotoMapCollection also can serialize itself to a stream or reconstruct maps
@@ -76,9 +77,10 @@ namespace photometry {
     // works with a single contiguous vector of parameters of all components.
     void setParams(const DVector& p);
     DVector getParams() const;
-    int nParams() const {return totalFreeParameters;} // ??? need nSubParams too ???
+    int nParams() const {return totalFreeParameters;} 
 
     virtual double forward(double magIn, const PhotoArguments& args) const;
+    virtual double inverse(double magOut, const PhotoArguments& args) const;
     virtual double derivative(double magIn, const PhotoArguments& args) const;
     virtual double forwardDerivs(double magIn, const PhotoArguments& args,
 				 DVector& derivs) const;
@@ -86,11 +88,10 @@ namespace photometry {
     static string mapType() {return "Composite";}
     virtual string getType() const {return mapType();}
 
-    void write(ostream& os) const {
+    void write(ostream& os, int precision) const {
       throw PhotometryError("SubMap " + getName() + " should not be getting serialized");
     }
   };
-
 
   class PhotoMapCollection {
   public:

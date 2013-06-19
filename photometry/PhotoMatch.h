@@ -96,6 +96,63 @@ namespace photometry {
     const_iterator end() const {return elist.end();}
   };
 
+  // A prior on zeropoints of exposures will be forcing reference points into agreement.
+  // This class is for the reference points
+  class PhotoPriorReferencePoint {
+  public:
+    double magIn;  // Magnitude assigned to 1 count per second.
+    PhotoArguments args;
+    double airmass;
+    const SubMap* map;	// Photometric map applying to this reference point
+  };
+
+  // Class that manifests some prior constraint on the agreement of zeropoints of different
+  // exposures; typically one PhotoPrior for a photometric night's data
+  // ??? Internal to PhotoMapCollection???
+  class PhotoPrior {
+  public:
+    PhotoPrior(list<PhotoPriorReferencePoint> _points,
+	       double sigma,
+	       double zeropoint = 0.,
+	       double airmassCoefficient = 0.,
+	       double colorCoefficient = 0.,
+	       bool freeZeropoint = false,
+	       bool freeAirmass = false,
+	       bool freeColor = false);
+    int nParams() const {return nFree;}
+    DVector getParams() const;
+    void setParams(const DVector& p);
+
+    // Locations of parameters in global vector
+    int startIndex() const {return globalStartIndex;}
+    int mapNumber(int iMap) const {return globalMapNumber;}
+
+    void operator()(const DVector& params, double& chisq,
+		    DVector& beta, tmv::SymMatrix<double>& alpha);
+
+    int accumulateChisq(double& chisq,
+			 DVector& beta,
+			//**tmv::SymMatrix<double>& alpha);
+			AlphaUpdater& updater);
+    // sigmaClip returns true if clipped, and deletes the clipped guy
+    bool sigmaClip(double sigThresh);
+    // Chisq for this match, also updates dof for free parameters
+    double chisq(int& dof, double& maxDeviateSq) const;
+    
+  private:
+    double sigma;	// strength of prior (mags) at each reference point
+    list<PhotoPriorReferencePoint> points;
+    int nFree;	// Count of number of free parameters among m, a, b.
+    int globalStartIndex;	// Index of m/a/b in PhotoMapCollection param vector
+    int globalMapNumber;	// map number for resource locking
+    bool mIsFree;
+    bool aIsFree;
+    bool bIsFree;
+    double m;	// Mag zeropoint
+    double a;	// X-1 airmass coefficient
+    double b;	// color coefficient
+  }
+
   // Class that fits to make magnitudes agree
   class PhotoAlign {
   private:
