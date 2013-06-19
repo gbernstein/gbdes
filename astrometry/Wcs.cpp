@@ -36,7 +36,7 @@ Wcs::toSky(double xpix, double ypix) const {
   // Create duplicate coordinates for thread safety:
   SphericalCoords* nc = nativeCoords->duplicate();
   nc->setLonLat(xw*wScale, yw*wScale);
-  SphericalICRS retval(*nativeCoords);
+  SphericalICRS retval(*nc);
   delete nc;
   return retval;
 }

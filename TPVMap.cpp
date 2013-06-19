@@ -94,7 +94,7 @@ ReadPV(const Header* h, int ipv) {
   else if (ipv==2) 
     prefix="PV2_";
   else 
-    throw AstrometryError("SCAMPMap::ReadPV needs ipv=1 or 2");
+    throw AstrometryError("TPVMap::ReadPV needs ipv=1 or 2");
   vector<double> coeffs;
   // Convention is that PV1_1 and PV2_1 default to 1. while other
   // coefficients default to 0, so that absence of any keywords equals
@@ -175,7 +175,7 @@ WritePV(const PolyMap& pm,
     coeffs = cm;
     coeffs.transposeSelf();
   } else {
-    throw AstrometryError("SCAMPMap::WritePV needs ipv=1 or 2");
+    throw AstrometryError("TPVMap::WritePV needs ipv=1 or 2");
   }
   int order = coeffs.nrows()-1;
   int i=0;
@@ -434,7 +434,7 @@ astrometry::fitTPV(Bounds<double> b,
   }
 
   if (rms>tolerance) {
-    cerr << "WARNING:  SCAMPMap RMS is " << rms*DEGREE/ARCSEC
+    cerr << "WARNING:  TPVMap RMS is " << rms*DEGREE/ARCSEC
 	 << " at maximum order " << polyOrder
 	 << " fitting Wcs " << wcsIn.getName()
 	 << endl;

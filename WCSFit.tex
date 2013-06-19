@@ -136,19 +136,23 @@ FITTING???
 \section{Inputs}
 The program is called as
 
-{\tt WCSFit} {???\it $\langle$field specs$\rangle\,\langle$exposure specs$\rangle\, [$parameter file$]\,[$parameter file$]\ldots$}
+{\tt WCSFit} {???\it $\langle$match file$\rangle\\, [$parameter file$]\,[$parameter file$]\ldots$}
 
-The standard input is read as additional parameter specifications.  If you have no additional parameters you will need to send an empty file to stdin.  
+The standard input is read as additional parameter specifications.  If you have no additional parameters you will need to send an empty file to stdin.  The {\it match file} is a multi-extension FITS files with the extensions produced by {\tt WCSFoF}.  It will contain the paths of the object catalog FITS files, which will be accessed by {\tt WCSFit}.
 
 \subsection{Parameters}
 Parameters can be specified one per line as {\it $\langle$parameter name$\rangle [{\tt=}] \langle$value$\rangle\; [ {\tt \#;}]$ comment.}
 \begin{itemize}
-\item {\tt matchRadius:} Distance (in arcsec) for friends-of-friends matching algorithm. (Default $=1$.)
-\item {\tt useAffinities:} Force matches to be from the same affinity class ({\tt true}).
-\item {\tt outName:} Filename for the output FITS tables ({\it match.cat}).
+\item {\tt maxPixError:} Detections with pixel uncertainties above this value are ignored (default 0.1):
+\item {\tt pixSysError:} An error (in pixels) that is added in quadrature to all detections except reference objects (0.01)
+\item {\tt referenceSysError:} An error (in arcsec) that is added in quadrature to all reference objects (0.003)
 \item {\tt minMatch:} Minimum number of detections for a match to be retained (2).
-\item {\tt selfMatch:} If false, reject all matches that have more than one detection from the same exposure ({\tt true}).
-\item {\tt renameInstruments:} A translation table for instrument names.  This is a string having the format {\it $\langle$regex1$\rangle=\langle$replace1$\rangle, $ $\langle$regex2$\rangle=\langle$replace2$\rangle, \ldots.$}  Incoming instrument names are checked for matches with any of the regular expressions; if they match one, the name is translated into the replacement test.  Examples:
+\item {\tt clipThresh:} the number of rescaled sigmas beyond which objects are rejected as outliers.  See algorithm discussion below. (5)
+\item {\tt clipEntireMatch:}  If {\tt true}, the discovery of an outlier in a match will cause the entire match to be ignored.  The default of {\tt false} means that only the outlier detection is discarded---although a final round of clipping is always performed for which {\tt clipEntireMatch} is treated as {\tt true}.  [This is necessary for cases of spurious matches between two distinct objects that each have many detections.]
+\item {\tt reserveFraction:} fraction of input matches that are reserved from the 
+
+
+A translation table for instrument names.  This is a string having the format {\it $\langle$regex1$\rangle=\langle$replace1$\rangle, $ $\langle$regex2$\rangle=\langle$replace2$\rangle, \ldots.$}  Incoming instrument names are checked for matches with any of the regular expressions; if they match one, the name is translated into the replacement test.  Examples:
 \begin{itemize}
 \item {\tt renameInstruments = "i.* = i, r.* = r"} will change anything starting with {\tt i} or {\tt r} to the single-letter names.
 \item {\tt renameInstruments "(..).* = \textbackslash{}1"} will use just the first two letters of any instrument name.  The translated instrument name will be used when looking up an instrument in the input {\tt PixelMapCollection} files.

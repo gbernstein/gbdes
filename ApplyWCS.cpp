@@ -114,6 +114,10 @@ main(int argc, char *argv[])
       exit(1);
     }
 
+    // If we are outputting degrees, use 7 decimal places.
+    if (projection[1] || useNative[1])
+      cout << fixed << setprecision(7) << endl;
+
     // Begin reading data
     string buffer;
     while (stringstuff::getlineNoComment(cin, buffer)) {
