@@ -20,6 +20,9 @@ public:
   // Save value into output table
   virtual void writeOutputTable(img::FTable& outTable, long row) const =0;
   string getName() const {return columnName;}
+
+  bool doRead() const {return isInput;}
+  bool doWrite() const {return isOutput;}
 protected:
   string columnName;
   bool isInput;

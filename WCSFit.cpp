@@ -1150,6 +1150,7 @@ main(int argc, char *argv[])
 	    ++j;
 	  }
 	}
+	(*im)->countFit(); // Recount the fittable objects after changing wts
 	int nFit = (*im)->fitSize();
 	if ( nFit < minMatches) {
 	  // Remove entire match if it's too small, and kill its Detections too

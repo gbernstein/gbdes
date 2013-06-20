@@ -410,10 +410,8 @@ astrometry::fitTPV(Bounds<double> b,
     for (int i=0; i<vxp.size(); i++) {
       double xmod, ymod;
       poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
-      xmod = vxw[i] - xmod;
-      ymod = vyw[i] - ymod;
       for (int j=0; j<nP; j++) {
-	beta[j] += xmod*derivs(0,j) + ymod*derivs(1,j);
+	beta[j] += vxw[i]*derivs(0,j) + vyw[i]*derivs(1,j);
 	for (int k=0; k<=j; k++) 
 	  alpha(j,k)+=derivs(0,j)*derivs(0,k) + derivs(1,j)*derivs(1,k);
       }
@@ -425,7 +423,7 @@ astrometry::fitTPV(Bounds<double> b,
     rms = 0.;
     for (int i=0; i<vxp.size(); i++) {
       double xmod, ymod;
-      poly.toWorldDerivs(vxp[i], vyp[i], xmod, ymod, derivs);
+      poly.toWorld(vxp[i], vyp[i], xmod, ymod);
       rms += pow(vxw[i] - xmod, 2.) + pow(vyw[i] - ymod,2.);
     }
     rms = sqrt(rms/vxp.size());
@@ -435,7 +433,7 @@ astrometry::fitTPV(Bounds<double> b,
 
   if (rms>tolerance) {
     cerr << "WARNING:  TPVMap RMS is " << rms*DEGREE/ARCSEC
-	 << " at maximum order " << polyOrder
+	 << " at maximum order " << polyOrder-1
 	 << " fitting Wcs " << wcsIn.getName()
 	 << endl;
   }
