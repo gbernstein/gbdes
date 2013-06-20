@@ -48,6 +48,7 @@ namespace photometry {
     int  field;
     int  instrument;
     string mapName;	// name of PhotoMap for this Exposure
+    double airmass;	// Airmass at reference position
   private:
     // Hide:
     Exposure(const Exposure& rhs);

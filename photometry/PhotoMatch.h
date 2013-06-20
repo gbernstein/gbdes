@@ -108,7 +108,7 @@ namespace photometry {
 
   // Class that manifests some prior constraint on the agreement of zeropoints of different
   // exposures; typically one PhotoPrior for a photometric night's data
-  // ??? Internal to PhotoMapCollection???
+
   class PhotoPrior {
   public:
     PhotoPrior(list<PhotoPriorReferencePoint> _points,
@@ -158,27 +158,40 @@ namespace photometry {
   private:
     list<Match*>& mlist;
     PhotoMapCollection& pmc;
+    list<PhotoPrior*>& priors;
     double relativeTolerance;
+    int nPriorParams;
+    int priorMapNumber;	// Map number assigned to all params in the priors
+    void countPriorParams();
   public:
     PhotoAlign(PhotoMapCollection& pmc_,
-	       list<Match*>& mlist_): mlist(mlist_),
-				      pmc(pmc_), 
-				      relativeTolerance(0.001)  {}
+	       list<Match*>& mlist_,
+	       list<PhotoPrior*>& priors_): mlist(mlist_),
+					    pmc(pmc_), 
+					    priors(priors_),
+					    relativeTolerance(0.001)  {countPriorParams();}
 
-    void remap();	// Re-map all Detections using current params
-    double fitOnce(bool reportToCerr=true);	// Returns chisq of previous fit, updates params.
     // Conduct one round of sigma-clipping.  If doReserved=true, 
     // then only clip reserved Matches.  If =false, then
     // only clip non-reserved Matches.
     int sigmaClip(double sigThresh, bool doReserved=false,
 		  bool clipEntireMatch=false);
+    // Clip the priors to eliminate non-photometric exposures.  Set the flag to
+    // eliminate all use of a prior that has any outliers (one bad exposure means full night
+    // is assumed non-photometric).
+    int sigmaClipPrior(double sigThresh, bool clipEntirePrior=false);
+
     // Calculate total chisq.  doReserved same meaning as above.
+    void setParams(const DVector& p);
+    DVector getParams() const;
+    int nParams() const {return pmc.nParams() + nPriorParams;}
+
+    void remap();	// Re-map all Detections using current params
+    double fitOnce(bool reportToCerr=true);	// Returns chisq of previous fit, updates params.
     double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
-    void setParams(const DVector& p) {pmc.setParams(p);}
-    DVector getParams() const {return pmc.getParams();}
-    int nParams() const {return pmc.nParams();}
     void operator()(const DVector& params, double& chisq,
 		    DVector& beta, tmv::SymMatrix<double>& alpha);
+
     void setRelTolerance(double tol) {relativeTolerance=tol;}
     // Return count of useful (un-clipped) Matches & Detections.
     // Count either reserved or non-reserved objects, and require minMatches useful
