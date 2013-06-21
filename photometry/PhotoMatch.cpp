@@ -546,6 +546,20 @@ PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   return nclip;
 }
 
+int
+PhotoAlign::sigmaClipPrior(double sigThresh, bool clipEntirePrior) {
+  int nClip = 0;
+  for (list<PhotoPrior*>::iterator i = priors.begin();
+       i != priors.end();
+       ++i) 
+    if ((*i)->sigmaClip(sigThresh)) {
+      // Clipped something.
+      nClip++;
+      if (clipEntirePrior) (*i)->clipAll();
+    }
+  return nClip;
+}
+
 double
 PhotoAlign::chisqDOF(int& dof, double& maxDeviate, 
 		     bool doReserved) const {
@@ -562,7 +576,15 @@ PhotoAlign::chisqDOF(int& dof, double& maxDeviate,
     chisq += (*i)->chisq(dof, maxDeviate);
   }
   maxDeviate = sqrt(maxDeviate);
-  if (!doReserved) dof -= pmc.nParams();
+  if (!doReserved) {
+    // If doing the fitted objects, include prior and adjust DOF for fit
+    dof -= pmc.nParams();
+    for (list<PhotoPrior*>::const_iterator i = priors.begin();
+	 i != priors.end();
+	 ++i) {
+      chisq += (*i)->chisq(dof);
+    }
+  }
   return chisq;
 }
 
@@ -604,4 +626,19 @@ PhotoAlign::count(long int& mcount, long int& dcount,
   }
 }
 
-
+void
+PhotoAlign::countPriorParams() {
+  // Reassign all counts/pointers for parameters of priors.
+  // Degenerate priors will be skipped.
+  int startIndex = pmc.nParams();
+  int mapNumber = pmc.nFreeMaps();
+  for (list<PhotoPrior*>::const_iterator i = priors.begin();
+       i != priors.end();
+       ++i) {
+    if ((*i)->isDegenerate()) continue;
+    (*i)->globalStartIndex = startIndex;
+    startIndex += (*i)->nParams();
+    (*i)->globalMapNumber = mapNumber++;
+  }
+  nPriorParams = startIndex - pmc.nParams();
+}

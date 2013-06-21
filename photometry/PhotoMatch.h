@@ -148,8 +148,10 @@ namespace photometry {
     int nParams() const {return nFree;}
     DVector getParams() const;
     void setParams(const DVector& p);
+    // If this call is true, prior cannot be used for fitting:
+    bool isDegenerate() const {return nFit < nFree;}
 
-    double getName() const {return name;}
+    string getName() const {return name;}
 
     double getZeropoint() const {return m;}
     double getAirmass() const {return a;}
@@ -168,6 +170,8 @@ namespace photometry {
 			AlphaUpdater& updater);
     // sigmaClip returns true if clipped one, and only will clip worst one - no recalculation
     bool sigmaClip(double sigThresh);
+    // Mark all of this prior as clipped (will no longer be fit)
+    void clipAll();
     // Chisq for this match, also updates dof for free parameters - no recalculation
     double chisq(int& dof) const;
     
@@ -176,6 +180,7 @@ namespace photometry {
     list<PhotoPriorReferencePoint> points;
     string name;
     int nFree;	// Count of number of free parameters among m, a, b.
+    friend class PhotoAlign;	// PhotoAlign can change the global indices
     int globalStartIndex;	// Index of m/a/b in PhotoMapCollection param vector
     int globalMapNumber;	// map number for resource locking
     bool mIsFree;
@@ -213,7 +218,7 @@ namespace photometry {
 		  bool clipEntireMatch=false);
     // Clip the priors to eliminate non-photometric exposures.  Set the flag to
     // eliminate all use of a prior that has any outliers (one bad exposure means full night
-    // is assumed non-photometric).
+    // is assumed non-photometric).  Returns number of priors with a clip.
     int sigmaClipPrior(double sigThresh, bool clipEntirePrior=false);
 
     // Calculate total chisq.  doReserved same meaning as above.
