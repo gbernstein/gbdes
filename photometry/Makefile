@@ -16,7 +16,7 @@ CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
 
 SRC = $(shell ls *.cpp)
 
-OBJ = PhotoMap.o PhotoMapCollection.o SubMap.o
+OBJ = PhotoMap.o PhotoMapCollection.o SubMap.o PhotoPrior.o PhotoMatch.o
 
 # LIB_DIRS 
 LIB_DIRS = -L $(TMV_DIR)/lib -L $(BOOST_DIR)/lib

@@ -25,95 +25,104 @@ using namespace photometry;
 ///// Class that regulates rank-one updates to small portions of
 ///// the giant alpha symmetric matrix, allowing finer-grained locking
 /////////////////////////////////////////////////////////////
-class photometry::AlphaUpdater {
-public:
-  AlphaUpdater(tmv::SymMatrix<double>& alpha_,
-	       const PhotoMapCollection& pmc_,
-	       int nLocks=0): alpha(alpha_), pmc(pmc_) {
+AlphaUpdater::AlphaUpdater(tmv::SymMatrix<double>& alpha_,
+			   int nMaps_,
+			   int nLocks): alpha(alpha_), nMaps(nMaps_) {
 #ifdef _OPENMP
-    // Decide how many map elements per lock
-    nMaps = pmc.nFreeMaps();
-    int nBlocks = nMaps*(nMaps+1)/2;
-    if (nLocks > nBlocks || nLocks<=0) {
-      blockLength = 1;
-      nLocks = nBlocks;
-    } else {
-      blockLength = nBlocks / nLocks;
-      nLocks = (nBlocks+blockLength+-1) / blockLength;
-    }
-    locks.resize(nLocks);
-    // build array of locks
-    for (int i=0; i<locks.size(); i++)
-      omp_init_lock(&locks[i]);
-#endif
+  // We will set up locks for altering subregions of the matrix.
+  // The regions will be divided into sets of parameters from
+  // a range of PixelMaps.  nMaps is the total number of maps
+  // with free parameters and nLocks is the number of distinct lockable regions
+  // we want to have.  Matrix is symmetric so we are dividing a triangular region.
+  // First decide how many map elements per lock
+  int nBlocks = nMaps*(nMaps+1)/2;
+  if (nLocks > nBlocks || nLocks<=0) {
+    blockLength = 1;
+    nLocks = nBlocks;
+  } else {
+    blockLength = nBlocks / nLocks;
+    nLocks = (nBlocks+blockLength+-1) / blockLength;
   }
-  ~AlphaUpdater() {
-#ifdef _OPENMP    // Release locks
-    for (int i=0; i<locks.size(); i++)
-      omp_destroy_lock(&locks[i]);
+  locks.resize(nLocks);
+  // build array of locks
+  for (int i=0; i<locks.size(); i++)
+    omp_init_lock(&locks[i]);
 #endif
-  }
-  // Update submatrix with corner at (startIndex1,startIndex2) with += scalar * v1 ^ v2
-  // map[12] are sequence numbers of map components in the PixelMapCollection, used
-  // to divide the matrix into blocks for locking in multithreaded case
-  void rankOneUpdate(int map1, int startIndex1, tmv::VectorView<double>& v1, 
-		     int map2, int startIndex2, tmv::VectorView<double>& v2,
-		     double scalar=1.) {
-    if (v1.size() <= 0 || v2.size() <=0) return;	// Nothing to add.
-    bool diagonal = (map1 == map2);
-    bool swapVectors = (map1 < map2);
-
-#ifdef _OPENMP
-    // Get the block index corresponding to these 2 keys
-    int block = (swapVectors ? (map2*(map2+1)/2 + map1) : (map1*(map1+1)/2 + map2))
-      / blockLength;
-    Assert(block < locks.size());
-    // Set lock for its region - will wait here if busy!
-    omp_set_lock(&locks[block]);
-    // Pre-multiply the vectors?
-#endif
-    if (diagonal) {
-      alpha.subSymMatrix(startIndex1, startIndex1 + v1.size()) += scalar * v1 ^ v1;
-    } else if (swapVectors) {
-      alpha.subMatrix(startIndex2, startIndex2+v2.size(),
-		      startIndex1, startIndex1+v1.size()) += scalar * v2 ^ v1;
-    } else {
-      alpha.subMatrix(startIndex1, startIndex1+v1.size(),
-		      startIndex2, startIndex2+v2.size()) += scalar * v1 ^ v2;
-    }
-#ifdef _OPENMP
-    omp_unset_lock(&locks[block]);
-#endif
-  }
-private:
-  tmv::SymMatrix<double>& alpha;
-  const PhotoMapCollection& pmc;
-#ifdef _OPENMP
-  int nLocks;
-  int blockLength;
-  int nMaps;
-  // Lock array
-  vector<omp_lock_t> locks;
-#endif
-};
-
-Match::Match(Detection *e): elist(1,e), nFit(1), isReserved(false) {
-  e->itsMatch = this;
 }
+
+AlphaUpdater::~AlphaUpdater() {
+#ifdef _OPENMP    // Release locks
+  for (int i=0; i<locks.size(); i++)
+    omp_destroy_lock(&locks[i]);
+#endif
+}
+
+
+// Update submatrix with corner at (startIndex1,startIndex2) with += scalar * v1 ^ v2
+// map[12] are sequence numbers of map components in the PixelMapCollection, used
+// to divide the matrix into blocks for locking in multithreaded case
+void 
+AlphaUpdater::rankOneUpdate(int map1, int startIndex1, tmv::ConstVectorView<double> v1, 
+			    int map2, int startIndex2, tmv::ConstVectorView<double> v2,
+			    double scalar) {
+  if (v1.size() <= 0 || v2.size() <=0) return;	// Nothing to add.
+  bool diagonal = (map1 == map2);
+  bool swapVectors = (map1 < map2);
+
+#ifdef _OPENMP
+  // Get the block index corresponding to these 2 keys
+  int block = (swapVectors ? (map2*(map2+1)/2 + map1) : (map1*(map1+1)/2 + map2))
+    / blockLength;
+  Assert(block < locks.size());
+  // Set lock for its region - will wait here if busy!
+  omp_set_lock(&locks[block]);
+  // Pre-multiply the vectors?
+#endif
+  if (diagonal) {
+    alpha.subSymMatrix(startIndex1, startIndex1 + v1.size()) += scalar * v1 ^ v1;
+  } else if (swapVectors) {
+    alpha.subMatrix(startIndex2, startIndex2+v2.size(),
+		    startIndex1, startIndex1+v1.size()) += scalar * v2 ^ v1;
+  } else {
+    alpha.subMatrix(startIndex1, startIndex1+v1.size(),
+		    startIndex2, startIndex2+v2.size()) += scalar * v1 ^ v2;
+  }
+#ifdef _OPENMP
+  omp_unset_lock(&locks[block]);
+#endif
+}
+
+bool
+Match::isFit(const Detection* e) {
+  // A Detection will contribute to fit if it has nonzero weight and is not clipped.
+  return !(e->isClipped) && e->wt>0.;
+}
+
+Match::Match(Detection *e): elist(), nFit(0), isReserved(false) {
+  add(e);
+}
+
 void
 Match::add(Detection *e) {
   elist.push_back(e);
   e->itsMatch = this;
   e->isClipped = false;
-  nFit++;
+  if ( isFit(e)) nFit++;
 }
 
 void
 Match::remove(Detection* e) {
   elist.remove(e);  
   e->itsMatch = 0;
-  // Recount fittable objects
-  countFit();
+  if ( isFit(e) ) nFit--;
+}
+
+list<Detection*>::iterator 
+Match::erase(list<Detection*>::iterator i,
+	     bool deleteDetection) {
+  if (isFit(*i)) nFit--;
+  if (deleteDetection) delete *i;
+  return elist.erase(i);
 }
 
 void
@@ -140,14 +149,13 @@ Match::clipAll() {
 }
 
 // Update and return count of fittable objects:
-int
+void
 Match::countFit() {
   nFit = 0;
   for (list<Detection*>::iterator i=elist.begin();
        i!=elist.end();
-       ++i) 
-    if ( !(*i)->isClipped && !(*i)->wt==0.) nFit++;
-  return nFit;
+       ++i)
+    if (isFit(*i)) nFit++;
 }
 
 void
@@ -215,17 +223,15 @@ Match::accumulateChisq(double& chisq,
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     int npi = (*i)->map->nParams();
-    double magOut;
     if (npi>0) {
       di[ipt] = new DVector(npi);
-      magOut = (*i)->map->forwardDerivs((*i)->magIn, (*i)->args,
-					*di[ipt]);
+      (*i)->magOut = (*i)->map->forwardDerivs((*i)->magIn, (*i)->args,
+					      *di[ipt]);
     } else {
-      magOut = (*i)->map->forward((*i)->magIn, (*i)->args);
+      (*i)->magOut = (*i)->map->forward((*i)->magIn, (*i)->args);
     }
-    (*i)->magOut = magOut;
   }
 
   getMean(mean,wt);
@@ -236,7 +242,7 @@ Match::accumulateChisq(double& chisq,
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     double wti=(*i)->wt;
     double mi=(*i)->magOut;
 
@@ -313,7 +319,7 @@ Match::accumulateChisq(double& chisq,
 bool
 Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
-  // ??? Only clip the worst outlier at most
+  // Only clip the worst outlier at most
   double mean;
   if (nFit<=1) return false;
   double maxSq=0.;
@@ -321,7 +327,7 @@ Match::sigmaClip(double sigThresh,
   getMean(mean);
   for (list<Detection*>::iterator i=elist.begin(); 
        i!=elist.end(); ++i) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     double mi = (*i)->magOut;
     double clipsq = (*i)->clipsq;
     double devSq = (mi-mean)*(mi-mean)*clipsq;
@@ -364,7 +370,7 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
   for (list<Detection*>::const_iterator i=elist.begin(); 
        i!=elist.end(); 
        ++i) {
-    if ((*i)->isClipped) continue;
+    if (!isFit(*i)) continue;
     double mi = (*i)->magOut;
     double wti = (*i)->wt;
     double cc = (mi-mean)*(mi-mean)*wti;
@@ -378,7 +384,8 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
 void
 PhotoAlign::operator()(const DVector& p, double& chisq,
 		       DVector& beta, tmv::SymMatrix<double>& alpha) {
-  int nP = pmc.nParams();
+  countPriorParams();
+  int nP = nParams();
   Assert(p.size()==nP);
   Assert(beta.size()==nP);
   Assert(alpha.nrows()==nP);
@@ -389,7 +396,7 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
   int matchCtr=0;
 
   const int NumberOfLocks = 2000;
-  AlphaUpdater updater(alpha, pmc, NumberOfLocks);
+  AlphaUpdater updater(alpha, pmc.nFreeMaps(), NumberOfLocks);
 
 #ifdef _OPENMP
   const int chunk=10000;
@@ -444,6 +451,7 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
   beta += newBeta;
   }
 #else
+  // This is the match loop for single threading:
   for (list<Match*>::const_iterator i=mlist.begin();
        i != mlist.end();
        ++i) {
@@ -453,11 +461,16 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
 				<< endl;
     matchCtr++;
     if ( m->getReserved() ) continue;	//skip reserved objects
-    //**    m->accumulateChisq(newChisq, beta, alpha);
     m->accumulateChisq(newChisq, beta, updater);
   }
 #endif
   chisq = newChisq;
+
+  // Now need to accumulate the contributions from the priors.  A single thread will do.
+  for (list<PhotoPrior*>::iterator i = priors.begin();
+       i != priors.end();
+       ++i) 
+    (*i)->accumulateChisq(chisq, beta, updater);
 
   {
     //***** Code that will be useful in spotting unconstrained parameters:
@@ -501,6 +514,11 @@ PhotoAlign::remap() {
   for (list<Match*>::const_iterator i=mlist.begin();
        i != mlist.end();
        ++i)
+    (*i)->remap();
+
+  for (list<PhotoPrior*>::iterator i = priors.begin();
+       i != priors.end();
+       ++i) 
     (*i)->remap();
 }
 

@@ -15,9 +15,31 @@ using std::list;
 #include "Bounds.h"
 #include "PhotoMapCollection.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace photometry {
 
-  class AlphaUpdater; // Used only in Match.cpp ???
+  class AlphaUpdater {
+  public:
+    AlphaUpdater(tmv::SymMatrix<double>& alpha_,
+		 int nMaps_,
+		 int nLocks=0);
+    void rankOneUpdate(int map1, int startIndex1, tmv::ConstVectorView<double> v1, 
+		       int map2, int startIndex2, tmv::ConstVectorView<double> v2,
+		       double scalar=1.);
+    ~AlphaUpdater();
+  private:
+    tmv::SymMatrix<double>& alpha;
+    int nMaps;
+#ifdef _OPENMP
+    int nLocks;
+    int blockLength;
+    // Lock array
+    vector<omp_lock_t> locks;
+#endif
+  };
 
   class Match;  // Forward declaration
 
@@ -44,6 +66,7 @@ namespace photometry {
     list<Detection*> elist;
     int nFit;	// Number of un-clipped points with non-zero weight in fit
     bool isReserved;	// Do not contribute to re-fitting if true
+    static bool isFit(const Detection* e);
   public:
     Match(Detection* e);
     // Add and remove automatically update itsMatch of the Detection
@@ -52,22 +75,21 @@ namespace photometry {
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
     list<Detection*>::iterator erase(list<Detection*>::iterator i,
-				     bool deleteDetection=false) {
-      if (deleteDetection) delete *i;
-      return elist.erase(i);
-    }
+				     bool deleteDetection=false);
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
     void clear(bool deleteDetections=false);
-    void remap();  // Remap each point, i.e. make new magOut
-    // Mean of un-clipped output mags, optionally with total weight
-    void getMean(double& mag) const;
-    void getMean(double& mag, double& wt) const;
+
     int size() const {return elist.size();}
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {return nFit;}
     // Update and return count of above:
-    int countFit(); 
+    void countFit(); 
+
+    void remap();  // Remap each point, i.e. make new magOut
+    // Mean of un-clipped output mags, optionally with total weight - no remapping done
+    void getMean(double& mag) const;
+    void getMean(double& mag, double& wt) const;
 
     // Is this object to be reserved from re-fitting?
     bool getReserved() const {return isReserved;}
@@ -100,10 +122,13 @@ namespace photometry {
   // This class is for the reference points
   class PhotoPriorReferencePoint {
   public:
+    PhotoPriorReferencePoint(): airmass(1.), map(0), isClipped(false) {}
     double magIn;  // Magnitude assigned to 1 count per second.
+    double magOut;	// Mag after mapping.
     PhotoArguments args;
     double airmass;
     const SubMap* map;	// Photometric map applying to this reference point
+    bool isClipped;
   };
 
   // Class that manifests some prior constraint on the agreement of zeropoints of different
@@ -111,8 +136,9 @@ namespace photometry {
 
   class PhotoPrior {
   public:
-    PhotoPrior(list<PhotoPriorReferencePoint> _points,
-	       double sigma,
+    PhotoPrior(list<PhotoPriorReferencePoint> points_,
+	       double sigma_,
+	       string name_="",
 	       double zeropoint = 0.,
 	       double airmassCoefficient = 0.,
 	       double colorCoefficient = 0.,
@@ -123,25 +149,32 @@ namespace photometry {
     DVector getParams() const;
     void setParams(const DVector& p);
 
+    double getName() const {return name;}
+
+    double getZeropoint() const {return m;}
+    double getAirmass() const {return a;}
+    double getColor() const {return b;}
+
     // Locations of parameters in global vector
     int startIndex() const {return globalStartIndex;}
-    int mapNumber(int iMap) const {return globalMapNumber;}
+    int mapNumber() const {return globalMapNumber;}
 
-    void operator()(const DVector& params, double& chisq,
-		    DVector& beta, tmv::SymMatrix<double>& alpha);
-
+    // Recalculate *all* the reference points with current parameters
+    void remap();
+    // Recalculate the fittable points and increment chisq and fitting vector/matrix
     int accumulateChisq(double& chisq,
 			 DVector& beta,
 			//**tmv::SymMatrix<double>& alpha);
 			AlphaUpdater& updater);
-    // sigmaClip returns true if clipped, and deletes the clipped guy
+    // sigmaClip returns true if clipped one, and only will clip worst one - no recalculation
     bool sigmaClip(double sigThresh);
-    // Chisq for this match, also updates dof for free parameters
-    double chisq(int& dof, double& maxDeviateSq) const;
+    // Chisq for this match, also updates dof for free parameters - no recalculation
+    double chisq(int& dof) const;
     
   private:
     double sigma;	// strength of prior (mags) at each reference point
     list<PhotoPriorReferencePoint> points;
+    string name;
     int nFree;	// Count of number of free parameters among m, a, b.
     int globalStartIndex;	// Index of m/a/b in PhotoMapCollection param vector
     int globalMapNumber;	// map number for resource locking
@@ -151,7 +184,10 @@ namespace photometry {
     double m;	// Mag zeropoint
     double a;	// X-1 airmass coefficient
     double b;	// color coefficient
-  }
+
+    int nFit;	// Number of reference points being fit
+    void countFit();	// Update the above number
+  };
 
   // Class that fits to make magnitudes agree
   class PhotoAlign {
@@ -161,8 +197,7 @@ namespace photometry {
     list<PhotoPrior*>& priors;
     double relativeTolerance;
     int nPriorParams;
-    int priorMapNumber;	// Map number assigned to all params in the priors
-    void countPriorParams();
+    void countPriorParams();  // Update parameter counts, indices, map numbers for priors
   public:
     PhotoAlign(PhotoMapCollection& pmc_,
 	       list<Match*>& mlist_,
@@ -186,9 +221,10 @@ namespace photometry {
     DVector getParams() const;
     int nParams() const {return pmc.nParams() + nPriorParams;}
 
-    void remap();	// Re-map all Detections using current params
+    void remap();	// Re-map all Detections and Priors using current params
     double fitOnce(bool reportToCerr=true);	// Returns chisq of previous fit, updates params.
     double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
+    // This is the () operator that is called by Marquardt to try a fit with new params
     void operator()(const DVector& params, double& chisq,
 		    DVector& beta, tmv::SymMatrix<double>& alpha);
 
