@@ -131,12 +131,14 @@ main(int argc, char *argv[])
 {
   double reserveFraction;
   double clipThresh;
+  double priorClipThresh;
+  bool clipEntirePrior;
   double maxMagError;
   double magSysError;
   double referenceSysError;
   int minMatches;
   bool clipEntireMatch;
-  int exposureOrder;
+  bool exposureModel;
   string deviceModel;
   string outCatalog;
   string catalogSuffix;
@@ -144,6 +146,7 @@ main(int argc, char *argv[])
   double chisqTolerance;
   string renameInstruments;
   string useInstruments;
+  string colorExposures;
   string existingMaps;
   string fixMaps;
   string canonicalExposures;
@@ -160,48 +163,52 @@ main(int argc, char *argv[])
 
     parameters.addMemberNoValue("INPUTS");
     parameters.addMember("maxMagError",&maxMagError, def | lowopen,
-			 "Cut objects with magnitude uncertainty above this", 0.05, 0.);
+			 "cut objects with magnitude uncertainty above this", 0.05, 0.);
     parameters.addMember("magSysError",&magSysError, def | low,
-			 "Additional systematic error for all detected mags", 0.002, 0.);
+			 "additional systematic error for all detected mags", 0.002, 0.);
     parameters.addMember("referenceSysError",&referenceSysError, def | low,
 			 "Reference object systematic error (mag)", 0.05, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
-			 "Minimum number of detections for usable match", 2, 2);
+			 "minimum number of detections for usable match", 2, 2);
+    parameters.addMember("useInstruments",&useInstruments, def,
+			 "the instruments that are assumed to produce matching mags","");
+    parameters.addMember("colorExposures",&colorExposures, def,
+			 "exposures holding valid colors for stars","");
     parameters.addMemberNoValue("CLIPPING");
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
     parameters.addMember("clipEntireMatch",&clipEntireMatch, def,
 			 "Discard entire object if one outlier", false);
+    parameters.addMember("priorClipThresh",&priorClipThresh, def | low,
+			 "Clipping threshold (sigma)", 5., 2.);
+    parameters.addMember("clipEntirePrior",&clipEntirePrior, def,
+			 "Discard entire night's prior if one outlier", false);
     parameters.addMemberNoValue("FITTING");
+    parameters.addMember("priorFile", &priorFile, def,
+			 "File specifying any priors to apply to zeropoints and colors", "");
     parameters.addMember("reserveFraction",&reserveFraction, def | low,
 			 "Fraction of matches reserved from re-fit", 0., 0.);
-    parameters.addMember("exposureOrder",&exposureOrder, def | low,
-			 "Order of per-exposure map", 1, 0);
+    parameters.addMember("exposureModel",&exposureModel, def,
+			 "Form of per-exposure map", "Constant");
     parameters.addMember("deviceModel",&deviceModel, def,
 			 "Form of device map", "Poly 2");
     parameters.addMember("chisqTolerance",&chisqTolerance, def | lowopen,
 			 "Fractional change in chisq for convergence", 0.001, 0.);
     parameters.addMember("renameInstruments",&renameInstruments, def,
 			 "list of new names to give to instruments for maps","");
-    parameters.addMember("useInstruments",&useInstruments, def,
-			 "the instruments that are assumed to produce matching mags","");
     parameters.addMember("existingMaps",&existingMaps, def,
-			 "list of astrometric maps to draw from existing files","");
+			 "list of photometric maps to draw from existing files","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
     parameters.addMember("canonicalExposures",&canonicalExposures, def,
 			 "list of exposures that will have identity exposure maps","");
-    parameters.addMember("priorFile", &priorFile, def,
-			 "File specifying any priors to apply to zeropoints and colors", "");
-
-    parameters.addMemberNoValue("FILES");
+    parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "wcscat.fits");
     parameters.addMember("outPhotFile",&outPhotFile, def,
 			 "Output serialized photometric solutions", "photfit.phot");
     parameters.addMember("outPriorFile",&outPriorFile, def,
 			 "Output listing of zeropoints etc of exposures tied by priors","");
-    // ?? distinct outputs for each extension's photometric fits?
   }
 
   // Fractional reduction in RMS required to continue sigma-clipping:
@@ -251,7 +258,9 @@ main(int argc, char *argv[])
     /////////////////////////////////////////////////////
 
     // Teach PhotoMapCollection about new kinds of PhotoMaps:
-    // ???    PhotoMapCollection::registerMapType<PolyMap>();
+    // Currently all map types are automatically loaded in PhotoMapCollection constructor,
+    // but if new ones are invented, this is the format:
+    // PhotoMapCollection::registerMapType<PolyMap>();
 
     const char listSeperator=',';
 
@@ -312,25 +321,39 @@ main(int argc, char *argv[])
 
     list<string> canonicalExposureList = split(canonicalExposures, listSeperator);
     for (list<string>::iterator i = canonicalExposureList.begin();
-	 i != canonicalExposureList.end(); )
+	 i != canonicalExposureList.end(); ) {
+      stripWhite(*i);
       if (i->empty()) {
-	i = fixMapList.erase(i);
+	i = canonicalMapList.erase(i);
       } else {
-	stripWhite(*i);
 	++i;
       }
+    }
 
     // The list of instruments that we will be matching together in this run:
     // have their parameters held fixed.
     list<string> useInstrumentList = split(useInstruments, listSeperator);
     for (list<string>::iterator i = useInstrumentList.begin();
-	 i != useInstrumentList.end(); ) 
+	 i != useInstrumentList.end(); )  {
+      stripWhite(*i);
       if (i->empty()) {
 	i = useInstrumentList.erase(i);
       } else {
-	stripWhite(*i);
 	++i;
       }
+    }
+
+    // The list of exposures that are considered valid sources of color information:
+    list<string> useColorList = split(colorExposures, listSeperator);
+    for (list<string>::iterator i = useColorList.begin();
+	 i != useColorList.end(); ) {
+      stripWhite(*i);
+      if (i->empty()) {
+	i = useColorList.erase(i);
+      } else {
+	++i;
+      }
+    }
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Instruments, Devices, Exposures
@@ -403,6 +426,9 @@ main(int argc, char *argv[])
 
     // Read in the table of exposures
     vector<Exposure*> exposures;
+    // This vector will hold the color-priority value of each exposure.  -1 means an exposure
+    // that does not hold color info.
+    vector<int> exposureColorPriorities;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
       FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Exposures");
@@ -418,6 +444,7 @@ main(int argc, char *argv[])
       ff.readCells(dec, "Dec");
       ff.readCells(fieldNumber, "fieldNumber");
       ff.readCells(instrumentNumber, "InstrumentNumber");
+      exposureColorPriorities = vector<int>(names.size(), -1);
       for (int i=0; i<names.size(); i++) {
 	// The projection we will use for this exposure:
 	astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
@@ -426,9 +453,22 @@ main(int argc, char *argv[])
 	Exposure* expo = new Exposure(names[i],gn);
 	expo->field = fieldNumber[i];
 	expo->instrument = instrumentNumber[i];
+
+	// See if this exposure name matches any of the color exposures
+	int priority = 0;
+	for (list<string>::const_iterator j = useColorList.begin();
+	     j != useColorList.end();
+	     ++j, ++priority) {
+	  if (regexMatch(*j, names[i])) {
+	    // Yes: give this exposure a priority according to order of the exposure it first matches.
+	    exposureColorPriorities[i] = priority;
+	    continue;
+	  }
+	}
 	// Is this exposure in an instrument of interest, or a reference or tag?
 	if (expo->instrument>=0 && !instruments[expo->instrument]) {
 	  // No - don't save info, insert null into exposure list
+	  // ??? Need a way to specify whether to use reference exposures, tags ???
 	  delete expo;
 	  expo = 0;
 	}
@@ -439,6 +479,7 @@ main(int argc, char *argv[])
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
     vector<Extension*> extensions;
+    vector<ColorExtension*> colorExtensions;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
       extensionTable = ft.extract();
@@ -449,6 +490,17 @@ main(int argc, char *argv[])
       Extension* extn = new Extension;
       int j;
       extensionTable.readCell(j, "ExposureNumber", i);
+
+      // Determine whether this extension might be used to provide colors
+      int colorPriority = exposureColorPriorities[j];
+      if (colorPriority < 0) {
+	colorExtensions.push_back(0);
+      } else {
+	ColorExtension* ce = new ColorExtension;
+	ce->priority = colorPriority;
+	colorExtensions.push_back(ce);
+      }
+	
       if (!exposures[j]) {
 	// This extension is not in an exposure of interest.  Skip it.
 	delete extn;
@@ -706,11 +758,12 @@ main(int argc, char *argv[])
 
 	// Save this map into the collection
 	mapCollection.learnMap(*pm);
+	delete pm;
 
       } // end loop creating PhotoMaps for all Devices.
 
       // Now create an exposure map for all exposures with this instrument,
-      // and set initial parameters by fitting to input WCS map.
+      // and set initial parameters to be identity ???
 
       for (list<long>::const_iterator i= exposuresWithInstrument.begin();
 	   i != exposuresWithInstrument.end();
@@ -750,6 +803,7 @@ main(int argc, char *argv[])
 	}
 	
 	// We will create a new exposure map 
+	// ??? more general exposure map now ???  Initialize to identity ???
 	expoMap = new PolyMap(exposureOrder, 
 			      PolyMap::Exposure,	// Use exposure coords as polynomial args
 			      expo.name);
@@ -839,27 +893,65 @@ main(int argc, char *argv[])
       // Smaller collections for each match
       vector<long> extns;
       vector<long> objs;
-      for (int i=0; i<seq.size(); i++) {
-	if (seq[i]==0) {
-	  if (extns.size() >= minMatches) {
-	    // Make a match from previous few entries, if there were more than minMatches:
+      // These variables determine what the highest-priority color information available
+      // in the match is so far.
+      long matchColorExtension = -1;
+      long matchColorObject = 0;
+      int colorPriority = -1;
+      for (int i=0; i<=seq.size(); i++) {
+	if (i>=seq.size() || seq[i]==0) {
+	  // Processing the previous (or final) match.
+	  int nValid = extns.size();
+	  if (matchColorExtension < 0) {
+	    // There is no color information for this match.  So discard any detection which requires
+	    // a color to produce its map:
+	    nValid = 0;
+	    for (int j=0; j<extns.size(); j++) {
+	      Assert(extensions[extns[j]]);
+	      if (extensions[extns[j]]->map->needsColor()) {
+		// Mark this detection as useless
+		extns[j] = -1;
+	      } else {
+		nValid++;
+	      }
+	    }
+	  }
+	  if (nValid >= minMatches) {
+	    // Make a match from the valid entries, and note need to get data for the detections and color
+	    int j=0;
+	    while (extns[j]<0 && j<extns.size()) ++j;  // Skip detections starved of their color
+	    Assert(j>=extns.size());
 	    Detection* d = new Detection;
-	    d->catalogNumber = extns[0];
-	    d->objectNumber = objs[0];
+	    d->catalogNumber = extns[j];
+	    d->objectNumber = objs[j];
 	    matches.push_back(new Match(d));
-	    extensions[extns[0]]->keepers.insert(std::pair<long, Detection*>(objs[0], d));
-	    for (int j=1; j<extns.size(); j++) {
+	    extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
+	    for (++j; j<extns.size(); j++) {
+	      if (extns[j]<0) continue;  // Skip detections needing unavailable color
 	      d = new Detection;
 	      d->catalogNumber = extns[j];
 	      d->objectNumber = objs[j];
 	      matches.back()->add(d);
 	      extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
 	    }
+	    if (matchColorExtension >=0) {
+	      // Tell the color catalog that it needs to look this guy up:
+	      Assert(colorExtensions[matchColorExtension]);
+	      colorExtensions[matchColorExtension]->keepers.insert(std::pair<long,Match*>(objs[j],
+											  matches.back()));
+	    }
 	  }
 	  // Clear out previous Match:
 	  extns.clear();
 	  objs.clear();
+	  matchColorExtension = -1;
+	  colorPriority = -1;
 	} // Finished processing previous match
+
+	// If we done reading entries, quit this loop
+	if (i >= seq.size()) break;
+
+	// Read in next detection in the catalog
 	if (extn[i]<0 || extensions[extn[i]]) {
 	  // Record a Detection in a useful extension:
 	  extns.push_back(extn[i]);
@@ -867,21 +959,6 @@ main(int argc, char *argv[])
 	}
       } // End loop of catalog entries
       
-      // Make a last match out of final entries, if there are enough
-      if (extns.size() >= minMatches) {
-	Detection* d = new Detection;
-	d->catalogNumber = extns[0];
-	d->objectNumber = objs[0];
-	matches.push_back(new Match(d));
-	extensions[extns[0]]->keepers.insert(std::pair<long,Detection*>(objs[0], d));
-	for (int j=1; j<extns.size(); j++) {
-	  Detection* d = new Detection;
-	  d->catalogNumber = extns[j];
-	  d->objectNumber = objs[j];
-	  matches.back()->add(d);
-	  extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
-	}
-      }
     } // End loop over input matched catalogs
 
     // Now loop over all original catalog bintables, reading the desired rows
@@ -905,10 +982,10 @@ main(int argc, char *argv[])
       extensionTable.readCell(magKey, "magKey", iext);
       string magErrKey;
       extensionTable.readCell(magErrKey, "magErrKey", iext);
-      string colorKey;
-      extensionTable.readCell(colorKey, "colorKey", iext);
       double weight;
       extensionTable.readCell(weight, "magWeight", iext);
+      // Assume an airmass column is in the extension table.
+      // Values <1 mean (including a default 0) mean it's not available.
       double airmass;
       extensionTable.readCell(airmass, "Airmass", iext);
 
@@ -931,13 +1008,10 @@ main(int argc, char *argv[])
       }
 
       bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
-      bool useColor = !(colorKey.empty() || stringstuff::nocaseEqual(colorKey, "None"));
       // What we need to read from the FitsTable:
       vector<string> neededColumns;
       if (!useRows)
 	neededColumns.push_back(idKey);
-      if (!useColor)
-	neededColumns.push_back(colorKey);
       neededColumns.push_back(xKey);
       neededColumns.push_back(yKey);
       neededColumns.push_back(magKey);
@@ -1016,11 +1090,79 @@ main(int argc, char *argv[])
       }
     } // end loop over catalogs to read
 	
-    cerr << "Done reading catalogs." << endl;
+    cerr << "Done reading catalogs for magnitudes." << endl;
+
+    // Now loop again over all catalogs being used to supply colors,
+    // and insert colors into all the PhotoArguments for Detections they match
+    for (int iext = 0; iext < colorExtensions.size(); iext++) {
+      if (!colorExtensions[iext]) continue; // Skip unused 
+      Extension& extn = *colorExtensions[iext];
+      if (extn.keepers.empty()) continue; // Not using any colors from this catalog
+      string filename;
+      extensionTable.readCell(filename, "Filename", iext);
+      /**/cerr << "# Reading color catalog " << iext
+	       << "/" << colorExtensions.size()
+	       << " from " << filename << endl;
+      int hduNumber;
+      extensionTable.readCell(hduNumber, "HDUNumber", iext);
+      string idKey;
+      extensionTable.readCell(idKey, "idKey", iext);
+      string colorExpression;
+      extensionTable.readCell(colorExpression, "colorExpression", iext);
+      stripWhite(colorExpression);
+      if (colorExpression.empty()) {
+	cerr << "No colorExpression specified for filename " << filename
+	     << " HDU " << hduNumber
+	     << endl;
+	exit(1);
+      }
+
+      // Read the entire catalog for this extension
+      FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
+      FTable ff = ft.use();
+
+      bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
+      vector<long> id;
+      if (useRows) {
+	id.resize(ff.nrows());
+	for (long i=0; i<id.size(); i++)
+	  id[i] = i;
+      } else {
+	ff.readCells(id, idKey);
+      }
+      Assert(id.size() == ff.nrows());
+
+      vector<double> color(id.size(), 0.);
+      ff.evaluate(color, colorExpression);
+
+      for (long irow = 0; irow < ff.nrows(); irow++) {
+	map<long, Match*>::iterator pr = extn.keepers.find(id[irow]);
+	if (pr == extn.keepers.end()) continue; // Not a desired object
+
+	// Have a desired object. Put the color into everything it matches
+	Match* m = pr->second;
+	extn.keepers.erase(pr);
+
+	for ( Match::iterator j = m->begin();
+	      j != m->end();
+	      ++j) 
+	  (*j)->args.color = color[irow];
+      } // End loop over catalog objects
+
+      if (!extn.keepers.empty()) {
+	cerr << "Did not find all desired objects in catalog " << filename
+	     << " extension " << hduNumber
+	     << endl;
+	exit(1);
+      }
+    } // end loop over catalogs to read
+	
+    cerr << "Done reading catalogs for colors." << endl;
 
     // Make a pass through all matches to reserve as needed and purge 
     // those not wanted.  
 
+    // ??? Count fitted detections per exposure to freeze parameters of those without enough??
     {
       ran::UniformDeviate u;
       long dcount=0;
@@ -1067,6 +1209,11 @@ main(int argc, char *argv[])
 
     } // End Match-culling section.
 
+    ///////////////////////////////////////////////////////////
+    // Construct priors
+    ///////////////////////////////////////////////////////////
+
+    // ??????????
 
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 

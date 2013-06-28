@@ -131,3 +131,28 @@ PolyMap::write(std::ostream& os, int precision) const {
   os << (useExposureCoords ? "Exposure" : "Device") << endl;
   poly.write(os, precision);
 }
+
+PhotoMap*
+ConstantMap::create(std::istream& is, string name) {
+  // Serialization of ConstantMap is just a single number (the constant)
+  string buffer;
+  if (!getlineNoComment(is, buffer)) 
+    throw PhotometryError("ConstantMap::create() is missing inputs for name " + name);
+
+  istringstream iss(buffer);
+  double c;
+  if (!(iss >> c))
+    throw PhotometryError("Format error for ConstantMap::create() name " + name
+			  + " on input line: " + buffer);
+  ConstantMap* cm =  new ConstantMap(c, name);
+  return cm;
+}
+
+void
+ConstantMap::write(std::ostream& os, int precision) const {
+  // Save precision and format of stream before changing it:
+  StreamSaver ss(os);
+  os.precision(precision);
+  os.setf( ios_base::showpos | ios_base::scientific);
+  os << c << endl;
+}

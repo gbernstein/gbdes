@@ -25,6 +25,7 @@ PhotoMapCollection::PhotoMapTypeInitialize() {
   if (creatorsInitialized) return;
   creatorsInitialized = true;
   registerMapType<IdentityMap>();
+  registerMapType<ConstantMap>();
   registerMapType<PolyMap>();
 }
 

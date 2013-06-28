@@ -95,6 +95,34 @@ namespace photometry {
     virtual void write(std::ostream& os, int precision) const {} // Nothing to write
   };
 
+  // Map that shifts magnitudes by a scalar.  Scalar is a free parameter.
+  class ConstantMap: public PhotoMap {
+  public:
+    ConstantMap(double c_=0., string name=""): PhotoMap(name), c(c_) {}
+    virtual PhotoMap* duplicate() const {return new ConstantMap(*this);}
+    static string mapType() {return "Constant";}
+    virtual string getType() const {return mapType();}
+    static PhotoMap* create(std::istream& is, string name_="");
+    virtual void write(std::ostream& os, int precision) const;
+    virtual double forward(double magIn, const PhotoArguments& args) const {return magIn+c;}
+    virtual double inverse(double magIn, const PhotoArguments& args) const {return magIn+c;}
+    virtual double forwardDerivs(double magIn, const PhotoArguments& args,
+				 DVector& derivs) const {
+      derivs = DVector(1,1.);
+      return magIn + c;
+    }
+
+    virtual int nParams() const {return 1;}
+    virtual DVector getParams() const {return DVector(1,c);}
+    virtual void setParams(const DVector& p) {
+      Assert(p.size()==1);
+      c = p[0];
+    }
+  private:
+    double c;
+  };
+
+
   // A ColorTerm will take any other kind of PhotoMap and multiply its shift by the color given
   // in the PhotoArguments.
   // The ColorTerm will assume ownership of the PhotoMap that it wraps and will delete it.  

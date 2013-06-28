@@ -47,8 +47,8 @@ namespace photometry {
     astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for this exposure
     int  field;
     int  instrument;
-    string mapName;	// name of PhotoMap for this Exposure
     double airmass;	// Airmass at reference position
+    string mapName;	// name of PhotoMap for this Exposure
   private:
     // Hide:
     Exposure(const Exposure& rhs);
@@ -69,6 +69,16 @@ namespace photometry {
       if (startWcs) delete startWcs;
     }
   private:
+  };
+
+  // Class that represents an catalog of objects from a single device on single exposure
+  // that will be used solely to extract color information.
+  class ColorExtension {
+  public:
+    ColorExtension() {}
+    int priority;	// Rank of this catalog in heirarchy of colors.  Lower value takes priority.
+    // The objects from this catalog that we will use, and the matches they give colors for:
+    std::map<long, Match*> keepers;  
   };
 
 } // end namespace photometry

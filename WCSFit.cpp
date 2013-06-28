@@ -316,23 +316,25 @@ main(int argc, char *argv[])
     // have their parameters held fixed.
     list<string> fixMapList = split(fixMaps, listSeperator);
     for (list<string>::iterator i = fixMapList.begin();
-	 i != fixMapList.end(); ) 
+	 i != fixMapList.end(); ) {
+      stripWhite(*i);
       if (i->empty()) {
 	i = fixMapList.erase(i);
       } else {
-	stripWhite(*i);
 	++i;
       }
+    }
 
     list<string> canonicalExposureList = split(canonicalExposures, listSeperator);
     for (list<string>::iterator i = canonicalExposureList.begin();
-	 i != canonicalExposureList.end(); )
+	 i != canonicalExposureList.end(); ) {
+      stripWhite(*i);
       if (i->empty()) {
-	i = fixMapList.erase(i);
+	i = canonicalMapList.erase(i);
       } else {
-	stripWhite(*i);
 	++i;
       }
+    }
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Fields, Instruments, Devices, Exposures
@@ -775,6 +777,7 @@ main(int argc, char *argv[])
 
 	// Save this map into the collection
 	mapCollection.learnMap(*pm);
+	delete pm;
       } // end loop creating PixelMaps for all Devices.
 
       // Now create an exposure map for all exposures with this instrument,
