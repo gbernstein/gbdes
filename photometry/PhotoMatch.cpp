@@ -642,3 +642,30 @@ PhotoAlign::countPriorParams() {
   }
   nPriorParams = startIndex - pmc.nParams();
 }
+
+void
+PhotoAlign::setParams(const DVector& p) {
+  pmc.setParams(p.subVector(0,pmc.nParams()));
+  int startIndex = pmc.nParams();
+  for (list<PhotoPrior*>::iterator i = priors.begin();
+       i != priors.end();
+       ++i) {
+    if ((*i)->isDegenerate()) continue;
+    (*i)->setParams(p.subVector(startIndex, startIndex+(*i)->nParams()));
+    startIndex += (*i)->nParams();
+  }
+}
+
+DVector
+PhotoAlign::getParams() const {
+  DVector p(nParams(), -888.);
+  p.subVector(0,pmc.nParams()) = pmc.getParams();
+  int startIndex = pmc.nParams();
+  for (list<PhotoPrior*>::const_iterator i = priors.begin();
+       i != priors.end();
+       ++i) {
+    if ((*i)->isDegenerate()) continue;
+    p.subVector(startIndex, startIndex+(*i)->nParams()) = (*i)->getParams();
+    startIndex += (*i)->nParams();
+  }
+}

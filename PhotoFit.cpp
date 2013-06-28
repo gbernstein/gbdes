@@ -63,8 +63,36 @@ spaceReplace(string& s) {
   s = regexReplace("[[:space:]]+","_",s);
 }
 
-// A function to parse strings describing PixelMap models, setting tolerance for inversion of world coords:
-PhotoMap* photoMapDecode(string code, string name, PolyMap::ArgumentType arg=PolyMap::Device);
+// Another helper function to split up a string into a list of whitespace-trimmed strings.
+// Get rid of any null ones.
+
+// Here is the default character at which to split:
+const char DefaultListSeperator=',';
+
+list<string> splitArgument(string input, const char listSeperator = DefaultListSeperator) {
+  list<string> out = split(input, listSeperator);
+  for (list<string>::iterator i = out.begin();
+       i != out.end(); )  {
+    stripWhite(*i);
+    if (i->empty()) {
+      i = out.erase(i);
+    } else {
+      ++i;
+    }
+  }
+  return out;
+}
+
+// A function to parse strings describing PhotoMap models
+// Parameters of each constructed model are initialized to be close to identity transformation on mags.
+PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType arg=PhotoMap::Device);
+
+// Another function that takes a string of photoMapDecode-able atoms, separated by "+" signs, and
+// has the PhotoMapCollection learn this sequence, retrievable using mapName.
+// The argtype determines whether the models being built use Device or Exposure coordinates.
+void
+learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
+	       PhotoMap::ArgumentType argtype=PhotoMap::Device);
 
 class Accum {
 public:
@@ -138,7 +166,7 @@ main(int argc, char *argv[])
   double referenceSysError;
   int minMatches;
   bool clipEntireMatch;
-  bool exposureModel;
+  string exposureModel;
   string deviceModel;
   string outCatalog;
   string catalogSuffix;
@@ -147,6 +175,11 @@ main(int argc, char *argv[])
   string renameInstruments;
   string useInstruments;
   string colorExposures;
+  string useReferenceExposures;
+  bool referenceColorTerm;
+  double minColor;
+  double maxColor;
+  bool requireColor;
   string existingMaps;
   string fixMaps;
   string canonicalExposures;
@@ -172,8 +205,19 @@ main(int argc, char *argv[])
 			 "minimum number of detections for usable match", 2, 2);
     parameters.addMember("useInstruments",&useInstruments, def,
 			 "the instruments that are assumed to produce matching mags","");
+    parameters.addMember("useReferenceExposures",&useReferenceExposures, def,
+			 "names of reference exposures to be included in chi-squared","");
+    parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
 			 "exposures holding valid colors for stars","");
+    parameters.addMember("referenceColorTerm",&referenceColorTerm, def,
+			 "set true to admit a color coefficient for reference magnitudes",false);
+    parameters.addMember("minColor",&minColor, def,
+			 "minimum value of color to be used",-10.);
+    parameters.addMember("maxColor",&maxColor, def,
+			 "maximum value of color to be used",+10.);
+    parameters.addMember("requireColor",&requireColor, def,
+			 "set true to reject objects having no color datum", false);
     parameters.addMemberNoValue("CLIPPING");
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
@@ -209,7 +253,7 @@ main(int argc, char *argv[])
 			 "Output serialized photometric solutions", "photfit.phot");
     parameters.addMember("outPriorFile",&outPriorFile, def,
 			 "Output listing of zeropoints etc of exposures tied by priors","");
-  }
+}
 
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
@@ -262,12 +306,10 @@ main(int argc, char *argv[])
     // but if new ones are invented, this is the format:
     // PhotoMapCollection::registerMapType<PolyMap>();
 
-    const char listSeperator=',';
-
     // First is a regex map from instrument names to the names of their PhotoMaps
     RegexReplacements instrumentTranslator;
     {
-      list<string> ls = split(renameInstruments, listSeperator);
+      list<string> ls = split(renameInstruments, DefaultListSeperator);
       for (list<string>::const_iterator i = ls.begin();
 	   i != ls.end();
 	   ++i) {
@@ -289,7 +331,7 @@ main(int argc, char *argv[])
     // from which we should de-serialize them
     RegexReplacements existingMapFinder;
     {
-      list<string> ls = split(existingMaps, listSeperator);
+      list<string> ls = split(existingMaps, DefaultListSeperator);
       for (list<string>::const_iterator i = ls.begin();
 	   i != ls.end();
 	   ++i) {
@@ -309,51 +351,20 @@ main(int argc, char *argv[])
 
     // This is list of regexes of PhotoMap names (or instrument names) that should
     // have their parameters held fixed.
-    list<string> fixMapList = split(fixMaps, listSeperator);
-    for (list<string>::iterator i = fixMapList.begin();
-	 i != fixMapList.end(); ) 
-      if (i->empty()) {
-	i = fixMapList.erase(i);
-      } else {
-	stripWhite(*i);
-	++i;
-      }
+    list<string> fixMapList = splitArgument(fixMaps);
 
-    list<string> canonicalExposureList = split(canonicalExposures, listSeperator);
-    for (list<string>::iterator i = canonicalExposureList.begin();
-	 i != canonicalExposureList.end(); ) {
-      stripWhite(*i);
-      if (i->empty()) {
-	i = canonicalMapList.erase(i);
-      } else {
-	++i;
-      }
-    }
+    // Regexes that match exposures to have identity exposure maps
+    list<string> canonicalExposureList = splitArgument(canonicalExposures);
 
     // The list of instruments that we will be matching together in this run:
     // have their parameters held fixed.
-    list<string> useInstrumentList = split(useInstruments, listSeperator);
-    for (list<string>::iterator i = useInstrumentList.begin();
-	 i != useInstrumentList.end(); )  {
-      stripWhite(*i);
-      if (i->empty()) {
-	i = useInstrumentList.erase(i);
-      } else {
-	++i;
-      }
-    }
+    list<string> useInstrumentList = splitArgument(useInstruments);
 
     // The list of exposures that are considered valid sources of color information:
-    list<string> useColorList = split(colorExposures, listSeperator);
-    for (list<string>::iterator i = useColorList.begin();
-	 i != useColorList.end(); ) {
-      stripWhite(*i);
-      if (i->empty()) {
-	i = useColorList.erase(i);
-      } else {
-	++i;
-      }
-    }
+    list<string> useColorList = splitArgument(colorExposures);
+
+    // The list of reference exposures whose mags will be included in chi-squared
+    list<string> useReferenceList = splitArgument(useReferenceExposures);
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Instruments, Devices, Exposures
@@ -446,13 +457,7 @@ main(int argc, char *argv[])
       ff.readCells(instrumentNumber, "InstrumentNumber");
       exposureColorPriorities = vector<int>(names.size(), -1);
       for (int i=0; i<names.size(); i++) {
-	// The projection we will use for this exposure:
-	astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
-										  dec[i]*DEGREE)));
 	spaceReplace(names[i]);
-	Exposure* expo = new Exposure(names[i],gn);
-	expo->field = fieldNumber[i];
-	expo->instrument = instrumentNumber[i];
 
 	// See if this exposure name matches any of the color exposures
 	int priority = 0;
@@ -466,10 +471,22 @@ main(int argc, char *argv[])
 	  }
 	}
 	// Is this exposure in an instrument of interest, or a reference or tag?
-	if (expo->instrument>=0 && !instruments[expo->instrument]) {
-	  // No - don't save info, insert null into exposure list
-	  // ??? Need a way to specify whether to use reference exposures, tags ???
-	  delete expo;
+	// Yes, if it's a reference exposure with name given in useReferenceExposures
+	bool useThisExposure = instrumentNumber[i]==REF_INSTRUMENT 
+	  && regexMatchAny(useReferenceList, names[i]);
+	// or if it's a normal exposure using an instrument that has been included
+	useThisExposure = useThisExposure || (instrumentNumber[i]>=0 && 
+					      !instruments[instrumentNumber[i]]);
+
+	Exposure* expo;
+	if (useThisExposure) {
+	  // The projection we will use for this exposure:
+	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
+										  dec[i]*DEGREE)));
+	  expo = new Exposure(names[i],gn);
+	  expo->field = fieldNumber[i];
+	  expo->instrument = instrumentNumber[i];
+	} else {
 	  expo = 0;
 	}
 	exposures.push_back(expo);
@@ -488,11 +505,11 @@ main(int argc, char *argv[])
     }
     for (int i=0; i<extensionTable.nrows(); i++) {
       Extension* extn = new Extension;
-      int j;
-      extensionTable.readCell(j, "ExposureNumber", i);
+      int iExposure;
+      extensionTable.readCell(iExposure, "ExposureNumber", i);
 
       // Determine whether this extension might be used to provide colors
-      int colorPriority = exposureColorPriorities[j];
+      int colorPriority = exposureColorPriorities[iExposure];
       if (colorPriority < 0) {
 	colorExtensions.push_back(0);
       } else {
@@ -501,7 +518,7 @@ main(int argc, char *argv[])
 	colorExtensions.push_back(ce);
       }
 	
-      if (!exposures[j]) {
+      if (!exposures[iExposure]) {
 	// This extension is not in an exposure of interest.  Skip it.
 	delete extn;
 	extn = 0;
@@ -509,9 +526,16 @@ main(int argc, char *argv[])
 	continue;
       }
       extensions.push_back(extn);
-      extn->exposure = j;
-      extensionTable.readCell(j, "DeviceNumber", i);
-      extn->device = j;
+      extn->exposure = iExposure;
+      int iDevice;
+      extensionTable.readCell(iDevice, "DeviceNumber", i);
+      extn->device = iDevice;
+      // Assume an airmass column is in the extension table.
+      // Values <1 mean (including a default 0) mean it's not available.
+      double airmass;
+      extensionTable.readCell(airmass, "Airmass", i);
+      extn->airmass = airmass;
+
       string s;
       extensionTable.readCell(s, "WCS", i);
       if (stringstuff::nocaseEqual(s, "ICRS")) {
@@ -523,7 +547,7 @@ main(int argc, char *argv[])
 	istringstream iss(s);
 	astrometry::PixelMapCollection pmcTemp;
 	if (!pmcTemp.read(iss)) {
-	  cerr << "Did not find Wcs format for ???" << endl;
+	  cerr << "Did not find WCS format for extension ???" << endl;
 	  exit(1);
 	}
 	string wcsName = pmcTemp.allWcsNames().front();
@@ -727,43 +751,11 @@ main(int argc, char *argv[])
       // Now we create new PhotoMaps for each Device that does not already have one.
       for (int idev=0; idev < inst->nDevices; idev++) {
 	if (deviceMapsExist[idev]) continue;
-
-	// Create a new PhotoMap for this device. 
-	PhotoMap* pm=0;
-	list<string> pmCodes = stringstuff::split(deviceModel,'+');
-	if (pmCodes.size() == 1) {
-	  pm = photoMapDecode(pmCodes.front(),inst->mapNames[idev]);
-	} else if (pmCodes.size() > 1) {
-	  // Build a compound SubMap with desired maps in order:
-	  int index = 0;
-	  list<PhotoMap*> pmList;
-	  for (list<string>::const_iterator ipm = pmCodes.begin();
-	       ipm != pmCodes.end();
-	       ++ipm, ++index) {
-	    ostringstream oss;
-	    // Components will have index number appended to device map name:
-	    oss << inst->mapNames[idev] << "_" << index;
-	    pmList.push_back(photoMapDecode(*ipm, oss.str()));
-	  }
-	  pm = new SubMap(pmList, inst->mapNames[idev]);
-	  // Delete the original components, which have now been duplicated in SubMap:
-	  for (list<PhotoMap*>::iterator ipm=pmList.begin();
-	       ipm != pmList.end();
-	       ++ipm)
-	    delete *ipm;
-	} else {
-	  cerr << "Empty deviceModel specification" << endl;
-	  exit(1);
-	}
-
-	// Save this map into the collection
-	mapCollection.learnMap(*pm);
-	delete pm;
-
+	learnParsedMap(deviceModel, inst->mapNames[idev], mapCollection);
       } // end loop creating PhotoMaps for all Devices.
 
       // Now create an exposure map for all exposures with this instrument,
-      // and set initial parameters to be identity ???
+      // and set initial parameters to be identity map if not already given.
 
       for (list<long>::const_iterator i= exposuresWithInstrument.begin();
 	   i != exposuresWithInstrument.end();
@@ -803,14 +795,7 @@ main(int argc, char *argv[])
 	}
 	
 	// We will create a new exposure map 
-	// ??? more general exposure map now ???  Initialize to identity ???
-	expoMap = new PolyMap(exposureOrder, 
-			      PolyMap::Exposure,	// Use exposure coords as polynomial args
-			      expo.name);
-	expo.mapName = expo.name;
-
-	// Insert the Exposure map into the collection
-	mapCollection.learnMap(*expoMap);
+	learnParsedMap(exposureModel, expo.name, mapCollection);
 
 	// Check for fixed maps
 	if (regexMatchAny(fixMapList, expoMap->getName())) {
@@ -828,16 +813,32 @@ main(int argc, char *argv[])
     // Freeze the parameters of all the fixed maps
     mapCollection.setFixed(fixedMapNames, true);
 
+    // Register maps for all reference exposures being used:
+    for (long iexp =0; iexp < exposures.size(); iexp++) {
+      if (!exposures[iexp]) continue;	// Skip if exposure is not in used
+      Exposure& expo = *exposures[iexp];
+      if (expo.instrument != REF_INSTRUMENT) continue; // or if not a reference exposure
+      if (referenceColorTerm) {
+	// Every reference exposure will get a floating color coefficient
+	PhotoMap* pm = new ConstantMap;
+	pm = new ColorTerm(pm, expo.name);
+	mapCollection.learnMap(*pm);
+	delete pm;
+	expo.mapName = expo.name;
+      } else {
+	// No freedom in the reference magnitude map:
+	expo.mapName = IdentityMap::mapType();
+      }
+    }
+
     // Now construct a SubMap for every extension
     for (int iext=0; iext<extensions.size(); iext++) {
       Extension& extn = *extensions[iext];
       Exposure& expo = *exposures[extn.exposure];
       int ifield = expo.field;
       if ( expo.instrument < 0) {
-	// Tag & reference exposures have no instruments and no fitting
-	// being done. 
-	// ??? color term in reference exposures ???
-	extn.map = mapCollection.issueMap(IdentityMap().getName());
+	// Reference exposures have no instruments, but possible color term per exposure
+	extn.map = mapCollection.issueMap(expo.mapName);
       } else {
 	// Real instrument, make a map combining its exposure with its Device map:
 	string mapName = expo.name + "/" 
@@ -903,16 +904,21 @@ main(int argc, char *argv[])
 	  // Processing the previous (or final) match.
 	  int nValid = extns.size();
 	  if (matchColorExtension < 0) {
-	    // There is no color information for this match.  So discard any detection which requires
-	    // a color to produce its map:
-	    nValid = 0;
-	    for (int j=0; j<extns.size(); j++) {
-	      Assert(extensions[extns[j]]);
-	      if (extensions[extns[j]]->map->needsColor()) {
-		// Mark this detection as useless
-		extns[j] = -1;
-	      } else {
-		nValid++;
+	    // There is no color information for this match. 
+	    if (requireColor) {
+	      // Match is to be discarded without any color information
+	      nValid = 0.;
+	    } else {
+	      // Just discard any detection which requires a color to produce its map:
+	      nValid = 0;
+	      for (int j=0; j<extns.size(); j++) {
+		Assert(extensions[extns[j]]);
+		if (extensions[extns[j]]->map->needsColor()) {
+		  // Mark this detection as useless
+		  extns[j] = -1;
+		} else {
+		  nValid++;
+		}
 	      }
 	    }
 	  }
@@ -937,7 +943,7 @@ main(int argc, char *argv[])
 	    if (matchColorExtension >=0) {
 	      // Tell the color catalog that it needs to look this guy up:
 	      Assert(colorExtensions[matchColorExtension]);
-	      colorExtensions[matchColorExtension]->keepers.insert(std::pair<long,Match*>(objs[j],
+	      colorExtensions[matchColorExtension]->keepers.insert(std::pair<long,Match*>(matchColorObject,
 											  matches.back()));
 	    }
 	  }
@@ -957,6 +963,18 @@ main(int argc, char *argv[])
 	  extns.push_back(extn[i]);
 	  objs.push_back(obj[i]);
 	}
+
+	// Record if we've got color information here
+	if (colorExtensions[extn[i]]) {
+	  int newPriority = colorExtensions[extn[i]]->priority;
+	  if (newPriority >= 0 && (colorPriority < 0 || newPriority < colorPriority)) {
+	    // This detection holds color info that we want
+	    colorPriority = newPriority;
+	    matchColorExtension = extn[i];
+	    matchColorObject = objs[i];
+	  }
+	}
+	  
       } // End loop of catalog entries
       
     } // End loop over input matched catalogs
@@ -984,10 +1002,6 @@ main(int argc, char *argv[])
       extensionTable.readCell(magErrKey, "magErrKey", iext);
       double weight;
       extensionTable.readCell(weight, "magWeight", iext);
-      // Assume an airmass column is in the extension table.
-      // Values <1 mean (including a default 0) mean it's not available.
-      double airmass;
-      extensionTable.readCell(airmass, "Airmass", iext);
 
       // Relevant structures for this extension
       Extension& extn = *extensions[iext];
@@ -1054,9 +1068,6 @@ main(int argc, char *argv[])
 	startWcs->toWorld(d->args.xDevice, d->args.yDevice,
 			  d->args.xExposure, d->args.yExposure);
 
-	if (useColor) ff.readCell(d->args.color, colorKey, irow);
-	d->args.airmass = airmass;
-	
 	// Get the mag input and its error
 	ff.readCell(d->magIn, magKey, irow);
 	double sigma;
@@ -1069,7 +1080,6 @@ main(int argc, char *argv[])
 	}
 
 	// Map to output and estimate output error
-	// ??? problem for nonlinear mag functions that may not be initialized here ???
 	d->magOut = sm->forward(d->magIn, d->args);
 
 	sigma = std::sqrt(sysError*sysError + sigma*sigma);
@@ -1096,7 +1106,7 @@ main(int argc, char *argv[])
     // and insert colors into all the PhotoArguments for Detections they match
     for (int iext = 0; iext < colorExtensions.size(); iext++) {
       if (!colorExtensions[iext]) continue; // Skip unused 
-      Extension& extn = *colorExtensions[iext];
+      ColorExtension& extn = *colorExtensions[iext];
       if (extn.keepers.empty()) continue; // Not using any colors from this catalog
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
@@ -1162,7 +1172,9 @@ main(int argc, char *argv[])
     // Make a pass through all matches to reserve as needed and purge 
     // those not wanted.  
 
-    // ??? Count fitted detections per exposure to freeze parameters of those without enough??
+    // Also count fitted detections per exposure to freeze parameters of those without any detections
+    vector<long> detectionsPerExposure(exposures.size(), 0);
+
     {
       ran::UniformDeviate u;
       long dcount=0;
@@ -1172,6 +1184,10 @@ main(int argc, char *argv[])
 
       list<Match*>::iterator im = matches.begin();
       while (im != matches.end() ) {
+	// Decide whether to reserve this match
+	if (reserveFraction > 0.)
+	  (*im)->setReserved( u < reserveFraction );
+
 	// Remove Detections with too-large errors:
 	Match::iterator j=(*im)->begin();
 	while (j != (*im)->end()) {
@@ -1184,7 +1200,16 @@ main(int argc, char *argv[])
 	    ++j;
 	  }
 	}
-	int nFit = (*im)->countFit();
+	int nFit = (*im)->fitSize();
+
+	if ((*im)->size() > 0) {
+	  // See if color is in range, using color from first Detection (they should
+	  // all have the same color).
+	  double color = (*(*im)->begin())->args.color;
+	  if (color != PhotoArguments::NODATA && (color < minColor || color > maxColor))
+	    nFit = 0; // Kill the whole Match below.
+	}
+
 	if ( nFit < minMatches) {
 	  // Remove entire match if it's too small, and kill its Detections too
 	  (*im)->clear(true);
@@ -1195,9 +1220,17 @@ main(int argc, char *argv[])
 	  dcount += nFit;	// Count total good detections
 	  chi += (*im)->chisq(dof, maxdev);
 
-	  // Decide whether to reserve this match
-	  if (reserveFraction > 0.)
-	    (*im)->setReserved( u < reserveFraction );
+	  // Count up fitted Detections in each exposure from this Match
+	  if (!(*im)->getReserved()) {
+	    for (Match::iterator j = (*im)->begin();
+		 j != (*im)->end();
+		 ++j) {
+	      if ((*j)->isClipped || (*j)->wt<=0.) continue; // Not a fitted object
+	      int iExtn = (*j)->catalogNumber;
+	      int iExpo = extensions[iExtn]->exposure;
+	      detectionsPerExposure[iExpo]++;
+	    }
+	  }
 
 	  ++im;
 	}
@@ -1209,10 +1242,21 @@ main(int argc, char *argv[])
 
     } // End Match-culling section.
 
+    // Check for unconstrained exposures:
+    for (int iExposure = 0; iExposure < detectionsPerExposure.size(); iExposure++) {
+      if (detectionsPerExposure[iExposure] <= 0 && exposures[iExposure]) {
+	Exposure& expo = *exposures[iExposure];
+	cerr << "WARNING: Exposure " << expo.name << " has no fitted detections.  Freezing its parameters."
+	     << endl;
+	mapCollection.setFixed(expo.mapName, true);
+      }
+    }
+
     ///////////////////////////////////////////////////////////
     // Construct priors
     ///////////////////////////////////////////////////////////
 
+    list<PhotoPrior*> priors;
     // ??????????
 
     ///////////////////////////////////////////////////////////
@@ -1220,7 +1264,7 @@ main(int argc, char *argv[])
     ///////////////////////////////////////////////////////////
 
     // make CoordAlign class
-    PhotoAlign ca(mapCollection, matches);
+    PhotoAlign ca(mapCollection, matches, priors);
 
     int nclip;
     double oldthresh=0.;
@@ -1558,10 +1602,15 @@ main(int argc, char *argv[])
 }
 
 /////////////////////////////////////////////////////////
-PhotoMap* photoMapDecode(string code, string name, PolyMap::ArgumentType argType) {
+PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType argType) {
   istringstream iss(code);
+  bool isColorTerm = false;
   string type;
   iss >> type;
+  if (stringstuff::nocaseEqual(type,"Color")) {
+    isColorTerm = true;
+    iss >> type;
+  }
   PhotoMap* pm;
   if (stringstuff::nocaseEqual(type,"Poly")) {
     int xOrder, yOrder;
@@ -1591,10 +1640,55 @@ PhotoMap* photoMapDecode(string code, string name, PolyMap::ArgumentType argType
       throw runtime_error("Could not open file for building TemplateMap1d <" + filename + ">");
     pm = TemplateMap1d::create(ifs, name);
     **/
+  } else if (stringstuff::nocaseEqual(type,"Constant")) {
+    pm = new ConstantMap(0., name);
   } else if (stringstuff::nocaseEqual(type,"Identity")) {
     pm = new IdentityMap;
   } else {
     throw runtime_error("Unknown type of PhotoMap: <" + type + ">");
   }
+  if (isColorTerm)
+    pm = new ColorTerm(pm, name);
   return pm;
+}
+
+/////////////////////////////////////////////////////////////
+// Routine to take a string that specifies a PhotoMap sequence and enter such a map
+// into the PhotoMapCollection where it can be retrieved using mapName.
+// The string is a sequence of atoms parsable by photoMapDecode, separated by + signs.
+/////////////////////////////////////////////////////////////
+void
+learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
+	       PhotoMap::ArgumentType argtype) {
+  // Create a new PhotoMap. 
+  PhotoMap* pm=0;
+  list<string> pmCodes = stringstuff::split(modelString,'+');
+  if (pmCodes.size() == 1) {
+    pm = photoMapDecode(pmCodes.front(),mapName,argtype);
+  } else if (pmCodes.size() > 1) {
+    // Build a compound SubMap with desired maps in order:
+    int index = 0;
+    list<PhotoMap*> pmList;
+    for (list<string>::const_iterator ipm = pmCodes.begin();
+	 ipm != pmCodes.end();
+	 ++ipm, ++index) {
+      ostringstream oss;
+      // Components will have index number appended to device map name:
+      oss << mapName << "_" << index;
+      pmList.push_back(photoMapDecode(*ipm, oss.str(),argtype));
+    }
+    pm = new SubMap(pmList, mapName);
+    // Delete the original components, which have now been duplicated in SubMap:
+    for (list<PhotoMap*>::iterator ipm=pmList.begin();
+	 ipm != pmList.end();
+	 ++ipm)
+      delete *ipm;
+  } else {
+    cerr << "Empty deviceModel specification" << endl;
+    exit(1);
+  }
+
+  // Save this map into the collection
+  pmc.learnMap(*pm);
+  delete pm;
 }

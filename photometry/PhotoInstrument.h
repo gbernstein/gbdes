@@ -47,7 +47,6 @@ namespace photometry {
     astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for this exposure
     int  field;
     int  instrument;
-    double airmass;	// Airmass at reference position
     string mapName;	// name of PhotoMap for this Exposure
   private:
     // Hide:
@@ -62,6 +61,7 @@ namespace photometry {
     Extension(): map(0), startWcs(0) {}
     int exposure;
     int device;
+    double airmass;	// Airmass at reference position
     SubMap* map;	  // The total magnitude transformation for this exposure
     astrometry::Wcs* startWcs;  // Input Wcs for this extension (owned by this class)
     std::map<long, Detection*> keepers;  // The objects from this catalog that we will use

@@ -203,3 +203,7 @@ bool ValueConverter(vector<double>& vec, const expressions::Value* val) {
 
 template 
 void TableData::evaluate(vector<bool>&, const string&, const Header* hh) const;
+template 
+void TableData::evaluate(vector<double>&, const string&, const Header* hh) const;
+template 
+void TableData::evaluate(vector<int>&, const string&, const Header* hh) const;

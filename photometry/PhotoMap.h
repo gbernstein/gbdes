@@ -28,6 +28,9 @@ namespace photometry {
 
   class PhotoArguments {
   public:
+    PhotoArguments(): xDevice(NODATA), yDevice(NODATA), xExposure(NODATA), yExposure(NODATA),
+		      color(NODATA) {}
+    const static double NODATA;
     double xDevice;
     double yDevice;
     double xExposure;
@@ -35,12 +38,16 @@ namespace photometry {
     double color;
   };
 
+
   class PhotoMap {
   public:
     PhotoMap(string name_="");
     virtual ~PhotoMap() {}
     // Return pointer to deep copy of self
     virtual PhotoMap* duplicate() const =0;
+
+    // Enum decides whether class is using device coordinates or exposure coords as position arguments:
+    enum ArgumentType {Device, Exposure};
 
     // forward transformations:
     virtual double forward(double magIn, const PhotoArguments& args) const=0;
@@ -176,8 +183,6 @@ namespace photometry {
 
   class PolyMap: public PhotoMap {
   public:
-    // Enum decides whether class is using device coordinates or exposure coords as polynomial arguments:
-    enum ArgumentType {Device, Exposure};
     PolyMap(const poly2d::Poly2d& p,
 	    ArgumentType argType,
 	    string name="");

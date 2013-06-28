@@ -4,6 +4,10 @@
 
 using namespace photometry;
 
+// Value signifying no data in PhotoArguments:
+const double
+PhotoArguments::NODATA = -888.;
+
 // Counter used to assign names to PhotoMaps created without specified name
 int 
 PhotoMap::anonymousCounter=0;
