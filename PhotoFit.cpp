@@ -14,6 +14,7 @@
 #include "Random.h"
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
+#include "PhotoInstrument.h"
 
 using namespace std;
 using namespace stringstuff;
@@ -53,8 +54,6 @@ string usage=
 // Note that PhotoMaps for devices within instrument will get names <instrument>/<device>.
 // And PhotoMaps for individual exposures will get names <exposure>/<device>.
 
-#include "PhotoInstrument.h"
-
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
 void
@@ -63,11 +62,11 @@ spaceReplace(string& s) {
   s = regexReplace("[[:space:]]+","_",s);
 }
 
+// Here is the default character at which to split lists given in parameters strings
+const char DefaultListSeperator=',';
+
 // Another helper function to split up a string into a list of whitespace-trimmed strings.
 // Get rid of any null ones.
-
-// Here is the default character at which to split:
-const char DefaultListSeperator=',';
 
 list<string> splitArgument(string input, const char listSeperator = DefaultListSeperator) {
   list<string> out = split(input, listSeperator);
@@ -93,6 +92,15 @@ PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType arg=Ph
 void
 learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
 	       PhotoMap::ArgumentType argtype=PhotoMap::Device);
+
+
+// Pull this code out: function to produce a list of PhotoPriors from an input file
+list<PhotoPrior*>
+readPriors(string filename, 
+	   const vector<Instrument*>& instruments, 
+	   const vector<Exposure*>& exposures, 
+	   const vector<Extension*>& extensions, 
+	   const vector<long>& detectionsPerExposure);
 
 class Accum {
 public:
@@ -184,7 +192,7 @@ main(int argc, char *argv[])
   string fixMaps;
   string canonicalExposures;
   string outPhotFile;
-  string priorFile;
+  string priorFiles;
   string outPriorFile;
   Pset parameters;
   {
@@ -228,8 +236,8 @@ main(int argc, char *argv[])
     parameters.addMember("clipEntirePrior",&clipEntirePrior, def,
 			 "Discard entire night's prior if one outlier", false);
     parameters.addMemberNoValue("FITTING");
-    parameters.addMember("priorFile", &priorFile, def,
-			 "File specifying any priors to apply to zeropoints and colors", "");
+    parameters.addMember("priorFiles", &priorFiles, def,
+			 "File(s) specifying any priors to apply to zeropoints and colors", "");
     parameters.addMember("reserveFraction",&reserveFraction, def | low,
 			 "Fraction of matches reserved from re-fit", 0., 0.);
     parameters.addMember("exposureModel",&exposureModel, def,
@@ -1257,7 +1265,17 @@ main(int argc, char *argv[])
     ///////////////////////////////////////////////////////////
 
     list<PhotoPrior*> priors;
-    // ??????????
+    {
+      // List of the files to use 
+      list<string> priorFileList = splitArgument(priorFiles);
+      for (list<string>::const_iterator i = priorFileList.begin();
+	   i != priorFileList.end();
+	   ++i) {
+	list<PhotoPrior*> thisTime = readPriors(*i, instruments, exposures, extensions, 
+						detectionsPerExposure);
+	priors.splice(priors.end(), thisTime);
+      }
+    }
 
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 

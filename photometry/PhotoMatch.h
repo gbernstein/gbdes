@@ -123,6 +123,8 @@ namespace photometry {
   class PhotoPriorReferencePoint {
   public:
     PhotoPriorReferencePoint(): airmass(1.), map(0), isClipped(false) {}
+    string exposureName;
+    string deviceName;
     double magIn;  // Magnitude assigned to 1 count per second.
     double magOut;	// Mag after mapping.
     PhotoArguments args;
