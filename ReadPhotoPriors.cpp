@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <iomanip>
 
 #include "Std.h"
 #include "Astrometry.h"
@@ -235,3 +236,4 @@ readPriors(string filename,
 
   return out;
 }
+

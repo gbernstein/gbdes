@@ -2,6 +2,7 @@
 // or just pushes these to predetermined values to break degeneracies.
 #include "PhotoMatch.h"
 #include <map>
+#include <StringStuff.h>
 
 using namespace photometry;
 
@@ -210,3 +211,50 @@ PhotoPrior::clipAll() {
   nFit = 0;
 }
 
+void
+PhotoPrior::reportHeader(ostream& os) {
+  os <<  
+    "Name        chisq  / dof  sigma   zpt    airmass  color   \n"
+    "* Exposure   Device   Residual  magIn  airmass  color   \n"
+    "----------------------------------------------------------"
+     << endl;
+}
+
+void
+PhotoPrior::report(ostream& os) const {
+  stringstuff::StreamSaver ss(os);
+
+  double chi = 0.;
+  int dof;
+
+  if (isDegenerate()) {
+    dof = nFit - nFree;
+  } else {
+    chi = chisq(dof);
+  }
+  os << setw(12) << left << getName()
+     << " "  << fixed << right << noshowpos << setprecision(1) << setw(6) << chi
+     << " / " << setw(3) << dof
+     << " " << setprecision(3) << setw(5) << getSigma()
+     << " " << showpos << setprecision(3) << setw(7) << getZeropoint()
+     << " " << (zeropointIsFree() ? " " : "*" )
+     << " " << setprecision(3) << setw(6) << getAirmass()
+     << " " << (airmassIsFree() ? " " : "*" )
+     << " " << setprecision(3) << setw(6) << getColor()
+     << " " << (colorIsFree() ? " " : "*" )
+     << endl;
+
+  for (list<PhotoPriorReferencePoint>::const_iterator i = points.begin();
+       i != points.end();
+       ++i) {
+    double resid = i->magOut - (m + a*i->airmass + b*i->args.color);
+    os << (i->isClipped ? "- " : "+ ")
+       << setw(12) << left << i->exposureName
+       << " " << setw(8) << i->deviceName
+       << " " << right << showpos << setprecision(3) << setw(6) << resid
+       << " " << noshowpos << setprecision(3) << setw(7) << i->magIn
+       << " " << setprecision(3) << setw(5) << i->airmass
+       << " " << showpos << setprecision(3) << setw(6) << i->args.color
+       << endl;
+  }
+}

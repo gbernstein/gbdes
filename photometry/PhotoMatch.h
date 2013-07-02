@@ -154,10 +154,13 @@ namespace photometry {
     bool isDegenerate() const {return nFit < nFree;}
 
     string getName() const {return name;}
-
+    double getSigma() const {return sigma;}
     double getZeropoint() const {return m;}
     double getAirmass() const {return a;}
     double getColor() const {return b;}
+    bool zeropointIsFree() const {return mIsFree;}
+    bool airmassIsFree() const {return aIsFree;}
+    bool colorIsFree() const {return bIsFree;}
 
     // Locations of parameters in global vector
     int startIndex() const {return globalStartIndex;}
@@ -177,6 +180,10 @@ namespace photometry {
     // Chisq for this match, also updates dof for free parameters - no recalculation
     double chisq(int& dof) const;
     
+    // For a printed report to the stated stream:
+    static void reportHeader(ostream& os);
+    void report(ostream& os) const;
+
   private:
     double sigma;	// strength of prior (mags) at each reference point
     list<PhotoPriorReferencePoint> points;
@@ -239,8 +246,11 @@ namespace photometry {
     // Return count of useful (un-clipped) Matches & Detections.
     // Count either reserved or non-reserved objects, and require minMatches useful
     // Detections for a valid match:
-    void count(long int& mcount, long int& dcount, bool doReserved=false, int minMatches=2) const;
-    void count(long int& mcount, long int& dcount, bool doReserved, int minMatches, long catalog) const;
+    void count(long int& mcount, long int& dcount, 
+	       bool doReserved=false, int minMatches=2) const;
+    // This gives the count for just a single selected input catalog:
+    void count(long int& mcount, long int& dcount, 
+	       bool doReserved, int minMatches, long catalog) const;
   };
 
 } // namespace astrometry

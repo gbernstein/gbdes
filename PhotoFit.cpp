@@ -1268,12 +1268,25 @@ main(int argc, char *argv[])
     {
       // List of the files to use 
       list<string> priorFileList = splitArgument(priorFiles);
+      // Call subroutine that will read & initialize priors from a file
       for (list<string>::const_iterator i = priorFileList.begin();
 	   i != priorFileList.end();
 	   ++i) {
 	list<PhotoPrior*> thisTime = readPriors(*i, instruments, exposures, extensions, 
 						detectionsPerExposure);
 	priors.splice(priors.end(), thisTime);
+      }
+    }
+
+    // Remove any priors that have insufficient data to fit
+    for (list<PhotoPrior*>::iterator i = priors.begin();
+	 i != priors.end(); ) {
+      if ((*i)->isDegenerate()) {
+	cout << "WARNING: PhotoPrior " << (*i)->getName()
+	     << " is degenerate and is being deleted " << endl;
+	i = priors.erase(i);
+      } else {
+	++i;
       }
     }
 
@@ -1313,7 +1326,7 @@ main(int argc, char *argv[])
       int dof;
       ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
       double thresh = sqrt(chisq/dof) * clipThresh;
-      cout << "Final chisq: " << chisq 
+      cout << "After fit: chisq " << chisq 
 	   << " / " << dof << " dof, max deviation " << max
 	   << "  new clip threshold at: " << thresh << " sigma"
 	   << endl;
@@ -1322,6 +1335,21 @@ main(int argc, char *argv[])
 	// else require full target precision and initiate another pass.
 	if (coarsePasses) {
 	  coarsePasses = false;
+	  // This is the point at which we will clip aberrant exposures from the priors,
+	  // after coarse passes are done, before we do fine passes.
+	  nclip = 0;
+	  do {
+	    if (nclip > 0) {
+	      // Refit the data after clipping priors
+	      ca.fitOnce();
+	      cout << "After prior clip: chisq " << chisq 
+		   << " / " << dof << " dof, max deviation " << max
+		   << endl;
+	    }
+	    // Clip up to one exposure per prior
+	    nclip = ca.sigmaClipPrior(priorClipThresh, false);
+	    cout << "Clipped " << nclip << " prior reference points" << endl;
+	  } while (nclip > 0);
 	  ca.setRelTolerance(chisqTolerance);
 	  cout << "--Starting strict tolerance passes, clipping full matches" << endl;
 	  oldthresh = thresh;
@@ -1574,6 +1602,17 @@ main(int argc, char *argv[])
     outTable.writeCells(magRes, "magRes", pointCount);
     outTable.writeCells(sigMag, "sigMag", pointCount);
     outTable.writeCells(wtFrac, "wtFrac", pointCount);
+
+    // Now for standard output.  First will print information on the priors,
+    // then an exposure-by-exposure table.
+
+    // The priors:
+    PhotoPrior::reportHeader(cout);
+    for (list<PhotoPrior*>::const_iterator i = priors.begin();
+	 i != priors.begin();
+	 ++i) {
+      (*i)->report(cerr);
+    }
 
     // Print summary statistics for each exposure
     cout << "#    Exp    N    DOF    dmag    +-    RMS chi_red   xExposure    yExposure \n"
