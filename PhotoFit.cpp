@@ -256,7 +256,7 @@ main(int argc, char *argv[])
 			 "list of exposures that will have identity exposure maps","");
     parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("outCatalog",&outCatalog, def,
-			 "Output FITS binary catalog", "wcscat.fits");
+			 "Output FITS binary catalog", "photo.fits");
     parameters.addMember("outPhotFile",&outPhotFile, def,
 			 "Output serialized photometric solutions", "photfit.phot");
     parameters.addMember("outPriorFile",&outPriorFile, def,
@@ -275,6 +275,9 @@ main(int argc, char *argv[])
     // Read parameters
     if (argc<2) {
       cerr << usage << endl;
+      cerr << "--------- Default Parameters: ---------" << endl;
+      parameters.setDefault();
+      parameters.dump(cerr);
       exit(1);
     }
     string inputTables = argv[1];
@@ -397,18 +400,20 @@ main(int argc, char *argv[])
       }
     }
     
+    /**/cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
+	     << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
+
     // Read in all the instrument extensions and their device info.
     vector<Instrument*> instruments(instrumentHDUs.size(),0);
     for (int i=0; i<instrumentHDUs.size(); i++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
       // Append new table to output:
       Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
-      FTable ff=ft.extract();
 
       string instrumentName;
       int instrumentNumber;
-      if (!ff.header()->getValue("Name", instrumentName)
-	  || !ff.header()->getValue("Number", instrumentNumber)) {
+      if (!ft.header()->getValue("Name", instrumentName)
+	  || !ft.header()->getValue("Number", instrumentNumber)) {
 	cerr << "Could not read name and/or number of instrument at extension "
 	     << instrumentHDUs[i] << endl;
       }
@@ -416,32 +421,37 @@ main(int argc, char *argv[])
       // Is this an instrument we are going to care about?
       string name = instrumentName;
       instrumentTranslator(name);  // Apply any name remapping specified.
-      if (!regexMatchAny(useInstrumentList, name)) 
-	continue;	// Skip this instrument if we aren't using its mags
-
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, -1);
-      out.setName("Instrument");
-      out.adopt(ff);
-      Assert(instrumentNumber < instruments.size());
-      Instrument* instptr = new Instrument(instrumentName);
-      instruments[instrumentNumber] = instptr;
+      if (regexMatchAny(useInstrumentList, name))  {
+	// This is an instrument we will use.  Get its devices
+	/**/cerr << "Reading instrument " << name << endl;
+	FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, -1);
+	out.setName("Instrument");
+	FTable ff=ft.extract();
+	out.adopt(ff);
+	Assert(instrumentNumber < instruments.size());
+	Instrument* instptr = new Instrument(instrumentName);
+	instruments[instrumentNumber] = instptr;
       
-      vector<string> devnames;
-      vector<double> vxmin;
-      vector<double> vxmax;
-      vector<double> vymin;
-      vector<double> vymax;
-      ff.readCells(devnames, "Name");
-      ff.readCells(vxmin, "XMin");
-      ff.readCells(vxmax, "XMax");
-      ff.readCells(vymin, "YMin");
-      ff.readCells(vymax, "YMax");
-      for (int j=0; j<devnames.size(); j++) {
-	spaceReplace(devnames[j]);
-	instptr->addDevice( devnames[j],
-			    Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
-      }
+	vector<string> devnames;
+	vector<double> vxmin;
+	vector<double> vxmax;
+	vector<double> vymin;
+	vector<double> vymax;
+	ff.readCells(devnames, "Name");
+	ff.readCells(vxmin, "XMin");
+	ff.readCells(vxmax, "XMax");
+	ff.readCells(vymin, "YMin");
+	ff.readCells(vymax, "YMax");
+	for (int j=0; j<devnames.size(); j++) {
+	  /**/cerr << "  Device " << devnames[j] << endl;
+	  spaceReplace(devnames[j]);
+	  instptr->addDevice( devnames[j],
+			      Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
+	}
+      } // Done reading an instrument.
     }
+
+    /**/cerr << "Read instruments " << endl;
 
     // Read in the table of exposures
     vector<Exposure*> exposures;
@@ -484,10 +494,11 @@ main(int argc, char *argv[])
 	  && regexMatchAny(useReferenceList, names[i]);
 	// or if it's a normal exposure using an instrument that has been included
 	useThisExposure = useThisExposure || (instrumentNumber[i]>=0 && 
-					      !instruments[instrumentNumber[i]]);
+					      instruments[instrumentNumber[i]]);
 
 	Exposure* expo;
 	if (useThisExposure) {
+	  /**/cerr << "Using exposure " << names[i] << endl;
 	  // The projection we will use for this exposure:
 	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
 										  dec[i]*DEGREE)));
@@ -500,6 +511,8 @@ main(int argc, char *argv[])
 	exposures.push_back(expo);
       }
     }
+
+    /**/cerr << "Done reading exposures " << endl;
 
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
@@ -544,6 +557,8 @@ main(int argc, char *argv[])
       extensionTable.readCell(airmass, "Airmass", i);
       extn->airmass = airmass;
 
+      /**/cerr << "Using extension " << i << " exposure " << iExposure 
+	       << " device " << iDevice << " airmass " << airmass << endl;
       string s;
       extensionTable.readCell(s, "WCS", i);
       if (stringstuff::nocaseEqual(s, "ICRS")) {
@@ -566,6 +581,8 @@ main(int argc, char *argv[])
       extn->startWcs->reprojectTo(*exposures[extn->exposure]->projection);
       // ??? or use the field center for reference/tag exposures ???
     }
+
+    /**/cerr << "Done reading extensions " << endl;
 
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
@@ -640,6 +657,9 @@ main(int argc, char *argv[])
 	       << " that does not have initial values.  Ignoring request to fix params."
 	       << endl;
 	}
+
+	/**/ cerr << "Existing map for device " << devMapName 
+		  << " ? " << deviceMapsExist[idev] << endl;
 
 	// Done with this device for now if we have no existing map to read.
 	if (!deviceMapsExist[idev]) continue;
@@ -759,6 +779,7 @@ main(int argc, char *argv[])
       // Now we create new PhotoMaps for each Device that does not already have one.
       for (int idev=0; idev < inst->nDevices; idev++) {
 	if (deviceMapsExist[idev]) continue;
+	/**/cerr << "Parsing deviceModel for " << inst->mapNames[idev] << endl;
 	learnParsedMap(deviceModel, inst->mapNames[idev], mapCollection);
       } // end loop creating PhotoMaps for all Devices.
 
@@ -770,7 +791,6 @@ main(int argc, char *argv[])
 	   ++i) {
 	int iexp = *i;
 	Exposure& expo = *exposures[iexp];
-	PhotoMap* expoMap=0;
 	// First we check to see if we are going to use an existing exposure map:
 	string loadFile = expo.name;
 	if (existingMapFinder(loadFile)) {
@@ -784,12 +804,13 @@ main(int argc, char *argv[])
 	    exit(1);
 	  }
 	  pmcExpo.read(ifs);
-	  expoMap = pmcExpo.issueMap(expo.name);
+	  PhotoMap* expoMap = pmcExpo.issueMap(expo.name);
 	  mapCollection.learnMap(*expoMap);
 	  expo.mapName = expoMap->getName();
 	  // If this imported map is to be held fixed, add it to the list:
 	  if (regexMatchAny(fixMapList, expo.mapName))
 	    fixedMapNames.push_back(expo.mapName);
+	  delete expoMap;
 
 	  // We're done with this exposure if we have pre-set map for it.
 	  continue;
@@ -802,21 +823,25 @@ main(int argc, char *argv[])
 	  continue;
 	}
 	
+	/**/cerr << "parsing exposureModel for " << expo.name << endl;
+
 	// We will create a new exposure map 
 	learnParsedMap(exposureModel, expo.name, mapCollection);
+	expo.mapName = expo.name;
 
 	// Check for fixed maps
-	if (regexMatchAny(fixMapList, expoMap->getName())) {
+	if (regexMatchAny(fixMapList, expo.mapName)) {
 	  cerr << "WARNING: Requested fixed parameters for Exposure map "
-	       << expoMap->getName()
+	       << expo.name
 	       << " that does not have initial values.  Ignoring request to fix params."
 	       << endl;
 	}
 
-	delete expoMap;
       } // end creation of this exposure map
 
     } // End instrument loop
+
+    /**/cerr << "Done creating maps for non-reference exposures " << endl;
 
     // Freeze the parameters of all the fixed maps
     mapCollection.setFixed(fixedMapNames, true);
@@ -841,6 +866,7 @@ main(int argc, char *argv[])
 
     // Now construct a SubMap for every extension
     for (int iext=0; iext<extensions.size(); iext++) {
+      if (!extensions[iext]) continue;  // not in use.
       Extension& extn = *extensions[iext];
       Exposure& expo = *exposures[extn.exposure];
       int ifield = expo.field;
@@ -856,6 +882,15 @@ main(int argc, char *argv[])
 	mapElements.push_back(instruments[expo.instrument]->mapNames[extn.device]);
 	// Followed by the exposure map:
 	mapElements.push_back(expo.mapName);
+	/**/{
+	  cerr << "Defining chain for " << mapName << " elements:" ;
+	  for (list<string>::const_iterator i = mapElements.begin();
+	       i != mapElements.end();
+	       ++i)
+	    cerr << " " << *i;
+	  cerr << endl;
+	}
+
 	mapCollection.defineChain( mapName, mapElements);
 
 	extn.map = mapCollection.issueMap(mapName);
@@ -890,6 +925,9 @@ main(int argc, char *argv[])
 	       << endl;
 	  exit(1);
 	}
+	stripWhite(affinity);
+	/**/cerr << "Affinity <" << affinity 
+		 << "> " << stringstuff::nocaseEqual(affinity, stellarAffinity) << endl;
 	if (!stringstuff::nocaseEqual(affinity, stellarAffinity))
 	  continue;
       }
@@ -899,6 +937,7 @@ main(int argc, char *argv[])
       ff.readCells(seq, "SequenceNumber");
       ff.readCells(extn, "Extension");
       ff.readCells(obj, "Object");
+      /**/cerr << "seq size " << seq.size() << " 2nd " << seq[1] << endl;
       // Smaller collections for each match
       vector<long> extns;
       vector<long> objs;
@@ -934,7 +973,7 @@ main(int argc, char *argv[])
 	    // Make a match from the valid entries, and note need to get data for the detections and color
 	    int j=0;
 	    while (extns[j]<0 && j<extns.size()) ++j;  // Skip detections starved of their color
-	    Assert(j>=extns.size());
+	    Assert(j<extns.size());
 	    Detection* d = new Detection;
 	    d->catalogNumber = extns[j];
 	    d->objectNumber = objs[j];
@@ -987,15 +1026,23 @@ main(int argc, char *argv[])
       
     } // End loop over input matched catalogs
 
+    /**/cerr << "Total match count: " << matches.size() << endl;
+
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
     for (int iext = 0; iext < extensions.size(); iext++) {
       if (!extensions[iext]) continue; // Skip unused 
+      // Relevant structures for this extension
+      Extension& extn = *extensions[iext];
+      Exposure& expo = *exposures[extn.exposure];
+
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
       /**/cerr << "# Reading object catalog " << iext
 	       << "/" << extensions.size()
-	       << " from " << filename << endl;
+	       << " from " << filename 
+	       << " seeking " << extn.keepers.size()
+	       << " objects" << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "HDUNumber", iext);
       string xKey;
@@ -1011,9 +1058,6 @@ main(int argc, char *argv[])
       double weight;
       extensionTable.readCell(weight, "magWeight", iext);
 
-      // Relevant structures for this extension
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
 
       const SubMap* sm=extn.map;
       bool isReference = (expo.instrument == REF_INSTRUMENT);
@@ -1058,6 +1102,13 @@ main(int argc, char *argv[])
       } catch (img::FTableError& e) {
 	errorColumnIsDouble = false;
       }
+      bool magColumnIsDouble = true;
+      try {
+	double d;
+	ff.readCell(d, magKey, 0);
+      } catch (img::FTableError& e) {
+	magColumnIsDouble = false;
+      }
 
       double sysError = isReference ? referenceSysError : magSysError;
 
@@ -1077,7 +1128,13 @@ main(int argc, char *argv[])
 			  d->args.xExposure, d->args.yExposure);
 
 	// Get the mag input and its error
-	ff.readCell(d->magIn, magKey, irow);
+	if (magColumnIsDouble) {
+	  ff.readCell(d->magIn, magKey, irow);
+	} else {
+	  float f;
+	  ff.readCell(f, magKey, irow);
+	  d->magIn = f;
+	}
 	double sigma;
 	if (errorColumnIsDouble) {
 	  ff.readCell(sigma, magErrKey, irow);
@@ -1185,14 +1242,17 @@ main(int argc, char *argv[])
 
     {
       ran::UniformDeviate u;
+      /**/u.Seed(53347L);  
       long dcount=0;
       int dof=0;
       double chi=0.;
       double maxdev=0.;
 
+      /**/cerr << "Before reserving, match count: " << matches.size() << endl;
       list<Match*>::iterator im = matches.begin();
       while (im != matches.end() ) {
 	// Decide whether to reserve this match
+	(*im)->countFit();
 	if (reserveFraction > 0.)
 	  (*im)->setReserved( u < reserveFraction );
 
@@ -1246,7 +1306,7 @@ main(int argc, char *argv[])
 
       cout << "Using " << matches.size() 
 	   << " matches with " << dcount << " total detections." << endl;
-      cout << " chisq " << chi << " / " << dof << " dof maxdev " << sqrt(maxdev) << endl;
+      cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
 
     } // End Match-culling section.
 
@@ -1315,7 +1375,7 @@ main(int argc, char *argv[])
 	int dof=0;
 	double chi= ca.chisqDOF(dof, maxdev, false);
 	cout << "Fitting " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << sqrt(maxdev) 
+	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
 	     << " sigma" << endl;
       }
 
@@ -1402,7 +1462,7 @@ main(int argc, char *argv[])
 	int dof=0;
 	double chisq= ca.chisqDOF(dof, max, true);
 	cout << "Clipping " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << sqrt(max) 
+	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
 	     << " sigma" << endl;
       
 	double thresh = sqrt(chisq/dof) * clipThresh;
@@ -1415,6 +1475,24 @@ main(int argc, char *argv[])
 	cout << "Clipped " << nclip
 	     << " matches " << endl;
       } while (nclip>0);
+    }
+
+    //////////////////////////////////////
+    // Output report on priors
+    //////////////////////////////////////
+    if (!outPriorFile.empty()) {
+      ofstream ofs(outPriorFile.c_str());
+      if (!ofs) {
+	cerr << "Error trying to open output file for prior report: " << outPriorFile << endl;
+	// *** will not quit before dumping output ***
+      } else {
+	PhotoPrior::reportHeader(ofs);
+	for (list<PhotoPrior*>::const_iterator i = priors.begin();
+	     i != priors.end();
+	     ++i) {
+	  (*i)->report(ofs);
+	}
+      }
     }
 
     //////////////////////////////////////
@@ -1603,22 +1681,14 @@ main(int argc, char *argv[])
     outTable.writeCells(sigMag, "sigMag", pointCount);
     outTable.writeCells(wtFrac, "wtFrac", pointCount);
 
-    // Now for standard output.  First will print information on the priors,
-    // then an exposure-by-exposure table.
-
-    // The priors:
-    PhotoPrior::reportHeader(cout);
-    for (list<PhotoPrior*>::const_iterator i = priors.begin();
-	 i != priors.begin();
-	 ++i) {
-      (*i)->report(cerr);
-    }
+    // Now for standard output, an exposure-by-exposure table.
 
     // Print summary statistics for each exposure
     cout << "#    Exp    N    DOF    dmag    +-    RMS chi_red   xExposure    yExposure \n"
 	 << "#                      |.....millimag....|          |.......degrees......|"
 	 << endl;
     for (int iexp=0; iexp<exposures.size(); iexp++) {
+      if (!exposures[iexp]) continue;
       cout << "Fit     " << setw(3) << iexp
 	   << " " << vaccFit[iexp].summary()
 	   << endl;

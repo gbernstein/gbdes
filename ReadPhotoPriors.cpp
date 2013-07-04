@@ -1,11 +1,25 @@
 // Code to read PhotoPriors from files.
 // Used in PhotoFit.cpp.
 
-// Program to fit photometric solutions to detection catalogs already matched by WCSFoF.
+// The prior files will be expected to have the following format.
+// * All blank lines or those starting with '#' or ';' are skipped
+// * First line of a prior has 
+//       <name> <sigma>
+// * Then there are lines specifying the initial zeropoint, color coefficent, and airmass coeff
+//   and whether these are to be held fixed or free.  These are given on optional lines saying:
+//   <zeropoint | airmass | color> <value> [free | fixed]
+//   where the exact words are given in 1st & 3rd args.  If 3rd is omitted, quantity is fixed.
+//   Any of these three not specified defaults to a fixed value of zero.
+// * Additional lines describe an exposure & device to be used as the reference point
+//   <Exposure name> <Device name> [xpix ypix] [instrumental mag]
+//   the optional last argument defaults to 0 and is the input mag that has to result in a match
+//   to the others under the prior.  Set it to input value that 1 ADU/s will have, typically.
+//   Also optional is a pixel coordinate pair to determine the reference point on the device.
+//   Defaults to the center of the selected device.
+//   Exposure name can be a regular expression.
+// * A prior ends when the file does, or at a line saying END
 #include <fstream>
 #include <sstream>
-#include <map>
-#include <iomanip>
 
 #include "Std.h"
 #include "Astrometry.h"

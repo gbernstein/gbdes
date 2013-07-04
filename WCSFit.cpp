@@ -330,7 +330,7 @@ main(int argc, char *argv[])
 	 i != canonicalExposureList.end(); ) {
       stripWhite(*i);
       if (i->empty()) {
-	i = canonicalMapList.erase(i);
+	i = canonicalExposureList.erase(i);
       } else {
 	++i;
       }
@@ -1134,6 +1134,7 @@ main(int argc, char *argv[])
 
     {
       ran::UniformDeviate u;
+      /**/ u.Seed(43215L);
       long dcount=0;
       int dof=0;
       double chi=0.;
@@ -1175,7 +1176,7 @@ main(int argc, char *argv[])
 
       cout << "Using " << matches.size() 
 	   << " matches with " << dcount << " total detections." << endl;
-      cout << " chisq " << chi << " / " << dof << " dof maxdev " << sqrt(maxdev) << endl;
+      cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
 
     } // End Match-culling section.
 
@@ -1205,7 +1206,7 @@ main(int argc, char *argv[])
 	int dof=0;
 	double chi= ca.chisqDOF(dof, maxdev, false);
 	cout << "Fitting " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << sqrt(maxdev) 
+	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
 	     << " sigma" << endl;
       }
 
@@ -1315,7 +1316,7 @@ main(int argc, char *argv[])
 	int dof=0;
 	double chisq= ca.chisqDOF(dof, max, true);
 	cout << "Clipping " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << sqrt(max) 
+	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
 	     << " sigma" << endl;
       
 	double thresh = sqrt(chisq/dof) * clipThresh;

@@ -177,14 +177,15 @@ namespace photometry {
 
     // Structure for every PhotoMap that we know about:
     struct MapElement {
-      MapElement(): realization(0), atom(0), isFixed(false), number(-1) {}
+      MapElement(): realization(0), atom(0), isFixed(false), 
+	nParams(0), number(-1) {}
       list<string> subordinateMaps;  // If it's compound, what it will be made from
       SubMap* realization;	     // pointer to its SubMap, if it's been built
       PhotoMap* atom;		     // Pointer to the PhotoMap itself, if atomic
+      bool isFixed;		     // True if its parameters are currently fixed.
       int startIndex;		     // Location in the union parameter array
       int nParams;		     // Number of parameters (only atomic is nonzero)
       int number;		     // sequential index among all maps with free parameters
-      bool isFixed;		     // True if its parameters are currently fixed.
     };
 
     map<string, MapElement> mapElements;  // all known PhotoMaps, indexed by name.

@@ -79,7 +79,8 @@ PhotoMapCollection::getParams() const {
     if (map.isFixed) continue;
     int nSub = map.nParams;
     if (nSub<=0) continue;
-    if (!map.atom) cerr << "mapElement is not atomic: " << i->first << " params: " << nSub << endl;
+    if (!map.atom) 
+      cerr << "mapElement is not atomic: " << i->first << " params: " << nSub << endl;
     Assert(map.atom);
     p.subVector(map.startIndex, map.startIndex+nSub) = 
       map.atom->getParams().subVector(0,nSub);

@@ -286,6 +286,7 @@ Match::accumulateChisq(double& chisq,
     if (di[ipt]) {delete di[ipt]; di[ipt]=0;}
   } // object loop
 
+
   // Subtract effects of derivatives on mean
   /*  We want to do this, but without touching the entire alpha matrix every time:
   alpha -=  (dmean ^ dmean)/wt;
@@ -396,7 +397,7 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
   int matchCtr=0;
 
   const int NumberOfLocks = 2000;
-  AlphaUpdater updater(alpha, pmc.nFreeMaps(), NumberOfLocks);
+  AlphaUpdater updater(alpha, maxMapNumber, NumberOfLocks);
 
 #ifdef _OPENMP
   const int chunk=10000;
@@ -641,6 +642,7 @@ PhotoAlign::countPriorParams() {
     (*i)->globalMapNumber = mapNumber++;
   }
   nPriorParams = startIndex - pmc.nParams();
+  maxMapNumber = mapNumber;
 }
 
 void
@@ -668,4 +670,5 @@ PhotoAlign::getParams() const {
     p.subVector(startIndex, startIndex+(*i)->nParams()) = (*i)->getParams();
     startIndex += (*i)->nParams();
   }
+  return p;
 }

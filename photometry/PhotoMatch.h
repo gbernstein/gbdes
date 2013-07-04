@@ -211,6 +211,7 @@ namespace photometry {
     list<PhotoPrior*>& priors;
     double relativeTolerance;
     int nPriorParams;
+    int maxMapNumber;
     void countPriorParams();  // Update parameter counts, indices, map numbers for priors
   public:
     PhotoAlign(PhotoMapCollection& pmc_,

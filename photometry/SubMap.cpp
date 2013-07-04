@@ -152,6 +152,7 @@ SubMap::forwardDerivs( double magIn, const PhotoArguments& args,
       magOut = vMaps[iMap]->forward(magIn, args);
     }
   }
+  return magOut;
 }
 
 // Calculate dOut / dIn, with chain rule:
