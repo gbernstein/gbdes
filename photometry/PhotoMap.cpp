@@ -51,9 +51,9 @@ double
 PolyMap::forward(double magIn, const PhotoArguments& args) const {
   double dMag;
   if (useExposureCoords)
-    dMag += poly(args.xExposure, args.yExposure);
+    dMag = poly(args.xExposure, args.yExposure);
   else
-    dMag += poly(args.xDevice, args.yDevice);
+    dMag = poly(args.xDevice, args.yDevice);
   return magIn + dMag;
 }
 

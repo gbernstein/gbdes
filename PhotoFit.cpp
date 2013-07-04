@@ -403,6 +403,10 @@ main(int argc, char *argv[])
     /**/cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
 	     << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
 
+    // This flag will be set if we have already opened (and overwritten) the
+    // output FITS catalog.
+    bool outputCatalogAlreadyOpen = false;
+
     // Read in all the instrument extensions and their device info.
     vector<Instrument*> instruments(instrumentHDUs.size(),0);
     for (int i=0; i<instrumentHDUs.size(); i++) {
@@ -421,10 +425,16 @@ main(int argc, char *argv[])
       // Is this an instrument we are going to care about?
       string name = instrumentName;
       instrumentTranslator(name);  // Apply any name remapping specified.
+      
       if (regexMatchAny(useInstrumentList, name))  {
 	// This is an instrument we will use.  Get its devices
 	/**/cerr << "Reading instrument " << name << endl;
-	FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, -1);
+	FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
+	if (!outputCatalogAlreadyOpen) {
+	  outFlags = outFlags + FITS::OverwriteFile;
+	  outputCatalogAlreadyOpen = true;
+	}
+	FITS::FitsTable out(outCatalog, outFlags, -1);
 	out.setName("Instrument");
 	FTable ff=ft.extract();
 	out.adopt(ff);
@@ -460,7 +470,12 @@ main(int argc, char *argv[])
     vector<int> exposureColorPriorities;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Exposures");
+      FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
+      if (!outputCatalogAlreadyOpen) {
+	outFlags = outFlags + FITS::OverwriteFile;
+	outputCatalogAlreadyOpen = true;
+      }
+      FITS::FitsTable out(outCatalog, outFlags, "Exposures");
       FTable ff = ft.extract();
       out.adopt(ff);
       vector<string> names;
@@ -1746,16 +1761,16 @@ PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType argTyp
     if ( (iss >> yOrder)) {
       PolyMap* poly = new PolyMap(xOrder, yOrder,argType, name);
       // Set PolyMap to identity for starters:
-      DVector p = pm->getParams();
+      DVector p = poly->getParams();
       p.setZero();
-      pm->setParams(p);
+      poly->setParams(p);
       pm = poly;
     } else {
       PolyMap* poly = new PolyMap(xOrder, argType, name);
       // PolyMap has zero coefficients, identity on mags:
-      DVector p = pm->getParams();
+      DVector p = poly->getParams();
       p.setZero();
-      pm->setParams(p);
+      poly->setParams(p);
       pm = poly;
     }
     /** Not in place yet:
