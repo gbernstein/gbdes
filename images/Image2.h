@@ -1,6 +1,5 @@
-// $Id: Image2.h,v 1.6 2009/11/02 22:48:53 garyb Exp $
 // Further pieces of the Image.h header.  Here are classes that
-// are going to be used directly by the programmer.
+// are not going to be used directly by the programmer.
 #ifndef IMAGE2_H
 #define IMAGE2_H
 
@@ -15,8 +14,6 @@ namespace img {
   ////////////////////////////////////////////////////////////////
   template <class T=float>
   class ImageData {
-    //    template <class U>
-    //friend class FITSImage;
   public:
     // Create:
     // image with unspecified data values:
@@ -30,6 +27,21 @@ namespace img {
   
     ~ImageData();
 
+    // Create a new ImageData that is duplicate of this one's data
+    ImageData* duplicate() const;
+  
+    // Manage change status - any alteration in subimage propagates to parent's change flag.
+    // Clearing parent change flag clears all subimages too.
+    // Cannot clear change flag of nor lock a subimage
+    bool isChanged() const {return isAltered;}
+    void touch() {isAltered = true; if (parent) parent->touch();}
+    void clearChanged();
+    bool isLocked() const {return lock;}
+    void setLock() {
+      if (parent) throw ImageError("Attempt to lock subimage");
+      lock = true;
+    }
+
     // This routine used by some other object rearranging the storage
     // array.  If ownRowPointers was set, then this routine deletes the
     // old array and assumes responsibility for deleting the new one.
@@ -37,30 +49,22 @@ namespace img {
       if (ownRowPointers) delete[] (rowPointers + bounds.getYMin()); 
       rowPointers=newRptrs;
     }
+
     // Make a new ImageData that is subimage of this one.  Data will be
     // shared in memory, just pixel bounds are different.  subimages
     // a.k.a. children must be destroyed before the parent.
-    ImageData* subimage(const Bounds<int> bsub);
-    const ImageData* const_subimage(const Bounds<int> bsub) const;  //return const
-    const ImageData* subimage(const Bounds<int> bsub) const;  //if this const
-    void deleteSubimages() const; // delete all living subimages
+    ImageData* subimage(const Bounds<int> bsub) const;
 
-    // Create a new subimage that is duplicate of this ones data
-    ImageData* duplicate() const;
-  
-    // Resize the image - this will throw exception if data array
-    // is not owned or if there are subimages in use.
-    // Data are undefined afterwards
-    void resize(const Bounds<int> newBounds);
+    // These changes to the data structure will throw exception if data array
+    // is not owned or if there are subimages in use, or if this is a subimage.
+    void resize(const Bounds<int> newBounds);      // Data are undefined afterwards
     // Copy in the data (and size) from another image.
     void copyFrom(const ImageData<T>& rhs);
-
-    // move origin of coordinates, preserving data.  Throws exception
-    // if data are not owned or if there are subimages in use.
+    // move origin of coordinates, preserving data.
     void shift(int x0, int y0);
 
     // Element access - unchecked
-    const T& operator()(const int xpos, const int ypos) const {
+    const T operator()(const int xpos, const int ypos) const {
       return *location(xpos,ypos);
     }
     T& operator()(const int xpos, const int ypos) {
@@ -68,21 +72,30 @@ namespace img {
     }
 
     // Element access - checked
-    const T& at(const int xpos, const int ypos) const {
-      if (!bounds.includes(xpos,ypos))  
-      	ImageBounds::FormatAndThrow(xpos,ypos,bounds);
+    const T at(const int xpos, const int ypos) const {
+      checkBounds(xpos,ypos);
       return *location(xpos,ypos);
     }
     T& at(const int xpos, const int ypos) {
-      if (!bounds.includes(xpos,ypos))  
-	ImageBounds::FormatAndThrow(xpos,ypos,bounds);
+      checkBounds(xpos,ypos);
       return *location(xpos,ypos);
     }
 
     // give pointer to a pixel in the storage array, 
     // for use by routines that buffer image data for us.
-    T*   location(const int xpos, const int ypos) const {
-      return *(rowPointers+ypos)+xpos;}
+    // All write access to pixels must go through this, so this is where we check
+    // for locking and update alteration flags
+    T*   location(const int xpos, const int ypos) {
+      checkLock("location()");
+      touch();
+      return *(rowPointers+ypos)+xpos;
+    }
+    const T* const_location(const int xpos, const int ypos) const {
+      return *(rowPointers+ypos)+xpos;
+    }
+    const T* location(int xpos, int ypos) const {
+      return const_location(xpos,ypos);
+    }
 
     // Access functions
     Bounds<int> getBounds() const {return bounds;}
@@ -92,18 +105,18 @@ namespace img {
     // image which will be a subimage of a parent:
     ImageData(const Bounds<int> inBounds, 
 	      const ImageData<T>* _parent);
-    ImageData(const ImageData &) {
-      throw ImageError("Attempt to use ImageData copy constructor");
-    }	//No inadvertent copying allowed! Use copyFrom() to be explicit.
-    ImageData& operator=(const ImageData&) {
-      throw ImageError("Attempt to use ImageData operator=");
-    }
+    // Hide:
+    ImageData(const ImageData &); 
+    ImageData& operator=(const ImageData&);
 
     Bounds<int>	bounds;
-    mutable T	**rowPointers;	// Pointers to start of the data rows
-    const ImageData<T>* parent; // If this is a subimage, what's parent?
+    mutable T **rowPointers;	// Pointers to start of the data rows
+    // Pointer is zero if this is not a subimage, else points to parent
+    ImageData<T>* const parent; 
     //list of subimages of this (sub)image:
-    mutable list<const ImageData<T>*> children;	
+    bool isAltered;
+    bool lock;
+    mutable list<ImageData<T>*> children;	
 
     // Does this object own (i.e. have responsibility for destroying):
     bool  ownDataArray;	// the actual data array
@@ -111,81 +124,101 @@ namespace img {
     mutable bool  isContiguous;	// Set if entire image is contiguous in memory
 
     // class utility functions:
+
+    // Call this for anything that is going to alter data
+    void checkLock(const string& s="") {
+      if (isLocked()) throw ImageError(s + " called for locked ImageData");
+      touch();
+    }
+
+    void checkBounds(int x, int y) const {
+      if (!bounds.includes(x,y))
+	FormatAndThrow<ImageBounds>() << " at (" << x << "," << y 
+				      << "), bounds " << bounds;
+    }
+
     void acquireArrays(Bounds<int> inBounds);
     void discardArrays();
-    void unlinkChild(const ImageData<T>* child) const;
-    void linkChild(const ImageData<T>* child) const;
+    void unlinkChild(ImageData<T>* child) const;
+    void linkChild(ImageData<T>* child) const;
+    // ??? Not sure if the below is needed:
+    void deleteSubimages() const; // delete all living subimages
+
   };
 
   //////////////////////////////////////////////////////////////////////////
   // Checked iterator for images
   //////////////////////////////////////////////////////////////////////////
-  // ??? need conversion from iter to const iter??
   template <class T=float>
-  class ImageChk_iter {
+  class Chk_iterator {
   private:
-    ImageData<T> *I;
     T* ptr;
-    int col;	//keep track of column number
+    int x;	//keep track of col number
+    int xMin;
+    int xMax;
   public:
-    ImageChk_iter(ImageData<T>* ii, const int x, const int y): I(ii), col(x) {
-      if (y<I->getBounds().getYMin() || y>I->getBounds().getYMax())
-	ImageBounds::FormatAndThrow("row",
-				    I->getBounds().getYMin(), I->getBounds().getYMax(),
-				    y);
-      ptr = &( (*I)(x,y));
+    Chk_iterator(ImageData<T>* D, int x_, int y): x(x_),
+						  xMin(D->getBounds().getXMin()),
+						  xMax(D->getBounds().getXMax()) {
+      if (y<D->getBounds().getYMin() || y>D->getBounds().getYMax())
+	FormatAndThrow<ImageBounds>() << " Y= " << y
+				      << " range ["  << D->getBounds().getYMin()
+				      << "," << D->getBounds().getYMax() << "]";
+      ptr = D->location(x,y);
     }
     T& operator*() const {
-      if (col<I->getBounds().getXMin() || col>I->getBounds().getXMax())
-	ImageBounds::FormatAndThrow("column",
-				    I->getBounds().getXMin(), I->getBounds().getXMax(),
-				    col);
+      if (x<xMin || x>xMax)
+	FormatAndThrow<ImageBounds>() << " X= " << x
+				      << " range [" << xMin
+				      << "," << xMax << "]";
       return *ptr;
     }
-    ImageChk_iter operator++() {++ptr; ++col; return *this;}
-    ImageChk_iter operator--() {++ptr; ++col; return *this;}
-    ImageChk_iter operator+=(int i) {ptr+=i; col+=i; return *this;}
-    ImageChk_iter operator-=(int i) {ptr-=i; col-=i; return *this;}
-    bool operator<(const ImageChk_iter rhs) const {return ptr<rhs.ptr;}
-    bool operator<=(const ImageChk_iter rhs) const {return ptr<=rhs.ptr;}
-    bool operator>(const ImageChk_iter rhs) const {return ptr>rhs.ptr;}
-    bool operator>=(const ImageChk_iter rhs) const {return ptr>=rhs.ptr;}
-    bool operator==(const ImageChk_iter rhs) const {return ptr==rhs.ptr;}
-    bool operator!=(const ImageChk_iter rhs) const {return ptr!=rhs.ptr;}
+    Chk_iterator operator++() {++ptr; ++x; return *this;}
+    Chk_iterator operator--() {++ptr; ++x; return *this;}
+    Chk_iterator operator+=(int i) {ptr+=i; x+=i; return *this;}
+    Chk_iterator operator-=(int i) {ptr-=i; x-=i; return *this;}
+    bool operator<(const Chk_iterator rhs) const {return ptr<rhs.ptr;}
+    bool operator<=(const Chk_iterator rhs) const {return ptr<=rhs.ptr;}
+    bool operator>(const Chk_iterator rhs) const {return ptr>rhs.ptr;}
+    bool operator>=(const Chk_iterator rhs) const {return ptr>=rhs.ptr;}
+    bool operator==(const Chk_iterator rhs) const {return ptr==rhs.ptr;}
+    bool operator!=(const Chk_iterator rhs) const {return ptr!=rhs.ptr;}
   };
 
   template <class T=float>
-  class ImageChk_citer {
+  class Chk_const_iterator {
   private:
-    const ImageData<T> *I;
     const T* ptr;
-    int col;	//keep track of column number
+    int x;	//keep track of col number
+    int xMin;
+    int xMax;
   public:
-    ImageChk_citer(const ImageData<T>* ii, 
-		   const int x, const int y): I(ii), col(x) {
-      if (y<I->getBounds().getYMin() || y>I->getBounds().getYMax())
-	ImageBounds::FormatAndThrow("row",
-				    I->getBounds().getYMin(), I->getBounds().getYMax(),
-				    y);
-      ptr = &( (*I)(x,y));
+    Chk_const_iterator(const ImageData<T>* D, int x_, int y): x(x_),
+							      xMin(D->getBounds().getXMin()),
+							      xMax(D->getBounds().getXMax()) {
+      if (y<D->getBounds().getYMin() || y>D->getBounds().getYMax())
+	FormatAndThrow<ImageBounds>() << " Y= " << y
+				      << " range ["  << D->getBounds().getYMin()
+				      << "," << D->getBounds().getYMax() << "]";
+      ptr = D->const_location(x,y);
     }
     const T& operator*() const {
-      if (col<I->getBounds().getXMin() || col>I->getBounds().getXMax())
-	ImageBounds::FormatAndThrow("column",
-				    I->getBounds().getXMin(), I->getBounds().getXMax(),
-				    col);
+      if (x<xMin || x>xMax)
+	FormatAndThrow<ImageBounds>() << " X= " << x
+				      << " range [" << xMin
+				      << "," << xMax << "]";
       return *ptr;
     }
-    ImageChk_citer operator++() {++ptr; ++col; return *this;}
-    ImageChk_citer operator--() {++ptr; ++col; return *this;}
-    ImageChk_citer operator+=(int i) {ptr+=i; col+=i; return *this;}
-    ImageChk_citer operator-=(int i) {ptr-=i; col-=i; return *this;}
-    bool operator<(const ImageChk_citer rhs) const {return ptr<rhs.ptr;}
-    bool operator<=(const ImageChk_citer rhs) const {return ptr<=rhs.ptr;}
-    bool operator>(const ImageChk_citer rhs) const {return ptr>rhs.ptr;}
-    bool operator>=(const ImageChk_citer rhs) const {return ptr>=rhs.ptr;}
-    bool operator==(const ImageChk_citer rhs) const {return ptr==rhs.ptr;}
-    bool operator!=(const ImageChk_citer rhs) const {return ptr!=rhs.ptr;}
+    Chk_const_iterator operator++() {++ptr; ++x; return *this;}
+    Chk_const_iterator operator--() {++ptr; ++x; return *this;}
+    Chk_const_iterator operator+=(int i) {ptr+=i; x+=i; return *this;}
+    Chk_const_iterator operator-=(int i) {ptr-=i; x-=i; return *this;}
+    bool operator<(const Chk_const_iterator rhs) const {return ptr<rhs.ptr;}
+    bool operator<=(const Chk_const_iterator rhs) const {return ptr<=rhs.ptr;}
+    bool operator>(const Chk_const_iterator rhs) const {return ptr>rhs.ptr;}
+    bool operator>=(const Chk_const_iterator rhs) const {return ptr>=rhs.ptr;}
+    bool operator==(const Chk_const_iterator rhs) const {return ptr==rhs.ptr;}
+    bool operator!=(const Chk_const_iterator rhs) const {return ptr!=rhs.ptr;}
   };
 
 } //namespace img

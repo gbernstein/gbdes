@@ -1,4 +1,3 @@
-// $Id: FTable.h,v 1.2 2012/09/08 15:48:19 garyb Exp $ 
 // Analogize the Image class to a 2d table that is an in-memory representation of a FITS
 // ASCII or binary table.  Will use the same header structure as the Image class.
 
@@ -20,9 +19,9 @@
 namespace img {
 
   // Exception classes:
-  class FTableError: public MyException {
+  class FTableError: public std::runtime_error {
   public: 
-    FTableError(const string &m=""): MyException("FTable Error: " + m) {}
+    FTableError(const string &m=""): std::runtime_error("FTable Error: " + m) {}
 
   };
   class FTableNonExistentColumn: public FTableError {
@@ -63,7 +62,8 @@ namespace img {
       H(new Header()),
       dcount(new int(1)),
       hcount(new int(1)) {}
-    // Copy constructor is really a data share:
+    // Copy constructor is really a data share; lock status is preserved
+    // by sharing so this can become unwriteable if we op= it to a locked rhs
     FTable(const FTable &rhs): 
       D(rhs.D),
       H(rhs.H), 
@@ -75,12 +75,12 @@ namespace img {
       if (D!=rhs.D) {
 	if (--(*dcount)==0) {delete D; delete dcount;}
 	D = rhs.D; dcount=rhs.dcount; (*dcount)++;
-	D->touch();
+	D->touch(); // ??? can omit this ???
       }
       if (H!=rhs.H) {
 	if (--(*hcount)==0) {delete H; delete hcount;}
 	H = rhs.H; hcount=rhs.hcount; (*hcount)++;
-	H->touch();
+	H->touch();  // ??? can omit this ???
       }
       return *this;
     }
@@ -117,6 +117,7 @@ namespace img {
     bool isChanged() const {return H->isChanged() || D->isChanged();}
     void clearChanged() {H->clearChanged(); D->clearChanged();}
     bool isLocked() const {return H->isLocked() || D->isLocked();}
+    // Note ***there is no unlocking of data.***  This avoids becoming unconst.
     void setLock() {H->setLock(); D->setLock();}
 
 

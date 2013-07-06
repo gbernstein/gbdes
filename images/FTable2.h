@@ -1,4 +1,3 @@
-// $Id: FTable2.h,v 1.4 2012/09/08 20:10:46 garyb Exp $
 // In-memory version of the FITS table structure.
 // This file contains classes / declarations that should not be needed
 // by the user.

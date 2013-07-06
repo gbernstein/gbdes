@@ -1,4 +1,3 @@
-// 	$Id: Image.cpp,v 1.30 2011/02/09 19:22:23 garyb Exp $	
 // Implementation code for Image class and related classes.
 #include "Image.h"
 #include <cstring>
@@ -9,41 +8,21 @@ using namespace img;
 using namespace std;
 
 /////////////////////////////////////////////////////////////////////
-// Constructor for out-of-bounds that has coordinate info
-/////////////////////////////////////////////////////////////////////
-void
-ImageBounds::FormatAndThrow(const string &m, 
-			    const int min, 
-			    const int max, 
-			    const int tried) {
-  char sbuff[120];
-  sprintf(sbuff,"Attempt to access %8s number %5d, range is %5d to %5d", 
-	  m.c_str(), tried, min, max);
-  string mm(sbuff);
-  throw ImageError(mm);
-}
-
-void
-ImageBounds::FormatAndThrow(const int x, 
-			    const int y, 
-			    const Bounds<int> b) {
-  char sbuff[120];
-  if (x<b.getXMin() || x>b.getXMax()) {
-    sprintf(sbuff,"Attempt to access column number %5d, range is %5d to %5d", 
-	  x, b.getXMin(), b.getXMax());
-  } else if (y<b.getYMin() || y>b.getYMax()) {
-    sprintf(sbuff,"Attempt to access row number %5d, range is %5d to %5d", 
-	  y, b.getYMin(), b.getYMax());
-  } else 
-    strcpy(sbuff,"Cannot find bounds violation ???");
-  string mm(sbuff);
-  throw ImageError(mm);
-}
-
-/////////////////////////////////////////////////////////////////////
 // Routines for the underlying data structure ImageData
 /////////////////////////////////////////////////////////////////////
 
+template <class T>
+void
+ImageData<T>::clearChanged() {
+  if (parent) 
+    throw ImageError("ImageData::clearChanged() called for a subimage");
+  isAltered = false;
+  for (typename list<ImageData<T>*>::iterator i = children.begin();
+       i != children.end();
+       ++i)
+    (*i)->isAltered = false;
+}
+ 
 // build or destroy the data array
 template <class T>
 void ImageData<T>::acquireArrays(Bounds<int> inBounds) {
@@ -94,14 +73,18 @@ ImageData<T>::discardArrays() {
 
 // image with unspecified data values:
 template <class T>
-ImageData<T>::ImageData(const Bounds<int> inBounds): parent(0) {
+ImageData<T>::ImageData(const Bounds<int> inBounds): parent(0),
+						     isAltered(false),
+						     lock(false) {
   acquireArrays(inBounds);
 }
 
 // image filled with a scalar:
 template <class T>
 ImageData<T>::ImageData(const Bounds<int> inBounds, 
-			const T initValue): parent(0) {
+			const T initValue): parent(0),
+					    isAltered(false),
+					    lock(false) {
   acquireArrays(inBounds);
   // Initialize the data
   Assert(isContiguous);
@@ -121,19 +104,23 @@ ImageData<T>::ImageData(const Bounds<int> inBounds,
 			T** rptrs,
 			bool _contig): bounds(inBounds),
 				       parent(0),
+				       isAltered(false),
+				       lock(false),
 				       ownDataArray(false),
 				       ownRowPointers(true),
 				       rowPointers(rptrs),
 				       isContiguous(_contig) {}
 
-// image which will be a subimage of a parent:
+// construct a subimage of a parent:
 // Note that there is no assumption that parent is contiguous, its
 // storage state could change.
 template <class T>
 ImageData<T>::ImageData(const Bounds<int> inBounds, 
 			const ImageData<T>* _parent): 
   bounds(inBounds),
-  parent(_parent),
+  parent(const_cast<ImageData<T>*> (_parent)),
+  isAltered(_parent->isAltered),
+  lock(_parent->lock),
   ownDataArray(false),
   ownRowPointers(false),
   rowPointers(_parent->rowPointers),
@@ -150,8 +137,8 @@ ImageData<T>::~ImageData() {
 
 template <class T>
 void
-ImageData<T>::unlinkChild(const ImageData<T>* child) const {
-  typename list<const ImageData<T>*>::iterator cptr =
+ImageData<T>::unlinkChild(ImageData<T>* child) const {
+  typename list<ImageData<T>*>::iterator cptr =
     find(children.begin(), children.end(), child);
   if (cptr==children.end() && !uncaught_exception()) 
     throw ImageError("ImageData::unlinkChild cannot find the child");
@@ -160,7 +147,7 @@ ImageData<T>::unlinkChild(const ImageData<T>* child) const {
 
 template <class T>
 void
-ImageData<T>::linkChild(const ImageData<T>* child) const {
+ImageData<T>::linkChild(ImageData<T>* child) const {
   children.push_back(child);
 }
 
@@ -175,7 +162,7 @@ ImageData<T>::deleteSubimages() const {
 
 // Get a subimage of this one
 template <class T>
-ImageData<T>* ImageData<T>::subimage(const Bounds<int> bsub) {
+ImageData<T>* ImageData<T>::subimage(const Bounds<int> bsub) const {
   if (!bounds.includes(bsub)) 
     throw ImageError("Attempt to create subimage outside of ImageData"
 		     " bounds");
@@ -183,24 +170,7 @@ ImageData<T>* ImageData<T>::subimage(const Bounds<int> bsub) {
   linkChild(child);
   return child;
 }
-
-// Get a read-only subimage of this one
-template <class T>
-const ImageData<T>* ImageData<T>::const_subimage(const Bounds<int> bsub) const {
-  if (!bounds.includes(bsub)) 
-    throw ImageError("Attempt to create subimage outside of ImageData"
-		     " bounds");
-  const ImageData* child = new ImageData(bsub, this);
-  linkChild(child);
-  return child;
-}
   
-// Get a read-only subimage of this one (if this is const)
-template <class T>
-const ImageData<T>* ImageData<T>::subimage(const Bounds<int> bsub) const {
-  return const_subimage(bsub);
-}
-
 // Create a new subimage that is duplicate of this ones data
 template <class T>
 ImageData<T>* 
@@ -209,20 +179,21 @@ ImageData<T>::duplicate() const {
   Assert(dup->isContiguous);
 
   // Copy the data from old array to new array
-  T  *inptr, *dptr;
+  const T *inptr;
+  T *dptr;
   long int xsize,ysize;
   xsize = bounds.getXMax() - bounds.getXMin() + 1;
   ysize = bounds.getYMax() - bounds.getYMin() + 1;
   
   if (isContiguous) {
     // Can be done is a single large copy if both contiguous
-    inptr = location(bounds.getXMin(),bounds.getYMin());
+    inptr = const_location(bounds.getXMin(),bounds.getYMin());
     dptr = dup->location(bounds.getXMin(),bounds.getYMin());
     memmove( (void *)dptr, (void *)inptr, sizeof(T)*xsize*ysize);
   } else {
     // Do copy by rows
     for (int i=bounds.getYMin(); i<=bounds.getYMax(); i++) {
-      inptr = location(bounds.getXMin(), i);
+      inptr = const_location(bounds.getXMin(), i);
       dptr = dup->location(bounds.getXMin(), i);
       memmove( (void *)dptr, (void *)inptr, sizeof(T)*xsize);
     }
@@ -242,6 +213,9 @@ ImageData<T>::resize(const Bounds<int> newBounds) {
   if (!children.empty())
     throw ImageError("Attempt to ImageData::resize() with subimages"
 		     " in use.");
+  if (parent)
+    throw ImageError("Attempt to ImageData::resize() a subimage");
+  checkLock("resize()");
   discardArrays();
   acquireArrays(newBounds);
 }
@@ -250,7 +224,15 @@ ImageData<T>::resize(const Bounds<int> newBounds) {
 template <class T>
 void
 ImageData<T>::copyFrom(const ImageData<T>& rhs) {
-  resize(rhs.getBounds());	//???Exception thrown will have misleading msg
+  checkLock("copyFrom()");
+  if (!children.empty())
+    throw ImageError("Attempt to ImageData::copyFrom() with subimages"
+		     " in use.");
+  if (parent)
+    throw ImageError("Attempt to ImageData::copyFrom() for a subimage");
+
+  resize(rhs.getBounds());
+
   // Copy the data from old array to new array
   T  *dptr;
   const T* inptr;
@@ -258,7 +240,7 @@ ImageData<T>::copyFrom(const ImageData<T>& rhs) {
   // Do copy by rows
   for (int i=bounds.getYMin(); i<=bounds.getYMax(); i++) {
     dptr = location(bounds.getXMin(), i);
-    inptr = rhs.location(bounds.getXMin(), i);
+    inptr = rhs.const_location(bounds.getXMin(), i);
     memmove( (void *)dptr, (void *)inptr, sizeof(T)*xsize);
   }
 }
@@ -267,12 +249,16 @@ ImageData<T>::copyFrom(const ImageData<T>& rhs) {
 template <class T>
 void
 ImageData<T>::shift(int x0, int y0) {
+  checkLock("shift()");
   if (!ownDataArray || !ownRowPointers)
     throw ImageError("Cannot ImageData::shift() when data are"
 		     " not owned by object");
   if (!children.empty())
     throw ImageError("Attempt to ImageData::shift() with subimages"
 		     " in use.");
+  if (parent)
+    throw ImageError("Attempt to ImageData::shift() for a subimage");
+
   int dx = x0 - bounds.getXMin();
   int dy = y0 - bounds.getYMin();
   for (int i=bounds.getYMin(); i<=bounds.getYMax(); i++)
@@ -298,20 +284,19 @@ Image<T>::subimage(const Bounds<int> bsub) {
   // Make a subimage of current pixel array:
   ImageData<T>* subD=D->subimage(bsub);
   // New image gets this subimage along with the full header
-  // of the parent.  ??? do something to keep subimage from writing
-  // to header???
+  // of the parent.
   return Image(subD,H, new int(0), hcount);
 }
 
 // Create subimage of given image, this time const.  
+// Notice it's necessary to create a non-const ImageData to build a new Image.
 template <class T>
 const Image<T>
 Image<T>::subimage(const Bounds<int> bsub) const {
   // Make a subimage of current pixel array, return :
   ImageData<T>* subD=D->subimage(bsub);
   // New image gets this subimage along with the full header
-  // of the parent.  ??? do something to keep subimage from writing
-  // to header???
+  // of the parent. 
   return Image(subD,H, new int(0), hcount);
 }
   
@@ -320,7 +305,7 @@ template <class T>
 Image<T>
 Image<T>::duplicate() const {
   ImageData<T>* dD=D->duplicate();
-  ImageHeader* dH=H->duplicate();
+  Header* dH=H->duplicate();
   return Image(dD, dH);
 }
 
@@ -328,65 +313,65 @@ Image<T>::duplicate() const {
 template <class T>
 void
 Image<T>::operator+=(const Image<T> rhs) {
-  if (!rhs.getBounds().includes(getBounds())) 
-    throw ImageError("+= with smaller image");
+  if (!getBounds().includes(rhs.getBounds())) 
+    throw ImageError("this does not bound rhs in +=");
   transform_pixel(*this, rhs, plus<T>());
 }
 template <class T>
 void
 Image<T>::operator-=(const Image<T> rhs) {
-  if (!rhs.getBounds().includes(getBounds())) 
-    throw ImageError("-= with smaller image");
+  if (!getBounds().includes(rhs.getBounds())) 
+    throw ImageError("this does not bound rhs in -=");
   transform_pixel(*this, rhs, minus<T>());
 }
 template <class T>
 void
 Image<T>::operator*=(const Image<T> rhs) {
-  if (!rhs.getBounds().includes(getBounds())) 
-    throw ImageError("*= with smaller image");
+  if (!getBounds().includes(rhs.getBounds())) 
+    throw ImageError("this does not bound rhs in *=");
   transform_pixel(*this, rhs, multiplies<T>());
 }
 template <class T>
 void
 Image<T>::operator/=(const Image<T> rhs) {
-  if (!rhs.getBounds().includes(getBounds())) 
-    throw ImageError("/= with smaller image");
+  if (!getBounds().includes(rhs.getBounds())) 
+    throw ImageError("this does not bound rhs in /=");
   transform_pixel(*this, rhs, divides<T>());
 }
 
 template <class T>
 Image<T>
 Image<T>::operator+(const Image<T> rhs) const {
-  Bounds<int> b=getBounds()&rhs.getBounds();
-  if (!b) throw ImageError("no intersection for binary operation");
-  Image<T> result(b);
+  if (getBounds() != rhs.getBounds()) 
+    throw ImageError("Mismatched image bound for +");
+  Image<T> result(getBounds());
   transform_pixel(result, *this, rhs, plus<T>());
   return result;
 }
 template <class T>
 Image<T>
 Image<T>::operator-(const Image<T> rhs) const {
-  Bounds<int> b=getBounds()&rhs.getBounds();
-  if (!b) throw ImageError("no intersection for binary operation");
-  Image<T> result(b);
+  if (getBounds() != rhs.getBounds()) 
+    throw ImageError("Mismatched image bounds for -");
+  Image<T> result(getBounds());
   transform_pixel(result, *this, rhs, minus<T>());
   return result;
 }
 template <class T>
 Image<T>
 Image<T>::operator*(const Image<T> rhs) const {
-  Bounds<int> b=getBounds()&rhs.getBounds();
-  if (!b) throw ImageError("no intersection for binary operation");
-  Image<T> result(b);
+  if (getBounds() != rhs.getBounds()) 
+    throw ImageError("Mismatched image bounds for +");
+  Image<T> result(getBounds());
   transform_pixel(result, *this, rhs, multiplies<T>());
   return result;
 }
 template <class T>
 Image<T>
 Image<T>::operator/(const Image<T> rhs) const {
-  Bounds<int> b=getBounds()&rhs.getBounds();
-  if (!b) throw ImageError("no intersection for binary operation");
-  Image<T> result(b);
+  if (getBounds() != rhs.getBounds()) 
+    throw ImageError("Mismatched image bounds for /");
+  Image<T> result(getBounds());
   transform_pixel(result, *this, rhs, divides<T>());
   return result;
 }

@@ -52,7 +52,7 @@
  * clear() flushes all records, plus the HISTORY and COMMENT lists.
  * size() is total number of records, HISTORY, and COMMENT entries.
  *
- * A copy or assignment of an Header is a deep copy (as long as
+ * A copy or assignment of a Header is a deep copy (as long as
  * all the header types T are).  Header owns all the HdrRecords
  * and will delete them upon deletion of hte Header.
  *
