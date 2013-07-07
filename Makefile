@@ -59,6 +59,8 @@ OBJ =  $(SUBOBJ)
 
 all: depend subs
 
+DrawPhoto: DrawPhoto.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testSerialize: testSerialize.o TPVMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testTemplateMap: testTemplateMap.o $(OBJ)
