@@ -182,10 +182,8 @@ namespace img {
 	  int* hc=new int(0)): D(Din), H(Hin), 
 	    dcount(dc), hcount(hc) {(*dcount)++; (*hcount)++;}
 
-    // ?? const ??
-    void showGuts(Header* &hh, int* &hc, ImageData<T>* &dd, int* &dc) {
-      hh = H; hc = hcount; dd = D; dc = dcount;
-    }
+    const ImageData<T>* data() const {return D;}
+
     ////////////////////////////////////////////////////////////
 
     // Header access and some shortcuts to keywords:

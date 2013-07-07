@@ -71,14 +71,14 @@ using std::list;
 namespace img {
 
   template <class T=float>
-  class FitsImage: public HDU {
+  class FitsImage: public FITS::Hdu {
   public:
-    FitsImage(string fname, 
+    FitsImage(string filename, 
 	      FITS::Flags f=FITS::ReadOnly,
-	      int HDUnumber_=1);
-    FitsImage(string fname, 
+	      int hduNumber_=1);
+    FitsImage(string filename, 
 	      FITS::Flags f,
-	      string HDUname);
+	      string hduName_);
     ~FitsImage();
     
     typedef T  value_type;
@@ -93,8 +93,10 @@ namespace img {
     void load() const;
     // Dump the buffered image to save memory, if no Images are using it.
     void unload() const;
+    void unload();
     
-    virtual void flush() const {if (isWriteable()) {flushData(); Hdu::flush();}}
+    virtual void flush() const {}   // const FitsImage will not try to write to disk
+    virtual void flush() {if (isWriteable()) {flushData(); Hdu::flush();}}
     virtual bool isChanged() const {return Hdu::isChanged() || (dptr && dptr->isChanged());}
 
     virtual void clear();
@@ -122,25 +124,25 @@ namespace img {
     // the specified Image (both data and header).  The FITS image is
     // NOT a mirror of the input image, it's a duplicate.
     // The ReadWrite and CreateImage flags are implicit here.
-    static void writeToFITS(const string fname, 
+    static void writeToFITS(string filename, 
 			    const Image<T> imageIn,
-			    const int HDUnum=1);
-    static void writeToFITS(const string fname, 
+			    int HDUnum=1);
+    static void writeToFITS(string filename, 
 			    const Image<T> imageIn,
-			    const string HDUname);
+			    string HDUname);
 
   private:
     // hide:
-    FitsImage(const FITSImage& rhs);
+    FitsImage(const FitsImage& rhs);
     void operator=(const FitsImage& rhs);
 
     Bounds<int> diskBounds;
     FITS::DataType nativeType;
     mutable ImageData<T>* dptr;
     mutable int *dcount;
-    mutable retypeOnFlush;	//Flag set if we need to change datatype to T on next flush.
+    bool retypeOnFlush;	//Flag set if we need to change datatype to T on next flush.
 
-    void flushData() const;
+    void flushData();
     void readBounds();	// Get bounds and native type from the disk file.
     // Read pixel data for requested bounds into a new ImageData
     // Exception if the bounds are not included in bounds on disk.
@@ -149,15 +151,6 @@ namespace img {
     // datatype of FITS HDU.  Disk image acquires shape of data.
     // Exception thrown if data bounds do not start at (1,1).
     void writeToDisk(const ImageData<T>* data, bool retypeDisk);
-
-    void readRows(const int ymin, const int ymax) const;
-    // Note that WriteRows is const even though it changes disk data.
-    // It is only used internally, the public routines for writing will
-    // preclude writing to read-only images
-    void writeRows(const int ymin, const int ymax) const;
-    T*   bufferLocation(const int xpos, const int ypos) const;
-    T**  makeRowPointers(const Bounds<int> b) const;
-
   };
 
 }  // namespace img

@@ -42,14 +42,6 @@ namespace img {
       lock = true;
     }
 
-    // This routine used by some other object rearranging the storage
-    // array.  If ownRowPointers was set, then this routine deletes the
-    // old array and assumes responsibility for deleting the new one.
-    void replaceRowPointers(T **newRptrs) const {
-      if (ownRowPointers) delete[] (rowPointers + bounds.getYMin()); 
-      rowPointers=newRptrs;
-    }
-
     // Make a new ImageData that is subimage of this one.  Data will be
     // shared in memory, just pixel bounds are different.  subimages
     // a.k.a. children must be destroyed before the parent.

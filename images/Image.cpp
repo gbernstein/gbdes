@@ -98,19 +98,6 @@ ImageData<T>::ImageData(const Bounds<int> inBounds,
     *initptr = initValue;
 }
 
-// image for which the data array has been set up by someone else:
-template <class T>
-ImageData<T>::ImageData(const Bounds<int> inBounds, 
-			T** rptrs,
-			bool _contig): bounds(inBounds),
-				       parent(0),
-				       isAltered(false),
-				       lock(false),
-				       ownDataArray(false),
-				       ownRowPointers(true),
-				       rowPointers(rptrs),
-				       isContiguous(_contig) {}
-
 // construct a subimage of a parent:
 // Note that there is no assumption that parent is contiguous, its
 // storage state could change.
