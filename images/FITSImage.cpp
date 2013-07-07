@@ -1,6 +1,5 @@
-//  $Id: FITSImage.cpp,v 1.34 2012/04/27 22:12:21 garyb Exp $
 // FITS Image manipulation routines.
-#include "FITSImage.h"
+#include "FitsImage.h"
 
 #include <typeinfo>
 
@@ -9,223 +8,412 @@ using namespace FITS;
 
 const int MAX_IMAGE_DIMENSIONS=10;	//maximal number of img dimensions
 
-
-// Shared static structures
-list<const FITSImageBase*> FITSImageBase::imgQ;
-int   FITSImageBase::totalMemoryTarget=DEFAULT_TOTAL_BUFFER_SIZE;
-long  FITSImageBase::totalMemoryInUse=0;
-
-
 /////////////////////////////////////////////////////////////////
-// Constructors/Destructors for the FITSImage objects
+// Convenience routines to send images straight to a FITS extension
 /////////////////////////////////////////////////////////////////
 template <class T>
 void 
-FITSImage<T>::writeToFITS(const string fname, 
+FitsImage<T>::writeToFITS(const string fname, 
 			  const Image<T> imageIn,
 			  const int HDUnum) {
-  FITSImage<T> fi(fname, ReadWrite+CreateImage, HDUnum);
+  FitsImage<T> fi(fname, ReadWrite+CreateImage, HDUnum);
   fi.copy(imageIn);
 }
 
 template <class T>
 void 
-FITSImage<T>::writeToFITS(const string fname, 
+FitsImage<T>::writeToFITS(const string fname, 
 			  const Image<T> imageIn,
 			  const string HDUname) {
-  FITSImage<T> fi(fname, ReadWrite+CreateImage, HDUname);
+  FitsImage<T> fi(fname, ReadWrite+CreateImage, HDUname);
   fi.copy(imageIn);
 }
 
+/////////////////////////////////////////////////////////////////
+// Constructors/Destructors for the FitsImage objects
+/////////////////////////////////////////////////////////////////
 template <class T>
-FITSImage<T>::FITSImage(const string fname, 
+FitsImage<T>::FitsImage(const string fname, 
 			const Flags f,
-			const int HDUnum):
-  parent(fname, Flags(f & ~(Overwrite+CreateImage))), 
-  HDUnumber(HDUnum), buffer(0), bufferTarget(DEFAULT_IMAGE_BUFFER_SIZE),
-  bufferBounds(), hcount(0) {
-  // Open image, insure this extension is in fact a 2d image, 
-  // and read axis data, etc.
-  if (f & Overwrite)
-    throw FITSError("Cannot open FITSImage with Overwrite flag");
-  if (HDUnumber < 1 || HDUnumber > parent.HDUCount()) 
-    // ??? add HDU numbers to these messages ???
-    if ( (f & CreateImage)
-	 && (f & ReadWrite)) {
-      // create needed null-image extension(s)
-      int n=parent.HDUCount();
-      int naxis=0;	//note zero-dimenisional images now.
-      long naxes[MAX_IMAGE_DIMENSIONS];
-      int status(0);
-      while (n<HDUnumber) {
+			const int HDUnumber_): Hdu(filename, HDUImage, hduNumber_, f),
+					       dptr(0), dcount(0),
+					       retypeOnFlush(false) {
+  readBounds();	
+}
+
+// Open with extension name
+template <class T>
+FitsImage<T>::FitsImage(const string fname, 
+			const Flags f,
+			const string HDUname): Hdu(filename, HDUImage, hduName_, f),
+					       dptr(0), dcount(0),
+					       retypeOnFlush(false) {
+  readBounds();
+}
+
+template <class T>
+void
+FitsImage<T>::readBounds() {
+  int status = moveTo();
+  int naxis, bitpix;
+  long naxes[MAX_IMAGE_DIMENSIONS];
+  fits_get_img_param(fptr(), MAX_IMAGE_DIMENSIONS,
+		     &bitpix, &naxis, naxes, &status);
+  checkCFITSIO(status, "Error opening image extension in " + getFilename());
+  if (naxis==2) {
+    // a good 2d image
+    nativeType = Bitpix_to_DataType(bitpix);
+    diskBounds = Bounds<int>( int(1), naxes[0], int(1), naxes[1]);
+  } else if (naxis==0) {
+    // No image data, set this up as null image
+    nativeType = Bitpix_to_DataType(bitpix);
+    diskBounds = Bounds<int>();   //null bounds by default
+  } else {
+    throw FITSError("Image is not 2d: " + getFilename());
+  }  
+}
+
+template <class T>
+FitsImage<T>::~FitsImage() {
 #ifdef FITSDEBUG
-	cerr << "creating image extension " << n << endl;
+  cerr << "Destroying FitsImage " << parent.getFilename() 
+       << " HDU #" << HDUnumber << endl;
 #endif
+  if (dptr) {
+    // Make sure nothing else is using the mirrored data still:
+    if (*dcount != 1)
+      throwFitsOrDump("Closing FitsImage with its data still linked, file " + getFilename());
+    flushData();
+    delete dptr;
+    delete dcount;
+  }
+  // Destructor for Hdu will flush header if still needed, and close files.
+}
+
+template <class T>
+void
+FitsImage<T>::unload() const {
+  if (dptr && dcount && (*dcount)==1 && !dptr->hasChildren()) {
+    // Get here if there is a data structure that no one is using
+    flushData();	//write any data back to disk
+    delete dptr;	// Get rid of it all.
+    dptr = 0;
+    delete dcount;
+    dcount = 0;
+  }
+}
+
+template <class T>
+void
+FitsImage<T>::load() const {
+  if (dptr) return;
+  dptr = readFromDisk(diskBounds);
+  dcount = new int(1);
+  if (!isWriteable()) dptr->setLock();
+}
+
+// Change image size - destroys data (header is kept).
+template <class T>
+void 
+FitsImage<T>::resize(const Bounds<int> newBounds) {
+  checkWriteable("resize()");
+  if (dptr && dptr->hasChildren()) 
+    throw FITSError("resize() for FitsImage " + getFilename() + " with subimages in use");
+
+  if (dptr) {
+    dptr->resize(newBounds);
+  } else {
+    // Just create image of new size to be written to disk later.
+    dptr = new ImageData<T>(newBounds);
+    dcount = new int(1);
+  }
+  if (!diskBounds) {
+    // If the disk image had null size, we want to change its datatype too when we create it.
+    retype();
+  }
+  dptr->touch();
+}
+
+// Force image on disk to be rewritten as type T.
+template <class T>
+void
+FitsImage<T>::retype() {
+  if (FITSTypeOf<T>() == nativeType) return; // Nothing to do.
+  checkWriteable("retype()");
+  // Read in the data if we don't have it, since we'll need to save it for retyping anyway
+  load();
+  retypeOnFlush = true;
+  dptr->touch();
+}
+
+template <class T>
+void
+FitsImage<T>::copy(const Image<T> I) {
+  checkWriteable("FitsImage::copy()");
+  if (dptr && dptr->hasChildren())
+    throw FITSError("copy() for FitsImage " + getFilename() + " with subimages in use");
+
+  if (hptr) {
+    hptr->copyFrom(*I.header());
+  } else {
+    hptr = I.header()->duplicate();
+    hcount = new int(1);
+  }
+  Header* hh;
+  int* hc;
+  ImageData<T>* dd;
+  int* dc;
+  I.showGuts(hh, hc, dd, dc);
+  if (dptr) {
+    dptr->copyFrom(*dd);
+  } else {
+    dptr = dd->duplicate();
+    dcount = new int(1);
+  }
+  // Mark both as altered
+  hptr->touch();
+  dptr->touch();
+}
+
+template <class T>
+void
+FitsImage<T>::flushData() const {
+  if (!dptr) return;
+  if (!dptr->isChanged()) return;
+  checkWriteable("FitsImage::flushData()");
+  writeToDisk(dptr, retypeOnFlush);
+  retypeOnFlush = false;
+  dptr->clearChanged();
+}
+
+// Make a new Image that is a copy of part of this image.
+template <class T>
+Image<T>
+FitsImage<T>::extract() const {
+  return extract(getBounds());
+}
+
+// Make a new Image that is a copy of part of this image.
+template <class T>
+Image<T>
+FitsImage<T>::extract(Bounds<int> b) const {
+  if (!getBounds().includes(b))
+    FormatAndThrow<FITSError>() << "Extraction bounds [" << b
+				<< "] outside FitsImage bounds [" << getBounds()
+				<< "]";
+  Header* hh = header()->duplicate();
+  ImageData<T>* dd=0;
+  if (dptr) {
+    if (getBounds()==b) {
+      dd = dptr->duplicate();
+    } else {
+      dd = dptr->subimage(b)->duplicate();
+    }
+  } else {
+    dd = readFromDisk(b);
+  }
+  return Image<T>(hh,dd);
+}
+
+template <class T>
+Image<T>
+FitsImage<T>::use() const {
+  return use(getBounds());
+}
+
+template <class T>
+Image<T>
+FitsImage<T>::use(const Bounds<int> b) const {
+  if (!getBounds().includes(b))
+    FormatAndThrow<FITSError>() << "Use bounds [" << b
+				<< "] outside FitsImage bounds [" << getBounds()
+				<< "]";
+  Hdu::header();	// Force header loading
+  load();		// Force data load
+  Assert(dptr);
+  // Build the table from our data and header:
+  ImageData<T>* dd = 0;
+  int* dc = 0;
+  if (b == dptr->getBounds()) {
+    // request bounds match full image - share the ImageData for use
+    dd = dptr;
+    dc = dcount;
+  } else {
+    // use a subimage of current data
+    // It will inherit lock status of current data.
+    dd = dptr->subimage(b);
+    dc = new int(0);
+  }
+  return new ImageData<T>(hptr, hcount, dd, dc);
+}
+
+  // Fill the ImageData structure from appropriate source:
+  if (get==diskBounds && !bufferBounds.includes(get)) {
+    // Read entire image directly to the extracted image, no buffer
+    long nelements = (diskBounds.getYMax()-diskBounds.getYMin() + 1);
+    nelements *= (diskBounds.getXMax()-diskBounds.getXMin() + 1);
+    
+    long firstpix[2]={diskBounds.getXMin(),diskBounds.getYMin()};
+    int status(0);
+    // Assuming new ImageData stores data contiguously!!! ***
+    fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
+		  firstpix, nelements, NULL,
+		  idata->location(get.getXMin(), get.getYMin()),
+		  NULL, &status);
+    if (status) throw_CFITSIO("extract() contigous read_pix on " 
+			    + parent.getFilename());
+  } else {
+    // Build image from buffered data, copy row by row
+    touch();
+    bufferMustSpan(get);
+    long nbytes=sizeof(T)*(get.getXMax()-get.getXMin()+1);
+    for (int y=get.getYMin(); y<=get.getYMax(); ++y)
+      memcpy(idata->location(get.getXMin(), y),
+	     bufferLocation(get.getXMin(), y),
+	     nbytes);
+  }
+  return Image<T>(idata,ihdr);
+}
+
+template <class T>
+void
+FitsImage<T>::writeToDisk(const ImageData<T>* data, bool retypeDisk) {
+  Assert(isWriteable());
+  if (data->getBounds() != diskBounds || retypeDisk) {
+    // Resize the extension
+    diskBounds = data->getBounds();
+    if (retypeDisk) nativeType = FITSTypeOf<T>();
+    int naxis(2);
+    long naxes[MAX_IMAGE_DIMENSIONS];
+    int bitpix = DataType_to_Bitpix(nativeType);
+    if (data->getBounds().getXMin() != 1
+	|| data->getBounds().getYMin() != 1)
+      FormatAndThrow<FITSError>() << "Origin of Image writing to FITS must be (1,1), have ["
+				  << data->getBounds() << "] for " << getFilename();
+    naxes[0] = newBounds.getXMax();
+    naxes[1] = newBounds.getYMax();
+    int status = moveTo();
+    fits_resize_img(fptr(), bitpix, naxis, naxes, &status);
+    checkCFITSIO(status, "Error resizing image extension in " + getFilename());
+  }
+  // ??? Copy data onto disk
+}
+
+template <class T>
+ImageType<T>*
+FitsImage<T>::readFromDisk(const Bounds<int> b) const {
+  if (!diskBounds.includes(b))
+    FormatAndThrow<FITSError>() << "readFromDisk() bounds [" << b
+				<< "] outside FITS image bounds [" << diskBounds
+				<< "]";
+  d = new ImageData<T>(b);
+  // ??? read data from disk
+  return d;
+}
+
+template class FitsImage<float>;
+template class FitsImage<int>;
+template class FitsImage<short>;
+
+////////////////////////////////////////////////////////////////////////////////////////////
+
+  if (!(parent.getFlags() & ReadWrite))
+    throw FITSError("Attempt to write() to read-only FitsImage()");
+  if (!(I.getBounds().includes(b) && diskBounds.includes(b)))
+    throw FITSError("Attempt to write() beyond bounds of image");
+
+  // Choose favored region to buffer.
+  Bounds<int> desired=desiredBounds(b);
+
+  long desiredSize = desired.getXMax() - desired.getXMin() + 1;
+  desiredSize *= desired.getYMax() - desired.getYMin() + 1;
+
+  int status(0);
+
+    // If buffering this would make something too large, then think
+  // about writing directly to the disk file:
+  if (desiredSize > bufferTarget) {
+    // Move FITS pointer to proper HDU
+    fits_movabs_hdu( parent.getFitsptr(), HDUnumber, NULL, &status);
+    if (!buffer) {
+      // write full image directly to disk.
+      // if contiguous this can be a single call:
+      // isContiguous needs a check...
+      if (I.data()->contiguousData() && b.getXMin()==diskBounds.getXMin()
+	  && b.getXMax()==diskBounds.getXMax()) {
+	long nelements=(b.getXMax()-b.getXMin()+1);
+	nelements *= b.getYMax() - b.getYMin() + 1;
+	long firstpix[2]={b.getXMin(), b.getYMin()};
+	fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
+		       firstpix, nelements, 
+		       I.data()->location(b.getXMin(),b.getYMin()), 
+		       &status);
+      } else {
+	//write to CFITSIO row by row
+	long nelements=(b.getXMax()-b.getXMin()+1);
+	long firstpix[2]={b.getXMin(), b.getYMin()};
+      
+	for (int y=b.getYMin(); y<=b.getYMax(); y++) {
+	  // write row to disk
+	  firstpix[1] = y;
+	  fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
+			 firstpix, nelements, 
+			 I.data()->location(b.getXMin(),y), 
+			 &status);
+	}
+      }
+    } else {
+      // write to disk those parts not in buffer
+      // write the rest to present buffer
+      touch();
+      alterableBounds += (b & bufferBounds);	//mark as changed
+      long nelements=(b.getXMax()-b.getXMin()+1);
+      long nbytes=sizeof(T)*nelements;
+      long firstpix[2]={b.getXMin(), b.getYMin()};
+      
+      for (int y=b.getYMin(); y<=b.getYMax(); y++) {
+	if (bufferBounds.includes(b.getXMin(), y)) {
+	  // write row to buffer
+	  memcpy(bufferLocation(b.getXMin(), y),
+		 I.data()->location(b.getXMin(), y),
+		 nbytes);
+	} else {
+	  // write row to disk
+	  firstpix[1] = y;
+	  fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
+			 firstpix, nelements, 
+			 I.data()->location(b.getXMin(),y), 
+			 &status);
+	}
+      }
+    }
+  } else {
+    // Write the whole thing to a buffer
+    touch();
+    bufferMustSpan(b);
+    alterableBounds += b;
+    // note some inefficiency here, we might have just read
+    // things we're going to overwrite now. ???
+    // copy data to buffer row by row
+    long nbytes=sizeof(T)*(b.getXMax()-b.getXMin()+1);
+    for (int y=b.getYMin(); y<=b.getYMax(); ++y) {
+      memcpy(bufferLocation(b.getXMin(), y),
+	     I.data()->location(b.getXMin(), y),
+	     nbytes);
+    }
+  }
+  if (status) throw_CFITSIO("write() on " 
+			    + parent.getFilename());
+}
+
+
+
 	fits_create_img(parent.getFitsptr(), 
 			DataType_to_Bitpix(Tfloat),
 			naxis, naxes,
 			&status);
 	if (status) throw_CFITSIO("Constructor creating image for " +
 				  parent.getFilename());
-	n++;
-      }
-      parent.flush();
-      Assert(parent.HDUCount()==HDUnumber);
-    } else {
-      throw FITSError("Requested non-existent HDU for " + fname);
-    }
-  if (parent.getHDUType(HDUnumber) != HDUImage)
-    throw FITSError("FITSImage requested extension that is not an image");
-
-  int naxis, bitpix;
-  long naxes[MAX_IMAGE_DIMENSIONS];
-  int status(0);
-  fits_get_img_param(parent.getFitsptr(), MAX_IMAGE_DIMENSIONS,
-		     &bitpix, &naxis, naxes, &status);
-  if (status) throw_CFITSIO("Constructor get_img_param for " +
-			    parent.getFilename());
-  
-  if (naxis==2) {
-    // a good 2d image
-    nativeType = Bitpix_to_DataType(bitpix);
-    diskBounds = Bounds<int>( int(1), naxes[0], int(1), naxes[1]);
-  } else if (naxis==0) {
-    // No image data, set this up as null image
-    nativeType = Bitpix_to_DataType(bitpix);
-    diskBounds = Bounds<int>();   //null bounds by default
-  } else {
-    throw FITSError("Image is not 2d.");
-  }  
-}
-
-// Open with extension name
-template <class T>
-FITSImage<T>::FITSImage(const string fname, 
-			const Flags f,
-			const string HDUname):
-  parent(fname, Flags(f & ~(Overwrite+CreateImage))), 
-  buffer(0), bufferTarget(DEFAULT_IMAGE_BUFFER_SIZE),
-  bufferBounds(), hcount(0) {
-  // Open image, insure this extension is in fact a 2d image, 
-  // and read axis data, etc.
-  if (f & Overwrite)
-    throw FITSError("Cannot open FITSImage with Overwrite flag");
-  if (parent.getHDUType(HDUname, HDUnumber) != HDUImage) {
-    if (HDUnumber<=0) {
-      if ( (f & CreateImage)
-	   && (f & ReadWrite)) {
-	// create needed null-image extension to give this name
-	int naxis=0;	//note zero-dimensional images now.
-	long naxes[MAX_IMAGE_DIMENSIONS];
-	int status(0);
-#ifdef FITSDEBUG
-	cerr << "creating FITSImage HDUname " << HDUname << endl;
-#endif
-	fits_movabs_hdu(parent.getFitsptr(),
-			parent.HDUCount(),
-			NULL,
-			&status);
-	fits_create_img(parent.getFitsptr(), 
-			DataType_to_Bitpix(Tfloat),
-			naxis, naxes,
-			&status);
-	parent.flush();
-	HDUnumber = parent.HDUCount();
-	fits_movabs_hdu(parent.getFitsptr(),
-			HDUnumber,
-			NULL,
-			&status);
-	char nname[FLEN_VALUE];
-	strncpy(nname,HDUname.c_str(), sizeof(nname));
-	nname[sizeof(nname)-1]=0;
-	fits_write_key(parent.getFitsptr(),
-		       Tstring,
-		       "EXTNAME",
-		       nname,
-		       NULL,
-		       &status);	//give extension desired name
-	if (status) throw_CFITSIO("Constructor locating HDU for "
-				  + fname);
-      } else {
-	throw FITSError("Requested non-existent HDU [" + HDUname
-			+ "] for " + fname);
-      }
-    } else {
-      throw FITSError("FITSImage HDU  ["
-		      + HDUname + "] of file "
-		      + fname + "is not an image");
-    }
-  }
-  int naxis, bitpix;
-  long naxes[MAX_IMAGE_DIMENSIONS];
-  int status(0);
-  fits_get_img_param(parent.getFitsptr(), MAX_IMAGE_DIMENSIONS,
-		     &bitpix, &naxis, naxes, &status);
-  if (status) throw_CFITSIO("Constructor 2 get_img_param for " +
-			    parent.getFilename());
-  if (naxis==2) {
-    // a good 2d image
-    nativeType = Bitpix_to_DataType(bitpix);
-    diskBounds = Bounds<int>( int(1), naxes[0], int(1), naxes[1]);
-  } else if (naxis==0) {
-    // No image data, set this up as null image
-    nativeType = Bitpix_to_DataType(bitpix);
-    diskBounds = Bounds<int>();   //null bounds by default
-  } else {
-    throw FITSError("Image is not 2d.");
-  }  
-}
-
-template <class T>
-FITSImage<T>::~FITSImage() {
-#ifdef FITSDEBUG
-  cerr << "Destroying FITSImage " << parent.getFilename() 
-       << " HDU #" << HDUnumber << endl;
-#endif
-  if (freeBuffer()) {
-    if (!uncaught_exception())
-      throw FITSError("Destroying FITSImage " + parent.getFilename() + 
-		      "with Images still in use");
-  }
-  flushHeader();
-  if (hcount)
-    if (!uncaught_exception())
-      throw FITSError("Header for " + parent.getFilename() + 
-		      "still linked upon FITSImage destruction");
-}
-
-template <class T>
-bool
-FITSImage<T>::freeBuffer() const {
-  flushData();	//write any data (or headers) back to disk
-  if (!buffer) return false;	//nothing to do if no buffer.
-  // Return TRUE if still images using these data; in most cases this
-  // is cause for an exception, unless resizing the buffer.
-  bool IfImagesLeft = purgeImages();
-#ifdef FITSDEBUG
-  cerr << "  About to delete buffer for " << parent.getFilename() 
-       << " HDU #" << HDUnumber << endl;
-#endif
-  delete[] buffer; buffer=0; 
-  bufferBounds = Bounds<int>(); //assign null bounds
-  totalMemoryInUse -= bufferSize*sizeof(T);
-  //unlink this from list of buffers
-  fptr me=find(imgQ.begin(), imgQ.end(), this);
-  if (me==imgQ.end()) 
-    throw FITSError("Can't find buffer on imgQ");
-  imgQ.erase(me);
-  return IfImagesLeft;
-}
-
-// Change image size - destroys data (header is kept).
-template <class T>
-void 
-FITSImage<T>::resize(const Bounds<int> newBounds) {
-  if (purgeImages())
-    throw FITSError("Cannot resize FITSImage for " 
-		    + parent.getFilename()
-		    + " with Images currently open");
-  freeBuffer();
   int status(0);
   int naxis(2);
   long naxes[MAX_IMAGE_DIMENSIONS];
@@ -234,7 +422,7 @@ FITSImage<T>::resize(const Bounds<int> newBounds) {
     // Image is defined, make 2d
     if (newBounds.getXMin()!=1 ||
 	newBounds.getYMin()!=1)
-      throw FITSError("Bounds of resized FITSImage <"
+      throw FITSError("Bounds of resized FitsImage <"
 		      + parent.getFilename() + 
 		      "> do not start at (1,1)");
     naxes[0] = newBounds.getXMax();
@@ -255,59 +443,10 @@ FITSImage<T>::resize(const Bounds<int> newBounds) {
    diskBounds = newBounds;
 }
 
-// Get rid of otherwise-unused Image<> structures.
-// Then tell whether any are left
-template <class T>
-bool
-FITSImage<T>::purgeImages() const {
-  imgptr i;
-  for (i=imgList.begin(); i!=imgList.end(); ++i)
-    if (i->isLastData()) {
-      imgList.erase(i--);
-    }
-  return imgList.size() > 0;
-}
-
-// Promote this FITSImage to the front of the buffer-usage queue.
-// Back of queue contains longest-dormant buffers
-template <class T>
-void
-FITSImage<T>::touch() const {
-  if (!buffer) return;	//If not using buffer then not on queue at all.
-  fptr me;
-  me = find(imgQ.begin(), imgQ.end(), this);
-  if (me!=imgQ.end()) imgQ.erase(me);
-  imgQ.push_front(this);
-}
-  
-void
-FITSImageBase::makeRoom(long addsize) {
-  // starting at back of buffer queue, try freeing buffers
-  // until there is room for requested memory
-  list<const FITSImageBase*>::iterator qptr=imgQ.end();
-  while ( (addsize + totalMemoryInUse > totalMemoryTarget* 1024L * 1024L)
-	 && qptr!=imgQ.begin()) {
-    qptr--;
-    if (!(*qptr)->purgeImages()) {
-      // Free to get rid of this buffer - freeBuffer() removes from imgQ
-      // Tricky business here: freeBuffer will remove this one from imgQ,
-      // so be careful of what happens to the iterator!
-      if (qptr==imgQ.begin()) {
-	(*qptr)->freeBuffer();
-	qptr = imgQ.begin();
-      } else {
-	(*(qptr--))->freeBuffer();
-      }
-
-    } // if buffer can be purged
-
-  } // while over quota
-}
-
 // Allocate space for a new buffer of size elements
 template<class T>
 void
-FITSImage<T>::allocateBuffer(const Bounds<int> b) const {
+FitsImage<T>::allocateBuffer(const Bounds<int> b) const {
   if (buffer) 
     throw FITSError("allocateBuffer() called when buffer!=0 for "
 		    + parent.getFilename());
@@ -331,54 +470,10 @@ FITSImage<T>::allocateBuffer(const Bounds<int> b) const {
   touch();
 }
 
-template <class T>
-void
-FITSImage<T>::suggestBufferSize(const int MBytes) const {
-  bufferTarget = MBytes;
-}
-template <class T>
-int
-FITSImage<T>::totalMemoryLimit(const int MBytes) {
-  if (MBytes>0) totalMemoryTarget = MBytes;
-  return totalMemoryTarget;
-}
-
-// Flush our buffer to CFITSIO and flush CFITSIO to disk
-template <class T>
-void
-FITSImage<T>::flushData() const {
-  if (alterableBounds) {
-    // If any of the buffer could have changed, write it back
-    writeRows(alterableBounds.getYMin(),alterableBounds.getYMax());
-    purgeImages();	
-    //Alterable region is now union of all open Images.  Note that
-    // I am counting readonly Images here too since there's
-    // no easy way to tell ???
-    imgptr i;
-    alterableBounds=Bounds<int>();
-    for (i=imgList.begin(); i!=imgList.end(); ++i)
-      alterableBounds += i->getBounds();
-  }
-  parent.flush();
-}
-
-template <class T>
-void
-FITSImage<T>::bufferEntireImage() const {
-  // Change suggested size to full image, next read will pull it all.
-  if (!diskBounds) return;
-  long size = diskBounds.getXMax() - diskBounds.getXMin()+1;
-  size *= diskBounds.getYMax() - diskBounds.getYMin()+1;
-  size *=sizeof(T);
-  size /= 1024L * 1024L;
-  size += 1;
-  bufferTarget = static_cast<int>(size);
-}
-
 // Get a range of rows from disk into current data buffer.
 template <class T>
 void
-FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
+FitsImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
 #ifdef FITSDEBUG
   cerr << "    readRows(" << ymin << "," << ymax << ") for image "
        << parent.getFilename()
@@ -519,7 +614,7 @@ FITSImage<T>::readRows(const int ymin, const int ymax, bool useCurrent) const{
 /////////////////////////////////////////////////////////////
 template <class T>
 void
-FITSImage<T>::writeRows(const int ymin, const int ymax) const {
+FitsImage<T>::writeRows(const int ymin, const int ymax) const {
 #ifdef FITSDEBUG
   cerr << "writeRows(" << ymin << "," << ymax << ") for image "
        << parent.getFilename() 
@@ -576,144 +671,13 @@ FITSImage<T>::writeRows(const int ymin, const int ymax) const {
 			    + parent.getFilename());
 }
 
-// If we want buffer to include bounds b, see what the buffer should
-// be. Desired bounds are a region of suggested size centered on
-// those required.
-template <class T>
-Bounds<int> FITSImage<T>::desiredBounds(const Bounds<int> b
-					=Bounds<int>(0,-1,0,-1)) const {
-  // See what the total buffered area must be
-  Bounds<int> required=b;
-  if (!purgeImages() && !b) {
-    // Neither existing images nor this request need any area.
-    return required;
-  }
-
-  // Always get full rows
-  required.setXMin(diskBounds.getXMin());
-  required.setXMax(diskBounds.getXMax());
-  imgptr i;
-  for (i=imgList.begin(); i!=imgList.end(); ++i)
-    required += i->getBounds();
-
-  // Keep the same thing if we already have required region
-  if (buffer && bufferBounds.includes(required)) return bufferBounds;
-
-  // Error if asking for outside the image
-  if (!diskBounds.includes(required))
-    throw FITSError("Request for buffer outside FITS image area");
-
-  long desiredRows = bufferTarget * 1024L * 1024L;
-  desiredRows /= (diskBounds.getXMax() - diskBounds.getXMin()+1)
-    *sizeof(T);
-  // Insure required region is included
-  desiredRows = MAX(desiredRows, static_cast<long> (
-		    required.getYMax() - required.getYMin() + 1));
-  // And don't need more than entire image
-  desiredRows = MIN(desiredRows,  static_cast<long> (
-		    diskBounds.getYMax() - diskBounds.getYMin() + 1));
-    
-    // Center region, place within bounds
-  int firstRow = (required.getYMax() + required.getYMin()
-		  - desiredRows) / 2;
-  firstRow = MIN(firstRow,required.getYMin());
-  firstRow = MAX(firstRow,diskBounds.getYMin());
-
-  int lastRow = firstRow + desiredRows - 1;
-  lastRow = MAX(lastRow, required.getYMax());
-  lastRow = MIN(lastRow, diskBounds.getYMax());
-  firstRow = lastRow - desiredRows + 1;
-
-#ifdef FITSDEBUG
-  cerr << "desired rows are " << firstRow
-       << " to " << lastRow
-       << " in FITSImage " << parent.getFilename()
-       << " HDU #" << HDUnumber
-       << endl;
-#endif
-  return Bounds<int>(diskBounds.getXMin(),diskBounds.getXMax(),
-		     firstRow, lastRow);
-}
-
-//////////////////////////
-//Manipulate buffer so that it includes target region
-template <class T>
-void
-FITSImage<T>::bufferMustSpan(const Bounds<int> b) const {
-  if (!b) throw FITSError("Invalid bounds in bufferMustSpan()");
-  Assert(diskBounds.includes(b));
-  
-  // Choose favored region to buffer.
-  Bounds<int> desired=desiredBounds(b);
-
-  // Nothing further if we're already buffered
-  if (buffer && bufferBounds.includes(desired)) return;
-
-  long desiredSize = desired.getXMax() - desired.getXMin() + 1;
-  desiredSize *= desired.getYMax() - desired.getYMin() + 1;
-
-  // If there is no current buffer, get what's desired
-  if (!buffer) {
-    allocateBuffer(desired);
-    // Read full desired region, ignore previous.
-    readRows(desired.getYMin(), desired.getYMax(), false);
-    return;
-  } else if ( bufferSize < desiredSize ||
-	      desiredSize < 0.8*bufferSize) {
-    // Current buffer is too small or substantially oversize;
-    // get a new buffer.
-    bool fb=freeBuffer();	//This flushes any altered data to disk.
-    allocateBuffer(desired);
-    readRows(desired.getYMin(), desired.getYMax(), false);
-    for (imgptr i=imgList.begin(); i!=imgList.end(); ++i) {
-      // give new rowPointer array to every active Image's ImageData.
       T** newrpt = makeRowPointers(i->getBounds());
       i->data()->replaceRowPointers(newrpt);
-    }
-    return;
-  } else if (desired & bufferBounds) {
-    // buffer is correct size, has some overlap with desired region:
-
-    // flush buffered region that might be written over:
-    if (alterableBounds && 
-	(desired.getYMax() < alterableBounds.getYMax()) )
-      writeRows(desired.getYMax()+1, alterableBounds.getYMax());
-    if (alterableBounds && 
-	(desired.getYMin() > alterableBounds.getYMin()) )
-      writeRows(alterableBounds.getYMin(), desired.getYMin()-1);
-    // Shrink alterable region to be within target
-    alterableBounds = alterableBounds & desired;
-
-    // then read in regions that are now needed:
-    if (desired.getYMin() < bufferBounds.getYMin()) {
-      readRows(desired.getYMin(), bufferBounds.getYMin()-1, true);
-    }
-    if (desired.getYMax() > bufferBounds.getYMax()) {
-      readRows(bufferBounds.getYMax()+1, desired.getYMax(), true);
-    }
-  } else {
-    // Buffer is correct size but disjoint from desired data:
-    flushData();
-    // read new data
-    readRows(desired.getYMin(), desired.getYMax(), false);
-  }
-}
-
-// Return pointer to the location of a given coord in the buffer
-template <class T>
-T*
-FITSImage<T>::bufferLocation(const int xpos, const int ypos) const {
-  if (!buffer) return 0;
-  int row = ypos - bufferBounds.getYMin() + firstRowOffset;
-  row %= bufferRows;	//wrap around buffer
-  long rowlen = bufferBounds.getXMax() - bufferBounds.getXMin() +1;
-  return buffer + row*rowlen + (xpos - bufferBounds.getXMin());
-}
 
 // Make a new RowPointer array for some image subsection stored in buffer
 template <class T>
 T** 
-FITSImage<T>::makeRowPointers(const Bounds<int> b) const {
+FitsImage<T>::makeRowPointers(const Bounds<int> b) const {
   // check bounds
   if (!buffer || !b || !bufferBounds.includes(b)) {
     throw FITSError("makeRowPointers to data not in buffer");
@@ -725,254 +689,3 @@ FITSImage<T>::makeRowPointers(const Bounds<int> b) const {
   return rptr - b.getYMin();
 }
 
-// Make a new Image that is a copy of part of this image.
-template <class T>
-Image<T>
-FITSImage<T>::extract(Bounds<int> b) const {
-  Bounds<int> get = b & diskBounds;
-  if (!get) 
-    throw FITSError("Attempt to extract outside of FITSImage bounds");
-  // Make new Image data structure, which will own all the data arrays.
-  ImageData<T>* idata = new ImageData<T>(get);
-  loadHeader();
-  ImageHeader* ihdr = new ImageHeader(*hptr);
-
-  // Fill the ImageData structure from appropriate source:
-  if (get==diskBounds && !bufferBounds.includes(get)) {
-    // Read entire image directly to the extracted image, no buffer
-    long nelements = (diskBounds.getYMax()-diskBounds.getYMin() + 1);
-    nelements *= (diskBounds.getXMax()-diskBounds.getXMin() + 1);
-    
-    long firstpix[2]={diskBounds.getXMin(),diskBounds.getYMin()};
-    int status(0);
-    // Assuming new ImageData stores data contiguously!!! ***
-    fits_read_pix(parent.getFitsptr(), FITSTypeOf<T>(),
-		  firstpix, nelements, NULL,
-		  idata->location(get.getXMin(), get.getYMin()),
-		  NULL, &status);
-    if (status) throw_CFITSIO("extract() contigous read_pix on " 
-			    + parent.getFilename());
-  } else {
-    // Build image from buffered data, copy row by row
-    touch();
-    bufferMustSpan(get);
-    long nbytes=sizeof(T)*(get.getXMax()-get.getXMin()+1);
-    for (int y=get.getYMin(); y<=get.getYMax(); ++y)
-      memcpy(idata->location(get.getXMin(), y),
-	     bufferLocation(get.getXMin(), y),
-	     nbytes);
-  }
-  return Image<T>(idata,ihdr);
-}
-// Or the entire image:
-template <class T>
-Image<T>
-FITSImage<T>::extract() const {
-  return extract(diskBounds);
-}
-
-template <class T>
-Image<T>
-FITSImage<T>::use(const Bounds<int> b) {
-  Bounds<int> get = b & diskBounds;
-  if (!get) 
-    throw FITSError("Attempt to use() outside of FITSImage bounds");
-  if (!(parent.getFlags() & ReadWrite))
-    throw FITSError("Attempt to use() writable Image from ReadOnly FITS");
-  // Build image from buffered data, copy row by row
-  touch();
-  bufferMustSpan(get);
-  T** rptrs = makeRowPointers(get);
-  // Make new ImageData and ImageHeader structures, then create Image
-  ImageData<T>* idata = new ImageData<T>(get, rptrs, false);
-  loadHeader();
-  Image<T> imgout(idata,hptr, new int(0), hcount);
-  // Add to list of in-use images
-  imgList.push_front(imgout);
-  alterableBounds += get;
-  return imgout;
-}
-
-// Get a const Image back
-template <class T>
-const Image<T>
-FITSImage<T>::useConst(const Bounds<int> b) const {
-  Bounds<int> get = b & diskBounds;
-  if (!get) 
-    throw FITSError("Attempt to use() outside of FITSImage bounds");
-  // Build image from buffered data, copy row by row
-  touch();
-  bufferMustSpan(get);
-
-  T** rptrs = makeRowPointers(get);
-  // Make new ImageData and Image structures
-  // Make new ImageData and ImageHeader structures, then create Image
-  ImageData<T>* idata = new ImageData<T>(get, rptrs, false);
-  loadHeader();
-  const Image<T> imgout(idata, hptr, new int(0), hcount);
-  // Add to list of in-use images - in this case, don't mark alterableBounds
-  imgList.push_front(imgout);
-  return imgout;
-}
-
-// Full images by default:
-template <class T>
-Image<T>
-FITSImage<T>::use() { return use(diskBounds);}
-
-template <class T>
-const Image<T>
-FITSImage<T>::useConst() const { return useConst(diskBounds);}
-
-// Write data from an external Image into this array.
-// Only the subsection b will be written in, and it must
-// fit within the existing DiskImage.
-
-template <class T>
-void
-FITSImage<T>::write(const Image<T> I) {write(I, I.getBounds());}
-
-template <class T>
-void
-FITSImage<T>::write(const Image<T> I, const Bounds<int> b) {
-  if (!(parent.getFlags() & ReadWrite))
-    throw FITSError("Attempt to write() to read-only FITSImage()");
-  if (!(I.getBounds().includes(b) && diskBounds.includes(b)))
-    throw FITSError("Attempt to write() beyond bounds of image");
-
-  // Choose favored region to buffer.
-  Bounds<int> desired=desiredBounds(b);
-
-  long desiredSize = desired.getXMax() - desired.getXMin() + 1;
-  desiredSize *= desired.getYMax() - desired.getYMin() + 1;
-
-  int status(0);
-
-    // If buffering this would make something too large, then think
-  // about writing directly to the disk file:
-  if (desiredSize > bufferTarget) {
-    // Move FITS pointer to proper HDU
-    fits_movabs_hdu( parent.getFitsptr(), HDUnumber, NULL, &status);
-    if (!buffer) {
-      // write full image directly to disk.
-      // if contiguous this can be a single call:
-      // isContiguous needs a check...
-      if (I.data()->contiguousData() && b.getXMin()==diskBounds.getXMin()
-	  && b.getXMax()==diskBounds.getXMax()) {
-	long nelements=(b.getXMax()-b.getXMin()+1);
-	nelements *= b.getYMax() - b.getYMin() + 1;
-	long firstpix[2]={b.getXMin(), b.getYMin()};
-	fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
-		       firstpix, nelements, 
-		       I.data()->location(b.getXMin(),b.getYMin()), 
-		       &status);
-      } else {
-	//write to CFITSIO row by row
-	long nelements=(b.getXMax()-b.getXMin()+1);
-	long firstpix[2]={b.getXMin(), b.getYMin()};
-      
-	for (int y=b.getYMin(); y<=b.getYMax(); y++) {
-	  // write row to disk
-	  firstpix[1] = y;
-	  fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
-			 firstpix, nelements, 
-			 I.data()->location(b.getXMin(),y), 
-			 &status);
-	}
-      }
-    } else {
-      // write to disk those parts not in buffer
-      // write the rest to present buffer
-      touch();
-      alterableBounds += (b & bufferBounds);	//mark as changed
-      long nelements=(b.getXMax()-b.getXMin()+1);
-      long nbytes=sizeof(T)*nelements;
-      long firstpix[2]={b.getXMin(), b.getYMin()};
-      
-      for (int y=b.getYMin(); y<=b.getYMax(); y++) {
-	if (bufferBounds.includes(b.getXMin(), y)) {
-	  // write row to buffer
-	  memcpy(bufferLocation(b.getXMin(), y),
-		 I.data()->location(b.getXMin(), y),
-		 nbytes);
-	} else {
-	  // write row to disk
-	  firstpix[1] = y;
-	  fits_write_pix(parent.getFitsptr(), FITSTypeOf<T>(),
-			 firstpix, nelements, 
-			 I.data()->location(b.getXMin(),y), 
-			 &status);
-	}
-      }
-    }
-  } else {
-    // Write the whole thing to a buffer
-    touch();
-    bufferMustSpan(b);
-    alterableBounds += b;
-    // note some inefficiency here, we might have just read
-    // things we're going to overwrite now. ???
-    // copy data to buffer row by row
-    long nbytes=sizeof(T)*(b.getXMax()-b.getXMin()+1);
-    for (int y=b.getYMin(); y<=b.getYMax(); ++y) {
-      memcpy(bufferLocation(b.getXMin(), y),
-	     I.data()->location(b.getXMin(), y),
-	     nbytes);
-    }
-  }
-  if (status) throw_CFITSIO("write() on " 
-			    + parent.getFilename());
-}
-
-template <class T>
-void
-FITSImage<T>::copy(const Image<T> I) {
-  resize(I.getBounds());	//This will check that no Images are outstanding
-  write(I);
-
-  // Keep old extension name if there is no new one.
-  string keyw="EXTNAME";
-  string oldName;
-  bool hasOldName = header()->getValue(keyw, oldName);
-  header()->clear();
-  (*header())+= *I.header();
-  // Restore previous extension name if there is no new one:
-  if (hasOldName && !header()->find(keyw))
-    header()->append(keyw,oldName);
-}
-
-//note I don't use CFITSIO hdu_copy calls here for copying HDUs because they
-// might not work for copy from one extension to another within image, and they
-// also always put the new one at the end of the extensions.
-template <class T>
-void
-FITSImage<T>::copy(const FITSImage<T>& fI) {
-  resize(fI.getBounds());	//This will check that no Images are outstanding
-  if (!fI.isNull()) {
-    const Image<T> ii=fI.useConst();
-    write(ii);
-  }
-  string keyw="EXTNAME";
-  string oldName;
-  bool hasOldName = header()->getValue(keyw, oldName);
-  header()->clear();
-  (*header())+= *fI.header();
-  // Restore previous extension name if there is no new one:
-  if (hasOldName && !header()->find(keyw))
-    header()->append(keyw,oldName);
-}
-
-template <class T>
-void 
-FITSImage<T>::renameExtension(const string newext) {
-  const string keyw="EXTNAME";
-  if (header()->find(keyw)) {
-    header()->setValue(keyw,newext);
-  } else {
-    header()->append(new HdrRecord<string>(keyw,newext,"FITS Extension name"));
-  }
-}
-
-template class FITSImage<float>;
-template class FITSImage<int>;
-template class FITSImage<short>;

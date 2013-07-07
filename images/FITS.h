@@ -78,6 +78,7 @@ namespace FITS {
     // Implicit conversion operator to allow simple use in cfitsio calls:
     operator fitsfile*() const {return ffile->getFitsptr();}
     int HDUCount() const;
+    // HDUNull is returned by the below if the HDU with chosen number or name does not exist.
     HDUType getHDUType(const int HDUnumber) const;
     HDUType getHDUType(const string HDUname) const;
     HDUType getHDUType(const string HDUname, int &HDUnum) const; //return number too

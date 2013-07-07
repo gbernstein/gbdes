@@ -53,7 +53,7 @@ namespace img {
     // Make a new ImageData that is subimage of this one.  Data will be
     // shared in memory, just pixel bounds are different.  subimages
     // a.k.a. children must be destroyed before the parent.
-    ImageData* subimage(const Bounds<int> bsub) const;
+    ImageData<T>* subimage(const Bounds<int> bsub) const;
 
     // These changes to the data structure will throw exception if data array
     // is not owned or if there are subimages in use, or if this is a subimage.
@@ -100,6 +100,8 @@ namespace img {
     // Access functions
     Bounds<int> getBounds() const {return bounds;}
     bool contiguousData() const {return isContiguous;}
+
+    bool hasChildren() const {return !children.empty();}
 
   private:
     // image which will be a subimage of a parent:
