@@ -54,7 +54,7 @@ ImageData<T>::discardArrays() {
   if (ownDataArray) {
     //Free the data array(s)
     if (isContiguous) {
-      delete [] location(bounds.getXMin(),bounds.getYMin());
+      delete [] const_location(bounds.getXMin(),bounds.getYMin());
     } else {
       T *dptr;
       for (int i=bounds.getYMin(); i<=bounds.getYMax(); i++) {

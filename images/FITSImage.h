@@ -99,7 +99,7 @@ namespace img {
     virtual void flush() {if (isWriteable()) {flushData(); Hdu::flush();}}
     virtual bool isChanged() const {return Hdu::isChanged() || (dptr && dptr->isChanged());}
 
-    virtual void clear();
+  // ???    virtual void clear();
 
     Bounds<int> getBounds() const {return dptr ? dptr->getBounds() : diskBounds;}
     bool isNull() const {return !getBounds();}  //no data for image?

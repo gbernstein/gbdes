@@ -262,9 +262,10 @@ FitsImage<T>::writeToDisk(const ImageData<T>* data, bool retypeDisk) {
   Assert(isWriteable());
   Bounds<int> b = data->getBounds();
   if (b != diskBounds || retypeDisk) {
+    // Assign native type to disk file if it was empty or if commanded:
+    if (retypeDisk || !diskBounds) nativeType = FITSTypeOf<T>();
     // Resize the extension
     diskBounds = b;
-    if (retypeDisk) nativeType = FITSTypeOf<T>();
     int naxis(2);
     long naxes[MAX_IMAGE_DIMENSIONS];
     int bitpix = DataType_to_Bitpix(nativeType);
