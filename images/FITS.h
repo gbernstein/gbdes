@@ -1,6 +1,6 @@
 // FITS.h:  manipulations of FITS files
 
-// The FITStypes.h file contains various enumerators and flags to
+// The FitsTypes.h file contains various enumerators and flags to
 // be used with FITS files.
 
 // The user-facing class is FitsFile.
@@ -25,7 +25,7 @@
 #include <cstring>
 #include "Std.h"
 
-#include "FITStypes.h"
+#include "FitsTypes.h"
 
 namespace FITS {
 

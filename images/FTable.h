@@ -144,7 +144,7 @@ namespace img {
       return (*D)[columnName]->stringLength();
     }
 
-    // Get the type of data stored in the C arrays (using the FITStypes.h class)
+    // Get the type of data stored in the C arrays (using the FitsTypes.h class)
     FITS::DataType elementType(string columnName) const {
       return (*D)[columnName]->elementType();
     }

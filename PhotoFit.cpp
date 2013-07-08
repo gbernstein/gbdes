@@ -428,7 +428,7 @@ main(int argc, char *argv[])
       
       if (regexMatchAny(useInstrumentList, name))  {
 	// This is an instrument we will use.  Get its devices
-	/**/cerr << "Reading instrument " << name << endl;
+	//**/cerr << "Reading instrument " << name << endl;
 	FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
 	if (!outputCatalogAlreadyOpen) {
 	  outFlags = outFlags + FITS::OverwriteFile;
@@ -453,15 +453,13 @@ main(int argc, char *argv[])
 	ff.readCells(vymin, "YMin");
 	ff.readCells(vymax, "YMax");
 	for (int j=0; j<devnames.size(); j++) {
-	  /**/cerr << "  Device " << devnames[j] << endl;
+	  //**/cerr << "  Device " << devnames[j] << endl;
 	  spaceReplace(devnames[j]);
 	  instptr->addDevice( devnames[j],
 			      Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
 	}
       } // Done reading an instrument.
     }
-
-    /**/cerr << "Read instruments " << endl;
 
     // Read in the table of exposures
     vector<Exposure*> exposures;
@@ -513,7 +511,6 @@ main(int argc, char *argv[])
 
 	Exposure* expo;
 	if (useThisExposure) {
-	  /**/cerr << "Using exposure " << names[i] << endl;
 	  // The projection we will use for this exposure:
 	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
 										  dec[i]*DEGREE)));
@@ -527,7 +524,6 @@ main(int argc, char *argv[])
       }
     }
 
-    /**/cerr << "Done reading exposures " << endl;
 
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
@@ -572,8 +568,6 @@ main(int argc, char *argv[])
       extensionTable.readCell(airmass, "Airmass", i);
       extn->airmass = airmass;
 
-      /**/cerr << "Using extension " << i << " exposure " << iExposure 
-	       << " device " << iDevice << " airmass " << airmass << endl;
       string s;
       extensionTable.readCell(s, "WCS", i);
       if (stringstuff::nocaseEqual(s, "ICRS")) {
@@ -596,8 +590,6 @@ main(int argc, char *argv[])
       extn->startWcs->reprojectTo(*exposures[extn->exposure]->projection);
       // ??? or use the field center for reference/tag exposures ???
     }
-
-    /**/cerr << "Done reading extensions " << endl;
 
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
@@ -672,9 +664,6 @@ main(int argc, char *argv[])
 	       << " that does not have initial values.  Ignoring request to fix params."
 	       << endl;
 	}
-
-	/**/ cerr << "Existing map for device " << devMapName 
-		  << " ? " << deviceMapsExist[idev] << endl;
 
 	// Done with this device for now if we have no existing map to read.
 	if (!deviceMapsExist[idev]) continue;
@@ -794,7 +783,6 @@ main(int argc, char *argv[])
       // Now we create new PhotoMaps for each Device that does not already have one.
       for (int idev=0; idev < inst->nDevices; idev++) {
 	if (deviceMapsExist[idev]) continue;
-	/**/cerr << "Parsing deviceModel for " << inst->mapNames[idev] << endl;
 	learnParsedMap(deviceModel, inst->mapNames[idev], mapCollection);
       } // end loop creating PhotoMaps for all Devices.
 
@@ -832,14 +820,11 @@ main(int argc, char *argv[])
 	}
 
 	if (iexp == canonicalExposure && noDevicesFixed) {
-	  /**/cerr << "Giving identity map to canonical exposure " << expo.name <<endl;
 	  // Give this canonical exposure identity map to avoid degeneracy with Instrument
 	  expo.mapName = IdentityMap().getName();
 	  continue;
 	}
 	
-	/**/cerr << "parsing exposureModel for " << expo.name << endl;
-
 	// We will create a new exposure map 
 	learnParsedMap(exposureModel, expo.name, mapCollection);
 	expo.mapName = expo.name;
@@ -855,8 +840,6 @@ main(int argc, char *argv[])
       } // end creation of this exposure map
 
     } // End instrument loop
-
-    /**/cerr << "Done creating maps for non-reference exposures " << endl;
 
     // Freeze the parameters of all the fixed maps
     mapCollection.setFixed(fixedMapNames, true);
@@ -897,14 +880,6 @@ main(int argc, char *argv[])
 	mapElements.push_back(instruments[expo.instrument]->mapNames[extn.device]);
 	// Followed by the exposure map:
 	mapElements.push_back(expo.mapName);
-	/**/{
-	  cerr << "Defining chain for " << mapName << " elements:" ;
-	  for (list<string>::const_iterator i = mapElements.begin();
-	       i != mapElements.end();
-	       ++i)
-	    cerr << " " << *i;
-	  cerr << endl;
-	}
 
 	mapCollection.defineChain( mapName, mapElements);
 
@@ -928,7 +903,6 @@ main(int argc, char *argv[])
     // telling each Extension which objects it should retrieve from its catalog
 
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
-      /**/cerr << "# Reading catalog extension " << catalogHDUs[icat] << endl;
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
       FTable ff = ft.use();
       {
@@ -941,8 +915,6 @@ main(int argc, char *argv[])
 	  exit(1);
 	}
 	stripWhite(affinity);
-	/**/cerr << "Affinity <" << affinity 
-		 << "> " << stringstuff::nocaseEqual(affinity, stellarAffinity) << endl;
 	if (!stringstuff::nocaseEqual(affinity, stellarAffinity))
 	  continue;
       }
@@ -952,7 +924,7 @@ main(int argc, char *argv[])
       ff.readCells(seq, "SequenceNumber");
       ff.readCells(extn, "Extension");
       ff.readCells(obj, "Object");
-      /**/cerr << "seq size " << seq.size() << " 2nd " << seq[1] << endl;
+
       // Smaller collections for each match
       vector<long> extns;
       vector<long> objs;

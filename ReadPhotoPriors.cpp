@@ -97,6 +97,9 @@ readPriors(string filename,
     bool airmassIsFree = false;
     bool colorIsFree = false;
 
+    // Keep track of exposures already included in this prior.
+    set<int> includedExposures;
+
     while (getlineNoComment(ifs,buffer)) {
       string keyword;
       double value;
@@ -140,6 +143,7 @@ readPriors(string filename,
 	vector<int> matchingExposures;
 	for (int iExpo = 0; iExpo < exposures.size(); iExpo++) {
 	  if (!exposures[iExpo]) continue;
+	  if (includedExposures.count(iExpo) > 0) continue; // Already have this exposure
 	  if (detectionsPerExposure[iExpo] <=0) continue; // Exclude no-data exposures
 	  if (regexMatch(exposureRegex, exposures[iExpo]->name))
 	    matchingExposures.push_back(iExpo);
@@ -188,6 +192,8 @@ readPriors(string filename,
 	    if (extn.exposure==matchingExposures[iMatch]
 		&& extn.device==matchingDevices[iMatch]) {
 	      extnMatch = true; // Stop looping - a given extension will match only once
+	      // Note that we've included this exposure in this prior.
+	      includedExposures.insert(matchingExposures[iMatch]);
 	      PhotoPriorReferencePoint point;
 	      point.exposureName = exposures[matchingExposures[iMatch]]->name;
 	      point.deviceName = deviceName;

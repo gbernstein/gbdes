@@ -180,7 +180,7 @@ PhotoPrior::accumulateChisq(double& chisq,
 bool
 PhotoPrior::sigmaClip(double sigThresh) {
   list<PhotoPriorReferencePoint>::iterator worst=points.end();
-  double maxDev = sigThresh;
+  double maxDev = sigThresh*sigma;
   for (list<PhotoPriorReferencePoint>::iterator i=points.begin();
        i!=points.end(); 
        ++i) {

@@ -1,4 +1,3 @@
-//  $Id: FITStypes.h,v 1.7 2009/11/02 22:48:53 garyb Exp $
 // Definitions, includes, and constants for FITS files and CFITSIO.
 #ifndef FITSTYPES_H
 #define FITSTYPES_H

@@ -7,7 +7,7 @@
 #include <list>
 #include <algorithm>
 
-#include "FITStypes.h"
+#include "FitsTypes.h"
 #include "Std.h"
 
 /************************  Header ****************************
