@@ -1,4 +1,5 @@
 // Make a FITS image of a DECam photometric solution, with flat normalization factors taken out.
+// This version looks up star flat value from Nicolas Regnault's image that has 1024x1024 superpixels.
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -18,15 +19,20 @@ class Device {
 public:
   Bounds<double> b;
   double norm;
+  int detsecX;
+  int detsecY;
 };
 
 int
 main(int argc, char *argv[])
 {
   double pixelScale = atof(argv[1]);
-  string band = argv[2];
-  string exposurePrefix = argv[3];
-  exposurePrefix += "/";
+  string nicolasFile = argv[2];
+  string outFile = argv[3];
+  string exposurePrefix = "DECam_00163584/";
+
+  // how big each of Nicolas' superpixels is, in CCD pixels
+  const int superPixelSize = 1024;
 
   // Convert rough input scale in DECam pixels into degrees per output pix:
   pixelScale *= 0.264 / 3600.;
@@ -38,25 +44,40 @@ main(int argc, char *argv[])
   map<string,Device> devices;
   Bounds<double> bExpo;
   {
-    string filename = "ccdinfo_" + band + ".txt";
+    string filename = "ccdInfo.txt";
     ifstream ifs(filename.c_str());
     string buffer;
     while (getlineNoComment(ifs, buffer)) {
       istringstream iss(buffer);
       string name;
-      double xmin, xmax, ymin, ymax, norm;
-      if (!(iss >> name >> xmin >> xmax >> ymin >> ymax >> norm)) {
+      double xmin, xmax, ymin, ymax;
+      if (!(iss >> name >> xmin >> xmax >> ymin >> ymax)) {
 	cerr << "Bad Device line: " << buffer << endl;
 	exit(1);
       }
       Device d;
-      d.norm = norm;
       d.b = Bounds<double>(xmin, xmax, ymin, ymax);
       bExpo += d.b;
       devices[name] = d;
     }
   }
 
+  {
+    // Read the corners of the images in detsec coordinates
+    ifstream ifs("detsecs.dat");
+    string buffer;
+    while (getlineNoComment(ifs, buffer)) {
+      string detpos;
+      int detsecX, detsecY;
+      istringstream iss(buffer);
+      if (! (iss >> detpos >> detsecX >> detsecY)) {
+	cerr << "Error on detsec reading, line: " << buffer << endl;
+	exit(1);
+      }
+      devices[detpos].detsecX = detsecX-2048;
+      devices[detpos].detsecY = detsecY;
+    }
+  }
   // Make the Image
   Bounds<int> bImage( static_cast<int> (floor(bExpo.getXMin()/pixelScale)),
 		      static_cast<int> (ceil(bExpo.getXMax()/pixelScale)),
@@ -69,13 +90,6 @@ main(int argc, char *argv[])
   {
     ifstream ifs("jul4.wcs");
     astromaps.read(ifs);
-  }
-
-  PhotoMapCollection photomaps;
-  {
-    string filename = "jul12." + band + ".photo";
-    ifstream ifs(filename.c_str());
-    photomaps.read(ifs);
   }
 
   // Adjust coordinates such that mean of N4 and S4 centers is at origin.
@@ -103,8 +117,15 @@ main(int argc, char *argv[])
 
     // Get Wcs and photometric solution
     Wcs* devWcs = astromaps.issueWcs(exposurePrefix + i->first);
-    photometry::SubMap* devPhoto = photomaps.issueMap(exposurePrefix + i->first);
 
+    // Get Nicolas's image
+    Image<> nicolas;
+    {
+      FitsImage<> fi(nicolasFile,FITS::ReadOnly,0);
+      nicolas = fi.extract();
+      nicolas += 1.;
+    }
+    
     // Loop over pixels
     for (int iy = bpix.getYMin(); iy <= bpix.getYMax(); iy++)
       for (int ix = bpix.getXMin(); ix <= bpix.getXMax(); ix++) {
@@ -116,15 +137,13 @@ main(int argc, char *argv[])
 	devWcs->toPix(args.xExposure, args.yExposure, args.xDevice, args.yDevice);
 	if (!bDevice.includes(args.xDevice,args.yDevice)) continue;	// Skip if outside device
 
-	// Calculate photometric correction
-	args.color = 0.;
-	double photo = devPhoto->forward(0., args);
-
-	// Apply normalization correction
-	starflat(ix, iy) = pow(10., -0.4*photo) * i->second.norm;
+	// Find the pixel in Nicolas' image that gives superpixel here
+	int xSup = (args.xDevice + i->second.detsecX-2)/superPixelSize + 1;
+	int ySup = (args.yDevice + i->second.detsecY-2)/superPixelSize + 1;
+	  
+	starflat(ix,iy) = pow(10.,0.4*(nicolas(xSup, ySup)-1.));
       }
-
   } // end Device loop.
   starflat.shift(1,1);
-  FitsImage<>::writeToFITS("test_"+band+".fits", starflat, 0);
+  FitsImage<>::writeToFITS(outFile, starflat, 0);
 }
