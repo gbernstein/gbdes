@@ -15,11 +15,13 @@
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
 #include "PhotoInstrument.h"
+#include "TemplateMap.h"
 
 using namespace std;
 using namespace stringstuff;
 using namespace photometry;
 using img::FTable;
+using FITS::FitsTable;
 
 string usage=
   "MakeColors: Merge magnitudes for matched detections to create new\n"
@@ -50,6 +52,9 @@ string usage=
 // Each comma-separated specifier gives the two bands that will be differenced to produce the
 // color that is written into a FITS table with given file name.
 
+// Routine to return clipped mean & uncertainty given data and weights w:
+void clipMeanAndError(vector<double>& x, vector<double>& w, double& mean, double& err,
+		      double threshold);
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -61,6 +66,45 @@ spaceReplace(string& s) {
 
 // Here is the default character at which to split lists given in parameters strings
 const char DefaultListSeperator=',';
+
+// Collect the regular expressions that will match instruments that are
+// assign to each magnitude band
+struct Band {
+  Band(): number(-1), hasData(false) {}
+  string name;
+  int number;
+  list<string> regexes;
+  bool hasData;
+};
+
+class Color {
+public:
+  Color(): fits(0), data(0), rowCount(0), extensionNumber(-1) {}
+  ~Color() {
+    if (data) delete data;
+    if (fits) delete fits;
+  }
+  string band1;
+  string band2;
+  string colorSpec;
+  string filename;
+  double offset;
+  int bandNumber1;
+  int bandNumber2;
+  FitsTable* fits;	// Pointer to the FitsTable that will hold this color's catalog
+  FTable* data;
+  long rowCount;	// Number of objects in this color's table so far
+  int extensionNumber;	// extension number assigned to this color's catalog;
+};
+
+// Collect this information for each desired detection in the input catalogs
+class MagPoint {
+public:
+  double ra;
+  double dec;
+  double mag;
+  double magErr;
+};
 
 // Another helper function to split up a string into a list of whitespace-trimmed strings.
 // Get rid of any null ones.
@@ -85,6 +129,7 @@ main(int argc, char *argv[])
 {
   double clipThresh;
   double maxMagError;
+  double magSysError;
   string renameInstruments;
   string magnitudes;
   string colors;
@@ -100,6 +145,8 @@ main(int argc, char *argv[])
 
     parameters.addMember("maxMagError",&maxMagError, def | lowopen,
 			 "Only output mags with errors below this level", 0.05, 0.);
+    parameters.addMember("magSysError",&magSysError, def | lowopen,
+			 "Systematic added in quadrature to mag error", 0.001, 0.);
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Magnitude clipping threshold (sigma)", 5., 2.);
     parameters.addMember("magnitudes",&magnitudes, def,
@@ -109,7 +156,7 @@ main(int argc, char *argv[])
     parameters.addMember("renameInstruments",&renameInstruments, def,
 			 "list of new names to give to instruments for maps","");
     parameters.addMember("wcsFiles",&wcsFiles, def,
-			 "files holding WCS maps to override starting WCSs","")
+			 "files holding WCS maps to override starting WCSs","");
     parameters.addMember("photoFiles",&photoFiles, def,
 			 "files holding single-band photometric solutions for input catalogs","");
 }
@@ -121,10 +168,14 @@ main(int argc, char *argv[])
 
   const string stellarAffinity="STELLAR";
 
+  const double NO_MAG_DATA = -100.;	// Value entered when there is no valid mag or color
+  const string colorColumnName = "COLOR";
+  const string colorErrorColumnName = "COLOR_ERR";
+
   try {
     
     // Read parameters
-    if (argc<2) {
+    if (argc<3) {
       cerr << usage << endl;
       cerr << "--------- Default Parameters: ---------" << endl;
       parameters.setDefault();
@@ -132,9 +183,10 @@ main(int argc, char *argv[])
       exit(1);
     }
     string inputTables = argv[1];
+    string magOutFile = argv[2];
 
     parameters.setDefault();
-    for (int i=2; i<argc; i++) {
+    for (int i=3; i<argc; i++) {
       // Open & read all specified input files
       ifstream ifs(argv[i]);
       if (!ifs) {
@@ -164,7 +216,7 @@ main(int argc, char *argv[])
     /////////////////////////////////////////////////////
 
     // Teach PixelMapCollection about new kinds of PixelMaps:
-    PixelMapCollection::registerMapType<TemplateMap1d>();
+    astrometry::PixelMapCollection::registerMapType<astrometry::TemplateMap1d>();
 
     // Teach PhotoMapCollection about new kinds of PhotoMaps:
     // Currently all map types are automatically loaded in PhotoMapCollection constructor,
@@ -195,7 +247,7 @@ main(int argc, char *argv[])
 
     // Get the list of files holding astrometric maps and read them.
     list<string> wcsFileList = splitArgument(wcsFiles);
-    PixelMapCollection astromaps;
+    astrometry::PixelMapCollection astromaps;
     for (list<string>::const_iterator i = wcsFileList.begin();
 	 i != wcsFileList.end();
 	 ++i) {
@@ -215,17 +267,8 @@ main(int argc, char *argv[])
 	cerr << "WARNING: could not read astrometric map file " << *i << endl;
     }
 
-    // Collect the regular expressions that will match instruments that are
-    // assign to each magnitude band
-    struct Band {
-      Band(): number(-1), hasData(false) {}
-      string name;
-      int number;
-      list<string> regexes;
-      bool hasData;
-    };
 
-    typedef map<string, Band > BandMap;
+    typedef map<string, Band> BandMap;
     BandMap bands;
     {
       list<string> bandspecs = splitArgument(magnitudes);
@@ -237,9 +280,9 @@ main(int argc, char *argv[])
 	  cerr << "Bad band/instrument pair: " << *i << endl;
 	  exit(1);
 	}
-	string bandName = bandInst[0];
+	string bandName = bandInst.front();
 	stripWhite(bandName);
-	instrumentRegex = bandInst[1];
+	string instrumentRegex = bandInst.back();
 	stripWhite(instrumentRegex);
 	if (bandName.empty() || instrumentRegex.empty()) {
 	  cerr << "Missing band or instrument: " << *i << endl;
@@ -255,8 +298,8 @@ main(int argc, char *argv[])
       for (BandMap::iterator i = bands.begin();
 	   i != bands.end();
 	   ++i) {
-	Band& b = i.second;
-	b.name = i.first;
+	Band& b = i->second;
+	b.name = i->first;
 	b.number = bandCounter++;
       }
     }
@@ -264,13 +307,6 @@ main(int argc, char *argv[])
     // Parse specifications for color.  Make a little struct to describe each color to be
     // extracted.
 
-    class Color {
-    public:
-      string band1;
-      string band2;
-      string filename;
-      double offset;
-    }
 
     list<Color> colorList;
     {
@@ -284,24 +320,27 @@ main(int argc, char *argv[])
 	success = (colorfile.size() ==2);
 	if (success) {
 	  // 2nd entry is filename
-	  c.filename = colorfile[1];
+	  c.filename = colorfile.back();
 	  stripWhite(c.filename);
+	  // 1st entry is the specification of the desired color
+	  c.colorSpec = colorfile.front();
+	  stripWhite(c.colorSpec);
 
 	  // Get possible offset constant from color description at '+'
-	  list<string> coloroffset = split(colorfile[0], '+');
+	  list<string> coloroffset = split(colorfile.front(), '+');
 	  success =  (coloroffset.size()>0 && coloroffset.size() <=2);
 	  c.offset = 0.;
 	  if (success && coloroffset.size() == 2) {
 	    // get offset
-	    istringstream iss(coloroffset[1]);
+	    istringstream iss(coloroffset.back());
 	    success = (iss >> c.offset);
 	  }
 	  // split up the color term at -
 	  if (success) {
-	    list<string> twobands = split(coloroffset[0], '-');
+	    list<string> twobands = split(coloroffset.front(), '-');
 	    if (twobands.size() == 2) {
-	      c.band1 = twobands[0];
-	      c.band2 = twobands[1];
+	      c.band1 = twobands.front();
+	      c.band2 = twobands.back();
 	      stripWhite(c.band1);
 	      stripWhite(c.band2);
 	    } else {
@@ -315,14 +354,16 @@ main(int argc, char *argv[])
 	}
 
 	// Check that both mags in the color are known to us:
-	if (!map.count(c.band1)) {
+	if (!bands.count(c.band1)) {
 	  cerr << "Undefined magnitude <" << c.band1 << " requested for color" << endl;
 	  exit(1);
 	}
-	if (!map.count(c.band2)) {
+	if (!bands.count(c.band2)) {
 	  cerr << "Undefined magnitude <" << c.band2 << " requested for color" << endl;
 	  exit(1);
 	}
+	c.bandNumber1 = bands[c.band1].number;
+	c.bandNumber2 = bands[c.band2].number;
 
 	colorList.push_back(c);
       } // end color spec loop
@@ -360,10 +401,11 @@ main(int argc, char *argv[])
 
     // Read in all the instrument extensions and their device info.
     vector<Instrument*> instruments(instrumentHDUs.size(),0);
+    // This array will say what band number any instrument gives data for.  -1 means none of interest
+    vector<int> instrumentBandNumbers(instrumentHDUs.size(), -1);
+
     for (int i=0; i<instrumentHDUs.size(); i++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
-      // Append new table to output:
-      Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
 
       string instrumentName;
       int instrumentNumber;
@@ -377,56 +419,46 @@ main(int argc, char *argv[])
       string name = instrumentName;
       instrumentTranslator(name);  // Apply any name remapping specified.
       
-      if (regexMatchAny(useInstrumentList, name))  {
-	// This is an instrument we will use.  Get its devices
-	//**/cerr << "Reading instrument " << name << endl;
-	FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
-	if (!outputCatalogAlreadyOpen) {
-	  outFlags = outFlags + FITS::OverwriteFile;
-	  outputCatalogAlreadyOpen = true;
-	}
-	FITS::FitsTable out(outCatalog, outFlags, -1);
-	out.setName("Instrument");
-	FTable ff=ft.extract();
-	out.adopt(ff);
-	Assert(instrumentNumber < instruments.size());
-	Instrument* instptr = new Instrument(instrumentName);
-	instruments[instrumentNumber] = instptr;
+      // Now see if this PhotoMap instrument name appears
+      for (BandMap::const_iterator iBand = bands.begin();
+	   iBand != bands.end();
+	   ++iBand) {
+
+	if (regexMatchAny(iBand->second.regexes, name))  {
+	  // This is an instrument we will use. 
+	  // Assign a band number
+	  instrumentBandNumbers[i] = iBand->second.number;
+	  // Get instrument's devices:
+	  FTable ff=ft.extract();
+	  Assert(instrumentNumber < instruments.size());
+	  Instrument* instptr = new Instrument(instrumentName);
+	  instruments[instrumentNumber] = instptr;
       
-	vector<string> devnames;
-	vector<double> vxmin;
-	vector<double> vxmax;
-	vector<double> vymin;
-	vector<double> vymax;
-	ff.readCells(devnames, "Name");
-	ff.readCells(vxmin, "XMin");
-	ff.readCells(vxmax, "XMax");
-	ff.readCells(vymin, "YMin");
-	ff.readCells(vymax, "YMax");
-	for (int j=0; j<devnames.size(); j++) {
-	  //**/cerr << "  Device " << devnames[j] << endl;
-	  spaceReplace(devnames[j]);
-	  instptr->addDevice( devnames[j],
-			      Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
-	}
-      } // Done reading an instrument.
-    }
+	  vector<string> devnames;
+	  vector<double> vxmin;
+	  vector<double> vxmax;
+	  vector<double> vymin;
+	  vector<double> vymax;
+	  ff.readCells(devnames, "Name");
+	  ff.readCells(vxmin, "XMin");
+	  ff.readCells(vxmax, "XMax");
+	  ff.readCells(vymin, "YMin");
+	  ff.readCells(vymax, "YMax");
+	  for (int j=0; j<devnames.size(); j++) {
+	    spaceReplace(devnames[j]);
+	    instptr->addDevice( devnames[j],
+				Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
+	  }
+	  break;	// Break out of band loop if we find one match.
+	} // Done with section when finding a band
+      } // Done with band loop
+    } // Done with instrument loop
 
     // Read in the table of exposures
     vector<Exposure*> exposures;
-    // This vector will hold the color-priority value of each exposure.  -1 means an exposure
-    // that does not hold color info.
-    vector<int> exposureColorPriorities;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
-      FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
-      if (!outputCatalogAlreadyOpen) {
-	outFlags = outFlags + FITS::OverwriteFile;
-	outputCatalogAlreadyOpen = true;
-      }
-      FITS::FitsTable out(outCatalog, outFlags, "Exposures");
-      FTable ff = ft.extract();
-      out.adopt(ff);
+      FTable ff = ft.use();
       vector<string> names;
       vector<double> ra;
       vector<double> dec;
@@ -437,70 +469,43 @@ main(int argc, char *argv[])
       ff.readCells(dec, "Dec");
       ff.readCells(fieldNumber, "fieldNumber");
       ff.readCells(instrumentNumber, "InstrumentNumber");
-      exposureColorPriorities = vector<int>(names.size(), -1);
+
       for (int i=0; i<names.size(); i++) {
+	// Continue in loop if this exposure contains no useful mag info.
+	if (instrumentBandNumbers[instrumentNumber[i]] < 0)
+	  continue;
+
 	spaceReplace(names[i]);
-
-	// See if this exposure name matches any of the color exposures
-	int priority = 0;
-	for (list<string>::const_iterator j = useColorList.begin();
-	     j != useColorList.end();
-	     ++j, ++priority) {
-	  if (regexMatch(*j, names[i])) {
-	    // Yes: give this exposure a priority according to order of the exposure it first matches.
-	    exposureColorPriorities[i] = priority;
-	    continue;
-	  }
-	}
-	// Is this exposure in an instrument of interest, or a reference or tag?
-	// Yes, if it's a reference exposure with name given in useReferenceExposures
-	bool useThisExposure = instrumentNumber[i]==REF_INSTRUMENT 
-	  && regexMatchAny(useReferenceList, names[i]);
-	// or if it's a normal exposure using an instrument that has been included
-	useThisExposure = useThisExposure || (instrumentNumber[i]>=0 && 
-					      instruments[instrumentNumber[i]]);
-
-	Exposure* expo;
-	if (useThisExposure) {
-	  // The projection we will use for this exposure:
-	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
+	// The projection we will use for this exposure:
+	astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
 										  dec[i]*DEGREE)));
-	  expo = new Exposure(names[i],gn);
-	  expo->field = fieldNumber[i];
-	  expo->instrument = instrumentNumber[i];
-	} else {
-	  expo = 0;
-	}
+	Exposure* expo = new Exposure(names[i],gn);
+	expo->field = fieldNumber[i];
+	expo->instrument = instrumentNumber[i];
 	exposures.push_back(expo);
       }
+
+      // ???? Add the magnitude and color catalogs to the Exposure table ???
     }
 
 
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
     vector<Extension*> extensions;
-    vector<ColorExtension*> colorExtensions;
-    {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
-      extensionTable = ft.extract();
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Extensions");
-      out.copy(extensionTable);
-    }
+    FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
+    extensionTable = ft.use();
+    // This array will give band associated with each extension.  -1 for no desired band.
+    vector<int> extensionBandNumbers(extensionTable.nrows(), -1);
+
+    // ??? Add the mag & color catalogs to the Extension table ???
+    // ??? and assign them extension numbers
+    int magCatalogExtensionNumber = -1; // ????
+
     for (int i=0; i<extensionTable.nrows(); i++) {
       Extension* extn = new Extension;
       int iExposure;
       extensionTable.readCell(iExposure, "ExposureNumber", i);
 
-      // Determine whether this extension might be used to provide colors
-      int colorPriority = exposureColorPriorities[iExposure];
-      if (colorPriority < 0) {
-	colorExtensions.push_back(0);
-      } else {
-	ColorExtension* ce = new ColorExtension;
-	ce->priority = colorPriority;
-	colorExtensions.push_back(ce);
-      }
-	
       if (!exposures[iExposure]) {
 	// This extension is not in an exposure of interest.  Skip it.
 	delete extn;
@@ -513,11 +518,13 @@ main(int argc, char *argv[])
       int iDevice;
       extensionTable.readCell(iDevice, "DeviceNumber", i);
       extn->device = iDevice;
-      // Assume an airmass column is in the extension table.
-      // Values <1 mean (including a default 0) mean it's not available.
-      double airmass;
-      extensionTable.readCell(airmass, "Airmass", i);
-      extn->airmass = airmass;
+
+      Exposure& expo = *exposures[iExposure];
+      // Save away the band number for this extension
+      extensionBandNumbers[i] = instrumentBandNumbers[expo.instrument];
+      // and get the name its maps should be found under.
+      string mapName = expo.name + "/" 
+	+ instruments[expo.instrument]->deviceNames.nameOf(extn->device);
 
       string s;
       extensionTable.readCell(s, "WCS", i);
@@ -527,331 +534,43 @@ main(int argc, char *argv[])
 	astrometry::SphericalICRS icrs;
 	extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", DEGREE);
       } else {
-	istringstream iss(s);
-	astrometry::PixelMapCollection pmcTemp;
-	if (!pmcTemp.read(iss)) {
-	  cerr << "Did not find WCS format for extension ???" << endl;
-	  exit(1);
+	try {
+	  // See if there is a map to use from the astrometric solution files
+	  extn->startWcs = astromaps.issueWcs(mapName);
+	} catch (PhotometryError) {
+	  // else we read from the input file's starting WCS
+	  istringstream iss(s);
+	  astrometry::PixelMapCollection pmcTemp;
+	  if (!pmcTemp.read(iss)) {
+	    cerr << "Did not find WCS format for " << mapName << endl;
+	    exit(1);
+	  }
+	  string wcsName = pmcTemp.allWcsNames().front();
+	  extn->startWcs = pmcTemp.cloneWcs(wcsName);
 	}
-	string wcsName = pmcTemp.allWcsNames().front();
-	extn->startWcs = pmcTemp.cloneWcs(wcsName);
       }
       // destination projection is the Exposure projection, whose coords used for any
       // exposure-level magnitude corrections
       extn->startWcs->reprojectTo(*exposures[extn->exposure]->projection);
-      // ??? or use the field center for reference/tag exposures ???
-    }
 
-    /////////////////////////////////////////////////////
-    //  Create and initialize all magnitude maps
-    /////////////////////////////////////////////////////
-
-    // Logic now for initializing instrument maps:
-    // 1) Assign a name to each instrument map; either it's name of instrument,
-    //    or we have a mapping from input parameters
-    // 2) If the instrument name is something we were told to reuse:
-    //        * get its form and values from the input map libraries for each device
-    // 3) If not reusing, make new maps for each device.
-    //        * Select canonical exposure either from cmd line or finding one
-    //        * set reference exposure's map to identity
-    //        * Initialize new map to identity.
-    // 4) Set initial exposure maps for each exposure that is not already canonical.
-    // 5) Freeze parameters of all map elements specified in input.
-
-    // Create a PhotoMapCollection to hold all the components of the PhotoMaps.
-    PhotoMapCollection mapCollection;
-    // Create an identity map used by all reference catalogs
-    mapCollection.learnMap(IdentityMap());
-
-    // This is list of PhotoMaps whose parameters will be held fixed during fitting:
-    list<string> fixedMapNames;
-
-    // Set up coordinate maps for each instrument & exposure
-    for (int iinst=0; iinst<instruments.size(); iinst++) {
-      Instrument* inst = instruments[iinst];
-      if (!inst) continue; // Only using some instruments
-
-      // (1) choose a name to be used for this Instrument's PhotoMap:
-      string mapName = inst->name;
-      instrumentTranslator(mapName);  // Apply any remapping specified.
-
-      // (2) See if this instrument has a map that we are re-using, and if params are fixed
-      string loadFile = mapName;
-      bool loadExistingMaps = existingMapFinder(loadFile);
-      bool fixInstrumentParameters = regexMatchAny(fixMapList, mapName);
-
-      // (3) decide for all devices whether they are looked up, or need creating,
-      //     and whether they are fixed
-      vector<bool> deviceMapsExist(inst->nDevices, loadExistingMaps);
-      vector<bool> fixDeviceMaps(inst->nDevices, fixInstrumentParameters);
-
-      PhotoMapCollection pmcInstrument;
-      if (loadExistingMaps) {
-	ifstream ifs(loadFile.c_str());
-	if (!ifs) {
-	  cerr << "Could not open file " + loadFile + " holding existing PhotoMaps" << endl;
-	  exit(1);
-	}
-	pmcInstrument.read(ifs);
-      }
-
-      for (int idev=0; idev<inst->nDevices; idev++) {
-	string devMapName = mapName + '/' + inst->deviceNames.nameOf(idev);
-	inst->mapNames[idev] = devMapName;
-	// A PhotoMap file for Device overrides one for the Instrument
-	string devLoadFile = devMapName;
-	if (existingMapFinder(devLoadFile)) {
-	  deviceMapsExist[idev] = true;
-	} else if (deviceMapsExist[idev]) {
-	  // Already have a map file from the Instrument
-	  devLoadFile = loadFile;
-	}
-	if (regexMatchAny(fixMapList, devMapName))
-	  fixDeviceMaps[idev] = true;
-
-	if (fixDeviceMaps[idev] && !deviceMapsExist[idev]) {
-	  cerr << "WARNING: Requested fixed parameters for Device map "
-	       << devMapName
-	       << " that does not have initial values.  Ignoring request to fix params."
-	       << endl;
-	}
-
-	// Done with this device for now if we have no existing map to read.
-	if (!deviceMapsExist[idev]) continue;
-	  
-	// Load the PhotoMap for this device if it is to be extracted from a file.
-	// We will not be throwing exceptions for duplicate names
-	PhotoMap* deviceMap;
-	if (devLoadFile==loadFile) {
-	  // Get map from the Instrument's collection:
-	  deviceMap = pmcInstrument.issueMap(devMapName);
-	  mapCollection.learnMap(*deviceMap);
-	} else {
-	  // Device has its own serialized file:
-	  PhotoMapCollection pmcDev;
-	  ifstream ifs(devLoadFile.c_str());
-	  if (!ifs) {
-	    cerr << "Could not open file " + devLoadFile + " holding existing PhotoMaps" << endl;
-	    exit(1);
-	  }
-	  pmcDev.read(ifs);
-	  deviceMap = pmcDev.issueMap(devMapName);
-	  mapCollection.learnMap(*deviceMap);
-	}
-
-	if (fixDeviceMaps[idev])
-	  fixedMapNames.push_back(devMapName);
-      } // end of device loop
-
-      // Canonical exposure will have its Exposure map will be fixed at identity 
-      // if none of the Device's maps are
-      // fixed at initial values;  we assume that any single device being fixed will
-      // break degeneracy between Exposure and Instrument models.
-
-      // First find all exposures from this instrument,
-      // and find if one is canonical;
-      long canonicalExposure = -1;
-      list<long> exposuresWithInstrument;
-      for (long iexp = 0; iexp < exposures.size(); iexp++) {
-	if (!exposures[iexp]) continue;  // Not using this exposure or its instrument
-	if (exposures[iexp]->instrument == iinst) {
-	  exposuresWithInstrument.push_back(iexp);
-	  if (regexMatchAny(canonicalExposureList, exposures[iexp]->name)) {
-	    if (canonicalExposure < 0) {
-	      // This is our canonical exposure
-	      canonicalExposure = iexp;
-	    } else {
-	      // Duplicate canonical exposures is an error
-	      cerr << "More than one canonical exposure for instrument " 
-		   << inst->name << ": " << endl;
-	      cerr << exposures[canonicalExposure]->name
-		   << " and " << exposures[iexp]->name
-		   << endl;
-	      exit(1);
-	    }
-	  }
-	}
-      } // end exposure loop
-
-      // Do we need a canonical exposure? Only if we have an an uninitialized device map
-      bool needCanonical = false;
-      for (int idev=0; idev<deviceMapsExist.size(); idev++)
-	if (!deviceMapsExist[idev]) {
-	  needCanonical = true;
-	  break;
-	}
-
-      // Or if none of the devices have their parameters fixed
-      bool noDevicesFixed = true;
-      for (int idev=0; idev<deviceMapsExist.size(); idev++)
-	if (deviceMapsExist[idev] && fixDeviceMaps[idev]) {
-	  noDevicesFixed = false;
-	  break;
-	}
-
-      if (noDevicesFixed) needCanonical = true;
-
-      if (needCanonical && canonicalExposure > 0) {
-	// Make sure our canonical exposure has all devices:
-	set<long> vexp;
-	vexp.insert(canonicalExposure);
-	FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
-	if (exts.nrows() != inst->nDevices) {
-	  cerr << "Canonical exposure " << exposures[canonicalExposure]->name
-	       << " for Instrument " << inst->name
-	       << " only has " << exts.nrows()
-	       << " devices out of " << inst->nDevices
-	       << endl;
-	  exit(1);
-	}
-      }
-
-      if (needCanonical && canonicalExposure < 0) {
-	// Need canonical but don't have one.  
-	// Find an exposure that has all devices for this Instrument.
-	for (list<long>::const_iterator i = exposuresWithInstrument.begin();
-	     i != exposuresWithInstrument.end();
-	     ++i) {
-	  // Filter the extension table for this exposure:
-	  set<long> vexp;
-	  vexp.insert(*i);
-	  FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
-	  // Stop here if this exposure has right number of extensions (exactly 1 per device):
-	  if (exts.nrows() == inst->nDevices) {
-	    canonicalExposure = *i;
-	    break; 
-	  }
-	}
-
-	if (canonicalExposure < 0) {
-	  cerr << "Could not find exposure with all devices for intrument "
-	       << inst->name << endl;
-	  exit(1);
-	}
-
-      } // end finding a canonical exposure for the Instrument
-
-      // Now we create new PhotoMaps for each Device that does not already have one.
-      for (int idev=0; idev < inst->nDevices; idev++) {
-	if (deviceMapsExist[idev]) continue;
-	learnParsedMap(deviceModel, inst->mapNames[idev], mapCollection);
-      } // end loop creating PhotoMaps for all Devices.
-
-      // Now create an exposure map for all exposures with this instrument,
-      // and set initial parameters to be identity map if not already given.
-
-      for (list<long>::const_iterator i= exposuresWithInstrument.begin();
-	   i != exposuresWithInstrument.end();
-	   ++i) {
-	int iexp = *i;
-	Exposure& expo = *exposures[iexp];
-	// First we check to see if we are going to use an existing exposure map:
-	string loadFile = expo.name;
-	if (existingMapFinder(loadFile)) {
-	  // Adopt the existing map for this exposure:
-	  PhotoMapCollection pmcExpo;
-	  ifstream ifs(loadFile.c_str());
-	  if (!ifs) {
-	    cerr << "Could not open serialized map file " 
-		 << loadFile
-		 << endl;
-	    exit(1);
-	  }
-	  pmcExpo.read(ifs);
-	  PhotoMap* expoMap = pmcExpo.issueMap(expo.name);
-	  mapCollection.learnMap(*expoMap);
-	  expo.mapName = expoMap->getName();
-	  // If this imported map is to be held fixed, add it to the list:
-	  if (regexMatchAny(fixMapList, expo.mapName))
-	    fixedMapNames.push_back(expo.mapName);
-	  delete expoMap;
-
-	  // We're done with this exposure if we have pre-set map for it.
-	  continue;
-	}
-
-	if (iexp == canonicalExposure && noDevicesFixed) {
-	  // Give this canonical exposure identity map to avoid degeneracy with Instrument
-	  expo.mapName = IdentityMap().getName();
-	  continue;
-	}
-	
-	// We will create a new exposure map 
-	learnParsedMap(exposureModel, expo.name, mapCollection);
-	expo.mapName = expo.name;
-
-	// Check for fixed maps
-	if (regexMatchAny(fixMapList, expo.mapName)) {
-	  cerr << "WARNING: Requested fixed parameters for Exposure map "
-	       << expo.name
-	       << " that does not have initial values.  Ignoring request to fix params."
-	       << endl;
-	}
-
-      } // end creation of this exposure map
-
-    } // End instrument loop
-
-    // Freeze the parameters of all the fixed maps
-    mapCollection.setFixed(fixedMapNames, true);
-
-    // Register maps for all reference exposures being used:
-    for (long iexp =0; iexp < exposures.size(); iexp++) {
-      if (!exposures[iexp]) continue;	// Skip if exposure is not in used
-      Exposure& expo = *exposures[iexp];
-      if (expo.instrument != REF_INSTRUMENT) continue; // or if not a reference exposure
-      if (referenceColorTerm) {
-	// Every reference exposure will get a floating color coefficient
-	PhotoMap* pm = new ConstantMap;
-	pm = new ColorTerm(pm, expo.name);
-	mapCollection.learnMap(*pm);
-	delete pm;
-	expo.mapName = expo.name;
-      } else {
-	// No freedom in the reference magnitude map:
-	expo.mapName = IdentityMap::mapType();
+      // Get the photometric solution too
+      extn->map = photomaps.issueMap(mapName);
+      if (extn->map->needsColor()) {
+	cerr << "MakeColors is not able to use the PhotoMap <" << mapName
+	     << "> because it requires color information." << endl;
+	exit(1);
       }
     }
-
-    // Now construct a SubMap for every extension
-    for (int iext=0; iext<extensions.size(); iext++) {
-      if (!extensions[iext]) continue;  // not in use.
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
-      int ifield = expo.field;
-      if ( expo.instrument < 0) {
-	// Reference exposures have no instruments, but possible color term per exposure
-	extn.map = mapCollection.issueMap(expo.mapName);
-      } else {
-	// Real instrument, make a map combining its exposure with its Device map:
-	string mapName = expo.name + "/" 
-	  + instruments[expo.instrument]->deviceNames.nameOf(extn.device);
-	list<string> mapElements;
-	// The extension map is the device map:
-	mapElements.push_back(instruments[expo.instrument]->mapNames[extn.device]);
-	// Followed by the exposure map:
-	mapElements.push_back(expo.mapName);
-
-	mapCollection.defineChain( mapName, mapElements);
-
-	extn.map = mapCollection.issueMap(mapName);
-      }
-    } // Extension loop
-
-    /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()
-	     << " with " << mapCollection.nParams() << " free parameters."
-	     << endl;
-
 
     //////////////////////////////////////////////////////////
     // Read in all the data
     //////////////////////////////////////////////////////////
 
-    // List of all Matches - they will hold pointers to all Detections too.
-    list<Match*> matches;    
-
-    // Start by reading all matched catalogs, creating Detection and Match arrays, and 
+    // Start by reading all matched catalogs, noting which 
     // telling each Extension which objects it should retrieve from its catalog
+
+    // Keep a set of desired object IDs from each extension
+    vector<set<long> > desiredObjects(extensions.size());
 
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
@@ -869,102 +588,19 @@ main(int argc, char *argv[])
 	if (!stringstuff::nocaseEqual(affinity, stellarAffinity))
 	  continue;
       }
-      vector<int> seq;
       vector<LONGLONG> extn;
       vector<LONGLONG> obj;
-      ff.readCells(seq, "SequenceNumber");
       ff.readCells(extn, "Extension");
       ff.readCells(obj, "Object");
 
-      // Smaller collections for each match
-      vector<long> extns;
-      vector<long> objs;
-      // These variables determine what the highest-priority color information available
-      // in the match is so far.
-      long matchColorExtension = -1;
-      long matchColorObject = 0;
-      int colorPriority = -1;
-      for (int i=0; i<=seq.size(); i++) {
-	if (i>=seq.size() || seq[i]==0) {
-	  // Processing the previous (or final) match.
-	  int nValid = extns.size();
-	  if (matchColorExtension < 0) {
-	    // There is no color information for this match. 
-	    if (requireColor) {
-	      // Match is to be discarded without any color information
-	      nValid = 0.;
-	    } else {
-	      // Just discard any detection which requires a color to produce its map:
-	      nValid = 0;
-	      for (int j=0; j<extns.size(); j++) {
-		Assert(extensions[extns[j]]);
-		if (extensions[extns[j]]->map->needsColor()) {
-		  // Mark this detection as useless
-		  extns[j] = -1;
-		} else {
-		  nValid++;
-		}
-	      }
-	    }
-	  }
-	  if (nValid >= minMatches) {
-	    // Make a match from the valid entries, and note need to get data for the detections and color
-	    int j=0;
-	    while (extns[j]<0 && j<extns.size()) ++j;  // Skip detections starved of their color
-	    Assert(j<extns.size());
-	    Detection* d = new Detection;
-	    d->catalogNumber = extns[j];
-	    d->objectNumber = objs[j];
-	    matches.push_back(new Match(d));
-	    extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
-	    for (++j; j<extns.size(); j++) {
-	      if (extns[j]<0) continue;  // Skip detections needing unavailable color
-	      d = new Detection;
-	      d->catalogNumber = extns[j];
-	      d->objectNumber = objs[j];
-	      matches.back()->add(d);
-	      extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
-	    }
-	    if (matchColorExtension >=0) {
-	      // Tell the color catalog that it needs to look this guy up:
-	      Assert(colorExtensions[matchColorExtension]);
-	      colorExtensions[matchColorExtension]->keepers.insert(std::pair<long,Match*>(matchColorObject,
-											  matches.back()));
-	    }
-	  }
-	  // Clear out previous Match:
-	  extns.clear();
-	  objs.clear();
-	  matchColorExtension = -1;
-	  colorPriority = -1;
-	} // Finished processing previous match
-
-	// If we done reading entries, quit this loop
-	if (i >= seq.size()) break;
-
-	// Read in next detection in the catalog
-	if (extn[i]<0 || extensions[extn[i]]) {
-	  // Record a Detection in a useful extension:
-	  extns.push_back(extn[i]);
-	  objs.push_back(obj[i]);
-	}
-
-	// Record if we've got color information here
-	if (colorExtensions[extn[i]]) {
-	  int newPriority = colorExtensions[extn[i]]->priority;
-	  if (newPriority >= 0 && (colorPriority < 0 || newPriority < colorPriority)) {
-	    // This detection holds color info that we want
-	    colorPriority = newPriority;
-	    matchColorExtension = extn[i];
-	    matchColorObject = objs[i];
-	  }
-	}
-	  
-      } // End loop of catalog entries
-      
+      for (int j = 0; j<extn.size(); j++) {
+	if (!extensions[extn[j]]) continue;
+	desiredObjects[extn[j]].insert(obj[j]);
+      }
     } // End loop over input matched catalogs
 
-    /**/cerr << "Total match count: " << matches.size() << endl;
+    // One catalog for each extension, with object ID's as keys
+    vector<map<long, MagPoint> > pointMaps(extensions.size());
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
@@ -979,8 +615,7 @@ main(int argc, char *argv[])
       /**/cerr << "# Reading object catalog " << iext
 	       << "/" << extensions.size()
 	       << " from " << filename 
-	       << " seeking " << extn.keepers.size()
-	       << " objects" << endl;
+	       << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "HDUNumber", iext);
       string xKey;
@@ -996,12 +631,8 @@ main(int argc, char *argv[])
       double weight;
       extensionTable.readCell(weight, "magWeight", iext);
 
-
-      const SubMap* sm=extn.map;
-      bool isReference = (expo.instrument == REF_INSTRUMENT);
-      bool isTag = (expo.instrument == TAG_INSTRUMENT);
-
       astrometry::Wcs* startWcs = extn.startWcs;
+      photometry::SubMap* photomap = extn.map;
 
       if (!startWcs) {
 	cerr << "Failed to find initial Wcs for device " 
@@ -1048,606 +679,242 @@ main(int argc, char *argv[])
 	magColumnIsDouble = false;
       }
 
-      double sysError = isReference ? referenceSysError : magSysError;
-
       for (long irow = 0; irow < ff.nrows(); irow++) {
-	map<long, Detection*>::iterator pr = extn.keepers.find(id[irow]);
-	if (pr == extn.keepers.end()) continue; // Not a desired object
-
-	// Have a desired object now.  Fill its Detection structure
-	Detection* d = pr->second;
-	extn.keepers.erase(pr);
-	d->map = sm;
+	set<long>::iterator pr = desiredObjects[iext].find(id[irow]);
+	if (pr == desiredObjects[iext].end()) continue; // Not a desired object
+	// Remove this object's ID from the list of those being sought.
+	desiredObjects[iext].erase(pr);
 
 	// Read the PhotometryArguments for this Detection:
-	ff.readCell(d->args.xDevice, xKey, irow);
-	ff.readCell(d->args.yDevice, yKey, irow);
-	startWcs->toWorld(d->args.xDevice, d->args.yDevice,
-			  d->args.xExposure, d->args.yExposure);
+	PhotoArguments args;
+	double magIn;
+	double magErr;
+
+	MagPoint mp;
+
+	ff.readCell(args.xDevice, xKey, irow);
+	ff.readCell(args.yDevice, yKey, irow);
+	astrometry::SphericalICRS sky = startWcs->toSky(args.xDevice, args.yDevice);
+	sky.getLonLat(mp.ra, mp.dec);
+	startWcs->toWorld(args.xDevice, args.yDevice,
+			  args.xExposure, args.yExposure);
+	args.color = 0;	// Note no color information is available!
 
 	// Get the mag input and its error
 	if (magColumnIsDouble) {
-	  ff.readCell(d->magIn, magKey, irow);
+	  ff.readCell(magIn, magKey, irow);
 	} else {
 	  float f;
 	  ff.readCell(f, magKey, irow);
-	  d->magIn = f;
+	  magIn = f;
 	}
-	double sigma;
 	if (errorColumnIsDouble) {
-	  ff.readCell(sigma, magErrKey, irow);
+	  ff.readCell(magErr, magErrKey, irow);
 	} else {
 	  float f;
 	  ff.readCell(f, magErrKey, irow);
-	  sigma = f;
+	  magErr = f;
 	}
 
 	// Map to output and estimate output error
-	d->magOut = sm->forward(d->magIn, d->args);
+	mp.mag = photomap->forward(magIn, args);
+	mp.magErr = magErr * pow(photomap->derivative(magIn, args), 2.);
 
-	sigma = std::sqrt(sysError*sysError + sigma*sigma);
-	d->sigmaMag = sigma;
-	sigma *= sm->derivative(d->magIn, d->args);
-	// no clips on tags
-	double wt = isTag ? 0. : pow(sigma,-2.);
-	d->clipsq = wt;
-	d->wt = wt * weight;
-	    
-      } // End loop over catalog objects
+	// Add this point's info to our MagPoint catalog
+	pointMaps[iext][id[irow]] = mp;
+      } // End loop over input rows of this extension
 
-      if (!extn.keepers.empty()) {
+      // Check that we have found all the objects we wanted:
+      if (!desiredObjects[iext].empty()) {
 	cerr << "Did not find all desired objects in catalog " << filename
 	     << " extension " << hduNumber
 	     << endl;
 	exit(1);
       }
-    } // end loop over catalogs to read
-	
-    cerr << "Done reading catalogs for magnitudes." << endl;
+    } // end loop over extensions to read
 
-    // Now loop again over all catalogs being used to supply colors,
-    // and insert colors into all the PhotoArguments for Detections they match
-    for (int iext = 0; iext < colorExtensions.size(); iext++) {
-      if (!colorExtensions[iext]) continue; // Skip unused 
-      ColorExtension& extn = *colorExtensions[iext];
-      if (extn.keepers.empty()) continue; // Not using any colors from this catalog
-      string filename;
-      extensionTable.readCell(filename, "Filename", iext);
-      /**/cerr << "# Reading color catalog " << iext
-	       << "/" << colorExtensions.size()
-	       << " from " << filename << endl;
-      int hduNumber;
-      extensionTable.readCell(hduNumber, "HDUNumber", iext);
-      string idKey;
-      extensionTable.readCell(idKey, "idKey", iext);
-      string colorExpression;
-      extensionTable.readCell(colorExpression, "colorExpression", iext);
-      stripWhite(colorExpression);
-      if (colorExpression.empty()) {
-	cerr << "No colorExpression specified for filename " << filename
-	     << " HDU " << hduNumber
-	     << endl;
-	exit(1);
-      }
 
-      // Read the entire catalog for this extension
-      FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
-      FTable ff = ft.use();
-
-      bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
-      vector<long> id;
-      if (useRows) {
-	id.resize(ff.nrows());
-	for (long i=0; i<id.size(); i++)
-	  id[i] = i;
-      } else {
-	ff.readCells(id, idKey);
-      }
-      Assert(id.size() == ff.nrows());
-
-      vector<double> color(id.size(), 0.);
-      ff.evaluate(color, colorExpression);
-
-      for (long irow = 0; irow < ff.nrows(); irow++) {
-	map<long, Match*>::iterator pr = extn.keepers.find(id[irow]);
-	if (pr == extn.keepers.end()) continue; // Not a desired object
-
-	// Have a desired object. Put the color into everything it matches
-	Match* m = pr->second;
-	extn.keepers.erase(pr);
-
-	for ( Match::iterator j = m->begin();
-	      j != m->end();
-	      ++j) 
-	  (*j)->args.color = color[irow];
-      } // End loop over catalog objects
-
-      if (!extn.keepers.empty()) {
-	cerr << "Did not find all desired objects in catalog " << filename
-	     << " extension " << hduNumber
-	     << endl;
-	exit(1);
-      }
-    } // end loop over catalogs to read
-	
-    cerr << "Done reading catalogs for colors." << endl;
-
-    // Make a pass through all matches to reserve as needed and purge 
-    // those not wanted.  
-
-    // Also count fitted detections per exposure to freeze parameters of those without any detections
-    vector<long> detectionsPerExposure(exposures.size(), 0);
-
+    // Make output catalogs
+    FitsTable magFitsTable(magOutFile, FITS::OverwriteFile);
+    FTable magTable = magFitsTable.use();
+    magTable.clear();	// should already be empty though
     {
-      ran::UniformDeviate u;
-      /**/u.Seed(53347L);  
-      long dcount=0;
-      int dof=0;
-      double chi=0.;
-      double maxdev=0.;
+      vector<double> dummy;
+      magTable.addColumn(dummy, "RA");
+      magTable.addColumn(dummy, "Dec");
+      for (BandMap::const_iterator iBand = bands.begin();
+	   iBand != bands.end();
+	   ++iBand)
+	magTable.addColumn(dummy, iBand->second.name);
+	magTable.addColumn(dummy, iBand->second.name+"_ERR");
+    }
+    long magRowCounter = 0;	// Count of objects with assigned magnitudes
 
-      /**/cerr << "Before reserving, match count: " << matches.size() << endl;
-      list<Match*>::iterator im = matches.begin();
-      while (im != matches.end() ) {
-	// Decide whether to reserve this match
-	(*im)->countFit();
-	if (reserveFraction > 0.)
-	  (*im)->setReserved( u < reserveFraction );
-
-	// Remove Detections with too-large errors:
-	Match::iterator j=(*im)->begin();
-	while (j != (*im)->end()) {
-	  Detection* d = *j;
-	  // Keep it if mag error is small or if it's from a tag or reference "instrument"
-	  if ( d->sigmaMag > maxMagError
-	       && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
-	    j = (*im)->erase(j, true);  // will delete the detection too.
-	  } else {
-	    ++j;
-	  }
-	}
-	int nFit = (*im)->fitSize();
-
-	if ((*im)->size() > 0) {
-	  // See if color is in range, using color from first Detection (they should
-	  // all have the same color).
-	  double color = (*(*im)->begin())->args.color;
-	  if (color != PhotoArguments::NODATA && (color < minColor || color > maxColor))
-	    nFit = 0; // Kill the whole Match below.
-	}
-
-	if ( nFit < minMatches) {
-	  // Remove entire match if it's too small, and kill its Detections too
-	  (*im)->clear(true);
-	  im = matches.erase(im);
-	} else {
-	  // Still a good match.
-
-	  dcount += nFit;	// Count total good detections
-	  chi += (*im)->chisq(dof, maxdev);
-
-	  // Count up fitted Detections in each exposure from this Match
-	  if (!(*im)->getReserved()) {
-	    for (Match::iterator j = (*im)->begin();
-		 j != (*im)->end();
-		 ++j) {
-	      if ((*j)->isClipped || (*j)->wt<=0.) continue; // Not a fitted object
-	      int iExtn = (*j)->catalogNumber;
-	      int iExpo = extensions[iExtn]->exposure;
-	      detectionsPerExposure[iExpo]++;
-	    }
-	  }
-
-	  ++im;
-	}
-      } // End loop over all matches
-
-      cout << "Using " << matches.size() 
-	   << " matches with " << dcount << " total detections." << endl;
-      cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
-
-    } // End Match-culling section.
-
-    // Check for unconstrained exposures:
-    for (int iExposure = 0; iExposure < detectionsPerExposure.size(); iExposure++) {
-      if (detectionsPerExposure[iExposure] <= 0 && exposures[iExposure]) {
-	Exposure& expo = *exposures[iExposure];
-	cerr << "WARNING: Exposure " << expo.name << " has no fitted detections.  Freezing its parameters."
-	     << endl;
-	mapCollection.setFixed(expo.mapName, true);
-      }
+    // Make a catalog for each color being calculated
+    for (list<Color>::iterator i = colorList.begin();
+	 i != colorList.end();
+	 ++i) {
+      i->fits = new FitsTable(i->filename, FITS::OverwriteFile);
+      i->data = &(i->fits->use());
+      i->data->clear();	// Should be redundant
+      i->data->header()->append("COLORSPEC",i->colorSpec);
+      vector<double> dummy;
+      i->data->addColumn(dummy, "RA");
+      i->data->addColumn(dummy, "Dec");
+      i->data->addColumn(dummy, colorColumnName);
+      i->data->addColumn(dummy, colorErrorColumnName);
     }
 
-    ///////////////////////////////////////////////////////////
-    // Construct priors
-    ///////////////////////////////////////////////////////////
 
-    list<PhotoPrior*> priors;
-    {
-      // List of the files to use 
-      list<string> priorFileList = splitArgument(priorFiles);
-      // Call subroutine that will read & initialize priors from a file
-      for (list<string>::const_iterator i = priorFileList.begin();
-	   i != priorFileList.end();
-	   ++i) {
-	list<PhotoPrior*> thisTime = readPriors(*i, instruments, exposures, extensions, 
-						detectionsPerExposure);
-	priors.splice(priors.end(), thisTime);
-      }
-    }
-
-    // Remove any priors that have insufficient data to fit
-    for (list<PhotoPrior*>::iterator i = priors.begin();
-	 i != priors.end(); ) {
-      if ((*i)->isDegenerate()) {
-	cout << "WARNING: PhotoPrior " << (*i)->getName()
-	     << " is degenerate and is being deleted " << endl;
-	i = priors.erase(i);
-      } else {
-	++i;
-      }
-    }
-
-    ///////////////////////////////////////////////////////////
-    // Now do the re-fitting 
-    ///////////////////////////////////////////////////////////
-
-    // make CoordAlign class
-    PhotoAlign ca(mapCollection, matches, priors);
-
-    int nclip;
-    double oldthresh=0.;
-
-    // Start off in a "coarse" mode so we are not fine-tuning the solution
-    // until most of the outliers have been rejected:
-    bool coarsePasses = true;
-    ca.setRelTolerance(10.*chisqTolerance);
-    // Here is the actual fitting loop 
-    do {
-      // Report number of active Matches / Detections in each iteration:
+    // Iterate over the match catalogs again, this time calculating mags & colors
+    for (int icat = 0; icat < catalogHDUs.size(); icat++) {
+      FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
+      FTable ff = ft.extract();
       {
-	long int mcount=0;
-	long int dcount=0;
-	ca.count(mcount, dcount, false, 2);
-	double maxdev=0.;
-	int dof=0;
-	double chi= ca.chisqDOF(dof, maxdev, false);
-	cout << "Fitting " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
-	     << " sigma" << endl;
-      }
-
-      // Do the fit here!!
-      double chisq = ca.fitOnce();
-      // Note that fitOnce() remaps *all* the matches, including reserved ones.
-      double max;
-      int dof;
-      ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
-      double thresh = sqrt(chisq/dof) * clipThresh;
-      cout << "After fit: chisq " << chisq 
-	   << " / " << dof << " dof, max deviation " << max
-	   << "  new clip threshold at: " << thresh << " sigma"
-	   << endl;
-      if (thresh >= max || (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement)) {
-	// Sigma clipping is no longer doing much.  Quit if we are at full precision,
-	// else require full target precision and initiate another pass.
-	if (coarsePasses) {
-	  coarsePasses = false;
-	  // This is the point at which we will clip aberrant exposures from the priors,
-	  // after coarse passes are done, before we do fine passes.
-	  nclip = 0;
-	  do {
-	    if (nclip > 0) {
-	      // Refit the data after clipping priors
-	      ca.fitOnce();
-	      cout << "After prior clip: chisq " << chisq 
-		   << " / " << dof << " dof, max deviation " << max
-		   << endl;
-	    }
-	    // Clip up to one exposure per prior
-	    nclip = ca.sigmaClipPrior(priorClipThresh, false);
-	    cout << "Clipped " << nclip << " prior reference points" << endl;
-	  } while (nclip > 0);
-	  ca.setRelTolerance(chisqTolerance);
-	  cout << "--Starting strict tolerance passes, clipping full matches" << endl;
-	  oldthresh = thresh;
-	  nclip = ca.sigmaClip(thresh, false, true);
-	  cout << "Clipped " << nclip
-	       << " matches " << endl;
-	  continue;
-	} else {
-	  // Done!
-	  break;
-	}
-      }
-      oldthresh = thresh;
-      nclip = ca.sigmaClip(thresh, false, clipEntireMatch || !coarsePasses);
-      if (nclip==0 && coarsePasses) {
-	// Nothing being clipped; tighten tolerances and re-fit
-	coarsePasses = false;
-	ca.setRelTolerance(chisqTolerance);
-	cout << "No clipping--Starting strict tolerance passes, clipping full matches" << endl;
-	continue;
-      }
-      cout << "Clipped " << nclip
-	   << " matches " << endl;
-      long int dcount=0;
-      long int mcount=0;
-      
-    } while (coarsePasses || nclip>0);
-  
-    // The re-fitting is now complete.  Serialize all the fitted magnitude solutions
-    {
-      ofstream ofs(outPhotFile.c_str());
-      if (!ofs) {
-	cerr << "Error trying to open output file for fitted photometry: " << outPhotFile << endl;
-	// *** will not quit before dumping output ***
-      } else {
-	mapCollection.write(ofs);
-      }
-    }
-
-    // If there are reserved Matches, run sigma-clipping on them now.
-    if (reserveFraction > 0.) {
-      cout << "** Clipping reserved matches: " << endl;
-      oldthresh = 0.;
-      do {
-	// Report number of active Matches / Detections in each iteration:
-	long int mcount=0;
-	long int dcount=0;
-	ca.count(mcount, dcount, true, 2);
-	double max;
-	int dof=0;
-	double chisq= ca.chisqDOF(dof, max, true);
-	cout << "Clipping " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
-	     << " sigma" << endl;
-      
-	double thresh = sqrt(chisq/dof) * clipThresh;
-	cout << "  new clip threshold: " << thresh << " sigma"
-	     << endl;
-	if (thresh >= max) break;
-	if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
-	oldthresh = thresh;
-	nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
-	cout << "Clipped " << nclip
-	     << " matches " << endl;
-      } while (nclip>0);
-    }
-
-    //////////////////////////////////////
-    // Output report on priors
-    //////////////////////////////////////
-    if (!outPriorFile.empty()) {
-      ofstream ofs(outPriorFile.c_str());
-      if (!ofs) {
-	cerr << "Error trying to open output file for prior report: " << outPriorFile << endl;
-	// *** will not quit before dumping output ***
-      } else {
-	PhotoPrior::reportHeader(ofs);
-	for (list<PhotoPrior*>::const_iterator i = priors.begin();
-	     i != priors.end();
-	     ++i) {
-	  (*i)->report(ofs);
-	}
-      }
-    }
-
-    //////////////////////////////////////
-    // Output data and calculate some statistics
-    //////////////////////////////////////
-
-    // Create Accum instances for fitted and reserved Detections on every
-    // exposure, plus total accumulator for all reference
-    // and all non-reference objects.
-    vector<Accum> vaccFit(exposures.size());
-    vector<Accum> vaccReserve(exposures.size());
-    Accum refAccFit;
-    Accum refAccReserve;
-    Accum accFit;
-    Accum accReserve;
-
-    // Open the output bintable
-    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, "PhotoOut");
-    FTable outTable = ft.use();;
-
-    // Create vectors that will be put into output table
-    vector<int> sequence;
-    outTable.addColumn(sequence, "SequenceNumber");
-    vector<long> catalogNumber;
-    outTable.addColumn(catalogNumber, "Extension");
-    vector<long> objectNumber;
-    outTable.addColumn(objectNumber, "Object");
-    vector<bool> clip;
-    outTable.addColumn(clip, "Clip");
-    vector<bool> reserve;
-    outTable.addColumn(reserve, "Reserve");
-    vector<float> xPix;
-    outTable.addColumn(xPix, "xPix");
-    vector<float> yPix;
-    outTable.addColumn(yPix, "yPix");
-    vector<float> xExposure;
-    outTable.addColumn(xExposure, "xExpo");
-    vector<float> yExposure;
-    outTable.addColumn(yExposure, "yExpo");
-    vector<float> color;
-    outTable.addColumn(color, "Color");
-
-    vector<float> magOut;
-    outTable.addColumn(magOut, "magOut");
-    vector<float> sigMag;
-    outTable.addColumn(sigMag, "sigMag");
-    vector<float> magRes;
-    outTable.addColumn(magRes, "magRes");
-
-    vector<float> wtFrac;
-    outTable.addColumn(wtFrac, "wtFrac");
-
-    // Cumulative counter for rows written to table:
-    long pointCount = 0;
-    // Write vectors to table when this many rows accumulate:
-    const long WriteChunk = 100000;
-
-    // Write all matches to output catalog, deleting them along the way
-    // and accumulating statistics of each exposure.
-    // 
-    list<Match*>::iterator im = matches.begin();
-    while ( im != matches.end()) {
-      // First, write current vectors to table if they've gotten big
-      if ( sequence.size() > WriteChunk) {
-	outTable.writeCells(sequence, "SequenceNumber", pointCount);
-	outTable.writeCells(catalogNumber, "Extension", pointCount);
-	outTable.writeCells(objectNumber, "Object", pointCount);
-	outTable.writeCells(clip, "Clip", pointCount);
-	outTable.writeCells(reserve, "Reserve", pointCount);
-	outTable.writeCells(xPix, "xPix", pointCount);
-	outTable.writeCells(yPix, "yPix", pointCount);
-	outTable.writeCells(xExposure, "xExpo", pointCount);
-	outTable.writeCells(yExposure, "yExpo", pointCount);
-	outTable.writeCells(color, "Color", pointCount);
-	outTable.writeCells(magOut, "magOut", pointCount);
-	outTable.writeCells(magRes, "magRes", pointCount);
-	outTable.writeCells(sigMag, "sigMag", pointCount);
-	outTable.writeCells(wtFrac, "wtFrac", pointCount);
-
-	pointCount += sequence.size();
-
-	sequence.clear();
-	catalogNumber.clear();
-	objectNumber.clear();
-	clip.clear();
-	reserve.clear();
-	xPix.clear();
-	yPix.clear();
-	xExposure.clear();
-	yExposure.clear();
-	color.clear();
-	magOut.clear();
-	magRes.clear();
-	sigMag.clear();
-	wtFrac.clear();
-      }	// Done flushing the vectors to Table
-
-      Match* m = *im;
-      double mean;
-      double wtot;
-      m->getMean(mean, wtot);
-      // Calculate number of DOF per Detection coordinate after
-      // allowing for fit to centroid:
-      int nFit = m->fitSize();
-      double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.;
-	    
-      int detcount=0;
-      for (Match::const_iterator idet=m->begin();
-	   idet != m->end();
-	   ++idet, ++detcount) {
-	const Detection* d = *idet;
-
-	// Prepare output quantities
-	sequence.push_back(detcount);
-	catalogNumber.push_back(d->catalogNumber);
-	objectNumber.push_back(d->objectNumber);
-	clip.push_back(d->isClipped);
-	reserve.push_back(m->getReserved());
-	wtFrac.push_back( d->isClipped ? 0. : d->wt / wtot);
-
-	xPix.push_back(d->args.xDevice);
-	yPix.push_back(d->args.yDevice);
-	xExposure.push_back(d->args.xExposure);
-	yExposure.push_back(d->args.yExposure);
-	color.push_back(d->args.color);
-
-	magOut.push_back(d->magOut);
-	// ?it's updated already, right??
-	magRes.push_back( mean==0. ? 0. : d->magOut - mean);
-	double sig=d->clipsq;
-	sig = (sig > 0.) ? 1./sqrt(sig) : 0.;
-	sigMag.push_back(sig);
-
-	if (mean!=0.) {
-	  // Accumulate statistics for meaningful residuals
-	  if (dofPerPt >= 0. && !d->isClipped) {
-	    int exposureNumber = extensions[d->catalogNumber]->exposure;
-	    Exposure* expo = exposures[exposureNumber];
-	    if (m->getReserved()) {
-	      if (expo->instrument==REF_INSTRUMENT) {
-		refAccReserve.add(d, mean, dofPerPt);
-		vaccReserve[exposureNumber].add(d, mean, dofPerPt);
-	      } else if (expo->instrument==TAG_INSTRUMENT) {
-		// do nothing
-	      } else {
-		accReserve.add(d, mean, dofPerPt);
-		vaccReserve[exposureNumber].add(d, mean, dofPerPt);
-	      }
-	    } else {
-	      // Not a reserved object:
-	      if (expo->instrument==REF_INSTRUMENT) {
-		refAccFit.add(d, mean, dofPerPt);
-		vaccFit[exposureNumber].add(d, mean, dofPerPt);
-	      } else if (expo->instrument==TAG_INSTRUMENT) {
-		// do nothing
-	      } else {
-		accFit.add(d, mean, dofPerPt);
-		vaccFit[exposureNumber].add(d, mean, dofPerPt);
-	      }
-	    }
-	  } // end statistics accumulation
-
-	} // End residuals calculation
-
-      } // End detection loop
-
-      // Done with this match, delete it with its Detections
-      m->clear(true);
-      // And get rid of match itself.
-      im = matches.erase(im);
-    } // end match loop
-
-    // Write remaining results to output table:
-    outTable.writeCells(sequence, "SequenceNumber", pointCount);
-    outTable.writeCells(catalogNumber, "Extension", pointCount);
-    outTable.writeCells(objectNumber, "Object", pointCount);
-    outTable.writeCells(clip, "Clip", pointCount);
-    outTable.writeCells(reserve, "Reserve", pointCount);
-    outTable.writeCells(xPix, "xPix", pointCount);
-    outTable.writeCells(yPix, "yPix", pointCount);
-    outTable.writeCells(xExposure, "xExpo", pointCount);
-    outTable.writeCells(yExposure, "yExpo", pointCount);
-    outTable.writeCells(color, "Color", pointCount);
-    outTable.writeCells(magOut, "magOut", pointCount);
-    outTable.writeCells(magRes, "magRes", pointCount);
-    outTable.writeCells(sigMag, "sigMag", pointCount);
-    outTable.writeCells(wtFrac, "wtFrac", pointCount);
-
-    // Now for standard output, an exposure-by-exposure table.
-
-    // Print summary statistics for each exposure
-    cout << "#    Exp    N    DOF    dmag    +-    RMS chi_red   xExposure    yExposure \n"
-	 << "#                      |.....millimag....|          |.......degrees......|"
-	 << endl;
-    for (int iexp=0; iexp<exposures.size(); iexp++) {
-      if (!exposures[iexp]) continue;
-      cout << "Fit     " << setw(3) << iexp
-	   << " " << vaccFit[iexp].summary()
-	   << endl;
-      if (reserveFraction > 0. && vaccReserve[iexp].n > 0) 
-	  cout << "Reserve " << setw(3) << iexp
-	       << " " << vaccReserve[iexp].summary()
+	// Only calculate mags and colors for stellar objects
+	string affinity;
+	if (!ff.getHdrValue("Affinity", affinity)) {
+	  cerr << "Could not find affinity keyword in header of extension " 
+	       << catalogHDUs[icat] 
 	       << endl;
-    } // exposure summary loop
-    
-    // Output summary data for reference catalog and detections
-    cout << "# " << endl;
-    cout << "#                   N    DOF    dmag    +-    RMS chi_red \n"
-	 << "#                             |.....millimag....|         "
-	 << endl;
-    cout << "Reference fit     " << refAccFit.summary() << endl;
-    if (reserveFraction>0. && refAccReserve.n>0)
-      cout << "Reference reserve " << refAccReserve.summary() << endl;
+	  exit(1);
+	}
+	stripWhite(affinity);
+	if (!stringstuff::nocaseEqual(affinity, stellarAffinity))
+	  continue;
+      }
+      vector<int> seqIn;
+      vector<LONGLONG> extnIn;
+      vector<LONGLONG> objIn;
+      ff.readCells(seqIn, "SequenceNumber");
+      ff.readCells(extnIn, "Extension");
+      ff.readCells(objIn, "Object");
 
-    cout << "Detection fit     " << accFit.summary() << endl;
-    if (reserveFraction>0. && accReserve.n>0)
-      cout << "Detection reserve " << accReserve.summary() << endl;
+      // We'll collect output data in these arrays, with mag & color entries 
+      vector<int> seqOut;
+      vector<LONGLONG> extnOut;
+      vector<LONGLONG> objOut;
+      seqOut.reserve(seqIn.size());
+      extnOut.reserve(extnIn.size());
+      objOut.reserve(objIn.size());
+
+      // Arrays in which we'll average the positions and magnitudes:
+      double sumRA = 0.;
+      double sumDec = 0;
+      int nRADec = 0;
+      vector<vector<double> > bandWeights(bands.size());
+      vector<vector<double> > bandMags(bands.size());
+      
+      int lastSeq = 0;
+      for (int j = 0; j<=extnIn.size(); j++) {
+	if (j==extnIn.size() || seqIn[j]==0) {
+	  // Calculate and save away all mags and colors for previous match
+	  bool hasMagnitudes = false;
+	  DVector mags(bands.size());
+	  DVector magErrors(bands.size());
+	  vector<bool> magValid(bands.size(), false);
+	  for (int i=0; i<mags.size(); i++) {
+	    clipMeanAndError(bandMags[i], bandWeights[i], mags[i], magErrors[i],
+			     clipThresh);
+	    magValid[i] = magErrors[i]>0. && magErrors[i] <= maxMagError;
+	    if (magValid[i]) 
+	      hasMagnitudes = true;
+	  }
+	  if (hasMagnitudes) {
+	    // Get RA & Dec in degrees
+	    sumRA /= (nRADec * DEGREE);
+	    sumDec /= (nRADec * DEGREE);
+	    ff.writeCell(sumRA, "RA", magRowCounter);
+	    ff.writeCell(sumDec, "Dec", magRowCounter);
+	    // write mags & colors if there are any of use here
+	    for (BandMap::const_iterator i= bands.begin();
+		 i != bands.end();
+		 ++i) {
+	      int index = i->second.number;
+	      if (magValid[index]) {
+		ff.writeCell( mags[index],
+			      i->second.name, magRowCounter);
+		ff.writeCell( magErrors[index],
+			      i->second.name+"_ERR", magRowCounter);
+	      } else {
+		// Mags with too-large errors get no-data marker
+		ff.writeCell( NO_MAG_DATA,
+			      i->second.name, magRowCounter);
+		ff.writeCell( NO_MAG_DATA,
+			      i->second.name+"_ERR", magRowCounter);
+	      }
+	    } // end mag band loop
+
+	    //  add a seq for the mag catalog entry
+	    seqOut.push_back(++lastSeq);
+	    extnOut.push_back(magCatalogExtensionNumber);
+	    objOut.push_back(magRowCounter++);
+	    
+	    //       for each possible color
+	    for (list<Color>::iterator icolor = colorList.begin();
+		 icolor != colorList.end();
+		 ++icolor) {
+	      //         do we have it?
+	      if ( magValid[icolor->bandNumber1] && magValid[icolor->bandNumber2]) {
+		//         write to color catalog
+		icolor->data->writeCell(mags[icolor->bandNumber1] - mags[icolor->bandNumber2]
+					+ icolor->offset,
+					colorColumnName, 
+					icolor->rowCount);
+		icolor->data->writeCell(hypot(magErrors[icolor->bandNumber1], 
+					      magErrors[icolor->bandNumber2]),
+					colorErrorColumnName, 
+					icolor->rowCount);
+		icolor->data->writeCell(sumRA, "RA", icolor->rowCount);
+		icolor->data->writeCell(sumDec, "Dec", icolor->rowCount);
+
+		//   add seq entry for color catalog
+		seqOut.push_back(++lastSeq);
+		extnOut.push_back(icolor->extensionNumber);
+		objOut.push_back(icolor->rowCount++);
+	      } // End processing for a valid color
+	    } // end color loop
+	  } // end hasMagnitudes
+
+	  //  clear mag & position accumulators
+	  sumRA = sumDec = 0.;
+	  nRADec = 0;
+	  for (int i = 0; i<bandWeights.size(); i++) bandWeights[i].clear();
+	  for (int i = 0; i<bandMags.size(); i++) bandMags[i].clear();
+	} // End block for completing a matched set
+
+	if (j==extnIn.size()) break;  // Quit if we don't have new data
+
+	// Propagate every detection to output table
+	seqOut.push_back(seqIn[j]);
+	extnOut.push_back(extnIn[j]);
+	objOut.push_back(objIn[j]);
+
+	lastSeq = seqIn[j];
+
+	// See if this detection has a mag we're interested in
+	int iBand = extensionBandNumbers[extnIn[j]];
+	if (iBand>=0 ) {
+	  // Yes; accumulate its information into averages
+	  MagPoint mp = pointMaps[extnIn[j]][objIn[j]]; // ?? check that it's here ???
+	  sumRA += mp.ra;
+	  sumDec += mp.dec;
+	  nRADec++;
+	  double weight = 1. / (mp.magErr*mp.magErr + magSysError*magSysError);
+	  if (mp.magErr==0.) weight = 0.;
+	  bandWeights[iBand].push_back(weight);
+	  bandMags[iBand].push_back(mp.mag);
+	}
+      } // End object loop for this match catalog.
+
+      // Write back the new sequences
+      ff.writeCells(seqOut, "SequenceNumber", 0);
+      ff.writeCells(extnOut, "Extension", 0);
+      ff.writeCells(objOut, "Object", 0);
+
+    } // End loop over input matched catalogs
+
+
 
     // Cleanup:
 
@@ -1664,96 +931,4 @@ main(int argc, char *argv[])
   } catch (std::runtime_error& m) {
     quit(m,1);
   }
-}
-
-/////////////////////////////////////////////////////////
-PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType argType) {
-  istringstream iss(code);
-  bool isColorTerm = false;
-  string type;
-  iss >> type;
-  if (stringstuff::nocaseEqual(type,"Color")) {
-    isColorTerm = true;
-    iss >> type;
-  }
-  PhotoMap* pm;
-  if (stringstuff::nocaseEqual(type,"Poly")) {
-    int xOrder, yOrder;
-    if (!(iss >> xOrder)) 
-      throw runtime_error("Could not decode PolyMap spec: <" + code + ">");
-    if ( (iss >> yOrder)) {
-      PolyMap* poly = new PolyMap(xOrder, yOrder,argType, name);
-      // Set PolyMap to identity for starters:
-      DVector p = poly->getParams();
-      p.setZero();
-      poly->setParams(p);
-      pm = poly;
-    } else {
-      PolyMap* poly = new PolyMap(xOrder, argType, name);
-      // PolyMap has zero coefficients, identity on mags:
-      DVector p = poly->getParams();
-      p.setZero();
-      poly->setParams(p);
-      pm = poly;
-    }
-    /** Not in place yet:
-  } else if (stringstuff::nocaseEqual(type,"Template")) {
-    string filename;
-    iss >> filename;
-    ifstream ifs(filename.c_str());
-    if (!ifs) 
-      throw runtime_error("Could not open file for building TemplateMap1d <" + filename + ">");
-    pm = TemplateMap1d::create(ifs, name);
-    **/
-  } else if (stringstuff::nocaseEqual(type,"Constant")) {
-    pm = new ConstantMap(0., name);
-  } else if (stringstuff::nocaseEqual(type,"Identity")) {
-    pm = new IdentityMap;
-  } else {
-    throw runtime_error("Unknown type of PhotoMap: <" + type + ">");
-  }
-  if (isColorTerm)
-    pm = new ColorTerm(pm, name);
-  return pm;
-}
-
-/////////////////////////////////////////////////////////////
-// Routine to take a string that specifies a PhotoMap sequence and enter such a map
-// into the PhotoMapCollection where it can be retrieved using mapName.
-// The string is a sequence of atoms parsable by photoMapDecode, separated by + signs.
-/////////////////////////////////////////////////////////////
-void
-learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
-	       PhotoMap::ArgumentType argtype) {
-  // Create a new PhotoMap. 
-  PhotoMap* pm=0;
-  list<string> pmCodes = stringstuff::split(modelString,'+');
-  if (pmCodes.size() == 1) {
-    pm = photoMapDecode(pmCodes.front(),mapName,argtype);
-  } else if (pmCodes.size() > 1) {
-    // Build a compound SubMap with desired maps in order:
-    int index = 0;
-    list<PhotoMap*> pmList;
-    for (list<string>::const_iterator ipm = pmCodes.begin();
-	 ipm != pmCodes.end();
-	 ++ipm, ++index) {
-      ostringstream oss;
-      // Components will have index number appended to device map name:
-      oss << mapName << "_" << index;
-      pmList.push_back(photoMapDecode(*ipm, oss.str(),argtype));
-    }
-    pm = new SubMap(pmList, mapName);
-    // Delete the original components, which have now been duplicated in SubMap:
-    for (list<PhotoMap*>::iterator ipm=pmList.begin();
-	 ipm != pmList.end();
-	 ++ipm)
-      delete *ipm;
-  } else {
-    cerr << "Empty deviceModel specification" << endl;
-    exit(1);
-  }
-
-  // Save this map into the collection
-  pmc.learnMap(*pm);
-  delete pm;
 }
