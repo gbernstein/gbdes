@@ -77,6 +77,8 @@ WCSFit: WCSFit.o TPVMap.o Match.o MapFit.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 PhotoFit: PhotoFit.o ReadPhotoPriors.o TPVMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+MakeColors: MakeColors.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testPrep: testPrep.o $(OBJ)

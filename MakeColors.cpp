@@ -79,11 +79,7 @@ struct Band {
 
 class Color {
 public:
-  Color(): fits(0), data(0), rowCount(0), extensionNumber(-1) {}
-  ~Color() {
-    if (data) delete data;
-    if (fits) delete fits;
-  }
+  Color(): rowCount(0), extensionNumber(-1) {}
   string band1;
   string band2;
   string colorSpec;
@@ -91,8 +87,7 @@ public:
   double offset;
   int bandNumber1;
   int bandNumber2;
-  FitsTable* fits;	// Pointer to the FitsTable that will hold this color's catalog
-  FTable* data;
+  FTable data;
   long rowCount;	// Number of objects in this color's table so far
   int extensionNumber;	// extension number assigned to this color's catalog;
 };
@@ -159,7 +154,7 @@ main(int argc, char *argv[])
 			 "files holding WCS maps to override starting WCSs","");
     parameters.addMember("photoFiles",&photoFiles, def,
 			 "files holding single-band photometric solutions for input catalogs","");
-}
+  }
 
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
@@ -427,7 +422,7 @@ main(int argc, char *argv[])
 	if (regexMatchAny(iBand->second.regexes, name))  {
 	  // This is an instrument we will use. 
 	  // Assign a band number
-	  instrumentBandNumbers[i] = iBand->second.number;
+	  instrumentBandNumbers[instrumentNumber] = iBand->second.number;
 	  // Get instrument's devices:
 	  FTable ff=ft.extract();
 	  Assert(instrumentNumber < instruments.size());
@@ -452,6 +447,8 @@ main(int argc, char *argv[])
 	  break;	// Break out of band loop if we find one match.
 	} // Done with section when finding a band
       } // Done with band loop
+      /**/cerr << "Done with instrument " << instrumentName 
+	       << " band " << instrumentBandNumbers[instrumentNumber] <<  endl;
     } // Done with instrument loop
 
     // Read in the table of exposures
@@ -471,8 +468,10 @@ main(int argc, char *argv[])
       ff.readCells(instrumentNumber, "InstrumentNumber");
 
       for (int i=0; i<names.size(); i++) {
+	/**/cerr << "Instrument " << instrumentNumber[i] << " name " 
+		 << names[i] << endl;
 	// Continue in loop if this exposure contains no useful mag info.
-	if (instrumentBandNumbers[instrumentNumber[i]] < 0)
+	if (instrumentNumber[i]<0 || instrumentBandNumbers[instrumentNumber[i]] < 0)
 	  continue;
 
 	spaceReplace(names[i]);
@@ -483,6 +482,9 @@ main(int argc, char *argv[])
 	expo->field = fieldNumber[i];
 	expo->instrument = instrumentNumber[i];
 	exposures.push_back(expo);
+
+	/**/cerr << "Done with exposure " << names[i] 
+		 << " instrument " << expo->instrument << endl;
       }
 
       // ???? Add the magnitude and color catalogs to the Exposure table ???
@@ -506,6 +508,8 @@ main(int argc, char *argv[])
       int iExposure;
       extensionTable.readCell(iExposure, "ExposureNumber", i);
 
+      /**/cerr << "Extension " << i << endl;
+
       if (!exposures[iExposure]) {
 	// This extension is not in an exposure of interest.  Skip it.
 	delete extn;
@@ -519,6 +523,7 @@ main(int argc, char *argv[])
       extensionTable.readCell(iDevice, "DeviceNumber", i);
       extn->device = iDevice;
 
+      /**/cerr << "Exposure " << iExposure << " Device " << iDevice << endl;
       Exposure& expo = *exposures[iExposure];
       // Save away the band number for this extension
       extensionBandNumbers[i] = instrumentBandNumbers[expo.instrument];
@@ -526,6 +531,7 @@ main(int argc, char *argv[])
       string mapName = expo.name + "/" 
 	+ instruments[expo.instrument]->deviceNames.nameOf(extn->device);
 
+      /**/cerr << "Getting maps for " << mapName << endl;
       string s;
       extensionTable.readCell(s, "WCS", i);
       if (stringstuff::nocaseEqual(s, "ICRS")) {
@@ -734,7 +740,7 @@ main(int argc, char *argv[])
     } // end loop over extensions to read
 
 
-    // Make output catalogs
+    // Make output tables
     FitsTable magFitsTable(magOutFile, FITS::OverwriteFile);
     FTable magTable = magFitsTable.use();
     magTable.clear();	// should already be empty though
@@ -744,9 +750,10 @@ main(int argc, char *argv[])
       magTable.addColumn(dummy, "Dec");
       for (BandMap::const_iterator iBand = bands.begin();
 	   iBand != bands.end();
-	   ++iBand)
+	   ++iBand) {
 	magTable.addColumn(dummy, iBand->second.name);
 	magTable.addColumn(dummy, iBand->second.name+"_ERR");
+      }
     }
     long magRowCounter = 0;	// Count of objects with assigned magnitudes
 
@@ -754,22 +761,19 @@ main(int argc, char *argv[])
     for (list<Color>::iterator i = colorList.begin();
 	 i != colorList.end();
 	 ++i) {
-      i->fits = new FitsTable(i->filename, FITS::OverwriteFile);
-      i->data = &(i->fits->use());
-      i->data->clear();	// Should be redundant
-      i->data->header()->append("COLORSPEC",i->colorSpec);
+      i->data.header()->append("COLORSPEC",i->colorSpec);
       vector<double> dummy;
-      i->data->addColumn(dummy, "RA");
-      i->data->addColumn(dummy, "Dec");
-      i->data->addColumn(dummy, colorColumnName);
-      i->data->addColumn(dummy, colorErrorColumnName);
+      i->data.addColumn(dummy, "RA");
+      i->data.addColumn(dummy, "Dec");
+      i->data.addColumn(dummy, colorColumnName);
+      i->data.addColumn(dummy, colorErrorColumnName);
     }
 
-
-    // Iterate over the match catalogs again, this time calculating mags & colors
+    // Iterate over the match catalogs again, this time calculating mags & colors,
+    // and adding the magnitude and color table entries to the matches
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
-      FTable ff = ft.extract();
+      FTable ff = ft.use();
       {
 	// Only calculate mags and colors for stellar objects
 	string affinity;
@@ -857,16 +861,16 @@ main(int argc, char *argv[])
 	      //         do we have it?
 	      if ( magValid[icolor->bandNumber1] && magValid[icolor->bandNumber2]) {
 		//         write to color catalog
-		icolor->data->writeCell(mags[icolor->bandNumber1] - mags[icolor->bandNumber2]
+		icolor->data.writeCell(mags[icolor->bandNumber1] - mags[icolor->bandNumber2]
 					+ icolor->offset,
 					colorColumnName, 
 					icolor->rowCount);
-		icolor->data->writeCell(hypot(magErrors[icolor->bandNumber1], 
+		icolor->data.writeCell(hypot(magErrors[icolor->bandNumber1], 
 					      magErrors[icolor->bandNumber2]),
 					colorErrorColumnName, 
 					icolor->rowCount);
-		icolor->data->writeCell(sumRA, "RA", icolor->rowCount);
-		icolor->data->writeCell(sumDec, "Dec", icolor->rowCount);
+		icolor->data.writeCell(sumRA, "RA", icolor->rowCount);
+		icolor->data.writeCell(sumDec, "Dec", icolor->rowCount);
 
 		//   add seq entry for color catalog
 		seqOut.push_back(++lastSeq);
@@ -914,6 +918,13 @@ main(int argc, char *argv[])
 
     } // End loop over input matched catalogs
 
+    // Write each of the color catalogs out to a file
+    for (list<Color>::iterator iColor = colorList.begin();
+	 iColor!=colorList.end();
+	 ++iColor) {
+      FitsTable ft(iColor->filename, FITS::OverwriteFile);
+      ft.copy(iColor->data);
+    }
 
 
     // Cleanup:
@@ -930,5 +941,25 @@ main(int argc, char *argv[])
 
   } catch (std::runtime_error& m) {
     quit(m,1);
+  }
+}
+
+void 
+clipMeanAndError(vector<double>& x, vector<double>& w, 
+		 double& mean, double& err,
+		 double threshold) {
+  Assert(x.size() == w.size());
+  // ignore clipping for now:
+  double sumw=0.;
+  double sumxw = 0.;
+  for (int i=0; i<x.size(); i++) {
+    sumw += w[i];
+    sumxw += x[i]*w[i];
+  }
+  if (sumxw <=0.) {
+    mean = err = 0.;
+  } else {
+    mean = sumxw / sumw;
+    err = sqrt(1./sumxw);
   }
 }
