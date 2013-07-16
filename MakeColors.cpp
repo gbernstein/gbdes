@@ -390,12 +390,9 @@ main(int argc, char *argv[])
     /**/cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
 	     << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
 
-    // This flag will be set if we have already opened (and overwritten) the
-    // output FITS catalog.
-    bool outputCatalogAlreadyOpen = false;
-
     // Read in all the instrument extensions and their device info.
     vector<Instrument*> instruments(instrumentHDUs.size(),0);
+    
     // This array will say what band number any instrument gives data for.  -1 means none of interest
     vector<int> instrumentBandNumbers(instrumentHDUs.size(), -1);
 
@@ -454,7 +451,7 @@ main(int argc, char *argv[])
     // Read in the table of exposures
     vector<Exposure*> exposures;
     {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
+      FITS::FitsTable ft(inputTables, FITS::ReadWrite, "Exposures");
       FTable ff = ft.use();
       vector<string> names;
       vector<double> ra;
@@ -470,38 +467,41 @@ main(int argc, char *argv[])
       for (int i=0; i<names.size(); i++) {
 	/**/cerr << "Instrument " << instrumentNumber[i] << " name " 
 		 << names[i] << endl;
-	// Continue in loop if this exposure contains no useful mag info.
-	if (instrumentNumber[i]<0 || instrumentBandNumbers[instrumentNumber[i]] < 0)
-	  continue;
-
-	spaceReplace(names[i]);
-	// The projection we will use for this exposure:
-	astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
-										  dec[i]*DEGREE)));
-	Exposure* expo = new Exposure(names[i],gn);
-	expo->field = fieldNumber[i];
-	expo->instrument = instrumentNumber[i];
-	exposures.push_back(expo);
-
-	/**/cerr << "Done with exposure " << names[i] 
-		 << " instrument " << expo->instrument << endl;
+	// Only create an Exposure if this exposure contains no useful mag info.
+	if (instrumentNumber[i]<0 || instrumentBandNumbers[instrumentNumber[i]] < 0) {
+	  exposures.push_back(0);
+	} else {
+	  spaceReplace(names[i]);
+	  // The projection we will use for this exposure:
+	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
+										    dec[i]*DEGREE)));
+	  Exposure* expo = new Exposure(names[i],gn);
+	  expo->field = fieldNumber[i];
+	  expo->instrument = instrumentNumber[i];
+	  exposures.push_back(expo);
+	  /**/cerr << "Using exposure " << names[i] 
+		   << " instrument " << expo->instrument << endl;
+	}
       }
 
       // ???? Add the magnitude and color catalogs to the Exposure table ???
+      // ??? Exposures have fields RA, DEC, FieldNumber, InstrumentNumber, Name
     }
 
 
     // Read info about all Extensions - we will keep the Table around.
-    FTable extensionTable;
     vector<Extension*> extensions;
-    FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
-    extensionTable = ft.use();
+    FITS::FitsTable ftExtensions(inputTables, FITS::ReadWrite, "Extensions");
+    FTable extensionTable = ftExtensions.use();
+
     // This array will give band associated with each extension.  -1 for no desired band.
     vector<int> extensionBandNumbers(extensionTable.nrows(), -1);
 
     // ??? Add the mag & color catalogs to the Extension table ???
     // ??? and assign them extension numbers
     int magCatalogExtensionNumber = -1; // ????
+    // ??? fields: Filename, FileNumber, HDUNumber, WCS, weight, ExposureNumber, DeviceNumber,
+    // ??? airmass, xkey, ykey, errkey, idkey, magkey, magweight, magerrkey.
 
     for (int i=0; i<extensionTable.nrows(); i++) {
       Extension* extn = new Extension;
@@ -580,7 +580,7 @@ main(int argc, char *argv[])
 
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
-      FTable ff = ft.use();
+      FTable ff = ft.extract();
       {
 	// Only do photometric fitting on the stellar objects:
 	string affinity;
@@ -761,7 +761,7 @@ main(int argc, char *argv[])
     for (list<Color>::iterator i = colorList.begin();
 	 i != colorList.end();
 	 ++i) {
-      i->data.header()->append("COLORSPEC",i->colorSpec);
+      i->data.header()->append("COLOR_ID",i->colorSpec);
       vector<double> dummy;
       i->data.addColumn(dummy, "RA");
       i->data.addColumn(dummy, "Dec");
@@ -769,10 +769,14 @@ main(int argc, char *argv[])
       i->data.addColumn(dummy, colorErrorColumnName);
     }
 
+    /**/cerr << "Made color tables" << endl;
+
     // Iterate over the match catalogs again, this time calculating mags & colors,
     // and adding the magnitude and color table entries to the matches
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
+      /**/cerr << "Ready to start calculating catalog extension" << inputTables << " " 
+	       << catalogHDUs[icat] << endl;
+      FITS::FitsTable ft(inputTables, FITS::ReadWrite, catalogHDUs[icat]);
       FTable ff = ft.use();
       {
 	// Only calculate mags and colors for stellar objects
@@ -828,24 +832,24 @@ main(int argc, char *argv[])
 	    // Get RA & Dec in degrees
 	    sumRA /= (nRADec * DEGREE);
 	    sumDec /= (nRADec * DEGREE);
-	    ff.writeCell(sumRA, "RA", magRowCounter);
-	    ff.writeCell(sumDec, "Dec", magRowCounter);
+	    magTable.writeCell(sumRA, "RA", magRowCounter);
+	    magTable.writeCell(sumDec, "Dec", magRowCounter);
 	    // write mags & colors if there are any of use here
 	    for (BandMap::const_iterator i= bands.begin();
 		 i != bands.end();
 		 ++i) {
 	      int index = i->second.number;
 	      if (magValid[index]) {
-		ff.writeCell( mags[index],
-			      i->second.name, magRowCounter);
-		ff.writeCell( magErrors[index],
-			      i->second.name+"_ERR", magRowCounter);
+		magTable.writeCell( mags[index],
+				    i->second.name, magRowCounter);
+		magTable.writeCell( magErrors[index],
+				    i->second.name+"_ERR", magRowCounter);
 	      } else {
 		// Mags with too-large errors get no-data marker
-		ff.writeCell( NO_MAG_DATA,
-			      i->second.name, magRowCounter);
-		ff.writeCell( NO_MAG_DATA,
-			      i->second.name+"_ERR", magRowCounter);
+		magTable.writeCell( NO_MAG_DATA,
+				    i->second.name, magRowCounter);
+		magTable.writeCell( NO_MAG_DATA,
+				    i->second.name+"_ERR", magRowCounter);
 	      }
 	    } // end mag band loop
 
@@ -910,7 +914,7 @@ main(int argc, char *argv[])
 	  bandMags[iBand].push_back(mp.mag);
 	}
       } // End object loop for this match catalog.
-
+	
       // Write back the new sequences
       ff.writeCells(seqOut, "SequenceNumber", 0);
       ff.writeCells(extnOut, "Extension", 0);
@@ -922,10 +926,11 @@ main(int argc, char *argv[])
     for (list<Color>::iterator iColor = colorList.begin();
 	 iColor!=colorList.end();
 	 ++iColor) {
+      /**/cerr << "Ready to write color catalog " << iColor->filename <<endl;
       FitsTable ft(iColor->filename, FITS::OverwriteFile);
       ft.copy(iColor->data);
     }
-
+    /**/cerr << "Ready to clean up" << endl;
 
     // Cleanup:
 
