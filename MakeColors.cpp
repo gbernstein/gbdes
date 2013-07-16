@@ -89,6 +89,7 @@ public:
   int bandNumber2;
   FTable data;
   long rowCount;	// Number of objects in this color's table so far
+  int exposureNumber;	// extension number assigned to this color's catalog;
   int extensionNumber;	// extension number assigned to this color's catalog;
 };
 
@@ -158,7 +159,7 @@ main(int argc, char *argv[])
 
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
-  const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting) ??? color terms???
+  const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting)
   const int TAG_INSTRUMENT=-2;	// Exposure number for tag objects (no fitting nor contrib to stats)
 
   const string stellarAffinity="STELLAR";
@@ -450,6 +451,8 @@ main(int argc, char *argv[])
 
     // Read in the table of exposures
     vector<Exposure*> exposures;
+    int magTableExposureNumber = -1;	// This will be the exposure # of the mag catalog
+
     {
       FITS::FitsTable ft(inputTables, FITS::ReadWrite, "Exposures");
       FTable ff = ft.use();
@@ -465,8 +468,6 @@ main(int argc, char *argv[])
       ff.readCells(instrumentNumber, "InstrumentNumber");
 
       for (int i=0; i<names.size(); i++) {
-	/**/cerr << "Instrument " << instrumentNumber[i] << " name " 
-		 << names[i] << endl;
 	// Only create an Exposure if this exposure contains no useful mag info.
 	if (instrumentNumber[i]<0 || instrumentBandNumbers[instrumentNumber[i]] < 0) {
 	  exposures.push_back(0);
@@ -479,13 +480,36 @@ main(int argc, char *argv[])
 	  expo->field = fieldNumber[i];
 	  expo->instrument = instrumentNumber[i];
 	  exposures.push_back(expo);
-	  /**/cerr << "Using exposure " << names[i] 
-		   << " instrument " << expo->instrument << endl;
+	  /**/cerr << "Exposure " << names[i] 
+		   << " using instrument " << expo->instrument 
+		   << " band " << instrumentBandNumbers[expo->instrument]
+		   << endl;
 	}
       }
 
-      // ???? Add the magnitude and color catalogs to the Exposure table ???
-      // ??? Exposures have fields RA, DEC, FieldNumber, InstrumentNumber, Name
+      // Add an exposure for the magnitude catalog.  Mag and color catalogs will be
+      // considered tags, and have no instrument.  We will give field number, RA, and Dec of
+      // the exposures as 0 since we are putting all colors into one catalog that crosses fields.
+      // ???? could split colors into fields
+
+      int magTableExposureNumber = ff.nrows();
+      ff.writeCell(0., "RA", magTableExposureNumber);
+      ff.writeCell(0., "Dec", magTableExposureNumber);
+      ff.writeCell(0, "FieldNumber", magTableExposureNumber);
+      ff.writeCell(TAG_INSTRUMENT, "InstrumentNumber", magTableExposureNumber);
+      ff.writeCell(magOutFile, "Name", magTableExposureNumber);
+
+      // And now each of the color catalogs, which will be its own exposure
+      for (list<Color>::iterator iColor = colorList.begin();
+	   iColor != colorList.end();
+	   ++iColor) {
+	iColor->exposureNumber = ff.nrows();
+	ff.writeCell(0., "RA", iColor->exposureNumber);
+	ff.writeCell(0., "Dec", iColor->exposureNumber);
+	ff.writeCell(0, "FieldNumber", iColor->exposureNumber);
+	ff.writeCell(TAG_INSTRUMENT, "InstrumentNumber", iColor->exposureNumber);
+	ff.writeCell(iColor->filename, "Name", iColor->exposureNumber);
+      }
     }
 
 
@@ -497,18 +521,11 @@ main(int argc, char *argv[])
     // This array will give band associated with each extension.  -1 for no desired band.
     vector<int> extensionBandNumbers(extensionTable.nrows(), -1);
 
-    // ??? Add the mag & color catalogs to the Extension table ???
-    // ??? and assign them extension numbers
-    int magCatalogExtensionNumber = -1; // ????
-    // ??? fields: Filename, FileNumber, HDUNumber, WCS, weight, ExposureNumber, DeviceNumber,
-    // ??? airmass, xkey, ykey, errkey, idkey, magkey, magweight, magerrkey.
 
     for (int i=0; i<extensionTable.nrows(); i++) {
       Extension* extn = new Extension;
       int iExposure;
       extensionTable.readCell(iExposure, "ExposureNumber", i);
-
-      /**/cerr << "Extension " << i << endl;
 
       if (!exposures[iExposure]) {
 	// This extension is not in an exposure of interest.  Skip it.
@@ -523,7 +540,6 @@ main(int argc, char *argv[])
       extensionTable.readCell(iDevice, "DeviceNumber", i);
       extn->device = iDevice;
 
-      /**/cerr << "Exposure " << iExposure << " Device " << iDevice << endl;
       Exposure& expo = *exposures[iExposure];
       // Save away the band number for this extension
       extensionBandNumbers[i] = instrumentBandNumbers[expo.instrument];
@@ -531,7 +547,6 @@ main(int argc, char *argv[])
       string mapName = expo.name + "/" 
 	+ instruments[expo.instrument]->deviceNames.nameOf(extn->device);
 
-      /**/cerr << "Getting maps for " << mapName << endl;
       string s;
       extensionTable.readCell(s, "WCS", i);
       if (stringstuff::nocaseEqual(s, "ICRS")) {
@@ -542,7 +557,8 @@ main(int argc, char *argv[])
       } else {
 	try {
 	  // See if there is a map to use from the astrometric solution files
-	  extn->startWcs = astromaps.issueWcs(mapName);
+	  // Note we are cloning instead of issuing since Extension expects to own the startWcs.
+	  extn->startWcs = astromaps.cloneWcs(mapName);
 	} catch (PhotometryError) {
 	  // else we read from the input file's starting WCS
 	  istringstream iss(s);
@@ -567,6 +583,74 @@ main(int argc, char *argv[])
 	exit(1);
       }
     }
+
+    // Add the mag & color catalogs to the Extension table and assign them extension numbers
+    int magTableExtensionNumber = extensionTable.nrows();
+    extensionTable.writeCell(magOutFile, "Filename", magTableExtensionNumber);
+    extensionTable.writeCell(magTableExposureNumber, "ExposureNumber", magTableExtensionNumber);
+    // Given a nonsense filenumber and Device number:
+    extensionTable.writeCell(-1, "FileNumber", magTableExtensionNumber);
+    extensionTable.writeCell(-1, "DeviceNumber", magTableExtensionNumber);
+    // Assuming the table is in the first non-primary extension of the file:
+    extensionTable.writeCell(1, "HDUNumber", magTableExtensionNumber);
+    extensionTable.writeCell(string("ICRS"), "WCS", magTableExtensionNumber);
+    // Names of required keys - some are null as there is no relevant file
+    extensionTable.writeCell(string("RA"), "XKEY", magTableExtensionNumber);
+    extensionTable.writeCell(string("Dec"), "YKEY", magTableExtensionNumber);
+    extensionTable.writeCell(string("_ROW"), "IDKEY", magTableExtensionNumber);
+    extensionTable.writeCell(string(""), "ERRKEY", magTableExtensionNumber);
+
+    // Assign null weights, magweights, keys if they exist in the table
+    // Start by getting a vector of all column names in this table
+    list<string> extantCols;
+    {
+      vector<string> vCols = extensionTable.listColumns();
+      for (int j=0; j<vCols.size(); j++) extantCols.push_back(vCols[j]);
+    }
+
+    if (regexMatchAny(extantCols, "Weight"))
+      extensionTable.writeCell(0., "Weight", magTableExtensionNumber);
+    if (regexMatchAny(extantCols, "MagWeight"))
+      extensionTable.writeCell(0., "MagWeight", magTableExtensionNumber);
+    if (regexMatchAny(extantCols, "Airmass"))
+      extensionTable.writeCell(0., "Airmass", magTableExtensionNumber);
+    if (regexMatchAny(extantCols, "MagKey"))
+      extensionTable.writeCell(string(""), "MagKey", magTableExtensionNumber);
+    if (regexMatchAny(extantCols, "MagErrKey"))
+      extensionTable.writeCell(string(""), "MagErrKey", magTableExtensionNumber);
+
+    for (list<Color>::iterator iColor = colorList.begin();
+	 iColor != colorList.end();
+	 ++iColor) {
+      iColor->extensionNumber = extensionTable.nrows();
+      extensionTable.writeCell(iColor->filename, "Filename", iColor->extensionNumber);
+      extensionTable.writeCell(iColor->exposureNumber, "ExposureNumber", iColor->extensionNumber);
+      // Given a nonsense filenumber and Device number:
+      extensionTable.writeCell(-1, "FileNumber", iColor->extensionNumber);
+      extensionTable.writeCell(-1, "DeviceNumber", iColor->extensionNumber);
+      // Assuming the table is in the first non-primary extension of the file:
+      extensionTable.writeCell(1, "HDUNumber", iColor->extensionNumber);
+      extensionTable.writeCell(string("ICRS"), "WCS", iColor->extensionNumber);
+      // Names of required keys - some are null as there is no relevant file
+      extensionTable.writeCell(string("RA"), "XKEY", iColor->extensionNumber);
+      extensionTable.writeCell(string("Dec"), "YKEY", iColor->extensionNumber);
+      extensionTable.writeCell(string("_ROW"), "IDKEY", iColor->extensionNumber);
+      extensionTable.writeCell(string(""), "ERRKEY", iColor->extensionNumber);
+
+      // Assign null weights, magweights, keys if they exist in the table
+      if (regexMatchAny(extantCols, "Weight"))
+	extensionTable.writeCell(0., "Weight", iColor->extensionNumber);
+      if (regexMatchAny(extantCols, "MagWeight"))
+	extensionTable.writeCell(0., "MagWeight", iColor->extensionNumber);
+      if (regexMatchAny(extantCols, "Airmass"))
+	extensionTable.writeCell(0., "Airmass", iColor->extensionNumber);
+      if (regexMatchAny(extantCols, "MagKey"))
+	extensionTable.writeCell(string(""), "MagKey", iColor->extensionNumber);
+      if (regexMatchAny(extantCols, "MagErrKey"))
+	extensionTable.writeCell(string(""), "MagErrKey", iColor->extensionNumber);
+      if (regexMatchAny(extantCols, "ColorExpression"))
+	extensionTable.writeCell(string("COLOR"), "ColorExpression", iColor->extensionNumber);
+    }      
 
     //////////////////////////////////////////////////////////
     // Read in all the data
@@ -739,7 +823,6 @@ main(int argc, char *argv[])
       }
     } // end loop over extensions to read
 
-
     // Make output tables
     FitsTable magFitsTable(magOutFile, FITS::OverwriteFile);
     FTable magTable = magFitsTable.use();
@@ -768,8 +851,6 @@ main(int argc, char *argv[])
       i->data.addColumn(dummy, colorColumnName);
       i->data.addColumn(dummy, colorErrorColumnName);
     }
-
-    /**/cerr << "Made color tables" << endl;
 
     // Iterate over the match catalogs again, this time calculating mags & colors,
     // and adding the magnitude and color table entries to the matches
@@ -855,7 +936,7 @@ main(int argc, char *argv[])
 
 	    //  add a seq for the mag catalog entry
 	    seqOut.push_back(++lastSeq);
-	    extnOut.push_back(magCatalogExtensionNumber);
+	    extnOut.push_back(magTableExtensionNumber);
 	    objOut.push_back(magRowCounter++);
 	    
 	    //       for each possible color
@@ -930,7 +1011,6 @@ main(int argc, char *argv[])
       FitsTable ft(iColor->filename, FITS::OverwriteFile);
       ft.copy(iColor->data);
     }
-    /**/cerr << "Ready to clean up" << endl;
 
     // Cleanup:
 
