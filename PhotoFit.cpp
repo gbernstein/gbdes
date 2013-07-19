@@ -428,7 +428,6 @@ main(int argc, char *argv[])
       
       if (regexMatchAny(useInstrumentList, name))  {
 	// This is an instrument we will use.  Get its devices
-	//**/cerr << "Reading instrument " << name << endl;
 	FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
 	if (!outputCatalogAlreadyOpen) {
 	  outFlags = outFlags + FITS::OverwriteFile;
@@ -453,7 +452,6 @@ main(int argc, char *argv[])
 	ff.readCells(vymin, "YMin");
 	ff.readCells(vymax, "YMax");
 	for (int j=0; j<devnames.size(); j++) {
-	  //**/cerr << "  Device " << devnames[j] << endl;
 	  spaceReplace(devnames[j]);
 	  instptr->addDevice( devnames[j],
 			      Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
@@ -501,7 +499,7 @@ main(int argc, char *argv[])
 	    continue;
 	  }
 	}
-	// Is this exposure in an instrument of interest, or a reference or tag?
+	// Are we going to want magnitudes from this exposure?
 	// Yes, if it's a reference exposure with name given in useReferenceExposures
 	bool useThisExposure = instrumentNumber[i]==REF_INSTRUMENT 
 	  && regexMatchAny(useReferenceList, names[i]);
@@ -540,6 +538,11 @@ main(int argc, char *argv[])
       int iExposure;
       extensionTable.readCell(iExposure, "ExposureNumber", i);
 
+      if (iExposure < 0 || iExposure >= exposures.size()) {
+	cerr << "Extension " << i << " has invalid exposure number " << iExposure << endl;
+	exit(1);
+      }
+
       // Determine whether this extension might be used to provide colors
       int colorPriority = exposureColorPriorities[iExposure];
       if (colorPriority < 0) {
@@ -551,7 +554,7 @@ main(int argc, char *argv[])
       }
 	
       if (!exposures[iExposure]) {
-	// This extension is not in an exposure of interest.  Skip it.
+	// Skip rest of this extension if we are not going to get mags from it
 	delete extn;
 	extn = 0;
 	extensions.push_back(extn);
@@ -585,11 +588,13 @@ main(int argc, char *argv[])
 	string wcsName = pmcTemp.allWcsNames().front();
 	extn->startWcs = pmcTemp.cloneWcs(wcsName);
       }
+
       // destination projection is the Exposure projection, whose coords used for any
       // exposure-level magnitude corrections
       extn->startWcs->reprojectTo(*exposures[extn->exposure]->projection);
-      // ??? or use the field center for reference/tag exposures ???
+      // ??? or use the field center for reference exposures ???
     }
+
 
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
@@ -926,8 +931,8 @@ main(int argc, char *argv[])
       ff.readCells(obj, "Object");
 
       // Smaller collections for each match
-      vector<long> extns;
-      vector<long> objs;
+      vector<long> matchExtns;
+      vector<long> matchObjs;
       // These variables determine what the highest-priority color information available
       // in the match is so far.
       long matchColorExtension = -1;
@@ -936,7 +941,7 @@ main(int argc, char *argv[])
       for (int i=0; i<=seq.size(); i++) {
 	if (i>=seq.size() || seq[i]==0) {
 	  // Processing the previous (or final) match.
-	  int nValid = extns.size();
+	  int nValid = matchExtns.size();
 	  if (matchColorExtension < 0) {
 	    // There is no color information for this match. 
 	    if (requireColor) {
@@ -945,11 +950,11 @@ main(int argc, char *argv[])
 	    } else {
 	      // Just discard any detection which requires a color to produce its map:
 	      nValid = 0;
-	      for (int j=0; j<extns.size(); j++) {
-		Assert(extensions[extns[j]]);
-		if (extensions[extns[j]]->map->needsColor()) {
+	      for (int j=0; j<matchExtns.size(); j++) {
+		Assert(extensions[matchExtns[j]]);
+		if (extensions[matchExtns[j]]->map->needsColor()) {
 		  // Mark this detection as useless
-		  extns[j] = -1;
+		  matchExtns[j] = -1;
 		} else {
 		  nValid++;
 		}
@@ -959,31 +964,32 @@ main(int argc, char *argv[])
 	  if (nValid >= minMatches) {
 	    // Make a match from the valid entries, and note need to get data for the detections and color
 	    int j=0;
-	    while (extns[j]<0 && j<extns.size()) ++j;  // Skip detections starved of their color
-	    Assert(j<extns.size());
+	    while (matchExtns[j]<0 && j<matchExtns.size()) ++j;  // Skip detections starved of their color
+	    Assert(j<matchExtns.size());
 	    Detection* d = new Detection;
-	    d->catalogNumber = extns[j];
-	    d->objectNumber = objs[j];
+	    d->catalogNumber = matchExtns[j];
+	    d->objectNumber = matchObjs[j];
 	    matches.push_back(new Match(d));
-	    extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
-	    for (++j; j<extns.size(); j++) {
-	      if (extns[j]<0) continue;  // Skip detections needing unavailable color
+	    extensions[matchExtns[j]]->keepers.insert(std::pair<long, Detection*>(matchObjs[j], d));
+	    for (++j; j<matchExtns.size(); j++) {
+	      if (matchExtns[j]<0) continue;  // Skip detections needing unavailable color
 	      d = new Detection;
-	      d->catalogNumber = extns[j];
-	      d->objectNumber = objs[j];
+	      d->catalogNumber = matchExtns[j];
+	      d->objectNumber = matchObjs[j];
 	      matches.back()->add(d);
-	      extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
+	      extensions[matchExtns[j]]->keepers.insert(std::pair<long, Detection*>(matchObjs[j], d));
 	    }
 	    if (matchColorExtension >=0) {
 	      // Tell the color catalog that it needs to look this guy up:
 	      Assert(colorExtensions[matchColorExtension]);
-	      colorExtensions[matchColorExtension]->keepers.insert(std::pair<long,Match*>(matchColorObject,
-											  matches.back()));
+	      colorExtensions[matchColorExtension]->keepers.insert
+		(std::pair<long,Match*>(matchColorObject,
+					matches.back()));
 	    }
 	  }
 	  // Clear out previous Match:
-	  extns.clear();
-	  objs.clear();
+	  matchExtns.clear();
+	  matchObjs.clear();
 	  matchColorExtension = -1;
 	  colorPriority = -1;
 	} // Finished processing previous match
@@ -991,11 +997,11 @@ main(int argc, char *argv[])
 	// If we done reading entries, quit this loop
 	if (i >= seq.size()) break;
 
-	// Read in next detection in the catalog
-	if (extn[i]<0 || extensions[extn[i]]) {
+	// Note extn/obj number of detections with useful mag data
+	if (extensions[extn[i]]) {
 	  // Record a Detection in a useful extension:
-	  extns.push_back(extn[i]);
-	  objs.push_back(obj[i]);
+	  matchExtns.push_back(extn[i]);
+	  matchObjs.push_back(obj[i]);
 	}
 
 	// Record if we've got color information here
@@ -1005,7 +1011,7 @@ main(int argc, char *argv[])
 	    // This detection holds color info that we want
 	    colorPriority = newPriority;
 	    matchColorExtension = extn[i];
-	    matchColorObject = objs[i];
+	    matchColorObject = obj[i];
 	  }
 	}
 	  
@@ -1025,11 +1031,11 @@ main(int argc, char *argv[])
 
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
-      /**/cerr << "# Reading object catalog " << iext
-	       << "/" << extensions.size()
-	       << " from " << filename 
-	       << " seeking " << extn.keepers.size()
-	       << " objects" << endl;
+      /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
+			       << "/" << extensions.size()
+			       << " from " << filename 
+			       << " seeking " << extn.keepers.size()
+			       << " objects" << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "HDUNumber", iext);
       string xKey;
@@ -1162,15 +1168,20 @@ main(int argc, char *argv[])
       if (extn.keepers.empty()) continue; // Not using any colors from this catalog
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
-      /**/cerr << "# Reading color catalog " << iext
-	       << "/" << colorExtensions.size()
-	       << " from " << filename << endl;
+      /**/ cerr << "# Reading color catalog " << iext
+				<< "/" << colorExtensions.size()
+				<< " from " << filename << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "HDUNumber", iext);
       string idKey;
       extensionTable.readCell(idKey, "idKey", iext);
       string colorExpression;
-      extensionTable.readCell(colorExpression, "colorExpression", iext);
+      try {
+	extensionTable.readCell(colorExpression, "colorExpression", iext);
+      } catch (img::FTableError& e) {
+	// If there is no colorExpression column, use a default:
+	colorExpression = "COLOR";
+      }
       stripWhite(colorExpression);
       if (colorExpression.empty()) {
 	cerr << "No colorExpression specified for filename " << filename
@@ -1209,11 +1220,14 @@ main(int argc, char *argv[])
 	      j != m->end();
 	      ++j) 
 	  (*j)->args.color = color[irow];
+
       } // End loop over catalog objects
 
       if (!extn.keepers.empty()) {
 	cerr << "Did not find all desired objects in catalog " << filename
 	     << " extension " << hduNumber
+	     << " " << extn.keepers.size() << " left, first ID is "
+	     << extn.keepers.begin()->first
 	     << endl;
 	exit(1);
       }

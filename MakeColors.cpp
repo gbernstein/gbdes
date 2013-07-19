@@ -492,7 +492,7 @@ main(int argc, char *argv[])
       // the exposures as 0 since we are putting all colors into one catalog that crosses fields.
       // ???? could split colors into fields
 
-      int magTableExposureNumber = ff.nrows();
+      magTableExposureNumber = ff.nrows();
       ff.writeCell(0., "RA", magTableExposureNumber);
       ff.writeCell(0., "Dec", magTableExposureNumber);
       ff.writeCell(0, "FieldNumber", magTableExposureNumber);

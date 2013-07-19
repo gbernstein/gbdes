@@ -224,12 +224,11 @@ readPriors(string filename,
 	      point.magOut = point.map->forward(point.magIn, point.args);
 	      refs.push_back(point);
 
-	      if (colorIsFree) {
-		// Need a second reference point with different color:
-		point.args.color = 1.;
-		point.magOut = point.map->forward(point.magIn, point.args);
-		refs.push_back(point);
-	      }
+	      // Need a second reference point with different color:
+	      // to force any color dependence to agree.
+	      point.args.color = 1.;
+	      point.magOut = point.map->forward(point.magIn, point.args);
+	      refs.push_back(point);
 
 	      // We've found a relevant catalog.
 	      foundOne = true;

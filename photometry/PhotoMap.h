@@ -150,7 +150,7 @@ namespace photometry {
     virtual void write(std::ostream& os, int precision) const {
       throw PhotometryError("ColorTerm " + getName() + " should not be getting serialized");
     }
-    bool needsColor() const {return true;}
+    virtual bool needsColor() const {return true;}
 
     double forward(double magIn, const PhotoArguments& args) const {
       return magIn + args.color * (pm->forward(magIn,args)-magIn);

@@ -28,11 +28,13 @@ SubMap::SubMap(const list<PhotoMap*>& photoMaps,
   vNSubParams.clear();
   vStartIndices.clear();
   vMapNumbers.clear();
+  anyColor = false;
   for (int i=0; i<nMaps(); i++) {
     vStartIndices.push_back(totalFreeParameters);
     vNSubParams.push_back(vMaps[i]->nParams());
     vMapNumbers.push_back(i);
     totalFreeParameters += vMaps[i]->nParams();
+    if (vMaps[i]->needsColor()) anyColor = true;
   }
 }
 

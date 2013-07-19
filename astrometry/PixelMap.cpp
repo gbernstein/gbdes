@@ -113,6 +113,7 @@ ReprojectionMap::operator=(const ReprojectionMap& rhs) {
   pix = rhs.pix->duplicate(); 
   world = rhs.world->duplicate(); 
   scaleFactor = rhs.scaleFactor;
+  return *this;
 }
 
 PixelMap*

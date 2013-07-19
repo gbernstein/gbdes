@@ -54,6 +54,7 @@ namespace photometry {
     int totalFreeParameters;	// Cache this total
     void countFreeParameters(); // update countFreeParameters from vNSubParams
 
+    bool anyColor;		// True if any of the components needs color info.
     // Hide to avoid inadvertent ownership confusion:
     SubMap(const SubMap& rhs);
     void operator=(const SubMap& rhs);
@@ -84,6 +85,7 @@ namespace photometry {
     virtual double derivative(double magIn, const PhotoArguments& args) const;
     virtual double forwardDerivs(double magIn, const PhotoArguments& args,
 				 DVector& derivs) const;
+    virtual bool needsColor() const {return anyColor;}
 
     static string mapType() {return "Composite";}
     virtual string getType() const {return mapType();}
