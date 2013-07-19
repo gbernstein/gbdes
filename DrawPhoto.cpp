@@ -24,10 +24,11 @@ int
 main(int argc, char *argv[])
 {
   double pixelScale = atof(argv[1]);
-  string band = argv[2];
-  string exposurePrefix = argv[3];
+  string photoPrefix = argv[2];
+  string band = argv[3];
+  string exposurePrefix = argv[4];
   exposurePrefix += "/";
-
+  
   // Convert rough input scale in DECam pixels into degrees per output pix:
   pixelScale *= 0.264 / 3600.;
 
@@ -63,6 +64,7 @@ main(int argc, char *argv[])
 		      static_cast<int> (floor(bExpo.getYMin()/pixelScale)),
 		      static_cast<int> (ceil(bExpo.getYMax()/pixelScale)) );
   Image<> starflat(bImage);
+  Image<> colorterm(bImage);
 
   // Read in astrometric and photometric solutions
   PixelMapCollection astromaps;
@@ -73,7 +75,7 @@ main(int argc, char *argv[])
 
   PhotoMapCollection photomaps;
   {
-    string filename = "jul12." + band + ".photo";
+    string filename = photoPrefix + "." + band + ".photo";
     ifstream ifs(filename.c_str());
     photomaps.read(ifs);
   }
@@ -119,7 +121,8 @@ main(int argc, char *argv[])
 	// Calculate photometric correction
 	args.color = 0.;
 	double photo = devPhoto->forward(0., args);
-
+	args.color = 1;
+	colorterm(ix,iy) = devPhoto->forward(0.,args) - photo;
 	// Apply normalization correction
 	starflat(ix, iy) = pow(10., -0.4*photo) * i->second.norm;
       }
@@ -127,4 +130,6 @@ main(int argc, char *argv[])
   } // end Device loop.
   starflat.shift(1,1);
   FitsImage<>::writeToFITS("test_"+band+".fits", starflat, 0);
+  colorterm.shift(1,1);
+  FitsImage<>::writeToFITS("test_"+band+".fits", colorterm, 1);
 }

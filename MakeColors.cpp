@@ -16,6 +16,7 @@
 #include "PhotoMapCollection.h"
 #include "PhotoInstrument.h"
 #include "TemplateMap.h"
+#include "FitsImage.h"
 
 using namespace std;
 using namespace stringstuff;
@@ -26,8 +27,9 @@ using FITS::FitsTable;
 string usage=
   "MakeColors: Merge magnitudes for matched detections to create new\n"
   "            catalogs giving magnitudes and colors for each match.\n"
-  "usage: MakeColors <match file> <mag file out> [parameter file] [parameter file...]\n"
-  "      <match file>:  FITS file with binary tables produced by WCSFoF, will be amended\n"
+  "usage: MakeColors <match file in> <match file out> <mag file out> [parameter file...]\n"
+  "      <match file in>:  FITS file with binary tables produced by WCSFoF\n"
+  "      <match file out>:  FITS file with binary tables, augmented with match and color info\n"
   "      <mag file out>: Name of output FITS catalog file to hold magnitudes\n"
   "     stdin is read as parameters.";
 
@@ -171,18 +173,19 @@ main(int argc, char *argv[])
   try {
     
     // Read parameters
-    if (argc<3) {
+    if (argc<4) {
       cerr << usage << endl;
-      cerr << "--------- Default Parameters: ---------" << endl;
+      cout << "#--------- Default Parameters: ---------" << endl;
       parameters.setDefault();
-      parameters.dump(cerr);
+      parameters.dump(cout);
       exit(1);
     }
     string inputTables = argv[1];
-    string magOutFile = argv[2];
+    string outputTables = argv[2];
+    string magOutFile = argv[3];
 
     parameters.setDefault();
-    for (int i=3; i<argc; i++) {
+    for (int i=4; i<argc; i++) {
       // Open & read all specified input files
       ifstream ifs(argv[i]);
       if (!ifs) {
@@ -367,23 +370,56 @@ main(int argc, char *argv[])
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Instruments, Devices, Exposures
+    //  and transfer info to the output file
     /////////////////////////////////////////////////////
 
     // All the names will be stripped of leading/trailing white space, and internal
     // white space replaced with single underscore - this keeps PhotoMap parsing functional.
 
+    // First time we write to output file, overwrite the whole file:
+    bool outputIsOpen = false;
+    
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
     vector<int> catalogHDUs;
     {
-      // Find which extensions are instrument tables
+      // Find which extensions are instrument tables.  Copy everything except
+      // Exposures, Extensions, and MatchCatalog tables to the output file.
       FITS::FitsFile ff(inputTables);
       for (int i=1; i<ff.HDUCount(); i++) {
-	FITS::Hdu h(inputTables, FITS::HDUAny, i);
-	if (stringstuff::nocaseEqual(h.getName(), "Instrument")) {
+	string hduName;
+	{
+	  FITS::Hdu h(inputTables, FITS::HDUAny, i);
+	  hduName = h.getName();
+	}
+	if (stringstuff::nocaseEqual(hduName, "Instrument")) {
 	  instrumentHDUs.push_back(i);
-	} else if (stringstuff::nocaseEqual(h.getName(), "MatchCatalog")) {
+	  // Write all instrument info to output:
+	  FITS::FitsTable ft(inputTables, FITS::ReadOnly, i);
+	  // Append new table to output:
+	  FITS::FitsTable out(outputTables,
+			      outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
+			      -1);
+	  outputIsOpen = true;
+	  out.setName("Instrument");
+	  Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
+	  FTable ff=ft.extract();
+	  out.adopt(ff);
+	} else if (stringstuff::nocaseEqual(hduName, "MatchCatalog")) {
 	  catalogHDUs.push_back(i);
+	} else if (stringstuff::nocaseEqual(hduName, "Extensions")
+		   || stringstuff::nocaseEqual(hduName, "Exposures") ) {
+	  // Do nothing - we will alter these and write them back later.
+	} else {
+	  // Append any other tables to the output
+	  FITS::FitsTable ft(inputTables, FITS::ReadOnly, i);
+	  FITS::FitsTable out(outputTables, 
+			      outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
+			      -1);
+	  outputIsOpen = true;
+	  out.setName(ft.getName());
+	  FTable ff=ft.extract();
+	  out.adopt(ff);
 	}
       }
     }
@@ -454,8 +490,8 @@ main(int argc, char *argv[])
     int magTableExposureNumber = -1;	// This will be the exposure # of the mag catalog
 
     {
-      FITS::FitsTable ft(inputTables, FITS::ReadWrite, "Exposures");
-      FTable ff = ft.use();
+      FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
+      FTable ff = ft.extract();
       vector<string> names;
       vector<double> ra;
       vector<double> dec;
@@ -510,13 +546,23 @@ main(int argc, char *argv[])
 	ff.writeCell(TAG_INSTRUMENT, "InstrumentNumber", iColor->exposureNumber);
 	ff.writeCell(iColor->filename, "Name", iColor->exposureNumber);
       }
+
+      // Done with exposure table.  Append augmented table to output FITS file
+      FITS::FitsTable out(outputTables, 
+			  outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
+			  "Exposures");
+      outputIsOpen = true;
+      out.copy(ff);
     }
 
 
     // Read info about all Extensions - we will keep the Table around.
     vector<Extension*> extensions;
-    FITS::FitsTable ftExtensions(inputTables, FITS::ReadWrite, "Extensions");
-    FTable extensionTable = ftExtensions.use();
+    FTable extensionTable;
+    {
+      FITS::FitsTable ftExtensions(inputTables, FITS::ReadOnly, "Extensions");
+      extensionTable = ftExtensions.extract();
+    }
 
     // This array will give band associated with each extension.  -1 for no desired band.
     vector<int> extensionBandNumbers(extensionTable.nrows(), -1);
@@ -652,6 +698,15 @@ main(int argc, char *argv[])
 	extensionTable.writeCell(string("COLOR"), "ColorExpression", iColor->extensionNumber);
     }      
 
+    // The extension table is now augmented.  Write it to the output FITS file:
+    {
+      FitsTable out(outputTables, 
+		    outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
+		    "Extensions");
+      outputIsOpen = true;
+      out.copy(extensionTable);
+    }
+
     //////////////////////////////////////////////////////////
     // Read in all the data
     //////////////////////////////////////////////////////////
@@ -664,7 +719,7 @@ main(int argc, char *argv[])
 
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
-      FTable ff = ft.extract();
+      FTable ff = ft.use();
       {
 	// Only do photometric fitting on the stellar objects:
 	string affinity;
@@ -854,11 +909,18 @@ main(int argc, char *argv[])
 
     // Iterate over the match catalogs again, this time calculating mags & colors,
     // and adding the magnitude and color table entries to the matches
+    // Also will append each one to the output file
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
       /**/cerr << "Ready to start calculating catalog extension" << inputTables << " " 
 	       << catalogHDUs[icat] << endl;
-      FITS::FitsTable ft(inputTables, FITS::ReadWrite, catalogHDUs[icat]);
-      FTable ff = ft.use();
+      FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
+      // Append extension to output and adopt the input data
+      FITS::FitsTable out(outputTables,
+			  FITS::ReadWrite+FITS::Create,
+			  -1);
+      out.setName(ft.getName());
+      FTable ff = ft.extract();
+      out.adopt(ff);
       {
 	// Only calculate mags and colors for stellar objects
 	string affinity;

@@ -1,4 +1,8 @@
-* Photometric fitting: need to ghost PixelMap -> PhotoMap, collections, CoordAlign->PhotoAlign, PhotoDetection, all to go into a PhotoFit.  
 * write a TemplateMap2d
-* Allow something other than polynomial Exposure map.
+* let templates serialize with their filenames
+* allow variable substitution (Device) into the DeviceMap specification.
 * Update documentation: PixelMap.tex and the fitting classes.
+* Document PhotoFit, MakeColors and all their parameters.
+* Outlier rejection in averaging mags for MakeColors
+* Feed PhotoFit, MakeColors a file giving pre-clipped extension/object pairs.
+* Collect common routines & variables from WCSFit, PhotoFit, and MakeColors into a common file.

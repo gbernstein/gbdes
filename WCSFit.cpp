@@ -448,15 +448,6 @@ main(int argc, char *argv[])
       }
     }
 
-    // Read and keep the table giving instructions for all input files:
-    FTable fileTable;
-    {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Files");
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Files");
-      fileTable = ft.extract();
-      out.copy(fileTable);
-    }
-
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
     vector<Extension*> extensions;

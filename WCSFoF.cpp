@@ -900,11 +900,6 @@ main(int argc,
 
     cerr << "*** Read " << allPoints.size() << " objects" << endl;
 
-    //  Open output catalog & put input file table into output table.
-    {
-      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::OverwriteFile, "Files");
-      ft.copy(fileTable);
-    }
     //  Write fields - field centers are given in degrees.
     {
       FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Fields");
