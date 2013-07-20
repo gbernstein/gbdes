@@ -1,5 +1,3 @@
-# $Id: Makefile,v 1.20 2012/01/02 19:25:58 garyb Exp $
-
 # First are site-dependent items - expect these to be defined in environment!
 #CXX = g++-4 -fopenmp
 #TMV_DIR
@@ -54,8 +52,7 @@ SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 
 #images/FitsTable.o images/Image.o images/FITSImage.o \
 
-#OBJ =  SCAMPMap.o $(SUBOBJ)
-OBJ =  $(SUBOBJ)
+OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
 
 all: depend subs
 
@@ -63,23 +60,24 @@ DrawPhoto: DrawPhoto.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DrawRegnault: DrawRegnault.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testSerialize: testSerialize.o TPVMap.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testTemplateMap: testTemplateMap.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-ApplyWCS: ApplyWCS.o TPVMap.o $(OBJ)
+ApplyWCS: ApplyWCS.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFoF: WCSFoF.o TPVMap.o ExtensionAttribute.o $(OBJ)
+WCSFoF: WCSFoF.o ExtensionAttribute.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFit: WCSFit.o TPVMap.o Match.o MapFit.o $(OBJ)
+WCSFit: WCSFit.o Match.o MapFit.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-PhotoFit: PhotoFit.o ReadPhotoPriors.o TPVMap.o $(OBJ)
+PhotoFit: PhotoFit.o ReadPhotoPriors.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 MakeColors: MakeColors.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+#
+testSerialize: testSerialize.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+testTemplateMap: testTemplateMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testPrep: testPrep.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

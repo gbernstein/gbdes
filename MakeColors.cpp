@@ -18,6 +18,8 @@
 #include "TemplateMap.h"
 #include "FitsImage.h"
 
+#include "FitSubroutines.h"
+
 using namespace std;
 using namespace stringstuff;
 using namespace photometry;
@@ -58,16 +60,6 @@ string usage=
 void clipMeanAndError(vector<double>& x, vector<double>& w, double& mean, double& err,
 		      double threshold);
 
-// A helper function that strips white space from front/back of a string and replaces
-// internal white space with underscores:
-void
-spaceReplace(string& s) {
-  stripWhite(s);
-  s = regexReplace("[[:space:]]+","_",s);
-}
-
-// Here is the default character at which to split lists given in parameters strings
-const char DefaultListSeperator=',';
 
 // Collect the regular expressions that will match instruments that are
 // assign to each magnitude band
@@ -103,23 +95,6 @@ public:
   double mag;
   double magErr;
 };
-
-// Another helper function to split up a string into a list of whitespace-trimmed strings.
-// Get rid of any null ones.
-
-list<string> splitArgument(string input, const char listSeperator = DefaultListSeperator) {
-  list<string> out = split(input, listSeperator);
-  for (list<string>::iterator i = out.begin();
-       i != out.end(); )  {
-    stripWhite(*i);
-    if (i->empty()) {
-      i = out.erase(i);
-    } else {
-      ++i;
-    }
-  }
-  return out;
-}
 
 
 int
@@ -161,54 +136,13 @@ main(int argc, char *argv[])
 
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
-  const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting)
-  const int TAG_INSTRUMENT=-2;	// Exposure number for tag objects (no fitting nor contrib to stats)
-
-  const string stellarAffinity="STELLAR";
-
-  const double NO_MAG_DATA = -100.;	// Value entered when there is no valid mag or color
-  const string colorColumnName = "COLOR";
-  const string colorErrorColumnName = "COLOR_ERR";
 
   try {
-    
-    // Read parameters
-    if (argc<4) {
-      cerr << usage << endl;
-      cout << "#--------- Default Parameters: ---------" << endl;
-      parameters.setDefault();
-      parameters.dump(cout);
-      exit(1);
-    }
+    // Read all the command-line and parameter-file program parameters
+    processParameters(parameters, usage, 3, argc, argv);
     string inputTables = argv[1];
     string outputTables = argv[2];
     string magOutFile = argv[3];
-
-    parameters.setDefault();
-    for (int i=4; i<argc; i++) {
-      // Open & read all specified input files
-      ifstream ifs(argv[i]);
-      if (!ifs) {
-	cerr << "Can't open parameter file " << argv[i] << endl;
-	exit(1);
-      }
-      try {
-	parameters.setStream(ifs);
-      } catch (std::runtime_error &m) {
-	cerr << "In file " << argv[i] << ":" << endl;
-	quit(m,1);
-      }
-    }
-    // and stdin:
-    try {
-      parameters.setStream(cin);
-    } catch (std::runtime_error &m) {
-      cerr << "In stdin:" << endl;
-      quit(m,1);
-    }
-
-    // List parameters in use
-    parameters.dump(cout);
 
     /////////////////////////////////////////////////////
     // Parse all the parameters describing maps etc. 
@@ -223,26 +157,8 @@ main(int argc, char *argv[])
     // PhotoMapCollection::registerMapType<PolyMap>();
 
     // First is a regex map from instrument names to the names of their PhotoMaps
-    RegexReplacements instrumentTranslator;
-    {
-      list<string> ls = split(renameInstruments, DefaultListSeperator);
-      for (list<string>::const_iterator i = ls.begin();
-	   i != ls.end();
-	   ++i) {
-	if (i->empty()) continue;
-	list<string> ls2 = split(*i, '=');
-	if (ls2.size() != 2) {
-	  cerr << "renameInstruments has bad translation spec: " << *i << endl;
-	  exit(1);
-	}
-	string regex = ls2.front();
-	string replacement = ls2.back();
-	stripWhite(regex);
-	stripWhite(replacement);
-	instrumentTranslator.addRegex(regex, replacement);
-      }
-    }
-
+    RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
+							     "renameInstruments");
 
     // Get the list of files holding astrometric maps and read them.
     list<string> wcsFileList = splitArgument(wcsFiles);

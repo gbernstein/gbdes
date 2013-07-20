@@ -21,6 +21,8 @@ using namespace stringstuff;
 using namespace photometry;
 using img::FTable;
 
+#include "FitSubroutines.h"
+
 string usage=
   "PhotoFit: Refine photometric solutions for a matched set of catalogs.\n"
   "usage: WCSFit <match file> [parameter file] [parameter file...]\n"
@@ -54,34 +56,6 @@ string usage=
 // Note that PhotoMaps for devices within instrument will get names <instrument>/<device>.
 // And PhotoMaps for individual exposures will get names <exposure>/<device>.
 
-// A helper function that strips white space from front/back of a string and replaces
-// internal white space with underscores:
-void
-spaceReplace(string& s) {
-  stripWhite(s);
-  s = regexReplace("[[:space:]]+","_",s);
-}
-
-// Here is the default character at which to split lists given in parameters strings
-const char DefaultListSeperator=',';
-
-// Another helper function to split up a string into a list of whitespace-trimmed strings.
-// Get rid of any null ones.
-
-list<string> splitArgument(string input, const char listSeperator = DefaultListSeperator) {
-  list<string> out = split(input, listSeperator);
-  for (list<string>::iterator i = out.begin();
-       i != out.end(); )  {
-    stripWhite(*i);
-    if (i->empty()) {
-      i = out.erase(i);
-    } else {
-      ++i;
-    }
-  }
-  return out;
-}
-
 // A function to parse strings describing PhotoMap models
 // Parameters of each constructed model are initialized to be close to identity transformation on mags.
 PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType arg=PhotoMap::Device);
@@ -94,7 +68,7 @@ learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
 	       PhotoMap::ArgumentType argtype=PhotoMap::Device);
 
 
-// Pull this code out: function to produce a list of PhotoPriors from an input file
+// Function to produce a list of PhotoPriors from an input file
 list<PhotoPrior*>
 readPriors(string filename, 
 	   const vector<Instrument*>& instruments, 
@@ -102,6 +76,7 @@ readPriors(string filename,
 	   const vector<Extension*>& extensions, 
 	   const vector<long>& detectionsPerExposure);
 
+// Class to accumulate residual statistics
 class Accum {
 public:
   double sum_m;
@@ -113,53 +88,11 @@ public:
   double sum_x;
   double sum_y;
   double sum_dof;
-  Accum(): sum_m(0.), sum_mw(0.),
-	   sum_mm(0.), sum_mmw(0.),
-	   sum_w(0.),
-	   sum_dof(0.), 
-	   sum_x(0.), sum_y(0.),
-	   n(0) {}
-  void add(const Detection* d, double magoff=0., double dof=1.) {
-    double dm = d->magOut - magoff;
-    sum_m += dm;
-    sum_mw += dm * d->wt;
-    sum_mm += dm * dm;
-    sum_mmw += dm * dm *d->wt;
-    sum_w += d->wt;
-    sum_dof += dof;
-    sum_x += d->args.xExposure;
-    sum_y += d->args.yExposure;
-    ++n;
-    }
-  double rms() const {
-    return n > 0 ? sqrt( sum_mm/n ) : 0.;
-  }
-  double reducedChisq() const {
-    return sum_dof>0 ? sum_mmw/sum_dof : 0.;
-  }
-  string summary() const {
-    ostringstream oss;
-    double dm = 0., sigm=0.;
-    double x=0., y=0.;
-    if (n>0) {
-      dm = sum_mw / sum_w;
-      sigm = 1./sqrt(sum_w);
-      x = sum_x / n;
-      y = sum_y / n;
-    }
-    oss << setw(4) << n 
-	<< fixed << setprecision(1)
-	<< " " << setw(6) << sum_dof
-	<< " " << setw(5) << dm*1000.
-	<< " " << setw(5) << sigm*1000.
-	<< " " << setw(5) << rms()*1000.
-	<< setprecision(2) 
-	<< " " << setw(5) << reducedChisq()
-	<< setprecision(5) << showpoint << showpos
-	<< " " << setw(9) << x 
-	<< " " << setw(9) << y ;
-    return oss.str();
-  }
+  Accum();
+  void add(const Detection* d, double magoff=0., double dof=1.);
+  double rms() const;
+  double reducedChisq() const;
+  string summary() const;
 };
 
 int
@@ -265,48 +198,12 @@ main(int argc, char *argv[])
 
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
-  const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting) ??? color terms???
-  const int TAG_INSTRUMENT=-2;	// Exposure number for tag objects (no fitting nor contrib to stats)
-
-  const string stellarAffinity="STELLAR";
 
   try {
     
-    // Read parameters
-    if (argc<2) {
-      cerr << usage << endl;
-      cerr << "--------- Default Parameters: ---------" << endl;
-      parameters.setDefault();
-      parameters.dump(cerr);
-      exit(1);
-    }
+    // Read all the command-line and parameter-file program parameters
+    processParameters(parameters, usage, 1, argc, argv);
     string inputTables = argv[1];
-
-    parameters.setDefault();
-    for (int i=2; i<argc; i++) {
-      // Open & read all specified input files
-      ifstream ifs(argv[i]);
-      if (!ifs) {
-	cerr << "Can't open parameter file " << argv[i] << endl;
-	exit(1);
-      }
-      try {
-	parameters.setStream(ifs);
-      } catch (std::runtime_error &m) {
-	cerr << "In file " << argv[i] << ":" << endl;
-	quit(m,1);
-      }
-    }
-    // and stdin:
-    try {
-      parameters.setStream(cin);
-    } catch (std::runtime_error &m) {
-      cerr << "In stdin:" << endl;
-      quit(m,1);
-    }
-
-    // List parameters in use
-    parameters.dump(cout);
 
     /////////////////////////////////////////////////////
     // Parse all the parameters describing maps etc. 
@@ -318,25 +215,8 @@ main(int argc, char *argv[])
     // PhotoMapCollection::registerMapType<PolyMap>();
 
     // First is a regex map from instrument names to the names of their PhotoMaps
-    RegexReplacements instrumentTranslator;
-    {
-      list<string> ls = split(renameInstruments, DefaultListSeperator);
-      for (list<string>::const_iterator i = ls.begin();
-	   i != ls.end();
-	   ++i) {
-	if (i->empty()) continue;
-	list<string> ls2 = split(*i, '=');
-	if (ls2.size() != 2) {
-	  cerr << "renameInstruments has bad translation spec: " << *i << endl;
-	  exit(1);
-	}
-	string regex = ls2.front();
-	string replacement = ls2.back();
-	stripWhite(regex);
-	stripWhite(replacement);
-	instrumentTranslator.addRegex(regex, replacement);
-      }
-    }
+    RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
+							     "renameInstruments");
 
     // Next is regex map from PhotoMap or instrument map names to files 
     // from which we should de-serialize them
@@ -1819,4 +1699,56 @@ learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
   // Save this map into the collection
   pmc.learnMap(*pm);
   delete pm;
+}
+
+Accum::Accum(): sum_m(0.), sum_mw(0.),
+		sum_mm(0.), sum_mmw(0.),
+		sum_w(0.),
+		sum_dof(0.), 
+		sum_x(0.), sum_y(0.),
+		n(0) {}
+void 
+Accum::add(const Detection* d, double magoff, double dof) {
+  double dm = d->magOut - magoff;
+  sum_m += dm;
+  sum_mw += dm * d->wt;
+  sum_mm += dm * dm;
+  sum_mmw += dm * dm *d->wt;
+  sum_w += d->wt;
+  sum_dof += dof;
+  sum_x += d->args.xExposure;
+  sum_y += d->args.yExposure;
+  ++n;
+}
+double 
+Accum::rms() const {
+  return n > 0 ? sqrt( sum_mm/n ) : 0.;
+}
+double 
+Accum::reducedChisq() const {
+  return sum_dof>0 ? sum_mmw/sum_dof : 0.;
+}
+string 
+Accum::summary() const {
+  ostringstream oss;
+  double dm = 0., sigm=0.;
+  double x=0., y=0.;
+  if (n>0) {
+    dm = sum_mw / sum_w;
+    sigm = 1./sqrt(sum_w);
+    x = sum_x / n;
+    y = sum_y / n;
+  }
+  oss << setw(4) << n 
+      << fixed << setprecision(1)
+      << " " << setw(6) << sum_dof
+      << " " << setw(5) << dm*1000.
+      << " " << setw(5) << sigm*1000.
+      << " " << setw(5) << rms()*1000.
+      << setprecision(2) 
+      << " " << setw(5) << reducedChisq()
+      << setprecision(5) << showpoint << showpos
+      << " " << setw(9) << x 
+      << " " << setw(9) << y ;
+  return oss.str();
 }

@@ -54,18 +54,12 @@ string usage=
 // There will be SubMaps by these names too that include the reprojection to field coordinates.
 
 #include "Instrument.h"
-
-// A helper function that strips white space from front/back of a string and replaces
-// internal white space with underscores:
-void
-spaceReplace(string& s) {
-  stripWhite(s);
-  s = regexReplace("[[:space:]]+","_",s);
-}
+#include "FitSubroutines.h"
 
 // A function to parse strings describing PixelMap models, setting tolerance for inversion of world coords:
 PixelMap* pixelMapDecode(string code, string name, double worldTolerance);
 
+// Statistics-accumulator class.  Defined after main()
 class Accum {
 public:
   double sumx;
@@ -84,58 +78,11 @@ public:
   double xw;
   double yw;
   double sumdof;
-  Accum(): sumxw(0.), sumyw(0.), 
-	   sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
-	   sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
-	   sumdof(0.), xpix(0.), ypix(0.), xw(0.), yw(0.),
-	   n(0) {}
-  void add(const Detection* d, double xoff=0., double yoff=0., double dof=1.) {
-    sumx += (d->xw-xoff);
-    sumy += (d->yw-yoff);
-    sumxw += (d->xw-xoff)*d->wtx;
-    sumyw += (d->yw-yoff)*d->wty;
-    sumxxw += (d->xw-xoff)*(d->xw-xoff)*d->wtx;
-    sumyyw += (d->yw-yoff)*(d->yw-yoff)*d->wty;
-    sumxx += (d->xw-xoff)*(d->xw-xoff);
-    sumyy += (d->yw-yoff)*(d->yw-yoff);
-    sumwx += d->wtx;
-    sumwy += d->wty;
-    sumdof += dof;
-    ++n;
-  }
-  double rms() const {
-    return n > 0 ? sqrt( (sumxx+sumyy)/(2.*n)) : 0.;
-  }
-  double reducedChisq() const {
-    return sumdof>0 ? (sumxxw+sumyyw)/(2.*sumdof) : 0.;
-  }
-  string summary() const {
-    ostringstream oss;
-    double dx = 0., dy = 0., sigx=0., sigy=0.;
-    if (n>0) {
-      dx = sumxw / sumwx;
-      sigx = 1./sqrt(sumwx);
-      dy = sumyw / sumwy;
-      sigy = 1./sqrt(sumwy);
-    }
-    oss << setw(4) << n 
-	<< fixed << setprecision(1)
-	<< " " << setw(6) << sumdof
-	<< " " << setw(5) << dx*1000.*DEGREE/ARCSEC 
-	<< " " << setw(5) << sigx*1000.*DEGREE/ARCSEC
-	<< " " << setw(5) << dy*1000.*DEGREE/ARCSEC 
-	<< " " << setw(5) << sigy*1000.*DEGREE/ARCSEC
-	<< " " << setw(5) << rms()*1000.*DEGREE/ARCSEC
-	<< setprecision(2) 
-	<< " " << setw(5) << reducedChisq()
-	<< setprecision(0) << noshowpoint
-	<< " " << setw(5) << xpix 
-	<< " " << setw(5) << ypix
-	<< setprecision(5) << showpoint << showpos
-	<< " " << setw(9) << xw 
-	<< " " << setw(9) << yw ;
-    return oss.str();
-  }
+  Accum();
+  void add(const Detection* d, double xoff=0., double yoff=0., double dof=1.);
+  double rms() const;
+  double reducedChisq() const;
+  string summary() const;
 };
 
 int
@@ -215,50 +162,14 @@ main(int argc, char *argv[])
   const double worldTolerance = 0.001*ARCSEC/DEGREE;
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
-  const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no WCS fitting)
-  const int TAG_INSTRUMENT=-2;	// Exposure number for tag objects (no WCS fitting nor contrib to stats)
 
   try {
     
-    // Read parameters
-    if (argc<2) {
-      cerr << usage << endl;
-      cerr << "--------- Default Parameters: ---------" << endl;
-      parameters.setDefault();
-      parameters.dump(cerr);
-      exit(1);
-    }
+    // Read all the command-line and parameter-file program parameters
+    processParameters(parameters, usage, 1, argc, argv);
     string inputTables = argv[1];
 
-    parameters.setDefault();
-    for (int i=2; i<argc; i++) {
-      // Open & read all specified input files
-      ifstream ifs(argv[i]);
-      if (!ifs) {
-	cerr << "Can't open parameter file " << argv[i] << endl;
-	exit(1);
-      }
-      try {
-	parameters.setStream(ifs);
-      } catch (std::runtime_error &m) {
-	cerr << "In file " << argv[i] << ":" << endl;
-	quit(m,1);
-      }
-    }
-    // and stdin:
-    try {
-      parameters.setStream(cin);
-    } catch (std::runtime_error &m) {
-      cerr << "In stdin:" << endl;
-      quit(m,1);
-    }
-
-    // List parameters in use
-    parameters.dump(cout);
-
     referenceSysError *= ARCSEC/DEGREE;
-
-    // ??? log parameters to output file somehow?
 
     /////////////////////////////////////////////////////
     // Parse all the parameters describing maps etc. ????
@@ -267,34 +178,15 @@ main(int argc, char *argv[])
     // Teach PixelMapCollection about new kinds of PixelMaps:
     PixelMapCollection::registerMapType<TemplateMap1d>();
 
-    const char listSeperator=',';
-
-    // First is a regex map from instrument names to the names of their PixelMaps
-    RegexReplacements instrumentTranslator;
-    {
-      list<string> ls = split(renameInstruments, listSeperator);
-      for (list<string>::const_iterator i = ls.begin();
-	   i != ls.end();
-	   ++i) {
-	if (i->empty()) continue;
-	list<string> ls2 = split(*i, '=');
-	if (ls2.size() != 2) {
-	  cerr << "renameInstruments has bad translation spec: " << *i << endl;
-	  exit(1);
-	}
-	string regex = ls2.front();
-	string replacement = ls2.back();
-	stripWhite(regex);
-	stripWhite(replacement);
-	instrumentTranslator.addRegex(regex, replacement);
-      }
-    }
+    // First is a regex map from instrument names to the names of their PhotoMaps
+    RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
+							     "renameInstruments");
 
     // Next is regex map from PixelMap or instrument map names to files 
     // from which we should de-serialize them
     RegexReplacements existingMapFinder;
     {
-      list<string> ls = split(existingMaps, listSeperator);
+      list<string> ls = split(existingMaps, DefaultListSeperator);
       for (list<string>::const_iterator i = ls.begin();
 	   i != ls.end();
 	   ++i) {
@@ -314,27 +206,10 @@ main(int argc, char *argv[])
 
     // This is list of regexes of PixelMap names (or instrument names) that should
     // have their parameters held fixed.
-    list<string> fixMapList = split(fixMaps, listSeperator);
-    for (list<string>::iterator i = fixMapList.begin();
-	 i != fixMapList.end(); ) {
-      stripWhite(*i);
-      if (i->empty()) {
-	i = fixMapList.erase(i);
-      } else {
-	++i;
-      }
-    }
+    list<string> fixMapList = splitArgument(fixMaps);
 
-    list<string> canonicalExposureList = split(canonicalExposures, listSeperator);
-    for (list<string>::iterator i = canonicalExposureList.begin();
-	 i != canonicalExposureList.end(); ) {
-      stripWhite(*i);
-      if (i->empty()) {
-	i = canonicalExposureList.erase(i);
-      } else {
-	++i;
-      }
-    }
+    // And any exposures that will be designated as canonical
+    list<string> canonicalExposureList = splitArgument(canonicalExposures);
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Fields, Instruments, Devices, Exposures
@@ -1635,3 +1510,61 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
   }
   return pm;
 }
+
+Accum::Accum(): sumxw(0.), sumyw(0.), 
+		sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
+		sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
+		sumdof(0.), xpix(0.), ypix(0.), xw(0.), yw(0.),
+		n(0) {}
+void 
+Accum::add(const Detection* d, double xoff, double yoff, double dof) {
+  sumx += (d->xw-xoff);
+  sumy += (d->yw-yoff);
+  sumxw += (d->xw-xoff)*d->wtx;
+  sumyw += (d->yw-yoff)*d->wty;
+  sumxxw += (d->xw-xoff)*(d->xw-xoff)*d->wtx;
+  sumyyw += (d->yw-yoff)*(d->yw-yoff)*d->wty;
+  sumxx += (d->xw-xoff)*(d->xw-xoff);
+  sumyy += (d->yw-yoff)*(d->yw-yoff);
+  sumwx += d->wtx;
+  sumwy += d->wty;
+  sumdof += dof;
+  ++n;
+}
+double 
+Accum::rms() const {
+  return n > 0 ? sqrt( (sumxx+sumyy)/(2.*n)) : 0.;
+}
+double
+Accum::reducedChisq() const {
+  return sumdof>0 ? (sumxxw+sumyyw)/(2.*sumdof) : 0.;
+}
+string 
+Accum::summary() const {
+  ostringstream oss;
+  double dx = 0., dy = 0., sigx=0., sigy=0.;
+  if (n>0) {
+    dx = sumxw / sumwx;
+    sigx = 1./sqrt(sumwx);
+    dy = sumyw / sumwy;
+    sigy = 1./sqrt(sumwy);
+  }
+  oss << setw(4) << n 
+      << fixed << setprecision(1)
+      << " " << setw(6) << sumdof
+      << " " << setw(5) << dx*1000.*DEGREE/ARCSEC 
+      << " " << setw(5) << sigx*1000.*DEGREE/ARCSEC
+      << " " << setw(5) << dy*1000.*DEGREE/ARCSEC 
+      << " " << setw(5) << sigy*1000.*DEGREE/ARCSEC
+      << " " << setw(5) << rms()*1000.*DEGREE/ARCSEC
+      << setprecision(2) 
+      << " " << setw(5) << reducedChisq()
+      << setprecision(0) << noshowpoint
+      << " " << setw(5) << xpix 
+      << " " << setw(5) << ypix
+      << setprecision(5) << showpoint << showpos
+      << " " << setw(9) << xw 
+      << " " << setw(9) << yw ;
+  return oss.str();
+}
+

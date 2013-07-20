@@ -5,4 +5,4 @@
 * Document PhotoFit, MakeColors and all their parameters.
 * Outlier rejection in averaging mags for MakeColors
 * Feed PhotoFit, MakeColors a file giving pre-clipped extension/object pairs.
-* Collect common routines & variables from WCSFit, PhotoFit, and MakeColors into a common file.
+* Clean up instrument name translation

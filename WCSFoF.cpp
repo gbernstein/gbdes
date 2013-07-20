@@ -1,8 +1,3 @@
-/* ???? TODO: 
-   Allow WCS to come from name of a Wcs in a serialized file.
-   Better yet, separate file for additional FITS keywords.
-   Change so that FITS extensions are not overwritten
-*/
 // Program to match catalogs based on world coordinates.
 
 #include "Std.h"
@@ -18,6 +13,8 @@
 #include "TPVMap.h"
 #include "StringStuff.h"
 #include "ExtensionAttribute.h"
+
+#include "FitSubroutines.h"
 
 using namespace std;
 using namespace img;
@@ -161,70 +158,19 @@ main(int argc,
   // Read parameters
   ////////////////////////////////////////////////
 
-  if (argc<3) {
-    cerr << usage << endl;
-    cerr << "--------- Default Parameters: ---------" << endl;
-    parameters.setDefault();
-    parameters.dump(cerr);
-    exit(1);
-  }
+  // Read all the command-line and parameter-file program parameters
+  processParameters(parameters, usage, 2, argc, argv);
   string fieldSpecs = argv[1];
   string exposureSpecs = argv[2];
-
-  parameters.setDefault();
-  for (int i=3; i<argc; i++) {
-    // Open & read all specified input files
-    ifstream ifs(argv[i]);
-    if (!ifs) {
-      cerr << "Can't open parameter file " << argv[i] << endl;
-      exit(1);
-    }
-    try {
-      parameters.setStream(ifs);
-    } catch (std::runtime_error &m) {
-      cerr << "In file " << argv[i] << ":" << endl;
-      quit(m,1);
-    }
-  }
-  // and stdin:
-  try {
-    parameters.setStream(cin);
-  } catch (std::runtime_error &m) {
-    cerr << "In stdin:" << endl;
-    quit(m,1);
-  }
-
-  // List parameters in use
-  parameters.dump(cout);
 
   // Convert matching radius to our system units for world coords (degrees)
   matchRadius *= ARCSEC/DEGREE;
 
   try {
-
-    const char listSeperator=',';
-
     // First build the regular expression structure used to translate instrument names
     // into shorter forms.
-    RegexReplacements instrumentTranslator;
-    {
-      list<string> ls = split(renameInstruments, listSeperator);
-      for (list<string>::const_iterator i = ls.begin();
-	   i != ls.end();
-	   ++i) {
-	if (i->empty()) continue;
-	list<string> ls2 = split(*i, '=');
-	if (ls2.size() != 2) {
-	  cerr << "renameInstruments has bad translation spec: " << *i << endl;
-	  exit(1);
-	}
-	string regex = ls2.front();
-	string replacement = ls2.back();
-	stripWhite(regex);
-	stripWhite(replacement);
-	instrumentTranslator.addRegex(regex, replacement);
-      }
-    }
+    RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
+							     "renameInstruments");
 
     ////////////////////////////////////////////////
     // Read in fields and save away orientations of tangent plane systems for each
@@ -284,10 +230,6 @@ main(int argc,
     // Start a list of the instruments
     NameIndex instrumentNames;
     vector<Instrument> instruments;
-    // ??? Should put these somewhere they are shared with the fitting programs
-    const int REFERENCE_INSTRUMENT=-1;
-    const int TAG_INSTRUMENT=-2;
-    const int NO_INSTRUMENT=-3;
 
     // And the exposures
     NameIndex exposureNames;
@@ -304,8 +246,6 @@ main(int argc,
     // Make a table into which we will stuff info about every extension 
     // of every catalog file we read:
     FTable extensionTable;
-
-    const string stellarAffinity="STELLAR";
 
     // Now assemble all of the catalog attributes we will read from input and/or write to output:
     list<ExtensionAttributeBase*> attributes;
@@ -395,37 +335,28 @@ main(int argc,
 
     // Now create ExtensionAttributes for any requested optional columns to be passed along
     {
-      list<string> names = stringstuff::split(stringAttributes, listSeperator);
+      list<string> names = splitArgument(stringAttributes);
       for (list<string>::iterator i = names.begin();
 	   i != names.end();
-	   ++i) {
-	string colName = *i;
-	stringstuff::stripWhite(colName);
-	if (colName.empty()) continue;
-	attributes.push_back(new ExtensionAttribute<string>(colName, ExtensionAttributeBase::ReadWrite));
-      }
+	   ++i) 
+	attributes.push_back(new ExtensionAttribute<string>(*i, 
+							    ExtensionAttributeBase::ReadWrite));
     }
     {
-      list<string> names = stringstuff::split(intAttributes, listSeperator);
+      list<string> names = splitArgument(intAttributes);
       for (list<string>::iterator i = names.begin();
 	   i != names.end();
-	   ++i) {
-	string colName = *i;
-	stringstuff::stripWhite(colName);
-	if (colName.empty()) continue;
-	attributes.push_back(new ExtensionAttribute<int>(colName, ExtensionAttributeBase::ReadWrite));
-      }
+	   ++i) 
+	attributes.push_back(new ExtensionAttribute<int>(*i, 
+							 ExtensionAttributeBase::ReadWrite));
     }
     {
-      list<string> names = stringstuff::split(doubleAttributes, listSeperator);
+      list<string> names = splitArgument(doubleAttributes);
       for (list<string>::iterator i = names.begin();
 	   i != names.end();
-	   ++i) {
-	string colName = *i;
-	stringstuff::stripWhite(colName);
-	if (colName.empty()) continue;
-	attributes.push_back(new ExtensionAttribute<double>(colName, ExtensionAttributeBase::ReadWrite));
-      }
+	   ++i) 
+	attributes.push_back(new ExtensionAttribute<double>(*i, 
+							    ExtensionAttributeBase::ReadWrite));
     }
 
     // Create necessary columns in the Extension table:
@@ -435,7 +366,6 @@ main(int argc,
       (*i)->makeOutputColumn(extensionTable);
 
     long extensionNumber = 0; // cumulative counter for all FITS tables read
-
 
     // If WCS is coming from a serialized PixelMapCollection, I'll keep last-used one around
     // to avoid re-parsing it all the time:
@@ -591,7 +521,7 @@ main(int argc,
 	  }
 	  int instrumentNumber=NO_INSTRUMENT;
 	  if (stringstuff::nocaseEqual(thisInstrument, "REFERENCE"))
-	    instrumentNumber = REFERENCE_INSTRUMENT;
+	    instrumentNumber = REF_INSTRUMENT;
 	  else if (stringstuff::nocaseEqual(thisInstrument, "TAG"))
 	    instrumentNumber = TAG_INSTRUMENT;
 	  else {
@@ -689,7 +619,7 @@ main(int argc,
 	  string instrument = instrumentAttr->getValue();
 	  if ( !instrument.empty()) {
 	    if ( stringstuff::nocaseEqual(instrument, "REFERENCE")) {
-	      if (instrumentNumber != REFERENCE_INSTRUMENT ) {
+	      if (instrumentNumber != REF_INSTRUMENT ) {
 		cerr << "Conflicting instrument assignments in file " << filename 
 		     << ":\n extension is REFERENCE but exposure is not"
 		     << endl;
