@@ -1,8 +1,6 @@
-* write a TemplateMap2d
-* let templates serialize with their filenames
+* write a radial TemplateMap
+* have Templates serialize with their filenames instead of listing entries
 * allow variable substitution (Device) into the DeviceMap specification.
 * Update documentation: PixelMap.tex and the fitting classes.
 * Document PhotoFit, MakeColors and all their parameters.
-* Outlier rejection in averaging mags for MakeColors
-* Feed PhotoFit, MakeColors a file giving pre-clipped extension/object pairs.
 * Clean up instrument name translation

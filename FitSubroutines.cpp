@@ -103,27 +103,28 @@ parseTranslator(string specString, string errorDescription) {
   return translator;
 }
 
-ExposureObjectSet::ExposureObjectSet(string filename) {
+ExtensionObjectSet::ExtensionObjectSet(string filename) {
+  if (filename.empty()) return;
   ifstream ifs(filename.c_str());
   if (!ifs) {
-    cerr << "Could not open Exposure/Object pair file " << filename << endl;
+    cerr << "Could not open Extension/Object pair file " << filename << endl;
     exit(1);
   }
   string buffer;
   while (stringstuff::getlineNoComment(ifs, buffer)) {
-    int exposureNumber;
+    int extensionNumber;
     long objectNumber;
     istringstream iss(buffer);
-    if (!iss >> exposureNumber >> objectNumber) {
-      cerr << "Bad Exposure/Object pair in " << filename
+    if (!iss >> extensionNumber >> objectNumber) {
+      cerr << "Bad Extension/Object pair in " << filename
 	   << ": <" << buffer << ">" << endl;
       exit(1);
     }
-    pairs.insert(EOPair(exposureNumber, objectNumber));
+    pairs.insert(EOPair(extensionNumber, objectNumber));
   }
 }
 
 bool
-ExposureObjectSet::operator()(int exposureNumber, long objectNumber) const {
-  return pairs.count( EOPair(exposureNumber, objectNumber)) >0;
+ExtensionObjectSet::operator()(int extensionNumber, long objectNumber) const {
+  return pairs.count( EOPair(extensionNumber, objectNumber)) >0;
 }

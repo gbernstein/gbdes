@@ -53,6 +53,8 @@ string usage=
 // Default is to find an exposure that has data in all devices and use it.
 // Will have an error if there is more than one constraint on any Instrument.
 
+// skipFile parameter gives name of file holding extension and object numbers of detections to ignore.
+
 // Note that PhotoMaps for devices within instrument will get names <instrument>/<device>.
 // And PhotoMaps for individual exposures will get names <exposure>/<device>.
 
@@ -102,6 +104,7 @@ main(int argc, char *argv[])
   double clipThresh;
   double priorClipThresh;
   bool clipEntirePrior;
+  string skipFile;
   double maxMagError;
   double magSysError;
   double referenceSysError;
@@ -127,6 +130,7 @@ main(int argc, char *argv[])
   string outPhotFile;
   string priorFiles;
   string outPriorFile;
+  int randomNumberSeed;
   Pset parameters;
   {
     const int def=PsetMember::hasDefault;
@@ -148,6 +152,8 @@ main(int argc, char *argv[])
 			 "the instruments that are assumed to produce matching mags","");
     parameters.addMember("useReferenceExposures",&useReferenceExposures, def,
 			 "names of reference exposures to be included in chi-squared","");
+    parameters.addMember("skipFile",&skipFile, def,
+			 "optional file holding extension/object of detections to ignore","");
     parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
 			 "exposures holding valid colors for stars","");
@@ -173,6 +179,8 @@ main(int argc, char *argv[])
 			 "File(s) specifying any priors to apply to zeropoints and colors", "");
     parameters.addMember("reserveFraction",&reserveFraction, def | low,
 			 "Fraction of matches reserved from re-fit", 0., 0.);
+    parameters.addMember("seed",&randomNumberSeed, def,
+			 "seed for reserving randomizer, <=0 to seed with time", 0);
     parameters.addMember("exposureModel",&exposureModel, def,
 			 "Form of per-exposure map", "Constant");
     parameters.addMember("deviceModel",&deviceModel, def,
@@ -256,6 +264,9 @@ main(int argc, char *argv[])
 
     // The list of reference exposures whose mags will be included in chi-squared
     list<string> useReferenceList = splitArgument(useReferenceExposures);
+
+    // Objects to ignore on input:
+    ExtensionObjectSet skipSet(skipFile);
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Instruments, Devices, Exposures
@@ -877,6 +888,9 @@ main(int argc, char *argv[])
 	// If we done reading entries, quit this loop
 	if (i >= seq.size()) break;
 
+	// continue loop if this is an object to ignore
+	if ( skipSet(extn[i],obj[i]) ) continue;
+
 	// Note extn/obj number of detections with useful mag data
 	if (extensions[extn[i]]) {
 	  // Record a Detection in a useful extension:
@@ -1123,7 +1137,7 @@ main(int argc, char *argv[])
 
     {
       ran::UniformDeviate u;
-      /**/u.Seed(53347L);  
+      if (randomNumberSeed >0) u.Seed(randomNumberSeed);
       long dcount=0;
       int dof=0;
       double chi=0.;

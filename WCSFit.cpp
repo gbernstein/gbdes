@@ -90,6 +90,7 @@ main(int argc, char *argv[])
 {
   bool reFit;	// until we separate the statistics part ???
   double reserveFraction;
+  int randomNumberSeed;
   double clipThresh;
   double maxPixError;
   double pixSysError;
@@ -97,6 +98,7 @@ main(int argc, char *argv[])
   int minMatches;
   bool clipEntireMatch;
   int exposureOrder;
+  string skipFile;
   string deviceModel;
   string outCatalog;
   string catalogSuffix;
@@ -129,9 +131,13 @@ main(int argc, char *argv[])
 			 "Clipping threshold (sigma)", 5., 2.);
     parameters.addMember("clipEntireMatch",&clipEntireMatch, def,
 			 "Discard entire object if one outlier", false);
+    parameters.addMember("skipFile",&skipFile, def,
+			 "optional file holding extension/object of detections to ignore","");
     parameters.addMemberNoValue("FITTING");
     parameters.addMember("reserveFraction",&reserveFraction, def | low,
 			 "Fraction of matches reserved from re-fit", 0., 0.);
+    parameters.addMember("seed",&randomNumberSeed, def,
+			 "seed for reserving randomizer, <=0 to seed with time", 0);
     parameters.addMember("exposureOrder",&exposureOrder, def | low,
 			 "Order of per-exposure map", 1, 0);
     parameters.addMember("deviceModel",&deviceModel, def,
@@ -210,6 +216,9 @@ main(int argc, char *argv[])
 
     // And any exposures that will be designated as canonical
     list<string> canonicalExposureList = splitArgument(canonicalExposures);
+
+    // Objects to ignore on input:
+    ExtensionObjectSet skipSet(skipFile);
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Fields, Instruments, Devices, Exposures
@@ -842,8 +851,8 @@ main(int argc, char *argv[])
       // Smaller collections for each match
       vector<long> extns;
       vector<long> objs;
-      for (int i=0; i<seq.size(); i++) {
-	if (seq[i]==0 && !extns.empty()) {
+      for (int i=0; i<=seq.size(); i++) {
+	if ( (i==seq.size() || seq[i]==0) && !extns.empty()) {
 	  // Make a match from previous few entries
 	  Detection* d = new Detection;
 	  d->catalogNumber = extns[0];
@@ -860,25 +869,15 @@ main(int argc, char *argv[])
 	  extns.clear();
 	  objs.clear();
 	} // Finished processing previous match
+	if (i>=seq.size()) break;
+	// Should we ignore this object?
+	if (skipSet(extn[i], obj[i])) continue;
+
+	// Add to things being used:
 	extns.push_back(extn[i]);
 	objs.push_back(obj[i]);
       } // End loop of catalog entries
       
-      // Make a last match out of final entries
-      if (!extns.empty()) {
-	Detection* d = new Detection;
-	d->catalogNumber = extns[0];
-	d->objectNumber = objs[0];
-	matches.push_back(new Match(d));
-	extensions[extns[0]]->keepers.insert(std::pair<long,Detection*>(objs[0], d));
-	for (int j=1; j<extns.size(); j++) {
-	  Detection* d = new Detection;
-	  d->catalogNumber = extns[j];
-	  d->objectNumber = objs[j];
-	  matches.back()->add(d);
-	  extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
-	}
-      }
     } // End loop over input matched catalogs
 
     // Now loop over all original catalog bintables, reading the desired rows
@@ -1000,7 +999,7 @@ main(int argc, char *argv[])
 
     {
       ran::UniformDeviate u;
-      /**/ u.Seed(43215L);
+      if (randomNumberSeed > 0)  u.Seed(randomNumberSeed);
       long dcount=0;
       int dof=0;
       double chi=0.;

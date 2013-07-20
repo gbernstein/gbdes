@@ -55,20 +55,21 @@ stringstuff::RegexReplacements  parseTranslator(string specString, string errorD
 
 class EOPair {
 public:
-  EOPair(int exp, long obj): exposureNumber(exp), objectNumber(obj) {}
+  EOPair(int exp, long obj): extensionNumber(exp), objectNumber(obj) {}
   bool operator<(const EOPair& rhs) const {
-    return exposureNumber < rhs.exposureNumber
-      || (exposureNumber==rhs.exposureNumber && objectNumber < rhs.objectNumber);
+    return extensionNumber < rhs.extensionNumber
+      || (extensionNumber==rhs.extensionNumber && objectNumber < rhs.objectNumber);
   }
 private:
-  int exposureNumber;
+  int extensionNumber;
   long objectNumber;
 };
 
-class ExposureObjectSet {
+class ExtensionObjectSet {
 public:
-  ExposureObjectSet(string filename);
-  bool operator()(int exposureNumber, long objectNumber) const;
+  ExtensionObjectSet(string filename);
+  bool operator()(int extensionNumber, long objectNumber) const;
+  void clear() {pairs.clear();}
 private:
   set<EOPair> pairs;
 };

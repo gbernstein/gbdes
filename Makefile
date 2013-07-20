@@ -74,6 +74,8 @@ MakeColors: MakeColors.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+ListClipped: ListClipped.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 #
 testSerialize: testSerialize.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

@@ -56,6 +56,10 @@ string usage=
 // Each comma-separated specifier gives the two bands that will be differenced to produce the
 // color that is written into a FITS table with given file name.
 
+// parameter clipFile is name of file containing (extension, object) number pairs that will
+// be ignored (clipped) in making colors.
+
+
 // Routine to return clipped mean & uncertainty given data and weights w:
 void clipMeanAndError(vector<double>& x, vector<double>& w, double& mean, double& err,
 		      double threshold);
@@ -108,6 +112,7 @@ main(int argc, char *argv[])
   string colors;
   string wcsFiles;
   string photoFiles;
+  string skipFile;
   Pset parameters;
   {
     const int def=PsetMember::hasDefault;
@@ -122,6 +127,8 @@ main(int argc, char *argv[])
 			 "Systematic added in quadrature to mag error", 0.001, 0.);
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Magnitude clipping threshold (sigma)", 5., 2.);
+    parameters.addMember("skipFile",&skipFile, def,
+			 "Optional file containing extension,object pairs to ignore", "");
     parameters.addMember("magnitudes",&magnitudes, def,
 			 "bands to output and instruments they come from","");
     parameters.addMember("colors",&colors, def,
@@ -182,6 +189,7 @@ main(int argc, char *argv[])
 	cerr << "WARNING: could not read astrometric map file " << *i << endl;
     }
 
+    ExtensionObjectSet clipSet(skipFile);
 
     typedef map<string, Band> BandMap;
     BandMap bands;
@@ -656,6 +664,7 @@ main(int argc, char *argv[])
 
       for (int j = 0; j<extn.size(); j++) {
 	if (!extensions[extn[j]]) continue;
+	if (clipSet(extn[j],obj[j])) continue;	// Skip unwanted detections.
 	desiredObjects[extn[j]].insert(obj[j]);
       }
     } // End loop over input matched catalogs
@@ -673,10 +682,10 @@ main(int argc, char *argv[])
 
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
-      /**/cerr << "# Reading object catalog " << iext
-	       << "/" << extensions.size()
-	       << " from " << filename 
-	       << endl;
+      /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
+			       << "/" << extensions.size()
+			       << " from " << filename 
+			       << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "HDUNumber", iext);
       string xKey;
@@ -1012,17 +1021,45 @@ clipMeanAndError(vector<double>& x, vector<double>& w,
 		 double& mean, double& err,
 		 double threshold) {
   Assert(x.size() == w.size());
-  // ignore clipping for now:
-  double sumw=0.;
-  double sumxw = 0.;
-  for (int i=0; i<x.size(); i++) {
-    sumw += w[i];
-    sumxw += x[i]*w[i];
-  }
-  if (sumxw <=0.) {
-    mean = err = 0.;
-  } else {
-    mean = sumxw / sumw;
-    err = sqrt(1./sumxw);
-  }
+
+  vector<bool> use(x.size(), true);
+  bool anyclip = true;
+  const int MaxIterations = 10;
+  int iteration = 0;
+  double sumw, sumxw;
+  double threshsq = threshold*threshold;
+  do {
+    iteration++;
+    sumw=0.;
+    sumxw = 0.;
+    for (int i=0; i<x.size(); i++) {
+      if (use[i]) {
+	sumw += w[i];
+	sumxw += x[i]*w[i];
+      }
+    }
+    if (sumxw <=0.) {
+      mean = err = 0.;
+      return;
+    } else {
+      mean = sumxw / sumw;
+      err = sqrt(1./sumxw);
+      if (iteration > MaxIterations) return;
+    }
+    anyclip = false;
+    double worstsq = 0.;
+    int worsti=-1;
+    for (int i=0; i<x.size(); i++) {
+      if (use[i] && 
+	  (x[i]-mean)*(x[i]-mean)*w[i] > worstsq) {
+	worstsq = (x[i]-mean)*(x[i]-mean)*w[i];
+	worsti = i;
+      }
+    }
+    if (worstsq > threshsq) {
+      anyclip = true;
+      use[worsti] = false;
+    }
+  } while (anyclip);
+  return;
 }
