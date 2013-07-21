@@ -247,7 +247,7 @@ PhotoPrior::report(ostream& os) const {
   for (list<PhotoPriorReferencePoint>::const_iterator i = points.begin();
        i != points.end();
        ++i) {
-    double resid = i->magOut - (m + a*i->airmass + b*i->args.color);
+    double resid = i->magOut - (m + a*(i->airmass-1.) + b*i->args.color);
     os << (i->isClipped ? "- " : "+ ")
        << setw(12) << left << i->exposureName
        << " " << setw(8) << i->deviceName

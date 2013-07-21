@@ -885,9 +885,9 @@ main(int argc, char *argv[])
     for (int iext = 0; iext < extensions.size(); iext++) {
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
-      /**/cerr << "# Reading object catalog " << iext
-	       << "/" << extensions.size()
-	       << " from " << filename << endl;
+      /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
+			       << "/" << extensions.size()
+			       << " from " << filename << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "HDUNumber", iext);
       string xKey;

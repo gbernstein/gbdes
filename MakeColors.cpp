@@ -174,6 +174,8 @@ main(int argc, char *argv[])
 	 i != wcsFileList.end();
 	 ++i) {
       ifstream ifs(i->c_str());
+      if (!ifs)
+	cerr << "WARNING: could not open astrometric map file " << *i << endl;
       if (!astromaps.read(ifs))
 	cerr << "WARNING: could not read astrometric map file " << *i << endl;
     }
@@ -185,8 +187,10 @@ main(int argc, char *argv[])
 	 i != photoFileList.end();
 	 ++i) {
       ifstream ifs(i->c_str());
+      if (!ifs)
+	cerr << "WARNING: could not open photometric map file " << *i << endl;
       if (!photomaps.read(ifs))
-	cerr << "WARNING: could not read astrometric map file " << *i << endl;
+	cerr << "WARNING: could not read photometric map file " << *i << endl;
     }
 
     ExtensionObjectSet clipSet(skipFile);
@@ -529,7 +533,7 @@ main(int argc, char *argv[])
 	  // See if there is a map to use from the astrometric solution files
 	  // Note we are cloning instead of issuing since Extension expects to own the startWcs.
 	  extn->startWcs = astromaps.cloneWcs(mapName);
-	} catch (PhotometryError) {
+	} catch (astrometry::AstrometryError& m) {
 	  // else we read from the input file's starting WCS
 	  istringstream iss(s);
 	  astrometry::PixelMapCollection pmcTemp;
