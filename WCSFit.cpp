@@ -182,7 +182,7 @@ main(int argc, char *argv[])
     /////////////////////////////////////////////////////
 
     // Teach PixelMapCollection about new kinds of PixelMaps:
-    PixelMapCollection::registerMapType<TemplateMap1d>();
+    loadPixelMapParser();
 
     // First is a regex map from instrument names to the names of their PhotoMaps
     RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,

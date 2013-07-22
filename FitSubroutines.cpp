@@ -3,6 +3,10 @@
 #include "StringStuff.h"
 #include <list>
 #include "Pset.h"
+#include "PhotoTemplate.h"
+#include "TemplateMap.h"
+#include "PixelMapCollection.h"
+#include "PhotoMapCollection.h"
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -128,3 +132,18 @@ bool
 ExtensionObjectSet::operator()(int extensionNumber, long objectNumber) const {
   return pairs.count( EOPair(extensionNumber, objectNumber)) >0;
 }
+
+void
+loadPixelMapParser() {
+  // put all new kinds of PixelMap atoms here:
+  astrometry::PixelMapCollection::registerMapType<astrometry::TemplateMap1d>();
+}
+
+void
+  loadPhotoMapParser() {
+  // put all new kinds of PhotoMap atoms here:
+  photometry::PhotoMapCollection::registerMapType<photometry::PhotoTemplate1d>();
+  photometry::PhotoMapCollection::registerMapType<photometry::PhotoRings>();
+}
+
+

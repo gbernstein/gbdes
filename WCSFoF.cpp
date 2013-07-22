@@ -11,6 +11,7 @@
 #include <iostream>
 #include "PixelMapCollection.h"
 #include "TPVMap.h"
+#include "TemplateMap.h"
 #include "StringStuff.h"
 #include "ExtensionAttribute.h"
 
@@ -167,6 +168,9 @@ main(int argc,
   matchRadius *= ARCSEC/DEGREE;
 
   try {
+    // Teach PixelMapCollection about all types of PixelMaps it might need to deserialize
+    loadPixelMapParser();
+
     // First build the regular expression structure used to translate instrument names
     // into shorter forms.
     RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,

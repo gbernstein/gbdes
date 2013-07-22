@@ -5,6 +5,7 @@
 #include <list>
 #include <set>
 #include "StringStuff.h"
+
 #include "Pset.h"
 
 using namespace std;
@@ -73,5 +74,12 @@ public:
 private:
   set<EOPair> pairs;
 };
+
+// These functions fill static tables with all the types of Photo/PixelMaps that we
+// may be deserializing:
+void
+loadPixelMapParser(); 
+void
+loadPhotoMapParser(); 
 
 #endif

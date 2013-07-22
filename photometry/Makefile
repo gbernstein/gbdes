@@ -25,6 +25,9 @@ LIBS = -lm $(LIB_DIRS) -lboost_regex -ltmv_symband $(TMV_LINK)
 
 all:  $(OBJ)
 
+testTemplate: testTemplate.o PhotoTemplate.o ../utilities/StringStuff.o ../utilities/Poly2d.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+
 ###############################################################
 ## Standard stuff:
 ###############################################################

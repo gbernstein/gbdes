@@ -155,13 +155,10 @@ main(int argc, char *argv[])
     // Parse all the parameters describing maps etc. 
     /////////////////////////////////////////////////////
 
-    // Teach PixelMapCollection about new kinds of PixelMaps:
-    astrometry::PixelMapCollection::registerMapType<astrometry::TemplateMap1d>();
-
-    // Teach PhotoMapCollection about new kinds of PhotoMaps:
-    // Currently all map types are automatically loaded in PhotoMapCollection constructor,
-    // but if new ones are invented, this is the format:
-    // PhotoMapCollection::registerMapType<PolyMap>();
+    // Teach PixelMapCollection about new kinds of PixelMaps it might need to deserialize
+    loadPixelMapParser();
+    // ...and PhotoMaps:
+    loadPhotoMapParser();
 
     // First is a regex map from instrument names to the names of their PhotoMaps
     RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,

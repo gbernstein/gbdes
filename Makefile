@@ -48,7 +48,7 @@ SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	astrometry/SubMap.o astrometry/Wcs.o astrometry/PixelMapCollection.o \
 	astrometry/SerializeProjection.o astrometry/TemplateMap.o \
 	photometry/PhotoMap.o photometry/PhotoMapCollection.o photometry/SubMap.o \
-	photometry/PhotoMatch.o photometry/PhotoPrior.o
+	photometry/PhotoMatch.o photometry/PhotoPrior.o photometry/PhotoTemplate.o
 
 #images/FitsTable.o images/Image.o images/FITSImage.o \
 

@@ -7,6 +7,7 @@
 #include "StringStuff.h"
 #include "Astrometry.h"
 #include "PixelMapCollection.h"
+#include "TemplateMap.h"
 #include "Header.h"
 #include "TPVMap.h"
 using namespace std;
@@ -34,6 +35,10 @@ main(int argc, char *argv[])
       cerr << usage << endl;
       exit(1);
     }
+
+    // put all new kinds of PixelMaps we might be deserializing here:
+    PixelMapCollection::registerMapType<TemplateMap1d>();
+
     int iarg=1;
     vector<Wcs*> wcs(2, (Wcs*) 0);
     vector<SphericalCoords*> projection(2, (SphericalCoords*) 0);

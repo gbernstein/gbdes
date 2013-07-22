@@ -15,6 +15,7 @@
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
 #include "PhotoInstrument.h"
+#include "PhotoTemplate.h"
 
 using namespace std;
 using namespace stringstuff;
@@ -217,10 +218,10 @@ main(int argc, char *argv[])
     // Parse all the parameters describing maps etc. 
     /////////////////////////////////////////////////////
 
-    // Teach PhotoMapCollection about new kinds of PhotoMaps:
-    // Currently all map types are automatically loaded in PhotoMapCollection constructor,
-    // but if new ones are invented, this is the format:
-    // PhotoMapCollection::registerMapType<PolyMap>();
+    
+    // Teach PhotoMapCollection about new kinds of PhotoMaps and PixelMaps
+    loadPhotoMapParser();
+    loadPixelMapParser();
 
     // First is a regex map from instrument names to the names of their PhotoMaps
     RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
@@ -679,7 +680,12 @@ main(int argc, char *argv[])
       // Now we create new PhotoMaps for each Device that does not already have one.
       for (int idev=0; idev < inst->nDevices; idev++) {
 	if (deviceMapsExist[idev]) continue;
-	learnParsedMap(deviceModel, inst->mapNames[idev], mapCollection);
+	// Allow substitution of device name into the deviceModel string:
+	string thisModel = stringstuff::regexReplace("DEVICE", 
+						     inst->deviceNames.nameOf(idev), 
+						     deviceModel);
+	/**/cerr << "thisModel: " << thisModel << endl;
+	learnParsedMap(thisModel, inst->mapNames[idev], mapCollection);
       } // end loop creating PhotoMaps for all Devices.
 
       // Now create an exposure map for all exposures with this instrument,
@@ -1653,15 +1659,18 @@ PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType argTyp
       poly->setParams(p);
       pm = poly;
     }
-    /** Not in place yet:
-  } else if (stringstuff::nocaseEqual(type,"Template")) {
+  } else if (stringstuff::nocaseEqual(type,"Template1d")) {
     string filename;
     iss >> filename;
-    ifstream ifs(filename.c_str());
-    if (!ifs) 
-      throw runtime_error("Could not open file for building TemplateMap1d <" + filename + ">");
-    pm = TemplateMap1d::create(ifs, name);
-    **/
+    pm = new PhotoTemplate1d(filename);
+    // Start with template coefficient of 1.
+    pm->setParams(DVector(1,1.));
+  } else if (stringstuff::nocaseEqual(type,"Rings")) {
+    string fileLeft, fileRight;
+    iss >> fileLeft >> fileRight;
+    pm = new PhotoRings(fileLeft, fileRight);
+    // Start with template coefficient of 1.
+    pm->setParams(DVector(1,1.));
   } else if (stringstuff::nocaseEqual(type,"Constant")) {
     pm = new ConstantMap(0., name);
   } else if (stringstuff::nocaseEqual(type,"Identity")) {
