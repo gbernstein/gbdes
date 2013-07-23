@@ -146,4 +146,71 @@ void
   photometry::PhotoMapCollection::registerMapType<photometry::PhotoRings>();
 }
 
+int 
+elementNumber(string& key) {
+  int out = -1;
+  list<string> l = stringstuff::split( stringstuff::regexReplace("^(.*)\\[[0-9]\\]$",
+								 "\\1;\\2",
+								 key),
+				       ';');
+  if (l.size()==2) {
+    key = l.front();
+    stripWhite(key);
+    out = atoi(l.back().c_str());
+  }
+  return out;
+}
 
+bool 
+isDouble(img::FTable f, string key, int elementNumber) {
+  bool out = true;
+  try {
+    if (elementNumber < 0) {
+      double d;
+      f.readCell(d, key, 0);
+    } else {
+      vector<double> d;
+      f.readCell(d, key, 0);
+    }
+  } catch (img::FTableError& e) {
+	out = false;
+  }
+  return out;
+}
+
+double 
+getTableDouble(img::FTable f, string key, int elementNumber, bool isDouble, long irow) {
+  double out;
+  if (isDouble) {
+    if (elementNumber < 0) {
+      f.readCell(out, key, irow);
+    } else {
+      vector<double> v;
+      f.readCell(v, key, irow);
+      if (elementNumber >= v.size()) {
+	cerr << "Requested element " << elementNumber
+	     << " of array at key " << key
+	     << " but size of array is " << v.size();
+	exit(1);
+      }
+      out = v[elementNumber];
+    }
+  } else {
+    if (elementNumber < 0) {
+      float fl;
+      f.readCell(fl, key, irow);
+      out = fl;
+    } else {
+      vector<float> v;
+      f.readCell(v, key, irow);
+      if (elementNumber >= v.size()) {
+	cerr << "Requested element " << elementNumber
+	     << " of array at key " << key
+	     << " but size of array is " << v.size();
+	exit(1);
+      }
+      out = v[elementNumber];
+    }
+  }
+  return out;
+}

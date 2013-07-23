@@ -59,6 +59,9 @@ string usage=
 // Note that PhotoMaps for devices within instrument will get names <instrument>/<device>.
 // And PhotoMaps for individual exposures will get names <exposure>/<device>.
 
+// magKey and magErrKey can be of form COLUMN[#] when COLUMN is an array column (float or double)
+// and # is the element of this array that we want to use.
+
 // A function to parse strings describing PhotoMap models
 // Parameters of each constructed model are initialized to be close to identity transformation on mags.
 PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType arg=PhotoMap::Device);
@@ -972,6 +975,12 @@ main(int argc, char *argv[])
 	neededColumns.push_back(idKey);
       neededColumns.push_back(xKey);
       neededColumns.push_back(yKey);
+      
+      // Be willing to get an element of array-valued bintable cell
+      // for mag or magerr.  Syntax would be
+      // MAGAPER[4]  to get 4th (0-indexed) element of MAGAPER column
+      int magKeyElement = elementNumber(magKey);
+      int magErrKeyElement = elementNumber(magErrKey);
       neededColumns.push_back(magKey);
       neededColumns.push_back(magErrKey);
 
@@ -987,20 +996,8 @@ main(int argc, char *argv[])
       }
       Assert(id.size() == ff.nrows());
 
-      bool errorColumnIsDouble = true;
-      try {
-	double d;
-	ff.readCell(d, magErrKey, 0);
-      } catch (img::FTableError& e) {
-	errorColumnIsDouble = false;
-      }
-      bool magColumnIsDouble = true;
-      try {
-	double d;
-	ff.readCell(d, magKey, 0);
-      } catch (img::FTableError& e) {
-	magColumnIsDouble = false;
-      }
+      bool magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
+      bool magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
 
       double sysError = isReference ? referenceSysError : magSysError;
 
@@ -1020,21 +1017,8 @@ main(int argc, char *argv[])
 			  d->args.xExposure, d->args.yExposure);
 
 	// Get the mag input and its error
-	if (magColumnIsDouble) {
-	  ff.readCell(d->magIn, magKey, irow);
-	} else {
-	  float f;
-	  ff.readCell(f, magKey, irow);
-	  d->magIn = f;
-	}
-	double sigma;
-	if (errorColumnIsDouble) {
-	  ff.readCell(sigma, magErrKey, irow);
-	} else {
-	  float f;
-	  ff.readCell(f, magErrKey, irow);
-	  sigma = f;
-	}
+	d->magIn = getTableDouble(ff, magKey, magKeyElement, magColumnIsDouble,irow);
+	double sigma = getTableDouble(ff, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
 
 	// Map to output and estimate output error
 	d->magOut = sm->forward(d->magIn, d->args);

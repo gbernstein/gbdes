@@ -7,6 +7,7 @@
 #include "StringStuff.h"
 
 #include "Pset.h"
+#include "FTable.h"
 
 using namespace std;
 
@@ -81,5 +82,14 @@ void
 loadPixelMapParser(); 
 void
 loadPhotoMapParser(); 
+
+// Routines to handle table entries that may be float or double, and might be array elements
+// First one: parse a key to see if it has form COLUMN[#].  The integer # is returned and the
+// key is return as COLUMN.  If no [#], key is unchanged and elementNumber=-1 is returned.
+int elementNumber(string& key);
+// Next one: see if the table column is double (true) else assume float (false)
+bool isDouble(img::FTable f, string key, int elementNumber);
+// Retrieve a double-valued number from either float or double column, element of array or scalar cell
+double getTableDouble(img::FTable f, string key, int elementNumber, bool isDouble, long irow);
 
 #endif

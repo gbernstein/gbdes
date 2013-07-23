@@ -59,6 +59,8 @@ string usage=
 // parameter clipFile is name of file containing (extension, object) number pairs that will
 // be ignored (clipped) in making colors.
 
+// magKey and magErrKey can be of form COLUMN[#] when COLUMN is an array column (float or double)
+// and # is the element of this array that we want to use.
 
 // Routine to return clipped mean & uncertainty given data and weights w:
 void clipMeanAndError(vector<double>& x, vector<double>& w, double& mean, double& err,
@@ -720,6 +722,12 @@ main(int argc, char *argv[])
 	neededColumns.push_back(idKey);
       neededColumns.push_back(xKey);
       neededColumns.push_back(yKey);
+
+      // Be willing to get an element of array-valued bintable cell
+      // for mag or magerr.  Syntax would be
+      // MAGAPER[4]  to get 4th (0-indexed) element of MAGAPER column
+      int magKeyElement = elementNumber(magKey);
+      int magErrKeyElement = elementNumber(magErrKey);
       neededColumns.push_back(magKey);
       neededColumns.push_back(magErrKey);
 
@@ -735,20 +743,8 @@ main(int argc, char *argv[])
       }
       Assert(id.size() == ff.nrows());
 
-      bool errorColumnIsDouble = true;
-      try {
-	double d;
-	ff.readCell(d, magErrKey, 0);
-      } catch (img::FTableError& e) {
-	errorColumnIsDouble = false;
-      }
-      bool magColumnIsDouble = true;
-      try {
-	double d;
-	ff.readCell(d, magKey, 0);
-      } catch (img::FTableError& e) {
-	magColumnIsDouble = false;
-      }
+      bool magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
+      bool magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
 
       for (long irow = 0; irow < ff.nrows(); irow++) {
 	set<long>::iterator pr = desiredObjects[iext].find(id[irow]);
@@ -772,20 +768,8 @@ main(int argc, char *argv[])
 	args.color = 0;	// Note no color information is available!
 
 	// Get the mag input and its error
-	if (magColumnIsDouble) {
-	  ff.readCell(magIn, magKey, irow);
-	} else {
-	  float f;
-	  ff.readCell(f, magKey, irow);
-	  magIn = f;
-	}
-	if (errorColumnIsDouble) {
-	  ff.readCell(magErr, magErrKey, irow);
-	} else {
-	  float f;
-	  ff.readCell(f, magErrKey, irow);
-	  magErr = f;
-	}
+	magIn = getTableDouble(ff, magKey, magKeyElement, magColumnIsDouble,irow);
+	magErr = getTableDouble(ff, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
 
 	// Map to output and estimate output error
 	mp.mag = photomap->forward(magIn, args);

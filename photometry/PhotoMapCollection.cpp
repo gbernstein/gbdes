@@ -587,3 +587,16 @@ PhotoMapCollection::read(istream& is, string namePrefix) {
   return true;
 }
 
+string
+PhotoMapCollection::atomHavingParameter(int parameterIndex) const {
+  // Find the atomic map that this parameter number influences
+  for (ConstMapIter imap = mapElements.begin();
+       imap != mapElements.end();
+       ++imap) {
+    if (!imap->second.atom) continue;
+    if ( parameterIndex >= imap->second.startIndex &&
+	 parameterIndex < imap->second.startIndex + imap->second.nParams)
+      return imap->first;
+  }
+  return "";	// Nothing in range, return empty string.
+}

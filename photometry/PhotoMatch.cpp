@@ -482,20 +482,27 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
 	  blank = false;
 	  break;
 	}
-      if (blank) 
+      if (blank) {
 	cerr << "***No constraints on row " << i << endl;
-    }
-    for (int j=0; j<alpha.ncols(); j++) {
-      bool blank = true;
-      for (int i = 0; i<alpha.nrows(); i++) 
-	if (alpha(i,j)!=0.) {
-	  blank = false;
-	  break;
+	if (i < pmc.nParams()) {
+	  string badAtom = pmc.atomHavingParameter(i);
+	  cerr << "Serialized version of the degenerate map:" << endl;
+	  pmc.writeMap(cerr, badAtom);
+	} else {
+	  // Look among the priors for this parameter
+	  for (list<PhotoPrior*>::const_iterator iprior = priors.begin();
+	       iprior != priors.end();
+	       ++iprior) {
+	    if ( i >= (*iprior)->startIndex() &&
+		 i < (*iprior)->startIndex() + (*iprior)->nParams()) {
+	      cerr << "Prior holding degenerate parameter is " << (*iprior)->getName();
+	      break;
+	    }
+	  }
 	}
-      if (blank) 
-	cerr << "***No constraints on col " << j << endl;
-    }
-  }
+      } // end report for blank alpha row
+    } // end row loop
+  } // end block checking for all-zero rows of alpha
 }
 
 double

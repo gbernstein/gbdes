@@ -159,6 +159,10 @@ namespace photometry {
     bool mapExists(string name) const {return mapElements.count(name);}
     vector<string> allMapNames() const;
 
+    // This is a routine useful for debugging: return the name of the atomic
+    // map that a certain parameter in the vector belongs to.
+    string atomHavingParameter(int parameterIndex) const;
+
     // This routine adds a new type of PhotoMap to the parsing dictionary
     template <class MapType>
     static void registerMapType() {
