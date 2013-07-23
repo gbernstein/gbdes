@@ -56,7 +56,7 @@ PhotoTemplate1d::create(std::istream& is, string name) {
   double factor;
   if (!(is >> sourceFile >> factor))
     throw PhotometryError("Missing filename/scaling in PhotoTemplate1d::create()");
-  PhotoMap* retval = new PhotoTemplate1d(sourceFile);
+  PhotoMap* retval = new PhotoTemplate1d(sourceFile, name);
   retval->setParams(DVector(1,factor));
   return retval;
 }
@@ -109,7 +109,7 @@ PhotoRings::create(std::istream& is, string name) {
   double factor;
   if (!(is >> sourceLeft >> sourceRight >> factor))
     throw PhotometryError("Missing filename(s) or scaling in PhotoRings::create()");
-  PhotoMap* retval = new PhotoRings(sourceLeft,sourceRight);
+  PhotoMap* retval = new PhotoRings(sourceLeft,sourceRight, name);
   retval->setParams(DVector(1,factor));
   return retval;
 }
@@ -158,12 +158,10 @@ PhotoRings::lookup(double xPix, double yPix) const {
   if (xPix < xSplit) {
     double radius = sqrt( (xPix - xCenterLeft)*(xPix - xCenterLeft) +
 			  (yPix - yCenterLeft)*(yPix - yCenterLeft) );
-    /**/cerr << "left, radius " << radius << " x " << xPix << endl;
     return tableLeft.lookup(radius);
   } else {
     double radius = sqrt( (xPix - xCenterRight)*(xPix - xCenterRight) +
 			  (yPix - yCenterRight)*(yPix - yCenterRight) );
-    /**/cerr << "right, radius " << radius << " x " << xPix << endl;
     return tableRight.lookup(radius);
   }
 }

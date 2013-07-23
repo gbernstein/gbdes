@@ -684,7 +684,6 @@ main(int argc, char *argv[])
 	string thisModel = stringstuff::regexReplace("DEVICE", 
 						     inst->deviceNames.nameOf(idev), 
 						     deviceModel);
-	/**/cerr << "thisModel: " << thisModel << endl;
 	learnParsedMap(thisModel, inst->mapNames[idev], mapCollection);
       } // end loop creating PhotoMaps for all Devices.
 
@@ -728,7 +727,7 @@ main(int argc, char *argv[])
 	}
 	
 	// We will create a new exposure map 
-	learnParsedMap(exposureModel, expo.name, mapCollection);
+	learnParsedMap(exposureModel, expo.name, mapCollection, PhotoMap::Exposure);
 	expo.mapName = expo.name;
 
 	// Check for fixed maps
@@ -1662,13 +1661,13 @@ PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType argTyp
   } else if (stringstuff::nocaseEqual(type,"Template1d")) {
     string filename;
     iss >> filename;
-    pm = new PhotoTemplate1d(filename);
+    pm = new PhotoTemplate1d(filename,name);
     // Start with template coefficient of 1.
     pm->setParams(DVector(1,1.));
   } else if (stringstuff::nocaseEqual(type,"Rings")) {
     string fileLeft, fileRight;
     iss >> fileLeft >> fileRight;
-    pm = new PhotoRings(fileLeft, fileRight);
+    pm = new PhotoRings(fileLeft, fileRight,name);
     // Start with template coefficient of 1.
     pm->setParams(DVector(1,1.));
   } else if (stringstuff::nocaseEqual(type,"Constant")) {

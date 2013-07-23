@@ -119,7 +119,7 @@ ExtensionObjectSet::ExtensionObjectSet(string filename) {
     int extensionNumber;
     long objectNumber;
     istringstream iss(buffer);
-    if (!iss >> extensionNumber >> objectNumber) {
+    if (!(iss >> extensionNumber >> objectNumber)) {
       cerr << "Bad Extension/Object pair in " << filename
 	   << ": <" << buffer << ">" << endl;
       exit(1);
