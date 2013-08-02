@@ -149,7 +149,7 @@ void
 int 
 elementNumber(string& key) {
   int out = -1;
-  list<string> l = stringstuff::split( stringstuff::regexReplace("^(.*)\\[[0-9]\\]$",
+  list<string> l = stringstuff::split( stringstuff::regexReplace("^(.*)\\[([0-9]*)\\]$",
 								 "\\1;\\2",
 								 key),
 				       ';');

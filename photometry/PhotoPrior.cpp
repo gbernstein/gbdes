@@ -195,9 +195,18 @@ PhotoPrior::sigmaClip(double sigThresh) {
   if (worst == points.end()) return false;
 
   // Have one to clip:
-  // ??? Put a debug statement here too?
   worst->isClipped = true;
   nFit--;
+  // Will also clip other Points from the same exposure (different color)
+  for (list<PhotoPriorReferencePoint>::iterator i=points.begin();
+       i!=points.end(); 
+       ++i) {
+    if (i==worst || i->isClipped) continue;
+    if (i->exposureName == worst->exposureName) {
+      i->isClipped = true;
+      nFit--;
+  }  
+  }
   return true;
 }
 

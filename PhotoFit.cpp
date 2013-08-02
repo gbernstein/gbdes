@@ -717,7 +717,6 @@ main(int argc, char *argv[])
 	  // If this imported map is to be held fixed, add it to the list:
 	  if (regexMatchAny(fixMapList, expo.mapName))
 	    fixedMapNames.push_back(expo.mapName);
-	  delete expoMap;
 
 	  // We're done with this exposure if we have pre-set map for it.
 	  continue;
@@ -726,6 +725,7 @@ main(int argc, char *argv[])
 	if (iexp == canonicalExposure && noDevicesFixed) {
 	  // Give this canonical exposure identity map to avoid degeneracy with Instrument
 	  expo.mapName = IdentityMap().getName();
+	  /**/cerr << "Canonical exposure map for " << expo.name << endl;
 	  continue;
 	}
 	
@@ -822,6 +822,12 @@ main(int argc, char *argv[])
 	if (!stringstuff::nocaseEqual(affinity, stellarAffinity))
 	  continue;
       }
+      {
+	/**/ string dummy1, dummy2;
+	ff.getHdrValue("Field", dummy1);
+	ff.getHdrValue("Affinity", dummy2);
+	cerr << "Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
+      }
       vector<int> seq;
       vector<LONGLONG> extn;
       vector<LONGLONG> obj;
@@ -860,6 +866,7 @@ main(int argc, char *argv[])
 	      }
 	    }
 	  }
+
 	  if (nValid >= minMatches) {
 	    // Make a match from the valid entries, and note need to get data for the detections and color
 	    int j=0;
@@ -930,6 +937,7 @@ main(int argc, char *argv[])
       // Relevant structures for this extension
       Extension& extn = *extensions[iext];
       Exposure& expo = *exposures[extn.exposure];
+      if (extn.keepers.empty()) continue; // or useless
 
       string filename;
       extensionTable.readCell(filename, "Filename", iext);
