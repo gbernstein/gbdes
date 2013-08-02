@@ -836,7 +836,7 @@ main(int argc,
 
     //  Write fields - field centers are given in degrees.
     {
-      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Fields");
+      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::OverwriteFile, "Fields");
       FTable ff=ft.use();
       vector<string> names;
       vector<double> ra;

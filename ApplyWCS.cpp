@@ -121,7 +121,7 @@ main(int argc, char *argv[])
 
     // If we are outputting degrees, use 7 decimal places.
     if (projection[1] || useNative[1])
-      cout << fixed << setprecision(7) << endl;
+      cout << fixed << setprecision(7);
 
     // Begin reading data
     string buffer;
