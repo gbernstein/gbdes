@@ -23,16 +23,35 @@ public:
   int detsecY;
 };
 
+string usage = "DrawRegnault: take a superpixel representation of the DECam focal plane and draw\n"
+  "     it as it projects onto the sky.  Used e.g. to turn Nicolas Regnault or Anne Bauer star\n"
+  "     flats into sky images.\n"
+  " usage: DrawRegnault <out pix scale> <input FITS> <output FITS> "
+  "[fill value] [input superpixel size]\n"
+  "     <out pix scale> is number of DECam pixels (0.264\"/pix) per output pixel\n"
+  "     <input FITS> is filename of the input image.  Input image contains superpixel version\n"
+  "                  of focal plane, with CCDs abutted (no gaps).\n"
+  "     <output FITS> is name of output FITS file portraying array on sky.\n"
+  "     [fill value] is assigned to output pixels that do not on a device (default: -1)\n"
+  "     [input superpixel size] is number of CCD pixels per pixel on tne input image.  Should\n"
+  "                  be a factor of 2 so it divides the device evenly.\n"
+  "  The files detsecs.dat and ccdInfo.txt holding device corners must be in the current directory!\n"
+  "  Also program will look for an astrometry map file named jul4.wcs to do the mapping!\n";
 int
 main(int argc, char *argv[])
 {
+  if (argc>6 || argc<4) {
+    cerr << usage << endl;
+    exit(1);
+  }
   double pixelScale = atof(argv[1]);
   string nicolasFile = argv[2];
   string outFile = argv[3];
+  const float noData = argc > 4 ? atof(argv[4]) : -1.;
+  const int superPixelSize = argc > 5 ? atoi(argv[5]) : 1024;
   string exposurePrefix = "DECam_00163584/";
 
   // how big each of Nicolas' superpixels is, in CCD pixels
-  const int superPixelSize = 1024;
 
   // Convert rough input scale in DECam pixels into degrees per output pix:
   pixelScale *= 0.264 / 3600.;
@@ -83,7 +102,7 @@ main(int argc, char *argv[])
 		      static_cast<int> (ceil(bExpo.getXMax()/pixelScale)),
 		      static_cast<int> (floor(bExpo.getYMin()/pixelScale)),
 		      static_cast<int> (ceil(bExpo.getYMax()/pixelScale)) );
-  Image<> starflat(bImage);
+  Image<> starflat(bImage, noData);
 
   // Read in astrometric and photometric solutions
   PixelMapCollection astromaps;
@@ -105,6 +124,9 @@ main(int argc, char *argv[])
     cout << "Center: " << center*3600. << " arcsec" << endl;
   }
 
+  double sum = 0.;
+  long n = 0;
+
   for (map<string,Device>::iterator i = devices.begin();
        i != devices.end();
        ++i) {
@@ -123,7 +145,6 @@ main(int argc, char *argv[])
     {
       FitsImage<> fi(nicolasFile,FITS::ReadOnly,0);
       nicolas = fi.extract();
-      nicolas += 1.;
     }
     
     // Loop over pixels
@@ -141,9 +162,15 @@ main(int argc, char *argv[])
 	int xSup = (args.xDevice + i->second.detsecX-2)/superPixelSize + 1;
 	int ySup = (args.yDevice + i->second.detsecY-2)/superPixelSize + 1;
 	  
-	starflat(ix,iy) = pow(10.,0.4*(nicolas(xSup, ySup)-1.));
+	starflat(ix,iy) = nicolas(xSup, ySup);
+	if (abs(starflat(ix,iy))<0.5) {
+	  sum += starflat(ix,iy);
+	  n++;
+	}
       }
   } // end Device loop.
+  // Set mean of starflat to zero
+  starflat -= sum/n;
   starflat.shift(1,1);
   FitsImage<>::writeToFITS(outFile, starflat, 0);
 }

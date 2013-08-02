@@ -275,7 +275,7 @@ def buildExpList(flist):
         name=m.group(1)
         
         # remove _cat if it is there
-        name=re.sub('_cat','',name)
+        name=re.sub('[._]cat','',name)
 
         # remove trailing ccd number
         name=re.sub('_\d\d$','',name)

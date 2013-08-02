@@ -8,6 +8,9 @@
 #include "FitsImage.h"
 #include "PhotoMapCollection.h"
 #include "PixelMapCollection.h"
+
+#include "FitSubroutines.h"
+
 using namespace img;
 using namespace astrometry;
 using namespace stringstuff;
@@ -24,11 +27,16 @@ int
 main(int argc, char *argv[])
 {
   double pixelScale = atof(argv[1]);
-  string photoPrefix = argv[2];
+  string photoFile = argv[2];
   string band = argv[3];
-  string exposurePrefix = argv[4];
-  exposurePrefix += "/";
+  string photoPrefix = argv[4];
+  photoPrefix += "/";
+  string outPrefix = argc>5 ? argv[5] : "test";
+  string astroPrefix = "DECam_00163584/";
   
+  loadPixelMapParser();
+  loadPhotoMapParser();
+
   // Convert rough input scale in DECam pixels into degrees per output pix:
   pixelScale *= 0.264 / 3600.;
 
@@ -51,7 +59,7 @@ main(int argc, char *argv[])
 	exit(1);
       }
       Device d;
-      d.norm = norm;
+      d.norm = -2.5*log10(norm);
       d.b = Bounds<double>(xmin, xmax, ymin, ymax);
       bExpo += d.b;
       devices[name] = d;
@@ -63,8 +71,12 @@ main(int argc, char *argv[])
 		      static_cast<int> (ceil(bExpo.getXMax()/pixelScale)),
 		      static_cast<int> (floor(bExpo.getYMin()/pixelScale)),
 		      static_cast<int> (ceil(bExpo.getYMax()/pixelScale)) );
-  Image<> starflat(bImage);
-  Image<> colorterm(bImage);
+  const float noData = -1.;
+  Image<> starflat(bImage, noData);
+  Image<> colorterm(bImage, noData);
+
+  double sum = 0.;
+  long n = 0;
 
   // Read in astrometric and photometric solutions
   PixelMapCollection astromaps;
@@ -75,7 +87,7 @@ main(int argc, char *argv[])
 
   PhotoMapCollection photomaps;
   {
-    string filename = photoPrefix + "." + band + ".photo";
+    string filename = photoFile;
     ifstream ifs(filename.c_str());
     photomaps.read(ifs);
   }
@@ -85,9 +97,9 @@ main(int argc, char *argv[])
   {
     Bounds<double> b;
     double x,y;
-    astromaps.issueWcs(exposurePrefix + "N4")->toWorld(1024.,2048.,x,y);
+    astromaps.issueWcs(astroPrefix + "N4")->toWorld(1024.,2048.,x,y);
     b += Position<double>(x,y);
-    astromaps.issueWcs(exposurePrefix + "S4")->toWorld(1024.,2048.,x,y);
+    astromaps.issueWcs(astroPrefix + "S4")->toWorld(1024.,2048.,x,y);
     b += Position<double>(x,y);
     center = b.center();
     cout << "Center: " << center*3600. << " arcsec" << endl;
@@ -104,8 +116,8 @@ main(int argc, char *argv[])
 		      static_cast<int> (ceil(b.getYMax()/pixelScale)) );
 
     // Get Wcs and photometric solution
-    Wcs* devWcs = astromaps.issueWcs(exposurePrefix + i->first);
-    photometry::SubMap* devPhoto = photomaps.issueMap(exposurePrefix + i->first);
+    Wcs* devWcs = astromaps.issueWcs(astroPrefix + i->first);
+    photometry::SubMap* devPhoto = photomaps.issueMap(photoPrefix + i->first);
 
     // Loop over pixels
     for (int iy = bpix.getYMin(); iy <= bpix.getYMax(); iy++)
@@ -124,12 +136,17 @@ main(int argc, char *argv[])
 	args.color = 1;
 	colorterm(ix,iy) = devPhoto->forward(0.,args) - photo;
 	// Apply normalization correction
-	starflat(ix, iy) = pow(10., -0.4*photo) * i->second.norm;
+	starflat(ix, iy) = -(photo + i->second.norm);
+	sum += starflat(ix,iy);
+	n++;
       }
 
   } // end Device loop.
+  // Set mean of good pixels to zero:
+  starflat -= sum/n;
+  string outfits = outPrefix + "." + band + ".fits";
   starflat.shift(1,1);
-  FitsImage<>::writeToFITS("test_"+band+".fits", starflat, 0);
+  FitsImage<>::writeToFITS(outfits, starflat, 0);
   colorterm.shift(1,1);
-  FitsImage<>::writeToFITS("test_"+band+".fits", colorterm, 1);
+  FitsImage<>::writeToFITS(outfits, colorterm, 1);
 }

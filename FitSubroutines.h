@@ -6,6 +6,12 @@
 #include <set>
 #include "StringStuff.h"
 
+// Load the kinds of maps we'll want
+#include "PixelMapCollection.h"
+#include "PhotoMapCollection.h"
+#include "PhotoTemplate.h"
+#include "TemplateMap.h"
+
 #include "Pset.h"
 #include "FTable.h"
 
