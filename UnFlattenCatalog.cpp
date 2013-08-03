@@ -120,9 +120,11 @@ main(int argc, char *argv[])
 	  FitsTable hdrOut(outFits, FITS::Create + FITS::OverwriteFile, -1) ;
 	  hdrOut.adopt( hdrTable.extract());
 	  firstWriteToFile = false;
+	  hdrOut.setName("LDAC_IMHEAD");
 	} else {
 	  FitsTable hdrOut(outFits, FITS::Create, -1) ;
 	  hdrOut.adopt( hdrTable.extract());
+	  hdrOut.setName("LDAC_IMHEAD");
 	}
       }
 
@@ -141,6 +143,7 @@ main(int argc, char *argv[])
     
       // Output table where this will go:
       FitsTable ff2(outFits, FITS::Create, -1);
+      ff2.setName("LDAC_OBJECTS");
 
       FTable ft;
       {
