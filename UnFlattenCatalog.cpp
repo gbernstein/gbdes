@@ -51,6 +51,10 @@ main(int argc, char *argv[])
     {
       // Read the corners of the images in detsec coordinates
       ifstream ifs("detsecs.dat");
+      if (!ifs) {
+	cerr << "Could not open detsecs.dat file" << endl;
+	exit(1);
+      }
       string buffer;
       while (getlineNoComment(ifs, buffer)) {
 	string detpos;
@@ -171,7 +175,7 @@ main(int argc, char *argv[])
 	  // Find the pixel in Yanny's image that gives superpixel here
 	  int xSup = (xPix + detsecX-2)/superPixelSize + 1;
 	  int ySup = (yPix + detsecY-2)/superPixelSize + 1;
-	  double magAdjust = starflat(xSup,ySup);
+	  double magAdjust = -starflat(xSup,ySup);
 	  magauto[i] += magAdjust;
 	  magpsf[i] += magAdjust;
 	  for (int j = 0; j<magaper[i].size(); j++)
