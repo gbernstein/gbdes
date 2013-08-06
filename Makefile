@@ -56,7 +56,7 @@ OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
 
 all: depend subs
 
-DrawPhoto: DrawPhoto.o $(OBJ)
+DrawPhoto: DrawPhoto.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DrawRegnault: DrawRegnault.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

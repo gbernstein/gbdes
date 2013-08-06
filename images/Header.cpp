@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cctype>
 #include <ios>
+#include <limits>
 
 using namespace img;
 using namespace std;
@@ -188,6 +189,12 @@ namespace img {
     HdrRecord<double>* hd = new HdrRecord<double>(keyword, 0., comment);
     if (!hd->setValueString(vstring)) return hd;
     delete hd;
+    // Last try: some DECam headers coming back with NAN.0 listed. 
+    if (stringstuff::nocaseEqual(vstring.substr(0,3),"NAN")) {
+      return new HdrRecord<double>(keyword,
+				   std::numeric_limits<double>::quiet_NaN(),
+				   comment);
+    }
     return 0;	// Formatting error
   }
 
