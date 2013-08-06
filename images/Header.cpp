@@ -196,6 +196,7 @@ namespace img {
     string buffer;
     while (stringstuff::getlineNoComment(is, buffer)) {
       HdrRecordBase* hrb = ReadASCIIHeader(buffer);
+      /**/cerr << "Got: " << hrb->getKeyword() << endl;
       if (!hrb) {
 	is.setstate(ios::failbit);  // ??? do we want to throw here?
 	continue;
