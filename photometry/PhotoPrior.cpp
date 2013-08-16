@@ -73,6 +73,7 @@ PhotoPrior::chisq(int& dof) const {
   for (list<PhotoPriorReferencePoint>::const_iterator i = points.begin();
        i != points.end();
        ++i) {
+    if (i->isClipped) continue;
     double dm = i->magOut - m - a*(i->airmass-1.) - b*i->args.color;
     chi += dm * dm;
   }

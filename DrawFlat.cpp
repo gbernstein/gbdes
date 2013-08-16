@@ -32,10 +32,11 @@ string usage =
 int
 main(int argc, char *argv[])
 {
-  if (argc<5 || argc>7) {
+  if (argc<4 || argc>6) {
     cerr << usage << endl;
     exit(1);
   }
+  try {
   double pixelScale = atof(argv[1]);
   string flatbase = argv[2];
   string outFits = argv[3];
@@ -46,7 +47,7 @@ main(int argc, char *argv[])
   pixelScale *= 0.264 / 3600.;
 
   // Bounds of device pixel coordinates that we will try to map:
-  Bounds<int> bDevice(16, 2032, 1, 4096);
+  Bounds<int> bDevice(16, 2033, 16, 4081);
 
   // Read in the device information
   map<string,Device> devices = decamInfo();
@@ -59,6 +60,7 @@ main(int argc, char *argv[])
        i != devices.end();
        ++i) 
       bExpo += i->second.b;
+
 
   // Make the Image
   Bounds<int> bImage( static_cast<int> (floor(bExpo.getXMin()/pixelScale)),
@@ -73,6 +75,7 @@ main(int argc, char *argv[])
   for (map<string,Device>::iterator i = devices.begin();
        i != devices.end();
        ++i) {
+    wcs.setDevice(i->first);
     // Convert device boundaries into pixel range
     Bounds<double> b = i->second.b;
     Bounds<int> bpix( static_cast<int> (floor(b.getXMin()/pixelScale)),
@@ -86,7 +89,7 @@ main(int argc, char *argv[])
     string flatfile = oss.str();
     Image<> flat;
     {
-      FitsImage<> flatfits(flatfile);
+      FitsImage<> flatfits(flatfile,FITS::ReadOnly,0);
       flat = flatfits.extract();
     }
     double norm;
@@ -94,6 +97,7 @@ main(int argc, char *argv[])
       cerr << "Flat field " << flatfile << " does not have SCALMEAN keyword" << endl;
       exit(1);
     }
+    /**/cerr << "File " << flatfile << " SCALMEAN " << norm << endl;
     double normMag = -2.5*log10(norm);
     // Loop over pixels
     for (int iy = bpix.getYMin(); iy <= bpix.getYMax(); iy++)
@@ -114,10 +118,14 @@ main(int argc, char *argv[])
 	vector<float> values;
 	for (int jy = medbounds.getYMin(); jy <= medbounds.getYMax(); jy++)
 	  for (int jx = medbounds.getXMin(); jx <= medbounds.getXMax(); jx++)
-	    values.push_back(flat(jx,jy));
+	    if (flat(jx, jy)>0) 
+	      values.push_back(flat(jx,jy));
 
 	// Apply normalization correction
-	bigFlat(ix, iy) = -2.5*log10( stats::median(values)) + normMag;
+	double median = stats::median(values);
+	bigFlat(ix, iy) = -2.5*log10(median) + normMag;
+	if (median <=0 || median > 100) 
+	  cerr << "median " << median << " for range " << medbounds << endl;
 	sum += bigFlat(ix,iy);
 	n++;
       }
@@ -127,4 +135,7 @@ main(int argc, char *argv[])
   bigFlat -= sum/n;
   bigFlat.shift(1,1);
   FitsImage<>::writeToFITS(outFits, bigFlat, 0);
+  } catch (std::runtime_error& e) {
+    quit(e,1);
+  }
 }
