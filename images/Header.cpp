@@ -195,6 +195,7 @@ namespace img {
 				   std::numeric_limits<double>::quiet_NaN(),
 				   comment);
     }
+    /**/cerr << "Got ASCII header with bad value <" << vstring << "> keyword " << keyword << endl;
     return 0;	// Formatting error
   }
 
