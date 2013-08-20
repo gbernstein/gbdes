@@ -58,6 +58,8 @@ all: depend subs
 
 DrawFlat: DrawFlat.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+DrawFlat2: DrawFlat2.o DECamInfo.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DrawPhoto: DrawPhoto.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DrawRegnault: DrawRegnault.o $(OBJ)
