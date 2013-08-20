@@ -36,6 +36,7 @@ main(int argc, char *argv[])
     cerr << usage << endl;
     exit(1);
   }
+  try {
   double pixelScale = atof(argv[1]);
   string flatfile = argv[2];
   string outFits = argv[3];
@@ -46,7 +47,7 @@ main(int argc, char *argv[])
   pixelScale *= 0.264 / 3600.;
 
   // Bounds of device pixel coordinates that we will try to map:
-  Bounds<int> bDevice(16, 2032, 1, 4096);
+  Bounds<int> bDevice(16, 2033, 16, 4081);
 
   // Read in the device information
   map<string,Device> devices = decamInfo();
@@ -118,10 +119,14 @@ main(int argc, char *argv[])
 	vector<float> values;
 	for (int jy = medbounds.getYMin(); jy <= medbounds.getYMax(); jy++)
 	  for (int jx = medbounds.getXMin(); jx <= medbounds.getXMax(); jx++)
-	    values.push_back(flat(jx,jy));
+	    if (flat(jx, jy)>0) 
+	      values.push_back(flat(jx,jy));
 
 	// Apply normalization correction
-	bigFlat(ix, iy) = -2.5*log10( stats::median(values));
+	double median = stats::median(values);
+	if (median <=0 || median > 100) 
+	  cerr << "median " << median << " for range " << medbounds << endl;
+	bigFlat(ix, iy) = -2.5*log10(median);
 	sum += bigFlat(ix,iy);
 	n++;
       }
@@ -131,4 +136,7 @@ main(int argc, char *argv[])
   bigFlat -= sum/n;
   bigFlat.shift(1,1);
   FitsImage<>::writeToFITS(outFits, bigFlat, 0);
+  } catch (std::runtime_error& e) {
+    quit(e,1);
+  }
 }
