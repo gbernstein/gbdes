@@ -56,6 +56,10 @@ OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
 
 all: depend subs
 
+Photo2DESDM: Photo2DESDM.o DECamInfo.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+CorrectFlat: CorrectFlat.o DECamInfo.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DrawFlat: DrawFlat.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DrawFlat2: DrawFlat2.o DECamInfo.o $(OBJ)
