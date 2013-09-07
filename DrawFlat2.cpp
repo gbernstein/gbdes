@@ -32,7 +32,7 @@ string usage =
 int
 main(int argc, char *argv[])
 {
-  if (argc<5 || argc>7) {
+  if (argc<4 || argc>6) {
     cerr << usage << endl;
     exit(1);
   }
@@ -87,8 +87,12 @@ main(int argc, char *argv[])
     }
     stripWhite(detpos);
 
+    /**/cerr << "HDU " << iHDU << " DETPOS " << detpos << endl;
+
     // Move along if this is an unwanted device
     if (devices.count(detpos)==0) continue;
+
+    wcs.setDevice(detpos);
 
     // Convert device boundaries into pixel range
     Bounds<double> b = devices[detpos].b;
@@ -98,7 +102,7 @@ main(int argc, char *argv[])
 		      static_cast<int> (ceil(b.getYMax()/pixelScale)) );
 
     // Open the flat-field image for this extension
-    Image<> flat = fi.use();
+    Image<> flat = fi.extract();
 
     // Loop over pixels
     for (int iy = bpix.getYMin(); iy <= bpix.getYMax(); iy++)
@@ -124,13 +128,12 @@ main(int argc, char *argv[])
 
 	// Apply normalization correction
 	double median = stats::median(values);
-	if (median <=0 || median > 100) 
+	if (median <=0) 
 	  cerr << "median " << median << " for range " << medbounds << endl;
 	bigFlat(ix, iy) = -2.5*log10(median);
 	sum += bigFlat(ix,iy);
 	n++;
       }
-
   } // end Device loop.
   // Set mean of good pixels to zero:
   bigFlat -= sum/n;
