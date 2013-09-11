@@ -72,7 +72,7 @@ ApplyPhoto: ApplyPhoto.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ApplyWCS: ApplyWCS.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-UnFlattenCatalog: UnFlattenCatalog.o $(OBJ)
+UnFlattenCatalog: UnFlattenCatalog.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

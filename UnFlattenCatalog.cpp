@@ -1,5 +1,3 @@
-// Make a FITS image of a DECam photometric solution, with flat normalization factors taken out.
-// This version looks up star flat value from Nicolas Regnault's image that has 1024x1024 superpixels.
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -8,16 +6,11 @@
 #include "FitsTable.h"
 #include "FitsImage.h"
 #include "ReadLdacHeader.h"
+#include "DECamInfo.h"
 
 using namespace img;
 using namespace FITS;
 using namespace stringstuff;
-
-class Device {
-public:
-  int detsecX;
-  int detsecY;
-};
 
 string usage = "UnFlattenCatalog: Collect individual-CCD LDAC catalogs into a single FITS file,\n"
   "     along the way multiplying all magnitudes by a factor derived from lookup into the\n"
@@ -27,6 +20,7 @@ string usage = "UnFlattenCatalog: Collect individual-CCD LDAC catalogs into a si
   " usage: UnFlattenCatalog <superpix file> <output FITS> [max magerr] [superpix size]\n"
   "     <superpix file> is name of the star flat superpixel file containing sky flat\n"
   "                  corrections that we want to un-correct on each magnitude.\n"
+  "                  Enter 'NULL' if no magnitude corrections wanted.\n"
   "     <output FITS> is name of output combined FITS catalog file\n"
   "     [max magerr] is the largest MAGERR_AUTO allowed into the output catalogs (default=0.05)\n"
   "     [superpix size] is number of CCD pixels per pixel on tne input image (default 512)\n"
@@ -41,38 +35,18 @@ main(int argc, char *argv[])
     exit(1);
   }
   string superpixFile = argv[1];
+  bool useStarFlat = !stringstuff::nocaseEqual(superpixFile, "NULL");
   string outFits = argv[2];
   const float maxMagErr = argc > 3 ? atof(argv[3]) : 0.05;
   const int superPixelSize = argc > 4 ? atoi(argv[4]) : 512;
 
   try {
     // Read in the device information
-    map<string,Device> devices;
-    {
-      // Read the corners of the images in detsec coordinates
-      ifstream ifs("detsecs.dat");
-      if (!ifs) {
-	cerr << "Could not open detsecs.dat file" << endl;
-	exit(1);
-      }
-      string buffer;
-      while (getlineNoComment(ifs, buffer)) {
-	string detpos;
-	int detsecX, detsecY;
-	istringstream iss(buffer);
-	if (! (iss >> detpos >> detsecX >> detsecY)) {
-	  cerr << "Error on detsec reading, line: " << buffer << endl;
-	  exit(1);
-	}
-	Device d;
-	d.detsecX = detsecX-2048;
-	d.detsecY = detsecY;
-	devices[detpos] = d;
-      }
-    }
+    map<string,decam::Device> devices = decam::decamInfo();
+
     // Read the starflat image
     Image<> starflat;
-    {
+    if (useStarFlat) {
       FitsImage<> f(superpixFile,FITS::ReadOnly,0);
       starflat = f.extract();
     }
@@ -156,36 +130,37 @@ main(int argc, char *argv[])
 	ft = ff.extract(selection, keepColumns);
       }
 
-      // Adjust magnitudes of each object
-      const long nrows = ft.nrows();
-      vector<double> x(nrows);
-      vector<double> y(nrows);
-      vector<float> magauto(nrows);
-      vector<float> magpsf(nrows);
-      vector<vector<float> > magaper(nrows);
-      ft.readCells(x, "XWIN_IMAGE");
-      ft.readCells(y, "YWIN_IMAGE");
-      ft.readCells(magauto, "MAG_AUTO");
-      ft.readCells(magpsf, "MAG_PSF");
-      ft.readCells(magaper, "MAG_APER");
-      for (long i = 0; i < nrows; i++) {
-	int xPix = static_cast<int> (floor(x[i]));
-	int yPix = static_cast<int> (floor(y[i]));
-	if ( array.includes(xPix, yPix)) {
-	  // Find the pixel in Yanny's image that gives superpixel here
-	  int xSup = (xPix + detsecX-2)/superPixelSize + 1;
-	  int ySup = (yPix + detsecY-2)/superPixelSize + 1;
-	  double magAdjust = -starflat(xSup,ySup);
-	  magauto[i] += magAdjust;
-	  magpsf[i] += magAdjust;
-	  for (int j = 0; j<magaper[i].size(); j++)
-	    magaper[i][j] += magAdjust;
+      if (useStarFlat) {
+	// Adjust magnitudes of each object
+	const long nrows = ft.nrows();
+	vector<double> x(nrows);
+	vector<double> y(nrows);
+	vector<float> magauto(nrows);
+	vector<float> magpsf(nrows);
+	vector<vector<float> > magaper(nrows);
+	ft.readCells(x, "XWIN_IMAGE");
+	ft.readCells(y, "YWIN_IMAGE");
+	ft.readCells(magauto, "MAG_AUTO");
+	ft.readCells(magpsf, "MAG_PSF");
+	ft.readCells(magaper, "MAG_APER");
+	for (long i = 0; i < nrows; i++) {
+	  int xPix = static_cast<int> (floor(x[i]));
+	  int yPix = static_cast<int> (floor(y[i]));
+	  if ( array.includes(xPix, yPix)) {
+	    // Find the pixel in Yanny's image that gives superpixel here
+	    int xSup = (xPix + detsecX-2)/superPixelSize + 1;
+	    int ySup = (yPix + detsecY-2)/superPixelSize + 1;
+	    double magAdjust = -starflat(xSup,ySup);
+	    magauto[i] += magAdjust;
+	    magpsf[i] += magAdjust;
+	    for (int j = 0; j<magaper[i].size(); j++)
+	      magaper[i][j] += magAdjust;
+	  }
 	}
+	ft.writeCells(magauto,"MAG_AUTO");
+	ft.writeCells(magpsf,"MAG_PSF");
+	ft.writeCells(magaper,"MAG_APER");
       }
-      ft.writeCells(magauto,"MAG_AUTO");
-      ft.writeCells(magpsf,"MAG_PSF");
-      ft.writeCells(magaper,"MAG_APER");
-
       // New output table adopts the filtered & adjusted data
       ff2.adopt(ft);
     } // End input catalog loop
