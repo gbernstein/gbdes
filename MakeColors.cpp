@@ -767,16 +767,23 @@ main(int argc, char *argv[])
 			  args.xExposure, args.yExposure);
 	args.color = 0;	// Note no color information is available!
 
+
 	// Get the mag input and its error
 	magIn = getTableDouble(ff, magKey, magKeyElement, magColumnIsDouble,irow);
 	magErr = getTableDouble(ff, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
 
 	// Map to output and estimate output error
 	mp.mag = photomap->forward(magIn, args);
-	mp.magErr = magErr * pow(photomap->derivative(magIn, args), 2.);
+	mp.magErr = magErr * abs(photomap->derivative(magIn, args));
 
 	// Add this point's info to our MagPoint catalog
 	pointMaps[iext][id[irow]] = mp;
+	if ( (iext==1004 && id[irow]==601) || (iext==2407 && id[irow]==365) ) 
+	  cerr << "At iext " << iext << " id " << id[irow] 
+	       << " x,yDevice " << args.xDevice << "," << args.yDevice
+	       << " ra,dec " << mp.ra*180./PI << "," << mp.dec*180./PI
+	       << " mag,err " << mp.mag << "," << mp.magErr
+	       << endl;
       } // End loop over input rows of this extension
 
       // Check that we have found all the objects we wanted:
@@ -953,14 +960,17 @@ main(int argc, char *argv[])
 
 	lastSeq = seqIn[j];
 
-	// See if this detection has a mag we're interested in
+	// See if this detection has a mag we're interested in and
+	// was kept as interesting:
 	int iBand = extensionBandNumbers[extnIn[j]];
-	if (iBand>=0 ) {
+	if (iBand>=0 &&
+	    pointMaps[extnIn[j]].count(objIn[j]) >0 ) {
 	  // Yes; accumulate its information into averages
-	  MagPoint mp = pointMaps[extnIn[j]][objIn[j]]; // ?? check that it's here ???
+	  MagPoint mp = pointMaps[extnIn[j]][objIn[j]];
 	  sumRA += mp.ra;
 	  sumDec += mp.dec;
 	  nRADec++;
+
 	  double weight = 1. / (mp.magErr*mp.magErr + magSysError*magSysError);
 	  if (mp.magErr==0.) weight = 0.;
 	  bandWeights[iBand].push_back(weight);
