@@ -25,15 +25,17 @@ using photometry::PhotoMap;
 string usage = 
   "Photo2DESDM: convert photometric instrumental solution to FITS files suitable\n"
   "     for use by DESDM\n"
-  "usage: Photo2DESDM <photo file> <instrument name> <output FITS base> \n"
+  "usage: Photo2DESDM <photo file> <instrument name> <output FITS base> [flatnorms] \n"
   "     <photo file> is file holding the serialized solution from PhotoFit\n"
   "     <instrument name> is the filter name, should be instrument name in photo file too\n"
-  "     <output FITS base> is root of the files that will be drawn, one per CCD";
+  "     <output FITS base> is root of the files that will be drawn, one per CCD\n"
+  "     [flatnorms] is an optional file with CCDPOS in 1st column and 2nd column containing\n"
+  "              a normalization factor to divide into each CCD's star flat by.";
 
 int
 main(int argc, char *argv[])
 {
-  if (argc!=4) {
+  if (argc<4 || argc>5) {
     cerr << usage << endl;
     exit(1);
   }
@@ -41,7 +43,9 @@ main(int argc, char *argv[])
   string filter = argv[2];
   string photoPrefix = filter + "/";
   string outFits = argv[3];
-  
+  bool useNorms = argc>4;
+  string normFile = useNorms ? argv[4] : "";
+
   try {
   loadPhotoMapParser();
 
@@ -53,6 +57,11 @@ main(int argc, char *argv[])
 
   // Read in the device information
   map<string,Device> devices = decamInfo();
+
+  if (useNorms) {
+    // Read in normalization factors
+    getDeviceNorms(normFile, devices);
+  }
 
   PhotoMapCollection photomaps;
   {
@@ -93,6 +102,8 @@ main(int argc, char *argv[])
 	double photo = devPhoto->forward(0., args);
 	starflat(ix, iy) = pow(10., -0.4*photo);
       }
+
+    if (useNorms) starflat /= i->second.norm;
 
     ostringstream oss;
     oss << outFits << "_" << std::setfill('0') << setw(2) << ccdNum << ".fits";

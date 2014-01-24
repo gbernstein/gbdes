@@ -89,6 +89,8 @@ DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 ListClipped: ListClipped.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 #
+testDecam: testDecam.o DECamInfo.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testSerialize: testSerialize.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testTemplateMap: testTemplateMap.o $(OBJ)
