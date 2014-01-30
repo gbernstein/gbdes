@@ -778,12 +778,6 @@ main(int argc, char *argv[])
 
 	// Add this point's info to our MagPoint catalog
 	pointMaps[iext][id[irow]] = mp;
-	if ( (iext==1004 && id[irow]==601) || (iext==2407 && id[irow]==365) ) 
-	  cerr << "At iext " << iext << " id " << id[irow] 
-	       << " x,yDevice " << args.xDevice << "," << args.yDevice
-	       << " ra,dec " << mp.ra*180./PI << "," << mp.dec*180./PI
-	       << " mag,err " << mp.mag << "," << mp.magErr
-	       << endl;
       } // End loop over input rows of this extension
 
       // Check that we have found all the objects we wanted:

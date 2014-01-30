@@ -54,6 +54,7 @@ main(int argc, char *argv[])
     // Names of columns that we want to keep from Final Cut catalogs:
     vector<string> keepColumns;
     keepColumns.push_back("BACKGROUND");
+    keepColumns.push_back("FLUX_MAX");
     keepColumns.push_back("FLAGS");
     keepColumns.push_back("SPREAD_MODEL");
     keepColumns.push_back("FLUX_RADIUS");
