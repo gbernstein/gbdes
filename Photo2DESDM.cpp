@@ -60,6 +60,7 @@ main(int argc, char *argv[])
 
   if (useNorms) {
     // Read in normalization factors
+    cerr << "Reading device norms from " << normFile << endl;
     getDeviceNorms(normFile, devices);
   }
 
@@ -105,8 +106,25 @@ main(int argc, char *argv[])
 
     if (useNorms) starflat /= i->second.norm;
 
+    // Add fake WCS to enable array display with DS9 (as per Yanny message 24 Jan 2014)
+    starflat.header()->append("CRVAL1",0.);
+    starflat.header()->append("CRVAL2",0.);
+    starflat.header()->append("CTYPE1",string("RA---TAN"));
+    starflat.header()->append("CTYPE2",string("DEC--TAN"));
+    starflat.header()->append("CD1_1",0.);
+    starflat.header()->append("CD1_2",7.286e-5);
+    starflat.header()->append("CD2_2",0.);
+    starflat.header()->append("CD2_1",-7.286e-5);
+    int ny = (i->second.detsecY-1)    / 2048;
+    int nx = (i->second.detsecX-2049) / 2048;
+    starflat.header()->append("CRPIX1",14826. - ny*2129.666667);
+    starflat.header()->append("CRPIX2",13423.2 - nx*2254.4);
+
     ostringstream oss;
     oss << outFits << "_" << std::setfill('0') << setw(2) << ccdNum << ".fits";
+    /**/if (useNorms) cerr << "Using norm " << i->second.norm << endl;
+
+
     FitsImage<>::writeToFITS(oss.str(), starflat, 0);
   } // end Device loop.
   } catch (std::runtime_error& e) {
