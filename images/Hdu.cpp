@@ -469,6 +469,17 @@ writeFitsHeader(fitsfile *fptr, img::Header *ih) {
       if (!hh->getUnits().empty())
 	fits_write_key_unit(fptr, keyword, units, &status);
       break;
+    case FITS::Tlogical:
+      {
+	// Specialize because CFITSIO wants pointer to int for logical value:
+	const img::HdrRecord<bool>* hb 
+	  = dynamic_cast<const img::HdrRecord<bool>*> (hh);
+	int i = hb->Value() ? 1 : 0;
+	fits_write_key(fptr, t, keyword, &i, comment, &status);
+	if (!hh->getUnits().empty())
+	  fits_write_key_unit(fptr, keyword, units, &status);
+      }
+      break;
     default:
       {
 	// nasty cast needed for CFITSIO:
