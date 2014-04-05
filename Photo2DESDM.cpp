@@ -75,6 +75,8 @@ main(int argc, char *argv[])
        i != devices.end();
        ++i) {
     cerr << "Working on " << i->first << endl;
+    if (useNorms) cerr << "Using norm " << i->second.norm << endl;
+
     photometry::SubMap* devPhoto = photomaps.issueMap(photoPrefix + i->first);
 
     int ccdNum = i->second.ccdnum;
@@ -104,7 +106,7 @@ main(int argc, char *argv[])
 	starflat(ix, iy) = pow(10., -0.4*photo);
       }
 
-    if (useNorms) starflat /= i->second.norm;
+    if (useNorms) starflat *= i->second.norm;
 
     // Add fake WCS to enable array display with DS9 (as per Yanny message 24 Jan 2014)
     starflat.header()->append("CRVAL1",0.);
@@ -117,15 +119,10 @@ main(int argc, char *argv[])
     starflat.header()->append("CD2_1",-7.286e-5);
     int ny = (i->second.detsecY-1)    / 2048;
     int nx = (i->second.detsecX-2049) / 2048;
-    starflat.header()->append("CRPIX1",14826. - ny*2129.666667);
-    starflat.header()->append("CRPIX2",13423.2 - nx*2254.4);
+    starflat.header()->append("CRPIX1",13423.2 - nx*2254.4);
+    starflat.header()->append("CRPIX2",14826. - ny*2129.666667);
 
-    ostringstream oss;
-    oss << outFits << "_" << std::setfill('0') << setw(2) << ccdNum << ".fits";
-    /**/if (useNorms) cerr << "Using norm " << i->second.norm << endl;
-
-
-    FitsImage<>::writeToFITS(oss.str(), starflat, 0);
+    FitsImage<>::writeToFITS(outFits + ".fits", starflat, i->first);
   } // end Device loop.
   } catch (std::runtime_error& e) {
     quit(e,1);
