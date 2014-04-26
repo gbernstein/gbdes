@@ -46,6 +46,7 @@ main(int argc, char *argv[])
   bool useNorms = argc>4;
   string normFile = useNorms ? argv[4] : "";
 
+  bool oneFile = false;	// set true to output all CCDs into one multi-extension FITS
   try {
   loadPhotoMapParser();
 
@@ -122,8 +123,60 @@ main(int argc, char *argv[])
     starflat.header()->append("CRPIX1",13423.2 - nx*2254.4);
     starflat.header()->append("CRPIX2",14826. - ny*2129.666667);
 
-    FitsImage<>::writeToFITS(outFits + ".fits", starflat, i->first);
+    if (oneFile) {
+      FitsImage<>::writeToFITS(outFits + ".fits", starflat, i->first);
+    } else {
+      ostringstream oss;
+      oss << outFits << "_" << setfill('0') << setw(2) << ccdNum << ".fits";
+      string fname = oss.str();
+      FitsImage<>::writeToFITS(fname, starflat, 0);
+    }
   } // end Device loop.
+
+  {
+    // And write a dummy image for dead CCD 61:
+    int ccdNum = 61;
+    Image<> starflat(bpix, 1.);
+
+    starflat.header()->append("CCDNUM", ccdNum);
+    starflat.header()->append("FILTER", filter);
+    time_t now;
+    time(&now);
+    string date = ctime(&now);
+    starflat.header()->append("DESMKICR", date);
+    string s = "illumcor";
+    starflat.header()->append("OBSTYPE", s);
+    s = "IMAGE ";
+    starflat.header()->append("DES_EXT", s);
+    starflat.header()->addHistory("Dummy image for dead CCD ");
+
+    // Add fake WCS to enable array display with DS9 (as per Yanny message 24 Jan 2014)
+    starflat.header()->append("CRVAL1",0.);
+    starflat.header()->append("CRVAL2",0.);
+    starflat.header()->append("CTYPE1",string("RA---TAN"));
+    starflat.header()->append("CTYPE2",string("DEC--TAN"));
+    starflat.header()->append("CD1_1",0.);
+    starflat.header()->append("CD1_2",7.286e-5);
+    starflat.header()->append("CD2_2",0.);
+    starflat.header()->append("CD2_1",-7.286e-5);
+    int detsecX = 24577;
+    int detsecY = 12289;
+    int ny = (detsecY-1)    / 2048;
+    int nx = (detsecX-2049) / 2048;
+    starflat.header()->append("CRPIX1",13423.2 - nx*2254.4);
+    starflat.header()->append("CRPIX2",14826. - ny*2129.666667);
+
+    string detpos = "N30";
+    if (oneFile) {
+      FitsImage<>::writeToFITS(outFits + ".fits", starflat, detpos);
+    } else {
+      ostringstream oss;
+      oss << outFits << "_" << setfill('0') << setw(2) << ccdNum << ".fits";
+      string fname = oss.str();
+      FitsImage<>::writeToFITS(fname, starflat, 0);
+    }
+  }
+
   } catch (std::runtime_error& e) {
     quit(e,1);
   }
