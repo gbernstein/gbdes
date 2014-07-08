@@ -84,6 +84,7 @@ main(int argc, char *argv[])
     Image<> starflat(bpix, 1.);
 
     starflat.header()->append("CCDNUM", ccdNum);
+    starflat.header()->append("DETPOS", i->first);
     starflat.header()->append("FILTER", filter);
     time_t now;
     time(&now);
@@ -136,9 +137,11 @@ main(int argc, char *argv[])
   {
     // And write a dummy image for dead CCD 61:
     int ccdNum = 61;
+    string detpos = "N30";
     Image<> starflat(bpix, 1.);
 
     starflat.header()->append("CCDNUM", ccdNum);
+    starflat.header()->append("DETPOS", detpos);
     starflat.header()->append("FILTER", filter);
     time_t now;
     time(&now);
@@ -166,7 +169,6 @@ main(int argc, char *argv[])
     starflat.header()->append("CRPIX1",13423.2 - nx*2254.4);
     starflat.header()->append("CRPIX2",14826. - ny*2129.666667);
 
-    string detpos = "N30";
     if (oneFile) {
       FitsImage<>::writeToFITS(outFits + ".fits", starflat, detpos);
     } else {
