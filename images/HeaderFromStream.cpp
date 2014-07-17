@@ -84,14 +84,14 @@ ReadASCIIHeader(string in) {
   else return 0;	// Formatting error
 }
 
-ImageHeader
+Header
 img::HeaderFromStream(istream& is) {
-  ImageHeader h;
+  Header h;
   string buffer;
   while (getline(is, buffer)) {
     HdrRecordBase* hrb = ReadASCIIHeader(buffer);
     if (!hrb) 
-      FormatAndThrow<ImageError>() << "Bad ASCII header card <" << buffer << ">";
+      FormatAndThrow<HeaderError>() << "Bad ASCII header card <" << buffer << ">";
     if (hrb->getKeyword()=="END") return h;
     else if (hrb->getKeyword()=="COMMENT") h.addComment(hrb->getComment());
     else if (hrb->getKeyword()=="HISTORY") h.addHistory(hrb->getComment());
@@ -102,7 +102,7 @@ img::HeaderFromStream(istream& is) {
 
 ostream&
 operator<<(ostream& os,
-	   const img::ImageHeader& h) {
+	   const img::Header& h) {
   for (h.rewind(); !h.atEnd(); h.incr())
     os << h.current()->writeCard() << endl;
   os << "END     " << endl;
