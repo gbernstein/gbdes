@@ -101,28 +101,35 @@ main(int argc, char *argv[])
 
     // Get Wcs and photometric solution
     wcs.setDevice(i->first);
-    photometry::SubMap* devPhoto = photomaps.issueMap(photoPrefix + i->first);
-    double normMag = -2.5*log10(i->second.norm);
-    // Loop over pixels
-    for (int iy = bpix.getYMin(); iy <= bpix.getYMax(); iy++)
-      for (int ix = bpix.getXMin(); ix <= bpix.getXMax(); ix++) {
-	photometry::PhotoArguments args;
-	args.xExposure = ix * pixelScale;
-	args.yExposure = iy * pixelScale;
-	wcs.toPix(args.xExposure, args.yExposure, args.xDevice, args.yDevice);
-	if (!bDevice.includes(args.xDevice,args.yDevice)) continue;	// Skip if outside device
+    photometry::SubMap* devPhoto = 0;
+    try {
+      devPhoto = photomaps.issueMap(photoPrefix + i->first);
+    } catch (photometry::PhotometryError& pm) {
+      // Might not have data for some extensions.  Just skip them.
+      devPhoto = 0;
+    }
+    if (devPhoto) {
+      double normMag = -2.5*log10(i->second.norm);
+      // Loop over pixels
+      for (int iy = bpix.getYMin(); iy <= bpix.getYMax(); iy++)
+	for (int ix = bpix.getXMin(); ix <= bpix.getXMax(); ix++) {
+	  photometry::PhotoArguments args;
+	  args.xExposure = ix * pixelScale;
+	  args.yExposure = iy * pixelScale;
+	  wcs.toPix(args.xExposure, args.yExposure, args.xDevice, args.yDevice);
+	  if (!bDevice.includes(args.xDevice,args.yDevice)) continue;	// Skip if outside device
 
-	// Calculate photometric correction
-	args.color = 0.;
-	double photo = devPhoto->forward(0., args);
-	args.color = 1;
-	colorterm(ix,iy) = devPhoto->forward(0.,args) - photo;
-	// Apply normalization correction
-	starflat(ix, iy) = -(photo + normMag);
-	sum += starflat(ix,iy);
-	n++;
-      }
-
+	  // Calculate photometric correction
+	  args.color = 0.;
+	  double photo = devPhoto->forward(0., args);
+	  args.color = 1;
+	  colorterm(ix,iy) = devPhoto->forward(0.,args) - photo;
+	  // Apply normalization correction
+	  starflat(ix, iy) = -(photo + normMag);
+	  sum += starflat(ix,iy);
+	  n++;
+	}
+    }
   } // end Device loop.
   // Set mean of good pixels to zero:
   starflat -= sum/n;

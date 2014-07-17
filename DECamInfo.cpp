@@ -73,7 +73,7 @@ string ccdData =
   "S29  1    2049  8193	  \n"
   "S30  2    2049 12289	  \n"
   "S31  3    2049 16385	  \n"
-  "# N30 61   24577 12289  dead CCD \n";
+  "# N30 61   24577 12289 dead CCD  \n ";
 
 map<string,Device>
 decam::decamInfo() {
