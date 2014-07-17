@@ -44,6 +44,7 @@ SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	images/FITS.o images/Header.o images/Hdu.o images/FitsTable.o \
 	images/FTable.o images/FTableExpression.o \
 	images/Image.o images/FitsImage.o \
+	images/HeaderFromStream.o \
 	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
 	astrometry/SubMap.o astrometry/Wcs.o astrometry/PixelMapCollection.o \
 	astrometry/SerializeProjection.o astrometry/TemplateMap.o \
@@ -73,6 +74,8 @@ ApplyPhoto: ApplyPhoto.o $(OBJ)
 ApplyWCS: ApplyWCS.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 UnFlattenCatalog: UnFlattenCatalog.o DECamInfo.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+UpdateHeaders: UpdateHeaders.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
