@@ -40,7 +40,7 @@ main(int argc, char *argv[]) {
       istringstream iss(buffer);
       string ccdnumString;
       string filter;
-      iss >> ccdnumString >> filter;
+      iss >> filter >> ccdnumString;
       if (ccdnumString==".") {
 	ccdnums.push_back(-1);
       } else {
@@ -100,6 +100,8 @@ main(int argc, char *argv[]) {
 	// Build header from the new ones and add it to the current header
 	istringstream iss(newHeader);
 	(*h.header())+=img::HeaderFromStream(iss);
+	double crp;
+	h.header()->getValue("CRPIX1",crp);
       } // end HDU loop.
     } // end file loop
   } catch (std::runtime_error& m) {
