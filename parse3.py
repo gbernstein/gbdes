@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-import pyfits
+import astropy.io.fits as pf
 import glob
 import re
 import os
 import sys
 from types import *
 from collections import defaultdict
-from pyfits import Column
+from astropy.io.fits import Column
 import numpy as np
 from copy import deepcopy
 class Enum(tuple): 
@@ -369,12 +369,10 @@ for k, v in vals.items():
     
     cols.append(col)
 
-outname='test.fits'
+outname='config.fits'
 if 'Outfile' in map:
     outname=map['Outfile']
 
-pycols = pyfits.ColDefs(cols)
-hdu = pyfits.new_table(pycols)
+pycols = pf.ColDefs(cols)
+hdu = pf.new_table(pycols)
 hdu.writeto(outname, clobber=True)
-
-

@@ -4,6 +4,9 @@
 #CFITSIO_DIR
 #FFTW_DIR
 #BOOST_DIR
+# GBTOOLS_DIR (defaults to ../gbtools if not in environment)
+
+GBTOOLS_DIR = ../gbtools
 
 export CXX
 export TMV_DIR
@@ -16,42 +19,45 @@ OPTFLAGS = -O3 -DASSERT
 export OPTFLAGS
 
 
+# Paths to the parts of the GBTOOLS we will use here
+UTILITIES := $(GBTOOLS_DIR)/utilities
+IMAGES := $(GBTOOLS_DIR)/images
+ASTROMETRY := $(GBTOOLS_DIR)/astrometry
+PHOTOMETRY := $(GBTOOLS_DIR)/photometry
+
 # ABS_INCLUDES are absolute paths 
 ABS_INCLUDES = -I $(TMV_DIR)/include -I $(CFITSIO_DIR)/include \
-	-I $(FFTW_DIR)/include -I $(BOOST_DIR)/include
+	-I $(FFTW_DIR)/include -I $(BOOST_DIR)/include \
+	-I $(UTILITIES) -I $(IMAGES) -I $(ASTROMETRY) -I $(PHOTOMETRY)
 
-# LIB_DIRS 
 LIB_DIRS = -L $(CFITSIO_DIR)/lib -L $(TMV_DIR)/lib -L $(FFTW_DIR)/lib \
 	-L $(BOOST_DIR)/lib
 
 TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
-#TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv-link)
 
 ##### Below here should be site-independent
-SUBDIRS = utilities images astrometry
+SUBDIRS = $(GBTOOLS_DIR)
 
 # INCLUDES can be relative paths, and will not be exported to subdirectory makes.
-INCLUDES = -I utilities -I images -I astrometry -I photometry
+INCLUDES = 
 
 CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
-SRC = $(shell ls *.cpp)
-
 LIBS = -lm $(LIB_DIRS) -lboost_regex -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 
 SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
 	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
 	utilities/Expressions.o \
-	images/FITS.o images/Header.o images/Hdu.o images/FitsTable.o \
-	images/FTable.o images/FTableExpression.o \
-	images/Image.o images/FitsImage.o \
-	images/HeaderFromStream.o \
-	astrometry/PixelMap.o astrometry/Astrometry.o astrometry/PolyMap.o \
-	astrometry/SubMap.o astrometry/Wcs.o astrometry/PixelMapCollection.o \
-	astrometry/SerializeProjection.o astrometry/TemplateMap.o \
-	photometry/PhotoMap.o photometry/PhotoMapCollection.o photometry/SubMap.o \
-	photometry/PhotoMatch.o photometry/PhotoPrior.o photometry/PhotoTemplate.o
+	$(IMAGES)/FITS.o $(IMAGES)/Header.o $(IMAGES)/Hdu.o $(IMAGES)/FitsTable.o \
+	$(IMAGES)/FTable.o $(IMAGES)/FTableExpression.o \
+	$(IMAGES)/Image.o $(IMAGES)/FitsImage.o \
+	$(IMAGES)/HeaderFromStream.o \
+	$(ASTROMETRY)/PixelMap.o $(ASTROMETRY)/Astrometry.o $(ASTROMETRY)/PolyMap.o \
+	$(ASTROMETRY)/SubMap.o $(ASTROMETRY)/Wcs.o $(ASTROMETRY)/PixelMapCollection.o \
+	$(ASTROMETRY)/SerializeProjection.o $(ASTROMETRY)/TemplateMap.o \
+	$(PHOTOMETRY)/PhotoMap.o $(PHOTOMETRY)/PhotoMapCollection.o $(PHOTOMETRY)/SubMap.o \
+	$(PHOTOMETRY)/PhotoMatch.o $(PHOTOMETRY)/PhotoPrior.o $(PHOTOMETRY)/PhotoTemplate.o
 
-#images/FitsTable.o images/Image.o images/FITSImage.o \
+SRC = $(shell ls *.cpp)
 
 OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
 
