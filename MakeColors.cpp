@@ -30,10 +30,12 @@ string usage=
   "MakeColors: Merge magnitudes for matched detections to create new\n"
   "            catalogs giving magnitudes and colors for each match.\n"
   "usage: MakeColors <match file in> <match file out> <mag file out> [parameter file...]\n"
+  "   [-parameter[=]value...]\n"
   "      <match file in>:  FITS file with binary tables produced by WCSFoF\n"
   "      <match file out>:  FITS file with binary tables, augmented with match and color info\n"
   "      <mag file out>: Name of output FITS catalog file to hold magnitudes\n"
-  "     stdin is read as parameters.";
+  "      Program parameters specified as command-line options or read from\n"
+  "          parameter file(s) specified on cmd line";
 
 // Temporary documentation:
 // parameter renameInstruments is a string that has format like

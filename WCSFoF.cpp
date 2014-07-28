@@ -22,13 +22,16 @@ using namespace img;
 using namespace FITS;
 using stringstuff::stripWhite;
 
-string usage="WCSFoF: Match objects using FoF algorithm on world coordinate system\n"
-             "WCSFoF <field specs> <exposure specs> [parameter file] [parameter file...]\n"
-	     "      <field specs>:  file holding <field name> <central coords> <extent>\n"
-	     "                      one field per line, where extent is max distance   \n"
-             "                      (in degrees) N, S, E, or W of any point from center.\n"
-             "      <exposure specs>: FITS file with binary table of input file info...\n"
-             "Program will look for additional parameters at stdin";
+string usage=
+  "Match objects using FoF algorithm on world coordinate system\n"
+  "WCSFoF <field specs> <exposure specs> [parameter file] [parameter file...]\n"
+  "   [-parameter[=]value...]\n"
+  "      <field specs>:  file holding <field name> <central coords> <extent>\n"
+  "                      one field per line, where extent is max distance   \n"
+  "                      (in degrees) N, S, E, or W of any point from center\n"
+  "      <exposure specs>: FITS file with binary table of input file info\n"
+  "      Program parameters specified as command-line options or read from\n"
+  "          parameter file(s) specified on cmd line";
   
 /// Struct that will hold the info about each point that matcher (and subsequent programs)
 /// will need

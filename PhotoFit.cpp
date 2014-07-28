@@ -27,8 +27,10 @@ using img::FTable;
 string usage=
   "PhotoFit: Refine photometric solutions for a matched set of catalogs.\n"
   "usage: WCSFit <match file> [parameter file] [parameter file...]\n"
+  "   [-parameter[=]value...]\n"
   "      <match file>:  FITS file with binary tables produced by WCSFoF\n"
-  "     stdin is read as parameters.";
+  "      Program parameters specified as command-line options or read from\n"
+  "          parameter file(s) specified on cmd line";
 
 // Temporary documentation:
 // parameter renameInstruments is a string that has format like

@@ -45,21 +45,32 @@ processParameters(Pset& parameters,
 		  int argc,
 		  char *argv[]) {
 
-  // Read parameters
-  if (argc<nRequiredArgs+1) {
+  int positionalArguments;
+  try {
+    // First read the command-line arguments so we know how many positional
+    // arguments precede them.
+    positionalArguments = parameters.setFromArguments(argc, argv);
+  } catch (std::runtime_error &m) {
+    // An error here might indicate someone entered "-help" or something
     cerr << usage << endl;
-    cout << "#--------- Default Parameters: ---------" << endl;
-    parameters.setDefault();
-    parameters.dump(cout);
+    cout << "#---- Parameter defaults: ----" << endl;
+    parameters.dump(cerr);
+    quit(m,1);
+  }
+  parameters.setDefault();
+  if (positionalArguments < nRequiredArgs+1) {
+    cerr << usage << endl;
+    cout << "#---- Parameter defaults: ----" << endl;
+    parameters.dump(cerr);
     exit(1);
   }
 
-  parameters.setDefault();
-  for (int i=nRequiredArgs+1; i<argc; i++) {
+  for (int i=nRequiredArgs+1; i<positionalArguments; i++) {
     // Open & read all specified input files
     ifstream ifs(argv[i]);
     if (!ifs) {
       cerr << "Can't open parameter file " << argv[i] << endl;
+      cerr << usage << endl;
       exit(1);
     }
     try {
@@ -69,15 +80,10 @@ processParameters(Pset& parameters,
       quit(m,1);
     }
   }
-  // and stdin:
-  try {
-    parameters.setStream(cin);
-  } catch (std::runtime_error &m) {
-    cerr << "In stdin:" << endl;
-    quit(m,1);
-  }
+  // And now re-read the command-line arguments so they take precedence
+  parameters.setFromArguments(argc, argv);
 
-  // List parameters in use
+  cout << "#" << stringstuff::taggedCommandLine(argc,argv) << endl;
   parameters.dump(cout);
 }
 

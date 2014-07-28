@@ -13,9 +13,10 @@ export TMV_DIR
 export CFITSIO_DIR
 export BOOST_DIR
 export FFTW_DIR
+export YAML_DIR
 
 # OPTFLAGS will be exported for subdir makes
-OPTFLAGS = -O3 -DASSERT
+OPTFLAGS = -O3 -DASSERT -DUSE_YAML
 export OPTFLAGS
 
 
@@ -27,11 +28,11 @@ PHOTOMETRY := $(GBTOOLS_DIR)/photometry
 
 # ABS_INCLUDES are absolute paths 
 ABS_INCLUDES = -I $(TMV_DIR)/include -I $(CFITSIO_DIR)/include \
-	-I $(FFTW_DIR)/include -I $(BOOST_DIR)/include \
+	-I $(FFTW_DIR)/include -I $(BOOST_DIR)/include -I $(YAML_DIR)/include \
 	-I $(UTILITIES) -I $(IMAGES) -I $(ASTROMETRY) -I $(PHOTOMETRY)
 
 LIB_DIRS = -L $(CFITSIO_DIR)/lib -L $(TMV_DIR)/lib -L $(FFTW_DIR)/lib \
-	-L $(BOOST_DIR)/lib
+	-L $(BOOST_DIR)/lib -L $(YAML_DIR)/lib
 
 TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
 
@@ -42,11 +43,11 @@ SUBDIRS = $(GBTOOLS_DIR)
 INCLUDES = 
 
 CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
-LIBS = -lm $(LIB_DIRS) -lboost_regex -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
+LIBS = -lm $(LIB_DIRS) -lyaml-cpp -lboost_regex -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
 
-SUBOBJ =utilities/BinomFact.o utilities/StringStuff.o utilities/Interpolant.o \
-	utilities/fft.o utilities/Table.o utilities/Pset.o utilities/Poly2d.o \
-	utilities/Expressions.o \
+SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpolant.o \
+	$(UTILITIES)/fft.o $(UTILITIES)/Table.o $(UTILITIES)/Pset.o $(UTILITIES)/Poly2d.o \
+	$(UTILITIES)/Expressions.o \
 	$(IMAGES)/FITS.o $(IMAGES)/Header.o $(IMAGES)/Hdu.o $(IMAGES)/FitsTable.o \
 	$(IMAGES)/FTable.o $(IMAGES)/FTableExpression.o \
 	$(IMAGES)/Image.o $(IMAGES)/FitsImage.o \
@@ -98,6 +99,9 @@ DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 ListClipped: ListClipped.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 #
+testYAML:  testYAML.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+
 testDecam: testDecam.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testSerialize: testSerialize.o $(OBJ)
