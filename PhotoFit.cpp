@@ -1339,7 +1339,7 @@ main(int argc, char *argv[])
 	cerr << "Error trying to open output file for fitted photometry: " << outPhotFile << endl;
 	// *** will not quit before dumping output ***
       } else {
-	mapCollection.write(ofs);
+	mapCollection.write(ofs, stringstuff::taggedCommandLine(argc,argv));
       }
     }
 
