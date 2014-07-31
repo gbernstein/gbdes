@@ -28,7 +28,7 @@ Columns:
   value: value or @keyword to look for in header
   select: regex that expid must match to apply this value
   default: value to assign if the specified header keyword does not exist
-  translator: regex to apply to header values if found
+  translation: regex to apply to header values if found
 
 Columns we'll require:
 'FILENAME','EXTENSION','INSTRUMENT','DEVICE',
@@ -36,14 +36,10 @@ Columns we'll require:
            'YKEY','IDKEY','EXPID'
 
 Special values:
+EXPOSURE = _FILENAME
 FIELD = _NEAREST
 IDKEY = _ROW
 WCS = _ICRS or _HEADER; special processing for this one.
-
-Special processing:
-FIELD - replace name with number
-INSTRUMENT - number?
-DEVICE - number?
 
 """
 
@@ -55,11 +51,20 @@ import astropy.units as u
 import re
 import importlib
 
+# These instrument names have special meaning.  "Observations" with these instruments
+# do not require a device name.
+specialInstruments=('REFERENCE','TAG')
+# These are the extension attributes that are processed in some special way before
+# being written to the output table.
+specialAttributes =('Filename','Extension','Exposure','Instrument','Field',\
+                    'Device','RA','Dec','WCSIN')
+
 class Field:
-    def __init__(self, **kwargs):
+    def __init__(self, initdict):
         # Expecting construction from a dictionary
         self.coords = coords.ICRS(ra=initdict['RA'],dec=initdict['Dec'],unit=(u.hourangle,u.degree))
         self.radius = float(initdict['Radius'])
+
         return
 
     def __eq__(self, other):
@@ -68,6 +73,30 @@ class Field:
     def distance(self,location):
         return self.coords.separation(location).degreen
 
+class Instrument:
+    def __init__(self):
+        # Start with an empty dictionary of device names
+        self.devices = {}
+        return
+    def addDevice(self,devName):
+        self.devices[devName] = len(self.devices)
+        return
+
+class Exposure:
+    def __init__(self, coords, field, instrument, exptime=None, airmass=None):
+        self.coords = coords
+        self.field = field
+        if (exptime==None):
+            self.exptime = 1.
+        else:
+            self.exptime = exptime
+        if (airmass==None):
+            airmass = 1.
+        else:
+            self.airmass = airmass
+        self.instrument = instrument
+        return
+    
 class AttributeFinder:
     def __init__(self, initdict):
         self.filter = None
@@ -95,7 +124,8 @@ class AttributeFinder:
                 # The header value should be read as a string and run through a regex/replace
                 rr = initdict['Translation'].split('=')
                 if len(rr)!=2:
-                    print "Attribute translator is not of form <regex>=<replace>: ",initdict['Translation']
+                    print "ERROR: Attribute translator is not of form <regex>=<replace>: ",\
+                      initdict['Translation']
                     sys.exit(1)
                 self.translation = (re.compile(rr[0]),rr[1])
         else:
@@ -137,6 +167,30 @@ class AttributeFinder:
             return None
 
     
+class Attribute:
+    """
+    Class is a list of AttributeFinders which all encode a given keyword.
+    They are added in order of increasing priority.  We will each one (in reverse order) to
+    see if it can assign a value to the attribute, and take the first one that succeeds.
+    """
+    def __init__(self, first):
+        self.seq = [first]
+        return
+
+    def addFinder(self, next):
+        if next.valueType != self.seq[0].valueType:
+            print "ERROR: Mismatched types for Attribute with value",next.value
+            sys.exit(1)
+        self.seq.append(next)
+        return
+    
+    def __call__(name, extnHeader=None, primaryHeader=None):
+        for finder in self.seq.reverse():
+            val = finder(name,extnHeader=extnHeader, primaryHeader=primaryHeader)
+            if val != None:
+                return val
+        return None   # If no finder worked..
+
 if __name__=='__main__':
     # Check for input & output file names in sys.argv (multiple inputs ok?)
     if len(sys.argv)<3:
@@ -173,18 +227,20 @@ if __name__=='__main__':
 
     print "Number of fields: ", len(fields)
 
-    # Make a sequence of AttributeFinders for all unique column names
+    # Make an Attribute sequence for all unique column names
     attributes = {}
     for d in attributeInput:
         name = d['Name']
         af = AttributeFinder(d)
         if name in attributes.keys():
-            if af.valueType != attributes[name][0].valueType:
-                print "Mismatched types for Attributes", name
-                sys.exit(1)
             attributes[name].append(af)
         else:
-            attributes[name] = [af,]
+            attributes[name] = Attribute(af)
+
+    # Dictionaries for exposures, instruments
+    exposures = {}
+    instruments = {}
+    extensions = []
 
     # Loop through file choices:
     for d in fileInput:
@@ -204,33 +260,166 @@ if __name__=='__main__':
         for f in files:
             fits = pf.open(f)
             # Primary extension can have a useful header but no table data
-            primaryHeader = fits[0].header
-            primaryHeader['@MAGIC__'] = f
+            pHeader = fits[0].header
+            pHeader['@MAGIC__'] = f
             
-            extnHeader = None
-            iextn = 1
-            while iextn < len(fits):
-                if fits[i].header['EXTNAME'] == 'LDAC_HEADER':
-                    extnHeader = ...
+            eHeader = None
+            for iextn in range(1,len(fits)):
+                if fits[iextn].header['EXTNAME'] == 'LDAC_HEADER':
+                    # For LDAC header extension, we just read header and move on
+                    eHeader = gmbpy.readLDACHeader(fits, iextn)
+                else:
+                    if eHeader == None:
+                        # This should be a catalog extension.  Get its header
+                        eHeader = fits[iextn].header
+                    else:
+                        # This should be the objects part of an LDAC pair
+                        if fits[iextn].header['EXTNAME'] != 'LDAC_OBJECTS':
+                            print 'ERROR: Did not get expected LDAC_OBJECTS at extn',iextn,\
+                                'of file',fits
+                            sys.exit(1)
+                    # Now have our headers, start filling in attributes in a dictionary
+                    extn = {'FILENAME':f,
+                            'EXTENSION':iextn}
+
+
+                    # Determine EXPOSURE  for this extension
+                    expo = exposureAttrib(fits, primaryHeader=pHeader, extnHeader=eHeader)
+                    if expo==None:
+                        print 'ERROR: no exposure ID for file',fits', extension',iextn
+                        sys.exit(1)
+                    extn['Exposure']=expo
+
+                    # Get INSTRUMENT
+                    inst = attributes['Instrument'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    if inst==None:
+                        print "ERROR: Missing Instrument at file",fits,"extension",iextn
+                        sys.exit(1)
                     
-#  Find files with glob -> FILENAME
-#  Get primary header
-#  Loop through extensions
-#    Check for LDAC_HEADER, if so read header and advance EXTENSION counter
-#    get secondary header
-#    Get EXPID and translate it
-#    Loop through columns
-#      Find first value entry that applies to this EXPID and yields a result.
-#      Translate value if requested
-#        Error if no rule can fill this column
-#      Special case: INSTRUMENT.  Make new Instrument if none exist
-#      Special case: DEVICE.  Add to Instrument if new.
-#      Speical case: EXPOSURE.  Add new Exposure, check for consistent AIRMASS?
-#      Special case: RA, Dec: turn into degrees?
-#      Special case: FIELD - do _NEAREST if needed
-#      Special case: WCS: might extract TPV from header(s)
-# Write FIELDs that are in use with >1 exposure
-# Write EXPOSURES in useful fields
-# Write INSTRUMENTS
-# Write Extensions
+                    # Other exposure-specific quantities:
+                    ra = attributes['RA'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    dec = attributes['Dec'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    # ??? Check for RA already in degrees?
+                    if ra!=None and dec!=None:
+                        icrs = coords.ICRS(ra,dec,unit=(u.hourangle,u.degree))
+                    else:
+                        icrs = None
+                    airmass = attributes['Airmass'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    exptime = attributes['Exptime'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    field = attributes['Field'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+
+                    if expo in exposures:
+                        # Already have an exposure with this name, make sure this is basically the same
+                        e = exposures[expo]
+                        if (airmass!=None and abs(airmass-e.airmass)>0.002) or \
+                           (exptime!=None and abs(exptime/e.exptime-1.)>0.0002) or \
+                           (icrs!=None and icrs.separation(e.coords).degree > 1):
+                            print "ERROR: info mismatch at exposure",expo, "file",fits,'extension',extn
+                            sys.exit(1)
+                        # Also check the field for a match, unless it is _NEAREST
+                        if field != '_NEAREST' and field!=e.field:
+                            print "ERROR: Field mismatch for exposure",expo
+                            print "Exposure has",e.field,"file",fits,"extension",iextn,"has",field
+                            sys.exit(1)
+                        # Check the instrument for a match
+                        if inst!=e.instrument:
+                            print "ERROR: Instrument mismatch for exposure",expo
+                            print "Exposure has",e.instrument,"file",fits,"extension",iextn,"has",inst
+                            sys.exit(1)
+                    else:
+                        # New exposure.  Need coordinates to create it
+                        if icrs==None:
+                            print "ERROR: Missing RA/Dec for new exposure",expo \
+                              "at file",fits,"extension",iextn
+                            sys.exit(1)
+                        if field==None:
+                            print "ERROR: Missing Field for new exposure",expo \
+                              "at file",fits,"extension",iextn
+                            sys.exit(1)
+                        elif field=="_NEAREST":
+                            # Finding nearest field center.
+                            field=None
+                            minDistance = 0.
+                            for k,f in fields.items():
+                                if field==None or f.distance(icrs)<minDistance:
+                                    field = k
+                                    minDistance = f.distance(icrs)
+                        exposures[expo] = Exposure(c, field, inst, airmass=airmass, exptime=exptime)
+
+                    # Add new instrument if needed
+                    if inst not in instruments and inst not in specialInstruments:
+                        instruments[inst] = Instrument()
+                        
+                    # Get device name, not needed for special devices
+                    dev  = attributes['Device'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    if dev==None:
+                        if inst in specialInstruments:
+                            # Give a blank device name
+                            dev = ''
+                        else:
+                            print "ERROR: Missing Device at file",fits,"exposure",iextn
+                            sys.exit(1)
+
+                    # Record the device for this extension.
+                    extn['Device'] = dev
+                        
+                    # ??? Handle the WCSIN
+
+                    # Now get a value for all other attributes and add to extension's dictionary
+                    for k,a in attributes.items():
+                        if k not in specialAttributes:
+                            extn[k] = a(expo, primaryHeader=pHeader, extnHeader=eHeader)
+
+                    # We are done with this extension.  Clear out the extension header
+                    extnHeader = None
+                    extensions.append(extn)
+
+    # Completed loop through all input files from all globs
+    # Get rid of fields with only 1 exposure:
+    for k in fields.keys():
+        count = 0
+        for e,v in exposures.items():
+            if v.field==k:
+                count += 1
+                if count>1:
+                    break
+        if count<=1:
+            # No matches will occur in this field.  Purge.
+            fields.pop(k)
+
+    # Now get rid of exposures that are not in a usable field, and
+    # extensions that are from these exposures
+    killedThese = []
+    for e,v in exposures.items():
+        if v.field not in fields:
+            exposures.pop(e)
+            killedThese.append(e)
+    tmplist = []
+    for e in extensions:
+        if e['Exposure'] not in killedThese:
+            tmplist.append(e)
+    extensions = tmplist
+    del killedThese
+    del tmplist
+    
+    # Get rid of instruments that are not used in useful exposures
+    for i in instruments.keys():
+        used = False
+        for e,v in exposures.items():
+            if v.instrument==i:
+                used = True
+                break
+        if not used:
+            instruments.pop(i)
+
+    # Collect device names for all Instruments from remaining extensions
+    for extn in extensions:
+        inst = exposures[extn['Exposure']].instrument
+        if inst not in specialInstruments:
+            instruments[inst].addDevice(extn['Device'])
+    
+    # Write FIELDs, assign numerical indices
+    # Write INSTRUMENTS, assign indices
+    # Write EXPOSURES, assign indices
+    # Write Extensions
 
