@@ -52,10 +52,11 @@ translations have format <regex>=<replace>
 import sys
 import yaml
 import astropy.io.fits as pf
-import astropy.coordinates as coords
+import astropy.coordinates as cc
 import astropy.units as u
 import re
 import importlib
+import glob
 
 # These instrument names have special meaning.  "Observations" with these instruments
 # do not require a device name.
@@ -75,13 +76,17 @@ def py_to_fits(val):
 
     vtype=type(val[0])
     
-    if(vtype is IntType):
+    if(vtype is int):
         return 'J'
-    elif(vtype is FloatType):
+    elif(vtype is float):
         return 'D'
-    elif(vtype is StringType):
+    elif(vtype is str):
         size=len(max(val,key=len))
         return 'A'+str(size)
+    else:
+        print "ERROR: No known FITS type for python type",vtype
+        sys.exit(1)
+    
 
 def colForAttribute(extensions, name):
     """
@@ -90,13 +95,14 @@ def colForAttribute(extensions, name):
     data = []
     for e in extensions:
         data.append(e[name])
-    return pf.Column(name=name, format=py_to_fits(data), data)
+    return pf.Column(name=name, format=py_to_fits(data), array=data)
 
 class Field:
-    def __init__(self, name, ra, dec, radius, index=-1):
+    def __init__(self, name, coords, radius, index=-1):
         # Expecting construction from a dictionary
         self.name = name
-        self.coords = coords.ICRS(ra,dec,unit=(u.hourangle,u.degree))
+        print "***",name,coords
+        self.coords = cc.ICRS(coords,unit=(u.hourangle,u.degree))
         self.radius = float(radius)
         self.index = int(index)
         return
@@ -117,7 +123,7 @@ def buildFieldTable(fields):
     dec =[]
     radius = []
     
-    int index = 0
+    index = 0
     for k,v in fields.items():
         name.append(k)
         ra.append(v.coords.ra.degree)
@@ -126,10 +132,12 @@ def buildFieldTable(fields):
         v.index = index
         index += 1
         
-    return pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),name=name),
-                                     pf.Column(name='RA',format=py_to_fits(ra),name=ra),
-                                     pf.Column(name='DEC',format=py_to_fits(dec),name=dec),
-                                     pf.Column(name='RADIUS',format=py_to_fits(radius),name=radius)]))
+    hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
+                       pf.Column(name='RA',format=py_to_fits(ra),array=ra),
+                       pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
+                       pf.Column(name='RADIUS',format=py_to_fits(radius),array=radius)]))
+    hdu.header['EXTNAME'] = 'Fields'
+    return hdu
 
 class Instrument:
     def __init__(self, name, index=-3):
@@ -139,7 +147,8 @@ class Instrument:
         self.index = index
         return
     def addDevice(self,devName):
-        self.devices[devName] = len(self.devices)
+        if devName not in self.devices:
+            self.devices[devName] = len(self.devices)
         return
 
 def buildInstrumentTable(inst):
@@ -147,22 +156,23 @@ def buildInstrumentTable(inst):
     Return a FITS BinTableHDU for this instrument
     """
     names = ["" for k in inst.devices]
-    for k,v in inst.devices:
+    for k,v in inst.devices.items():
         names[v] = k
     for n in names:
         # If any of the device names is null, then the indices are screwed up
-        if n="":
+        if n=="":
             print 'ERROR: Device indices screwed up for instrument',inst.name
             sys.exit(1)
     # Make an array of zeros to build the [xy]Min/Max columns
-    z = np.zeros(len(names),dtype=float)
-    hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(names),data=names),
-                                    pf.Column(name='XMIN',format=py_to_fits(z),data=z),
-                                    pf.Column(name='XMAX',format=py_to_fits(z),data=z),
-                                    pf.Column(name='XMIN',format=py_to_fits(z),data=z),
-                                    pf.Column(name='XMAX',format=py_to_fits(z),data=z)]));
+    z = [0. for n in names]
+    hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(names),array=names),
+                                    pf.Column(name='XMIN',format=py_to_fits(z),array=z),
+                                    pf.Column(name='XMAX',format=py_to_fits(z),array=z),
+                                    pf.Column(name='YMIN',format=py_to_fits(z),array=z),
+                                    pf.Column(name='YMAX',format=py_to_fits(z),array=z)]));
     hdu.header['NAME'] = inst.name
     hdu.header['NUMBER'] = inst.index
+    hdu.header['EXTNAME'] = 'Instrument'
     return hdu
 
 class Exposure:
@@ -193,7 +203,7 @@ def buildExposureTable(exposures, fields, instruments):
     field= []
     inst = []
     index = 0
-    for e in exposures:
+    for k,e in exposures.items():
         name.append(e.name)
         ra.append(e.coords.ra.degree)
         dec.append(e.coords.dec.degree)
@@ -202,19 +212,23 @@ def buildExposureTable(exposures, fields, instruments):
         e.index = index
         index += 1
 
-        return pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),name=name),
-                                        pf.Column(name='RA',format=py_to_fits(ra),name=ra),
-                                        pf.Column(name='DEC',format=py_to_fits(dec),name=dec),
-                                        pf.Column(name='FIELDNUMBER',format=py_to_fits(field),name=field),
-                                        pf.Column(name='INSTRUMENTNUMBER',format=py_to_fits(inst),name=inst)\
-                                          ]))
+    hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
+                       pf.Column(name='RA',format=py_to_fits(ra),array=ra),
+                       pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
+                       pf.Column(name='FIELDNUMBER',format=py_to_fits(field),array=field),
+                       pf.Column(name='INSTRUMENTNUMBER',format=py_to_fits(inst),\
+                                 array=inst) ]))
+    hdu.header['EXTNAME'] = 'Fields'
+    return hdu
 
 class AttributeFinder:
     def __init__(self, key, value, vtype="str", default=None, translation=None, select=None):
         self.key = key
-        if select != None
+        if select != None:
             # regular expression that must match the input NAME for the Attribute to apply
             self.select = re.compile(select)
+        else:
+            self.select=None
 
         # Determine the Python builtin type that the attribute must have, defaults to str
         self.valueType = getattr(importlib.import_module('__builtin__'),vtype)
@@ -230,7 +244,7 @@ class AttributeFinder:
                 # There is a default to assign if the keyword is absent
                 self.default = self.valueType(default)
             if translation==None:
-                self.translation==None
+                self.translation=None
             else:
                 # The header value should be read as a string and run through a regex/replace
                 rr = translation.split('=')
@@ -244,7 +258,7 @@ class AttributeFinder:
             self.value = self.valueType(value)
         return
 
-    def __call__(name, extnHeader=None, primaryHeader=None):
+    def __call__(self,name, extnHeader=None, primaryHeader=None):
         # Return the value of the attribute if name passes the select, otherwise return None.
         # If Attribute is to be sought in header, will do so from extnHeader first, then primaryHeader
         # if not found, then assign default if one exists.  Otherwise return None
@@ -270,7 +284,7 @@ class AttributeFinder:
         if val!=None:
             # Found something; return it as desired type
             return self.valueType(val)
-        elif if self.default!=None:
+        elif self.default!=None:
             # return the default if nothing was found
             return self.default
         else:
@@ -286,21 +300,21 @@ class Attribute:
     """
     def __init__(self, first):
         self.seq = [first]
-        self.name = first.name
+        self.key = first.key
         return
 
     def addFinder(self, next):
-        if next.name != self.name:
-            print "ERROR: Attribute with wrong name",first.name,"being added to",self.name
+        if next.key != self.key:
+            print "ERROR: Attribute with wrong name",first.key,"being added to",self.key
             sys.exit(1)
         if next.valueType != self.seq[0].valueType:
-            print "ERROR: Mismatched types for Attribute",self.name
+            print "ERROR: Mismatched types for Attribute",self.key
             sys.exit(1)
         self.seq.append(next)
         return
     
-    def __call__(name, extnHeader=None, primaryHeader=None):
-        for finder in self.seq.reverse():
+    def __call__(self,name, extnHeader=None, primaryHeader=None):
+        for finder in reversed(self.seq):
             val = finder(name,extnHeader=extnHeader, primaryHeader=primaryHeader)
             if val != None:
                 return val
@@ -317,7 +331,9 @@ if __name__=='__main__':
     fileInput = []
     attributeInput = []
     for yamlFile in sys.argv[1:-1]:
-        y = yaml.load(yamlFile)
+        stream = open(yamlFile)
+        y = yaml.load(stream)
+        stream.close()
         if 'Files' in y.keys():
             fileInput += y['Files']
         if 'Fields' in y.keys():
@@ -326,7 +342,7 @@ if __name__=='__main__':
             attributeInput += y['Attributes']
         
     outFile = sys.argv[-1]
-
+    print 'Fields:',fieldInput
     # Collect Fields, check that all keywords present
     fields = {}
     for d in fieldInput:
@@ -345,10 +361,10 @@ if __name__=='__main__':
     attributes = {}
     for d in attributeInput:
         af = AttributeFinder(**d)
-        if af.name in attributes.keys():
-            attributes[af.name].append(af)
+        if af.key in attributes.keys():
+            attributes[af.key].addFinder(af)
         else:
-            attributes[af.name] = Attribute(af)
+            attributes[af.key] = Attribute(af)
 
     # Dictionaries for exposures, instruments
     exposures = {}
@@ -360,16 +376,16 @@ if __name__=='__main__':
     for d in fileInput:
         # Maybe allow numerical ranges in the glob?
         files = glob.glob(d['glob'])
-        tmpdict = {'name':'EXPOSURE','value':'@EXPNUM'}
+        tmpdict = {'key':'EXPOSURE','value':'@EXPNUM'}
         if 'namekey' in d.keys():
             tmpdict['value'] = d['expkey']
         if 'Translation' in d.keys():
             tmpdict['translation'] = d['translation']
-        if tmpdict['value'] = '_FILENAME':
+        if tmpdict['value'] == '_FILENAME':
             # Special signal means to use filename, not a header keyword, as EXPOSURE value
             # I'll kludge this by adding a special keyword to the header after I read it:
             tmpdict['value'] = '@'+filenameSignal
-        exposureAttrib = AttributeFinder(tmpdict)
+        exposureAttrib = AttributeFinder(**tmpdict)
 
         for fitsname in files:
             fits = pf.open(fitsname)
@@ -393,14 +409,14 @@ if __name__=='__main__':
                                 'of file',fitsname
                             sys.exit(1)
                     # Now have our headers, start filling in attributes in a dictionary
-                    extn = {'FILENAME':f,
+                    extn = {'FILENAME':fitsname,
                             'EXTENSION':iextn}
 
 
                     # Determine EXPOSURE  for this extension
-                    expo = exposureAttrib(fits, primaryHeader=pHeader, extnHeader=eHeader)
+                    expo = exposureAttrib(fitsname, primaryHeader=pHeader, extnHeader=eHeader)
                     if expo==None:
-                        print 'ERROR: no exposure ID for file',fitsname', extension',iextn
+                        print 'ERROR: no exposure ID for file',fitsname,'extension',iextn
                         sys.exit(1)
                     extn['EXPOSURE']=expo
 
@@ -415,7 +431,7 @@ if __name__=='__main__':
                     dec = attributes['DEC'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     # ??? Check for RA already in degrees?
                     if ra!=None and dec!=None:
-                        icrs = coords.ICRS(ra,dec,unit=(u.hourangle,u.degree))
+                        icrs = cc.ICRS(ra=ra,dec=dec,unit=(u.hourangle,u.degree))
                     else:
                         icrs = None
                     airmass = attributes['AIRMASS'](expo, primaryHeader=pHeader, extnHeader=eHeader)
@@ -443,11 +459,11 @@ if __name__=='__main__':
                     else:
                         # New exposure.  Need coordinates to create it
                         if icrs==None:
-                            print "ERROR: Missing RA/DEC for new exposure",expo \
+                            print "ERROR: Missing RA/DEC for new exposure",expo, \
                               "at file",fitsname,"extension",iextn
                             sys.exit(1)
                         if field==None:
-                            print "ERROR: Missing FIELD for new exposure",expo \
+                            print "ERROR: Missing FIELD for new exposure",expo, \
                               "at file",fitsname,"extension",iextn
                             sys.exit(1)
                         elif field=="_NEAREST":
@@ -458,7 +474,7 @@ if __name__=='__main__':
                                 if field==None or f.distance(icrs)<minDistance:
                                     field = k
                                     minDistance = f.distance(icrs)
-                        exposures[expo] = Exposure(expo, c, field, inst, airmass=airmass, exptime=exptime)
+                        exposures[expo] = Exposure(expo, icrs, field, inst, airmass=airmass, exptime=exptime)
 
                     # Add new instrument if needed
                     if inst not in instruments and inst not in specialInstruments:
@@ -485,7 +501,7 @@ if __name__=='__main__':
                             extn[k] = a(expo, primaryHeader=pHeader, extnHeader=eHeader)
 
                     # We are done with this extension.  Clear out the extension header
-                    extnHeader = None
+                    eHeader = None
                     extensions.append(extn)
 
             fits.close()
@@ -564,7 +580,7 @@ if __name__=='__main__':
     # For DEVICE: get integer indices, aware that specialInstruments have none
     data = []
     for e in extensions:
-        inst = exposures[e['EXPOSURE'].instrument]
+        inst = instruments[exposures[e['EXPOSURE']].instrument]
         if inst in specialInstruments:
             dev = -1
         else:
@@ -573,15 +589,16 @@ if __name__=='__main__':
     cols.append(pf.Column(name='DEVICE',format=py_to_fits(data),array=data))
 
     # Add the WCSIN column as a variable-length character array
+    """
     data = []
     for e in extensions:
         data.append(e['WCSIN'])
-    cols.append(pf.Column(name='DEVICE','PA',array=data))
-        
+    cols.append(pf.Column(name='DEVICE',format='PA',array=data))
+    """     
     # Now create a column for every other attribute we have
-    for a in attributes:
-        if a not in specialAttributes:
-            cols.append(colForAttribute(extensions, a.name))
+    for k,a in attributes.items():
+        if a.key not in specialAttributes:
+            cols.append(colForAttribute(extensions, a.key))
 
     # Add the EXTENSION table as an HDU
     thdu = pf.new_table(pf.ColDefs(cols))
