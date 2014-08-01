@@ -15,26 +15,25 @@ map keys otherwise.
 
 Fields:
 - name:
-  ra:
-  dec:
+  coords:  
   radius:
 - name:...
 
 Files:
 - glob: glob for files
   expkey: @keyword or _FILENAME or value for expid to give each catalog in the file
-  translation: regex to apply to the id that is derived
+  translation: regex to apply to the id that is derived [None]
 - glob: ...
 
 
 Attributes:
-- name: the column name for the attribute
-  select: regex that exposure name must match to apply this value
-  vtype: str, float, int - data type that the we should get for value
+- key: the column name for the attribute
   value: value or '@<keyword>' to look for in header
-  default: value to assign if the specified header keyword does not exist
-  translation: regex to apply to header values if found
-
+  select: regex that exposure name must match to apply this value [None]
+  vtype: str, float, int - data type that the we should get for value [default=str]
+  default: value to assign if the specified header keyword does not exist [None]
+  translation: regex to apply to header values if found [None]
+- key: 
 Columns we'll require:
 'FILENAME','EXTENSION','INSTRUMENT','DEVICE',
            'FIELD','EXPOSURE','RA','DEC','WCSFILE','XKEY',
@@ -44,7 +43,7 @@ Special values:
 EXPOSURE = _FILENAME
 FIELD = _NEAREST
 IDKEY = _ROW
-WCS = _ICRS or _HEADER; special processing for this one.
+WCSIN = _ICRS or _HEADER; special processing for this one.
 
 translations have format <regex>=<replace>
 """
@@ -101,7 +100,6 @@ class Field:
     def __init__(self, name, coords, radius, index=-1):
         # Expecting construction from a dictionary
         self.name = name
-        print "***",name,coords
         self.coords = cc.ICRS(coords,unit=(u.hourangle,u.degree))
         self.radius = float(radius)
         self.index = int(index)
@@ -218,7 +216,7 @@ def buildExposureTable(exposures, fields, instruments):
                        pf.Column(name='FIELDNUMBER',format=py_to_fits(field),array=field),
                        pf.Column(name='INSTRUMENTNUMBER',format=py_to_fits(inst),\
                                  array=inst) ]))
-    hdu.header['EXTNAME'] = 'Fields'
+    hdu.header['EXTNAME'] = 'Exposures'
     return hdu
 
 class AttributeFinder:
@@ -274,7 +272,7 @@ class AttributeFinder:
         if extnHeader!=None and self.headerKey in extnHeader.keys():
             val = extnHeader[self.headerKey]
         elif primaryHeader!=None and self.headerKey in primaryHeader.keys():
-            val = extnHeader[self.headerKey]
+            val = primaryHeader[self.headerKey]
 
         if val!=None and self.translation!=None:
             # Translate the header value through the regex
@@ -377,15 +375,16 @@ if __name__=='__main__':
         # Maybe allow numerical ranges in the glob?
         files = glob.glob(d['glob'])
         tmpdict = {'key':'EXPOSURE','value':'@EXPNUM'}
-        if 'namekey' in d.keys():
+        if 'expkey' in d.keys():
             tmpdict['value'] = d['expkey']
-        if 'Translation' in d.keys():
+        if 'translation' in d.keys():
             tmpdict['translation'] = d['translation']
         if tmpdict['value'] == '_FILENAME':
             # Special signal means to use filename, not a header keyword, as EXPOSURE value
             # I'll kludge this by adding a special keyword to the header after I read it:
             tmpdict['value'] = '@'+filenameSignal
         exposureAttrib = AttributeFinder(**tmpdict)
+        print "*** value:",tmpdict['value']
 
         for fitsname in files:
             fits = pf.open(fitsname)
@@ -602,7 +601,7 @@ if __name__=='__main__':
 
     # Add the EXTENSION table as an HDU
     thdu = pf.new_table(pf.ColDefs(cols))
-    thdu.header['EXTNAME'] = 'EXTENSIONS'
+    thdu.header['EXTNAME'] = 'Extensions'
     outfits.append(thdu)
     
     # Write to FITS file
