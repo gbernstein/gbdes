@@ -70,6 +70,19 @@ import importlib
 import glob
 import gmbpy.utilities
 
+import astropy
+# Major annoyance: incompatible interfaces in astropy
+oldAstropy = int(astropy.__version__.split('.')[1])<3
+if oldAstropy:
+    ICRS = cc.ICRSCoordinates
+else:
+    ICRS = cc.ICRS
+def getDegree(a):
+    if oldAstropy:
+        return a.degrees
+    else:
+        return a.degree
+
 # These instrument names have special meaning.  "Observations" with these instruments
 # do not require a device name.
 # They have special indices: **** Keep in sync with FitSubroutines.h values! ****
@@ -118,7 +131,8 @@ class Field:
     def __init__(self, name, coords, radius, index=-1):
         # Expecting construction from a dictionary
         self.name = name
-        self.coords = cc.ICRS(coords,unit=(u.hourangle,u.degree))
+#        self.coords = cc.ICRS(coords,unit=(u.hourangle,u.degree))
+        self.coords = ICRS(coords,unit=(u.hourangle,u.degree))
         self.radius = float(radius)
         self.index = int(index)
         return
@@ -127,7 +141,7 @@ class Field:
         return self.coords==other.coords and self.radius==other.radius
 
     def distance(self,location):
-        return self.coords.separation(location).degree
+        return getDegree(self.coords.separation(location))
 
 def buildFieldTable(fields):
     """
@@ -142,8 +156,8 @@ def buildFieldTable(fields):
     index = 0
     for k,v in fields.items():
         name.append(k)
-        ra.append(v.coords.ra.degree)
-        dec.append(v.coords.dec.degree)
+        ra.append(getDegree(v.coords.ra))
+        dec.append(getDegree(v.coords.dec))
         radius.append(v.radius)
         v.index = index
         index += 1
@@ -228,10 +242,13 @@ def buildExposureTable(exposures, fields, instruments):
     index = 0
     for k,e in exposures.items():
         name.append(e.name)
-        ra.append(e.coords.ra.degree)
-        dec.append(e.coords.dec.degree)
+        ra.append(getDegree(e.coords.ra))
+        dec.append(getDegree(e.coords.dec))
         field.append(fields[e.field].index)
-        inst.append(instruments[e.instrument].index)
+        if e.instrument in specialInstruments:
+            inst.append(specialInstruments[e.instrument])
+        else:
+            inst.append(instruments[e.instrument].index)
         e.index = index
         index += 1
 
@@ -514,7 +531,8 @@ if __name__=='__main__':
                     dec = attributes['DEC'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     # ??? Check for RA already in degrees?
                     if ra!=None and dec!=None:
-                        icrs = cc.ICRS(ra=ra,dec=dec,unit=(u.hourangle,u.degree))
+#                        icrs = cc.ICRS(ra=ra,dec=dec,unit=(u.hourangle,u.degree))
+                        icrs = ICRS(ra=ra,dec=dec,unit=(u.hourangle,u.degree))
                     else:
                         icrs = None
                     airmass = attributes['AIRMASS'](expo, primaryHeader=pHeader, extnHeader=eHeader)
@@ -528,7 +546,7 @@ if __name__=='__main__':
                         if (airmass!=None and abs(airmass-e.airmass)>0.002) or \
                            (exptime!=None and abs(exptime/e.exptime-1.)>0.0002) or \
                            (mjd!=None and abs(mjd - e.mjd)>0.0002) or \
-                           (icrs!=None and icrs.separation(e.coords).degree > 1.):
+                           (icrs!=None and getDegree(icrs.separation(e.coords)) > 1.):
                             print "ERROR: info mismatch at exposure",expo, "file",fitsname,'extension',extn
                             sys.exit(1)
                         # Also check the field for a match, unless it is _NEAREST
@@ -676,11 +694,11 @@ if __name__=='__main__':
     # For DEVICE: get integer indices, aware that specialInstruments have none
     data = []
     for e in extensions:
-        inst = instruments[exposures[e['EXPOSURE']].instrument]
+        inst = exposures[e['EXPOSURE']].instrument
         if inst in specialInstruments:
             dev = -1
         else:
-            dev = inst.devices[e['DEVICE']]
+            dev = instruments[inst].devices[e['DEVICE']]
         data.append(dev)
     cols.append(pf.Column(name='DEVICE',format=py_to_fits(data),array=data))
 
@@ -693,6 +711,7 @@ if __name__=='__main__':
     # Now create a column for every other attribute we have
     for k,a in attributes.items():
         if a.key not in specialAttributes:
+            print "*** Getting",a.key
             cols.append(colForAttribute(extensions, a.key))
 
     # Add the EXTENSION table as an HDU
