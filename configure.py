@@ -10,7 +10,7 @@ the C++ programs that follow in the pipeline.
 """
 FITS column names will be given in ALL CAPS.  These are also the names of "Attributes" that
 are given to each extension.
-In the yaml file, we'll do First Letter Cap for the big categories, but expect lowercase for all
+In the yaml file, we'll do First Letter Cap for the 3 big categories, but expect lowercase for all
 map keys otherwise.
 
 Fields:
@@ -21,29 +21,41 @@ Fields:
 
 Files:
 - glob: glob for files
-  expkey: @keyword or _FILENAME or value for expid to give each catalog in the file
+  expkey: "< keyword" or _FILENAME or value for EXPOSURE to give each catalog in the file
   translation: regex to apply to the id that is derived [None]
 - glob: ...
 
+The glob for files can include numerical ranges, e.g.
+glob: DECam_00(236600-236700).fits.*
+will look for files with each value in this range (including 00236700).
 
 Attributes:
 - key: the column name for the attribute
-  value: value or '@<keyword>' to look for in header
+  value: value or '< keyword' to look for in header
   select: regex that exposure name must match to apply this value [None]
   vtype: str, float, int - data type that the we should get for value [default=str]
   default: value to assign if the specified header keyword does not exist [None]
   translation: regex to apply to header values if found [None]
 - key: 
-Columns we'll require:
+
+Note that all string-valued Attributes can include "${XXX}" anywhere and this will be replaced
+by the value of Attribute with name XXX.  This is *not* done for EXPOSURE, EXTENSION.
+
+Attributes we'll require as WCSFoF needs them:
 'FILENAME','EXTENSION','INSTRUMENT','DEVICE',
-           'FIELD','EXPOSURE','RA','DEC','WCSFILE','XKEY',
+           'FIELD','EXPOSURE','RA','DEC','WCSIN','XKEY',
            'YKEY','IDKEY'
 
+WCSFit requires:
+
+PhotoFit requires:
+
 Special values:
-EXPOSURE = _FILENAME
-FIELD = _NEAREST
-IDKEY = _ROW
-WCSIN = _ICRS or _HEADER; special processing for this one.
+EXPOSURE = _FILENAME  to pull the exposure name from the filename
+FIELD = _NEAREST      to assign to nearest Field on the sky
+IDKEY = _ROW          to have table row number be the object ID number
+WCSIN = _ICRS         to have the input pixel coords be RA, Dec in degrees
+WCSIN = _HEADER       to pull a FITS WCS out of the headers as starting WCS
 
 translations have format <regex>=<replace>
 """
@@ -56,16 +68,22 @@ import astropy.units as u
 import re
 import importlib
 import glob
+import gmbpy.utilities
 
 # These instrument names have special meaning.  "Observations" with these instruments
 # do not require a device name.
 # They have special indices: **** Keep in sync with FitSubroutines.h values! ****
 specialInstruments={'REFERENCE':-1,'TAG':-2}
-# These are the extension attributes that are processed in some special way before
-# being written to the output table.
-specialAttributes =('FILENAME','EXTENSION','EXPOSURE','INSTRUMENT','FIELD',\
-                    'DEVICE','RA','DEC','WCSIN')
 
+# These are the extension attributes that are processed in some special way before
+# being written to the output table, or belong to Exposure rather than Extension
+# and hence should not be written to Extension table.
+specialAttributes =('FILENAME','EXTENSION','EXPOSURE','INSTRUMENT','FIELD',\
+                    'DEVICE','RA','DEC','AIRMASS','EXPTIME','MJD','WCSIN')
+
+headerIndicator = "<"
+# Character at start of a attribute value that indicates lookup in header                    
+                    
 def py_to_fits(val):
     """
     Return a fits type-specification string corresponding to type of first
@@ -174,7 +192,7 @@ def buildInstrumentTable(inst):
     return hdu
 
 class Exposure:
-    def __init__(self, name, coords, field, instrument, exptime=None, airmass=None, index=-1):
+    def __init__(self, name, coords, field, instrument, exptime=None, airmass=None, mjd=None, index=-1):
         self.name = name
         self.coords = coords
         self.field = field
@@ -183,9 +201,13 @@ class Exposure:
         else:
             self.exptime = exptime
         if (airmass==None):
-            airmass = 1.
+            self.airmass = 1.
         else:
             self.airmass = airmass
+        if (mjd==None):
+            self.mjd = 0.
+        else:
+            self.mjd = mjd
         self.instrument = instrument
         self.index = index
         return
@@ -200,6 +222,9 @@ def buildExposureTable(exposures, fields, instruments):
     dec= []
     field= []
     inst = []
+    airmass = []
+    mjd = []
+    exptime = []
     index = 0
     for k,e in exposures.items():
         name.append(e.name)
@@ -210,12 +235,19 @@ def buildExposureTable(exposures, fields, instruments):
         e.index = index
         index += 1
 
+        airmass.append(e.airmass)
+        mjd.append(e.mjd)
+        exptime.append(e.exptime)
     hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
                        pf.Column(name='RA',format=py_to_fits(ra),array=ra),
                        pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
                        pf.Column(name='FIELDNUMBER',format=py_to_fits(field),array=field),
                        pf.Column(name='INSTRUMENTNUMBER',format=py_to_fits(inst),\
-                                 array=inst) ]))
+                                 array=inst),
+                       pf.Column(name="MJD",format=py_to_fits(mjd),array=mjd),
+                       pf.Column(name="AIRMASS",format=py_to_fits(airmass),array=airmass),
+                       pf.Column(name="EXPTIME",format=py_to_fits(exptime),array=exptime) ]))
+
     hdu.header['EXTNAME'] = 'Exposures'
     return hdu
 
@@ -233,9 +265,9 @@ class AttributeFinder:
 
         # Either get the value of the attribute, or information for extracting it from headers
         self.headerKey = None
-        if type(value)==str and len(value)>0 and value.strip()[0]=='@':
+        if type(value)==str and len(value)>0 and value.strip()[0]==headerIndicator:
             # The given value is a string indicating a header keyword lookup
-            self.headerKey = value.strip()[1:]
+            self.headerKey = value.strip()[1:].strip()
             if default == None:
                 self.default = None
             else:
@@ -318,6 +350,39 @@ class Attribute:
                 return val
         return None   # If no finder worked..
 
+def variableSubstitution(d):
+    """
+    Take the dictionary d, any values in it that are string-valued and contain
+    substring of form ${XXX} will be replaced with the value at key XXX.
+    Throws an exception for nonexistent key or for non-string-valued keys, or
+    for self-referencing variable substitution.
+    Does not attempt to find proper order of evaluation!
+    """
+    variable = re.compile(r"^(.*)\$\{(.*)\}(.*)")
+    for k,v in d.items():
+        if not isinstance(v,str):
+            # Only operate on string-valued entries
+            continue
+        m = variable.match(v)
+        if not m:
+            continue
+        vout = str(v)
+        while m:
+            key = m.group(2)
+            if key not in d.keys():
+                print "ERROR: variable substitution asks for nonexistent Attribute", key, "in", v
+                sys.exit(1)
+            if key==k:
+                print "ERROR: self-reference to Attribute", key, "in", v
+            vv = d[key]
+            if not isinstance(vv,str):
+                print "ERROR: variable substitution using non-string-valued Attribute",key
+                sys.exit(1)
+            vout = m.expand(r"\1"+vv+r"\3")
+            m = variable.match(vout)
+        d[k] = vout
+    return
+
 if __name__=='__main__':
     # Check for input & output file names in sys.argv (multiple inputs ok?)
     if len(sys.argv)<3:
@@ -340,7 +405,7 @@ if __name__=='__main__':
             attributeInput += y['Attributes']
         
     outFile = sys.argv[-1]
-    print 'Fields:',fieldInput
+
     # Collect Fields, check that all keywords present
     fields = {}
     for d in fieldInput:
@@ -370,11 +435,29 @@ if __name__=='__main__':
     extensions = []
 
     filenameSignal = 'MAGIC___'   #Phony keyword used to store the filename in primary header
+    rangere = re.compile(r"^(.*)\((\d+)-(\d+)\)(.*)$")  # regex to find numerical ranges in globs
     # Loop through file choices:
     for d in fileInput:
-        # Maybe allow numerical ranges in the glob?
-        files = glob.glob(d['glob'])
-        tmpdict = {'key':'EXPOSURE','value':'@EXPNUM'}
+        # Expand any numerical ranges that are in the glob
+        rm=rangere.match(d['glob'])
+        if rm:
+            start=int(rm.group(2))
+            end=int(rm.group(3))
+            if end<start:
+                print "ERROR: bad numerical range in file request", d
+                sys.exit(1)
+            globList = [rm.group(1) + str(x) + rm.group(4) for x in range(start,end+1)]
+        else:
+            globList = [d['glob']]
+
+        files = []
+        for g in globList:
+            files += glob.glob(g)
+
+        if len(files)==0:
+            print "WARNING: No files found matching", d['glob']
+            
+        tmpdict = {'key':'EXPOSURE','value':'< EXPNUM'}
         if 'expkey' in d.keys():
             tmpdict['value'] = d['expkey']
         if 'translation' in d.keys():
@@ -382,11 +465,11 @@ if __name__=='__main__':
         if tmpdict['value'] == '_FILENAME':
             # Special signal means to use filename, not a header keyword, as EXPOSURE value
             # I'll kludge this by adding a special keyword to the header after I read it:
-            tmpdict['value'] = '@'+filenameSignal
+            tmpdict['value'] = headerIndicator + filenameSignal
         exposureAttrib = AttributeFinder(**tmpdict)
-        print "*** value:",tmpdict['value']
 
         for fitsname in files:
+            print "Reading", fitsname
             fits = pf.open(fitsname)
             # Primary extension can have a useful header but no table data
             pHeader = fits[0].header
@@ -396,7 +479,7 @@ if __name__=='__main__':
             for iextn in range(1,len(fits)):
                 if fits[iextn].header['EXTNAME'] == 'LDAC_HEADER':
                     # For LDAC header extension, we just read header and move on
-                    eHeader = gmbpy.readLDACHeader(fits, iextn)
+                    eHeader = gmbpy.utilities.readLDACHeader(fits, iextn)
                 else:
                     if eHeader == None:
                         # This should be a catalog extension.  Get its header
@@ -424,6 +507,7 @@ if __name__=='__main__':
                     if inst==None:
                         print "ERROR: Missing Instrument at file",fitsname,"extension",iextn
                         sys.exit(1)
+                    extn['INSTRUMENT'] = inst
                     
                     # Other exposure-specific quantities:
                     ra = attributes['RA'](expo, primaryHeader=pHeader, extnHeader=eHeader)
@@ -436,12 +520,14 @@ if __name__=='__main__':
                     airmass = attributes['AIRMASS'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     exptime = attributes['EXPTIME'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     field = attributes['FIELD'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    mjd = attributes['MJD'](expo, primaryHeader=pHeader, extnHeader=eHeader)
 
                     if expo in exposures:
                         # Already have an exposure with this name, make sure this is basically the same
                         e = exposures[expo]
                         if (airmass!=None and abs(airmass-e.airmass)>0.002) or \
                            (exptime!=None and abs(exptime/e.exptime-1.)>0.0002) or \
+                           (mjd!=None and abs(mjd - e.mjd)>0.0002) or \
                            (icrs!=None and icrs.separation(e.coords).degree > 1.):
                             print "ERROR: info mismatch at exposure",expo, "file",fitsname,'extension',extn
                             sys.exit(1)
@@ -473,7 +559,8 @@ if __name__=='__main__':
                                 if field==None or f.distance(icrs)<minDistance:
                                     field = k
                                     minDistance = f.distance(icrs)
-                        exposures[expo] = Exposure(expo, icrs, field, inst, airmass=airmass, exptime=exptime)
+                            exposures[expo] = Exposure(expo, icrs, field, inst, airmass=airmass,
+                                                       exptime=exptime, mjd=mjd)
 
                     # Add new instrument if needed
                     if inst not in instruments and inst not in specialInstruments:
@@ -492,13 +579,23 @@ if __name__=='__main__':
                     # Record the device for this extension.
                     extn['DEVICE'] = dev
                         
-                    # ??? Handle the WCSIN
-
+                    # Handle the WCSIN
+                    wcsin = attributes['WCSIN'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    if wcsin.strip()=='_HEADER':
+                        # Retrieve the header from FITS WCS information in headers
+                        wcshdr = gmbpy.utilities.extractWCS( [pHeader, eHeader])
+                        extn['WCSIN'] = wcshdr.tostring(sep='\n',padding=False,endcard=False)
+                    else:
+                        extn['WCSIN'] = wcsin
+                        
                     # Now get a value for all other attributes and add to extension's dictionary
                     for k,a in attributes.items():
                         if k not in specialAttributes:
                             extn[k] = a(expo, primaryHeader=pHeader, extnHeader=eHeader)
 
+                    # Do any variable substitutions on the attributes:
+                    variableSubstitution(extn)
+                    
                     # We are done with this extension.  Clear out the extension header
                     eHeader = None
                     extensions.append(extn)
@@ -588,12 +685,11 @@ if __name__=='__main__':
     cols.append(pf.Column(name='DEVICE',format=py_to_fits(data),array=data))
 
     # Add the WCSIN column as a variable-length character array
-    """
     data = []
     for e in extensions:
         data.append(e['WCSIN'])
-    cols.append(pf.Column(name='DEVICE',format='PA',array=data))
-    """     
+    cols.append(pf.Column(name='WCSIN',format='PA',array=data))
+
     # Now create a column for every other attribute we have
     for k,a in attributes.items():
         if a.key not in specialAttributes:
