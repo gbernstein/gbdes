@@ -4,7 +4,6 @@
 #include "FoF.h"
 #include "FitsTable.h"
 #include "Astrometry.h"
-#include "ReadLdacHeader.h"
 #include "NameIndex.h"
 #include "Pset.h"
 #include <map>
@@ -13,7 +12,6 @@
 #include "TPVMap.h"
 #include "TemplateMap.h"
 #include "StringStuff.h"
-#include "ExtensionAttribute.h"
 
 #include "FitSubroutines.h"
 
@@ -24,12 +22,9 @@ using stringstuff::stripWhite;
 
 string usage=
   "Match objects using FoF algorithm on world coordinate system\n"
-  "WCSFoF <field specs> <exposure specs> [parameter file] [parameter file...]\n"
+  "WCSFoF <configfile> [parameter file] [parameter file...]\n"
   "   [-parameter[=]value...]\n"
-  "      <field specs>:  file holding <field name> <central coords> <extent>\n"
-  "                      one field per line, where extent is max distance   \n"
-  "                      (in degrees) N, S, E, or W of any point from center\n"
-  "      <exposure specs>: FITS file with binary table of input file info\n"
+  "      <configfile>: FITS file with binary tables describing input catalogs\n"
   "      Program parameters specified as command-line options or read from\n"
   "          parameter file(s) specified on cmd line";
   
@@ -95,24 +90,43 @@ struct Device: public Bounds<double> {
 };
 
 // Instrument is a collection of Devices, with a name
-struct Instrument: public NameIndex {
-  Instrument(const string& name_): name(name_) {}
+struct Instrument: public vector<Device> {
+  Instrument(const string& name_=""): name(name_) {}
   string name;
-  vector<Device> devices;
-  Device& operator[](const string& extName) {
-    int index = indexOf(extName);
-    if (index<0) throw std::runtime_error("Nonexistent Device " + extName
-					  + " in Instrument " + name);
-    return devices[index];
+  Instrument(const FTable& ft) {
+    ft.header()->getValue("Name",name);
+    for (int i=0; i<ft.nrows(); i++) {
+      Device d;
+      ft.readCell(d.name,"Name",i);
+      double tmp;
+      ft.readCell(tmp,"XMin",i);
+      d.setXMin(tmp);
+      ft.readCell(tmp,"XMax",i);
+      d.setXMax(tmp);
+      ft.readCell(tmp,"YMin",i);
+      d.setYMin(tmp);
+      ft.readCell(tmp,"YMax",i);
+      d.setYMax(tmp);
+      push_back(d);
+    }
   }
-  Device& operator[](int index) {return devices[index];}
-  int newDevice(const string& newName) {
-    devices.push_back(Device());
-    devices.back().name = newName;
-    return NameIndex::append(newName);
+};
+
+struct Exposure {
+public:
+  string name;
+  astrometry::SphericalICRS pointing;
+  int field;
+  int instrument;
+  void read(const FTable& ft, int irow) {
+    double ra, dec;
+    ft.readCell(name, "Name", irow);
+    ft.readCell(ra, "RA", irow);
+    ft.readCell(dec, "Dec", irow);
+    ft.readCell(field, "FieldNumber", irow);
+    ft.readCell(instrument, "InstrumentNumber", irow);
+    pointing.setRADec(ra*DEGREE, dec*DEGREE);
   }
-  // Hide this from base class
-  void append(string s);
 };
 
 int
@@ -125,10 +139,6 @@ main(int argc,
   string outCatalogName;
   int minMatches;
   bool allowSelfMatches;
-  string renameInstruments;
-  string stringAttributes;
-  string intAttributes;
-  string doubleAttributes;
 
   Pset parameters;
   {
@@ -143,19 +153,11 @@ main(int argc,
     parameters.addMember("useAffinities",&useAffinities, def,
 			 "Disallow star-galaxy matches & inter-filter galaxy matches?", true);
     parameters.addMember("outName",&outCatalogName, def,
-			 "filename for FITS output catalog", "match.cat");
+			 "filename for FITS output catalog", "match.fof");
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
     parameters.addMember("selfMatch",&allowSelfMatches, def,
 			 "Retain matches that have 2 elements from same exposure?", false);
-    parameters.addMember("renameInstruments",&renameInstruments, def,
-			 "list of new names to give to instruments for maps","");
-    parameters.addMember("stringAttributes",&stringAttributes, def,
-			 "list of string-valued extension attributes","errKey,tpvOut");
-    parameters.addMember("intAttributes",&intAttributes, def,
-			 "list of string-valued extension attributes","");
-    parameters.addMember("doubleAttributes",&doubleAttributes, def,
-			 "list of string-valued extension attributes","weight");
   }
 
   ////////////////////////////////////////////////
@@ -163,9 +165,8 @@ main(int argc,
   ////////////////////////////////////////////////
 
   // Read all the command-line and parameter-file program parameters
-  processParameters(parameters, usage, 2, argc, argv);
-  string fieldSpecs = argv[1];
-  string exposureSpecs = argv[2];
+  processParameters(parameters, usage, 1, argc, argv);
+  string configFile = argv[1];
 
   // Convert matching radius to our system units for world coords (degrees)
   matchRadius *= ARCSEC/DEGREE;
@@ -174,265 +175,163 @@ main(int argc,
     // Teach PixelMapCollection about all types of PixelMaps it might need to deserialize
     loadPixelMapParser();
 
-    // First build the regular expression structure used to translate instrument names
-    // into shorter forms.
-    RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
-							     "renameInstruments");
+    ////////////////////////////////////////////////
+    // Read in field table and save away orientations of tangent plane systems for each
+    ////////////////////////////////////////////////
+    FTable fieldTable;
+    try {
+      fieldTable = FitsTable(configFile, FITS::ReadOnly, "Fields").extract();
+    } catch (std::runtime_error& e) {
+      quit(e,1);
+    }
 
-    ////////////////////////////////////////////////
-    // Read in fields and save away orientations of tangent plane systems for each
-    ////////////////////////////////////////////////
-    NameIndex fieldNames;
     vector<Field*> fields;
 
-    {
-      ifstream ifs(fieldSpecs.c_str());
-      if (!ifs) {
-	cerr << "Can't open field specification file " << fieldSpecs << endl;
-	exit(1);
-      }
+    for (int ifield = 0; ifield < fieldTable.nrows(); ifield++) {
+      string name;
+      double ra;
+      double dec;
+      double extent;
+      fieldTable.readCell(name, "NAME", ifield);
+      fieldTable.readCell(ra, "RA", ifield);
+      fieldTable.readCell(dec, "DEC", ifield);
+      fieldTable.readCell(extent, "RADIUS", ifield);
 
-      string buffer;
-      while (stringstuff::getlineNoComment(ifs, buffer)) {
-	string name;
-	astrometry::SphericalICRS pole;
-	double extent;
-	{
-	  istringstream iss(buffer);
-	  if (!(iss >> name >> pole >> extent)) {
-	    cerr << "Bad field spec <" << buffer << ">" << endl;
-	    exit(1);
-	  }
-	  // Check for duplicate field name:
-	  if (fieldNames.has(name)) {
-	    cerr << "Duplicate field name: " << name << endl;
-	    exit(1);
-	  }
-	  Field* f = new Field;
-	  f->name = name;
-	  astrometry::Orientation orient(pole);
-	  f->projection = new astrometry::Gnomonic(orient);
-	  f->extent = extent;
-	  f->matchRadius = matchRadius;
-	  fields.push_back(f);
-	  fieldNames.append(name);
-	  Assert(fields.size()==fieldNames.size());
-	}
-      }
-    } // Done with input fields file
-    if (fields.empty()) {
-      cerr << "No fields were given" << endl;
-      exit(1);
-    }
+      Field* f = new Field;
+      f->name = name;
+      astrometry::Orientation orient(astrometry::SphericalICRS(ra*DEGREE, dec*DEGREE));
+      f->projection = new astrometry::Gnomonic(orient);
+      f->extent = extent;
+      f->matchRadius = matchRadius;
+      fields.push_back(f);
+    } // Done reading fields
+    Assert(!fields.empty());
 
     /**/cerr << "Read fields" << endl;
 
-    // Open table containing information on input files
-    FTable fileTable;
+    // Now read in all the instrument tables
+    list<int> instrumentHDUs;
     {
-      FitsTable ft(exposureSpecs,FITS::ReadOnly);
-      fileTable = ft.extract();
+      // Find which extensions are instrument tables
+      FITS::FitsFile ff(configFile);
+      for (int i=1; i<ff.HDUCount(); i++) {
+	FITS::Hdu h(configFile, FITS::HDUAny, i);
+	if (stringstuff::nocaseEqual(h.getName(), "Instrument"))
+	  instrumentHDUs.push_back(i);
+      }
     }
+    vector<FTable> instrumentTables(instrumentHDUs.size());
+    vector<Instrument*> instruments(instrumentHDUs.size(),0);
 
-    // Start a list of the instruments
-    NameIndex instrumentNames;
-    vector<Instrument> instruments;
+    for (list<int>::const_iterator i=instrumentHDUs.begin();
+	 i != instrumentHDUs.end();
+	 ++i) {
+      FTable ft = FitsTable(configFile, FITS::ReadOnly, *i).extract();
+      string instrumentName;
+      int instrumentNumber;
+      if (!ft.header()->getValue("Name", instrumentName)
+	  || !ft.header()->getValue("Number", instrumentNumber)) {
+	cerr << "Could not read name and/or number of instrument at extension "
+	     << *i << endl;
+      }
+      // Get rid of spaces in the name
+      spaceReplace(instrumentName);
+      Assert(instrumentNumber < instrumentTables.size() && instrumentNumber>=0);
+      ft.header()->setValue("Name",instrumentName);
 
-    // And the exposures
-    NameIndex exposureNames;
-    vector<astrometry::SphericalICRS> exposurePointings;
-    vector<int> exposureFields; // Record one field per exposure
-    vector<int> exposureInstruments; // Record one instrument per exposure
+      // Now save the table and make an Instrument structure
+      instrumentTables[instrumentNumber] = ft;
+      instruments[instrumentNumber] = new Instrument(ft);
+    }
+    // Check that all Instruments were read
+    for (int i=0; i<instruments.size(); i++)
+      if (!instruments[i]) {
+	cerr << "Failed to read instrument number " << i << endl;
+	exit(1);
+      }
 
+
+    // Now get information on exposures
+    FTable exposureTable;
+    try {
+      exposureTable = FitsTable(configFile, FITS::ReadOnly, "Exposures").extract();
+    } catch (std::runtime_error& e) {
+      quit(e,1);
+    }
+      
+    vector<Exposure*> exposures;
+    for (int i=0; i<exposureTable.nrows(); i++) {
+      Exposure* e = new Exposure;
+      e->read(exposureTable, i);
+      exposures.push_back(e);
+    }
+    Assert(exposures.size() == exposureTable.nrows());
+	   
     // And a list holding all Points being matched.  Note that catalogs do not make copies
     // of the Points, they just hold pointers to them.  So this is a warehouse.
     // If we wanted to save the memory of the list links we could just let all the Points
     // be zombies that are destroyed when the program ends.
     list<Point> allPoints;
 
-    // Make a table into which we will stuff info about every extension 
-    // of every catalog file we read:
+    // Table of information about every catalog file to read:
     FTable extensionTable;
-
-    // Now assemble all of the catalog attributes we will read from input and/or write to output:
-    list<ExtensionAttributeBase*> attributes;
-
-    ExtensionAttribute<string>* filenameAttr = 
-      new ExtensionAttribute<string>("Filename", ExtensionAttributeBase::ReadWrite);
-    attributes.push_back(filenameAttr);
-
-    ExtensionAttribute<int>* extensionAttr = 
-      new ExtensionAttribute<int>("Extension", ExtensionAttributeBase::ReadOnly, -1);
-    attributes.push_back(extensionAttr);
-
-    ExtensionAttribute<string>* fieldAttr = 
-      new ExtensionAttribute<string>("Field", ExtensionAttributeBase::ReadOnly, "_NEAREST");
-    attributes.push_back(fieldAttr);
-
-    ExtensionAttribute<string>* exposureAttr = 
-      new ExtensionAttribute<string>("Exposure", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(exposureAttr);
-
-    ExtensionAttribute<string>* instrumentAttr = 
-      new ExtensionAttribute<string>("Instrument", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(instrumentAttr);
-
-    ExtensionAttribute<string>* deviceAttr = 
-      new ExtensionAttribute<string>("Device", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(deviceAttr);
-
-    ExtensionAttribute<string>* raAttr = 
-      new ExtensionAttribute<string>("RA", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(raAttr);
-
-    ExtensionAttribute<string>* decAttr = 
-      new ExtensionAttribute<string>("Dec", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(decAttr);
-
-    ExtensionAttribute<string>* affinityAttr = 
-      new ExtensionAttribute<string>("Affinity", ExtensionAttributeBase::ReadOnly,
-				     stellarAffinity);
-    attributes.push_back(affinityAttr);
-
-    ExtensionAttribute<string>* selectAttr = 
-      new ExtensionAttribute<string>("Select", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(selectAttr);
-
-    ExtensionAttribute<string>* starSelectAttr = 
-      new ExtensionAttribute<string>("StarSelect", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(starSelectAttr);
-
-    ExtensionAttribute<string>* xKeyAttr = 
-      new ExtensionAttribute<string>("xKey", ExtensionAttributeBase::ReadWrite);
-    attributes.push_back(xKeyAttr);
-
-    ExtensionAttribute<string>* yKeyAttr = 
-      new ExtensionAttribute<string>("yKey", ExtensionAttributeBase::ReadWrite);
-    attributes.push_back(yKeyAttr);
-
-    ExtensionAttribute<string>* idKeyAttr = 
-      new ExtensionAttribute<string>("idKey", ExtensionAttributeBase::ReadWrite,
-				     "_ROW");
-    attributes.push_back(idKeyAttr);
-
-    ExtensionAttribute<string>* wcsfileAttr = 
-      new ExtensionAttribute<string>("WCSFile", ExtensionAttributeBase::ReadOnly);
-    attributes.push_back(wcsfileAttr);
-
-    // Extension attributes to be determined in this code and then output:
-    ExtensionAttribute<int>* fileNumberAttr = 
-      new ExtensionAttribute<int>("FileNumber", ExtensionAttributeBase::WriteOnly);
-    attributes.push_back(fileNumberAttr);
-
-    ExtensionAttribute<int>* hduNumberAttr = 
-      new ExtensionAttribute<int>("HDUNumber", ExtensionAttributeBase::WriteOnly);
-    attributes.push_back(hduNumberAttr);
-
-    ExtensionAttribute<int>* exposureNumberAttr = 
-      new ExtensionAttribute<int>("ExposureNumber", ExtensionAttributeBase::WriteOnly);
-    attributes.push_back(exposureNumberAttr);
-
-    ExtensionAttribute<int>* deviceNumberAttr = 
-      new ExtensionAttribute<int>("DeviceNumber", ExtensionAttributeBase::WriteOnly);
-    attributes.push_back(deviceNumberAttr);
-
-    ExtensionAttribute<string>* wcsAttr = 
-      new ExtensionAttribute<string>("WCS", ExtensionAttributeBase::WriteOnly);
-    attributes.push_back(wcsAttr);
-
-    // Now create ExtensionAttributes for any requested optional columns to be passed along
-    {
-      list<string> names = splitArgument(stringAttributes);
-      for (list<string>::iterator i = names.begin();
-	   i != names.end();
-	   ++i) 
-	attributes.push_back(new ExtensionAttribute<string>(*i, 
-							    ExtensionAttributeBase::ReadWrite));
+    try {
+      extensionTable = FitsTable(configFile, FITS::ReadOnly, "Extensions").extract();
+    } catch (std::runtime_error& e) {
+      quit(e,1);
     }
-    {
-      list<string> names = splitArgument(intAttributes);
-      for (list<string>::iterator i = names.begin();
-	   i != names.end();
-	   ++i) 
-	attributes.push_back(new ExtensionAttribute<int>(*i, 
-							 ExtensionAttributeBase::ReadWrite));
-    }
-    {
-      list<string> names = splitArgument(doubleAttributes);
-      for (list<string>::iterator i = names.begin();
-	   i != names.end();
-	   ++i) 
-	attributes.push_back(new ExtensionAttribute<double>(*i, 
-							    ExtensionAttributeBase::ReadWrite));
-    }
-
-    // Create necessary columns in the Extension table:
-    for (list<ExtensionAttributeBase*>::const_iterator i = attributes.begin();
-	 i != attributes.end();
-	 ++i) 
-      (*i)->makeOutputColumn(extensionTable);
-
-    long extensionNumber = 0; // cumulative counter for all FITS tables read
 
     // If WCS is coming from a serialized PixelMapCollection, I'll keep last-used one around
     // to avoid re-parsing it all the time:
     string currentPixelMapCollectionFileName = "";
     astrometry::PixelMapCollection* inputPmc=0;
 
-    // Loop over input files
-    for (int iFile = 0; iFile < fileTable.nrows(); iFile++) {
-
-      // First read in everything of interest from the fileTable for this file
-      for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
-	   i != attributes.end();
-	   ++i) 
-	if (!(*i)->readInputTable(fileTable, iFile)
-	    && (*i)->doRead()) {
-	  cerr << "Input filetable is missing attribute column " 
-	       << (*i)->getName() << endl;
-	  exit(1);
-	}
-
-      string filename = filenameAttr->getValue();
+    // Loop over input catalogs
+    for (long iextn = 0; iextn < extensionTable.nrows(); iextn++) {
+      string filename;
+      extensionTable.readCell(filename, "FILENAME", iextn);
       stripWhite(filename);
-      if (filename.empty()) {
-	cerr << "Missing filename for row number " << iFile << endl;
-	exit(1);
-      }
+      int hduNumber;
+      extensionTable.readCell(hduNumber, "EXTENSION", iextn);
 
-      /**/cerr << "Reading file " << iFile << "/" << fileTable.nrows()
-	       << " " << filename << endl;
+      FTable ft = FitsTable(filename, FITS::ReadOnly, hduNumber).extract();
 
-      // Open primary extension of the file to get its header
-      img::Header primaryHeader;
-      try {
-	Hdu primary(filename, FITS::HDUAny, 0, FITS::ReadOnly);
-	primaryHeader.copyFrom(*primary.header());
-      } catch (FITSError& m) {
-	// Could try non-FITS file format here...
-	quit(m,1);
-      }
+      string idKey;
+      extensionTable.readCell(idKey, "IDKEY",iextn);
       
+      if (stringstuff::nocaseEqual(idKey, "_ROW")) {
+	// Want the input table row number as ID column, so make such a column
+	vector<long> vi(ft.nrows());
+	for (int i=0; i<vi.size(); i++) vi[i] = i;
+	ft.addColumn(vi, "_ROW");
+      }
 
-      // Open the file that holds the WCS info for this file, if any
-      string wcsFile = wcsfileAttr->getValue();
-      stripWhite(wcsFile);
-	
-      bool usePixelMapCollection = false;   // True if we have a serialized PMC as input
-      bool useTPVInput = false;	// True if might have serialized FITS Header with TPV as input
-      bool xyAreRaDec = stringstuff::nocaseEqual(wcsFile, "ICRS")
-	|| stringstuff::nocaseEqual(wcsFile, "@_ICRS"); // 2nd form for backwards compatibility
-      ifstream wcsStream;
-      if (! (wcsFile.empty() || xyAreRaDec)) {
-	// See if input file is a serialized PixelMapCollection
-	if (wcsFile==currentPixelMapCollectionFileName) {
-	  // Already have the correct opened file
-	  usePixelMapCollection = true;
-	} else {
+      // Get exposure number, instrument, field, and device numbers
+      int exposureNumber;
+      extensionTable.readCell(exposureNumber, "Exposure", iextn);
+      int instrumentNumber = exposures[exposureNumber]->instrument;
+      int fieldNumber = exposures[exposureNumber]->field;
+      int deviceNumber;
+      extensionTable.readCell(deviceNumber, "Device", iextn);
+
+      // Now get the WCS for this extension
+      astrometry::Wcs* wcs = 0;
+      string wcsin;
+      extensionTable.readCell(wcsin, "WCSIN", iextn);
+      list<string> wcssplit = stringstuff::split(wcsin,'@');
+      if (wcssplit.size()==2) {
+	// @ sign signals that we are getting a map from a PMC
+	string wcsName = wcssplit.front();
+	string pmcFile = wcssplit.back();
+	// Replace any white space in wcs name with underscore:
+	wcsName = stringstuff::regexReplace("[[:space:]]+","_",wcsName);
+
+	if (pmcFile!=currentPixelMapCollectionFileName) {
+	  // Need to open this PMC file
 	  // Try opening file as new serialized PMC
-	  wcsStream.open(wcsFile.c_str());
+	  ifstream wcsStream(pmcFile.c_str());
 	  if (!wcsStream.is_open()) {
-	    cerr << "Could not open WCS information file <" << wcsFile 
+	    cerr << "Could not open PixelMapCollection file <" << pmcFile 
 		 << ">" << endl;
 	    exit(1);
 	  }
@@ -441,481 +340,193 @@ main(int argc,
 	    // Successfully found serialized file:
 	    if (inputPmc) delete inputPmc;
 	    inputPmc = tryPMC;
-	    currentPixelMapCollectionFileName = wcsFile;
-	    usePixelMapCollection = true;
+	    currentPixelMapCollectionFileName = pmcFile;
 	  } else {
-	    // Rewind input and try later as a TPV file:
-	    wcsStream.seekg(0);
-	    wcsStream.clear();
-	    useTPVInput = true;
-	  }
-	}
-      }
-
-      // Look at just the specified HDU, or if extension number is negative (=default), use all possible
-      // FITSTable extensions.
-      int firstHdu = extensionAttr->getValue();
-      int lastHdu = firstHdu;
-      if (lastHdu < 0) {
-	firstHdu = 1;
-	FitsFile ff(filename);
-	lastHdu = ff.HDUCount()-1;
-      }
-      bool isLDAC = false;
-      
-      for (int hduNumber = firstHdu; 
-	   hduNumber<=lastHdu;
-	   hduNumber++) {
-
-	bool haveLDACHeader = false;
-	Header localHeader = primaryHeader;
-	FTable ft;
-	{
-	  FitsTable fitstab(filename, FITS::ReadOnly, hduNumber);
-	  // If this is an LDAC image header, move on to next extension, which should be data
-	  if (stringstuff::nocaseEqual(fitstab.getName(), "LDAC_IMHEAD")) {
-	    isLDAC = true;
-	    if (hduNumber==lastHdu) {
-	      cerr << "Found only LDAC_HEADER at last HDU " << hduNumber
-		   << " of file " << filename << endl;
-	      exit(1);
-	    }
-	    continue;
-	  }
-
-	  // If this LDAC file, need to get header from previous extension
-	  if (stringstuff::nocaseEqual(fitstab.getName(), "LDAC_OBJECTS")) 
-	    isLDAC = true;
-
-	  if (isLDAC) {
-	    img::Header ldacHead = ReadLdacHeader(filename, hduNumber-1);
-	    localHeader += ldacHead;
-	  }
-
-	  // Read the entire catalog
-	  ft = fitstab.extract();
-	} // done with the FITS extension
-
-	localHeader += *ft.header();
-
-	// Now update from the header any attributes that referred to header entries:
-	for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
-	     i != attributes.end();
-	     ++i) 
-	  // ??? Note we are accepting default values if keyword is not in header,
-	  // ??? and the fate of values when keyword is in primary+extension header
-	  // ??? more than once is undefined.
-	  (*i)->checkHeader(localHeader);
-	
-	if (stringstuff::nocaseEqual(idKeyAttr->getValue(), "_ROW")) {
-	  // Want the input table row number as ID column, so make such a column
-	  vector<long> vi(ft.nrows());
-	  for (int i=0; i<vi.size(); i++) vi[i] = i;
-	  ft.addColumn(vi, "_ROW");
-	}
-
-	// Assign an exposure number:
-	string thisExposure = exposureAttr->getValue();
-	if (!exposureNames.has(thisExposure)) {
-	  // Create a new Exposure upon first encounter of it:
-	  exposureNames.append(thisExposure);
-
-	  // Assign an instrument, new one if not yet existent:
-	  string thisInstrument = instrumentAttr->getValue();
-	  if (thisInstrument.empty()) {
-	    cerr << "Missing instrument description for file " << filename << endl;
+	    cerr << "Failed deserializing PixelMapCollection file <" << pmcFile 
+		 << ">" << endl;
 	    exit(1);
 	  }
-	  int instrumentNumber=NO_INSTRUMENT;
-	  if (stringstuff::nocaseEqual(thisInstrument, "REFERENCE"))
-	    instrumentNumber = REF_INSTRUMENT;
-	  else if (stringstuff::nocaseEqual(thisInstrument, "TAG"))
-	    instrumentNumber = TAG_INSTRUMENT;
-	  else {
-	    // Apply regular expression translation table to instrument name before lookups.
-	    instrumentTranslator(thisInstrument);
-	    if (!instrumentNames.has(thisInstrument)) {
-	      instrumentNames.append(thisInstrument);
-	      instruments.push_back(Instrument(thisInstrument));
-	    }
-	    instrumentNumber = instrumentNames.indexOf(thisInstrument);
-	    Assert(instrumentNumber >= 0);
-	  }
-	  exposureInstruments.push_back(instrumentNumber);
+	} // Done reading the pmcFile
 
-	  // Get center coordinates of this extension as center of exposure:
-	  string thisRA = raAttr->getValue();
-	  string thisDec = decAttr->getValue();
-	  stripWhite(thisRA);
-	  stripWhite(thisDec);
-	  if (thisRA.empty() || thisDec.empty() ) {
-	    if (xyAreRaDec) {
-	      // OK to not have "exposure" coordinates, put in dummy:
-	      thisRA = "00:00:00";
-	      thisDec= "+00:00:00";
-	      // ??? But notice that this is trouble if trying _NEAREST field selection
-	    } else {
-	      cerr << "Missing RA/Dec for exposure " << thisExposure
-		   << " from file " << filename
-		   << endl;
-	      exit(1);
-	    }
-	  }
-	  string coords = thisRA + " " + thisDec;
-	  astrometry::SphericalICRS thisRADec;
-	  istringstream iss(coords);
-	  if (!(iss >> thisRADec)) {
-	    cerr << "Error reading RA & Dec for file " << filename
-		 << " from string <" << coords << ">" << endl;
-	    exit(1);
-	  }
-	  exposurePointings.push_back(thisRADec);
-
-	  // Assign a field to this exposure:
-	  string thisField = fieldAttr->getValue();
-	  if (thisField.empty()) {
-	    cerr << "Missing field name for file " << filename << endl;
-	    exit(1);
-	  }
-	  if (stringstuff::nocaseEqual(thisField, "_NEAREST")) {
-	    // Assign exposure to nearest field:
-	    Assert(!fields.empty());
-	    vector<Field*>::const_iterator i = fields.begin();
-	    (*i)->projection->setLonLat(0.,0.);
-	    double minDistance = thisRADec.distance(*(*i)->projection);
-	    thisField = (*i)->name;
-	    for ( ; i != fields.end(); ++i) {
-	      (*i)->projection->setLonLat(0.,0.);
-	      if (thisRADec.distance(*(*i)->projection) < minDistance) {
-		minDistance = thisRADec.distance(*(*i)->projection);
-		thisField = (*i)->name;
-	      }
-	    }
-	  }
-	  int fieldNumber = fieldNames.indexOf(thisField);
-	  if (fieldNumber < 0) {
-	    cerr << "Did not find information for field <" << thisField << ">" << endl;
-	    exit(1);
-	  }
-	  exposureFields.push_back(fieldNumber);
-
-	  Assert(exposurePointings.size()==exposureNames.size());
-	  Assert(exposurePointings.size()==exposureFields.size());
-	  Assert(exposurePointings.size()==exposureInstruments.size());
-	} // end creation of new Exposure information
-	int exposureNumber = exposureNames.indexOf(thisExposure);
-
-	// Get field and instrument from the exposure:
-	int fieldNumber = exposureFields[exposureNumber];
-	int instrumentNumber = exposureInstruments[exposureNumber];
-
-	// Error if different extensions put same exposure in different fields:
-	{
-	  string field = fieldAttr->getValue();
-	  if ( !field.empty() && !stringstuff::nocaseEqual(field, "_NEAREST")
-	       && !stringstuff::nocaseEqual(field, fieldNames.nameOf(exposureFields[exposureNumber]))) {
-	    cerr << "Conflicting field assignments in file " << filename 
-		 << ":\n exposure has <" << fieldNames.nameOf(exposureFields[exposureNumber])
-		 << ">\n extension has <" << field << ">"
-		 << endl;
-	    exit(1);
-	  }
-	} // done checking field agreement
-	{
-	  // Now check if this extension has different instrument than its exposure
-	  string instrument = instrumentAttr->getValue();
-	  if ( !instrument.empty()) {
-	    if ( stringstuff::nocaseEqual(instrument, "REFERENCE")) {
-	      if (instrumentNumber != REF_INSTRUMENT ) {
-		cerr << "Conflicting instrument assignments in file " << filename 
-		     << ":\n extension is REFERENCE but exposure is not"
-		     << endl;
-		exit(1);
-	      }
-	    } else if (stringstuff::nocaseEqual(instrument, "TAG")) {
-	      if (instrumentNumber != TAG_INSTRUMENT) {
-		cerr << "Conflicting instrument assignments in file " << filename 
-		     << ":\n extension is TAG but exposure is not"
-		     << endl;
-		exit(1);
-	      }
-	    } else {
-	      // Run instrument name through the translator, then check
-	      instrumentTranslator(instrument);
-	      if (!stringstuff::nocaseEqual(instrument, 
-					    instrumentNames.nameOf(instrumentNumber))) {
-		cerr << "Conflicting instrument assignments in file " << filename 
-		     << ":\n exposure has <" << instrumentNames.nameOf(instrumentNumber) 
-		     << ">\n extension has <" << instrument << ">"
-		     << endl;
-		exit(1);
-	      }
-	    }
-	  }
-	}  // Done checking instrument agreement
-
-	// Assign a device
-	int deviceNumber = -1;
-	if (instrumentNumber >= 0) {
-	  string thisDevice = deviceAttr->getValue();
-	  if (thisDevice.empty()) {
-	    cerr << "Empty device field for " << filename << endl;
-	    exit(1);
-	  }
-	  if (!instruments[instrumentNumber].has(thisDevice)) {
-	    instruments[instrumentNumber].newDevice(thisDevice);
-	  }
-	  deviceNumber = instruments[instrumentNumber].indexOf(thisDevice);
-	  Assert(deviceNumber >= 0);
-	}
-
-	// Set for output the critical info about this extension:
-	fileNumberAttr->setValue(iFile);
-	exposureNumberAttr->setValue(exposureNumber);
-	hduNumberAttr->setValue(hduNumber);
-	deviceNumberAttr->setValue(deviceNumber);
-
-	// Now get the WCS for this extension
-	astrometry::Wcs* wcs = 0;
-	if (xyAreRaDec) {
-	  // Do nothing here
-	} else if (usePixelMapCollection) {
-	  Assert(exposureInstruments[exposureNumber] >= 0);
-	  Assert(inputPmc);
-	  Instrument& inst = instruments[exposureInstruments[exposureNumber]];
-	  string wcsName = exposureNames.nameOf(exposureNumber) + "/"
-	    + inst[deviceNumber].name;
-	  // Replace any white space with underscore:
-	  wcsName = stringstuff::regexReplace("[[:space:]]+","_",wcsName);
-	  wcs = inputPmc->issueWcs(wcsName)->duplicate();
-	} else if (useTPVInput) {
-	  // Get the WCS from an external header file
-	  Header wcsHead;
-	  if (!(wcsStream >> wcsHead)) {
-	    cerr << "Error reading WCS/header from file " << wcsFile << endl;
-	    exit(1);
-	  }
-	  wcs = astrometry::readTPV(wcsHead);
-	  if (!wcs) {
-	    cerr << "Failed reading TPV WCS from file " << wcsFile << endl;
-	    exit(1);
-	  }
-	} else {
-	  // WCS should be in the headers we already have
-	  wcs = astrometry::readTPV(localHeader);
-	  if (!wcs) {
-	    cerr << "Failed reading TPV WCS for HDU " << hduNumber
-		 << " in file " << filename
-		 << endl;
-	    exit(1);
-	  }
-	}
-
-	// Now save away serialized WCS, and set projection to be the field coordinates
-	string wcsDump;
-	if (xyAreRaDec) {
-	  wcsDump = "ICRS";
-	} else {
-	  Assert(wcs);
-	  astrometry::PixelMapCollection pmc;
-	  pmc.learnWcs(*wcs);
-	  ostringstream oss;
-	  pmc.writeWcs(oss,wcs->getName());
-	  wcsDump = oss.str();
-	  wcs->reprojectTo(*fields[fieldNumber]->projection);
-	}
-	wcsAttr->setValue(wcsDump);
-
-	// Record attributes of this extension to an output table
-	for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
-	     i != attributes.end();
-	     ++i) 
-	  (*i)->writeOutputTable(extensionTable, extensionNumber);
-
-	// Go ahead and filter the input rows and get the columns we want
-	{
-	  string selectionExpression = selectAttr->getValue();
-	  stripWhite(selectionExpression);
-	  if (!selectionExpression.empty())
-	    ft.filterRows(selectionExpression);
-	}
-	vector<double> vx;
-	string key = xKeyAttr->getValue();
-	try {
-	  ft.readCells(vx, key);
-	} catch (FTableError& m) {
-	  // Trap for using float column in source file instead of double:
-	  vector<float> vf;
-	  ft.readCells(vf, key);
-	  vx.resize(vf.size());
-	  for (int i=0; i<vf.size(); i++) vx[i]=vf[i];
-	}
-	vector<double> vy;
-	key = yKeyAttr->getValue();
-	try {
-	  ft.readCells(vy, key);
-	} catch (FTableError& m) {
-	  // Trap for using float column in source file instead of double:
-	  vector<float> vf;
-	  ft.readCells(vf, key);
-	  vy.resize(vf.size());
-	  for (int i=0; i<vf.size(); i++) vy[i]=vf[i];
-	}
-	vector<long> vid;
-	key = idKeyAttr->getValue();
-	try {
-	  ft.readCells(vid, key);
-	} catch (FTableError& m) {
-	  // Trap for using int column in source file instead of long:
-	  vector<int> vidint;
-	  ft.readCells(vidint, key);
-	  vid.reserve(vidint.size());
-	  vid.insert(vid.begin(), vidint.begin(), vidint.end());
-	}
-	vector<bool> isStar(ft.nrows(), true);
-	{
-	  string starExpression = starSelectAttr->getValue();
-	  stripWhite(starExpression);
-	  if (!starExpression.empty())
-	    ft.evaluate(isStar, starExpression);
-	}
-
-	
-	// Select the Catalog(s) to which points from this extension will be added
-	string thisAffinity = affinityAttr->getValue();
-	if (thisAffinity.empty()) {
-	  cerr << "Missing affinity for " << filename << endl;
+	// Read the wcs from the collection
+	wcs = inputPmc->issueWcs(wcsName)->duplicate();
+      } else if (stringstuff::nocaseEqual(wcsin, "_ICRS")) {
+	// No mapping will be needed.  Do nothing.
+      } else {
+	// Assume that wcsin is a FITS WCS specification
+	Header wcsHead;
+	istringstream wcsStream(wcsin);
+	if (!(wcsStream >> wcsHead)) {
+	  cerr << "Error reading WCS/header from WCSIN at extension " << iextn << endl;
 	  exit(1);
 	}
-	PointCat* starCatalog = fields[fieldNumber]->catalogFor(stellarAffinity);
-	PointCat* galaxyCatalog = (stringstuff::nocaseEqual(stellarAffinity,
-							    thisAffinity) ?
-				   starCatalog : 
-				   fields[fieldNumber]->catalogFor(thisAffinity));
+	wcs = astrometry::readTPV(wcsHead);
+	if (!wcs) {
+	  cerr << "Failed reading TPV WCS from extension " << iextn << endl;
+	  exit(1);
+	}
+      }
+
+      // Now replace WCSIN in table with a new serialized one, 
+      // and set projection to be the field coordinates
+      if (wcs) {
+	string wcsDump;
+	astrometry::PixelMapCollection pmc;
+	pmc.learnWcs(*wcs);
+	ostringstream oss;
+	pmc.writeWcs(oss,wcs->getName());
+	wcsDump = oss.str();
+	wcs->reprojectTo(*fields[fieldNumber]->projection);
+	extensionTable.writeCell(wcsDump, "WCSIN", iextn);
+      }
+
+      // Now begin reading the input data
+
+      // Filter the input rows and get the columns we want
+      {
+	string selectionExpression;
+	extensionTable.readCell(selectionExpression, "SELECT", iextn);
+	stripWhite(selectionExpression);
+	if (!selectionExpression.empty())
+	  ft.filterRows(selectionExpression);
+      }
+      vector<double> vx;
+      string key;
+      extensionTable.readCell(key, "XKEY", iextn);
+      try {
+	ft.readCells(vx, key);
+      } catch (FTableError& m) {
+	// Trap for using float column in source file instead of double:
+	vector<float> vf;
+	ft.readCells(vf, key);
+	vx.resize(vf.size());
+	for (int i=0; i<vf.size(); i++) vx[i]=vf[i];
+      }
+      vector<double> vy;
+      extensionTable.readCell(key, "YKEY", iextn);
+      try {
+	ft.readCells(vy, key);
+      } catch (FTableError& m) {
+	// Trap for using float column in source file instead of double:
+	vector<float> vf;
+	ft.readCells(vf, key);
+	vy.resize(vf.size());
+	for (int i=0; i<vf.size(); i++) vy[i]=vf[i];
+      }
+      vector<long> vid;
+      extensionTable.readCell(key, "IDKEY", iextn);
+      try {
+	ft.readCells(vid, key);
+      } catch (FTableError& m) {
+	// Trap for using int column in source file instead of long:
+	vector<int> vidint;
+	ft.readCells(vidint, key);
+	vid.reserve(vidint.size());
+	vid.insert(vid.begin(), vidint.begin(), vidint.end());
+      }
+      vector<bool> isStar(ft.nrows(), true);
+      {
+	string starExpression;
+	extensionTable.readCell(starExpression, "STARSELECT", iextn);
+	stripWhite(starExpression);
+	if (!starExpression.empty())
+	  ft.evaluate(isStar, starExpression);
+      }
+
+      // Select the Catalog(s) to which points from this extension will be added
+      string thisAffinity;
+      extensionTable.readCell(thisAffinity, "AFFINITY", iextn);
+
+      PointCat* starCatalog = fields[fieldNumber]->catalogFor(stellarAffinity);
+      PointCat* galaxyCatalog = (stringstuff::nocaseEqual(stellarAffinity,
+							  thisAffinity) ?
+				 starCatalog : 
+				 fields[fieldNumber]->catalogFor(thisAffinity));
 	
-	// Now loops over objects in the catalog
-	for (int iObj = 0; iObj < vx.size(); iObj++) {
-	  double xpix = vx[iObj];
-	  double ypix = vy[iObj];
-	  // Expand bounds of device:
-	  if (instrumentNumber >=0) 
-	    instruments[instrumentNumber][deviceNumber]+=Position<double>(xpix,ypix);
+      // Now loops over objects in the catalog
+      for (int iObj = 0; iObj < vx.size(); iObj++) {
+	double xpix = vx[iObj];
+	double ypix = vy[iObj];
+	// Expand bounds of device:
+	if (instrumentNumber >=0) 
+	  (*instruments[instrumentNumber])[deviceNumber]+=Position<double>(xpix,ypix);
 	  
-	  //  maps coords to field's tangent plane
-	  double xw, yw;
-	  if (xyAreRaDec) {
-	    fields[fieldNumber]->projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*DEGREE, 
-										  vy[iObj]*DEGREE ));
-	    fields[fieldNumber]->projection->getLonLat(xw, yw);
-	    // Matching program will speak degrees, not radians:
-	    xw /= DEGREE;
-	    yw /= DEGREE;
-	  } else {
-	    Assert(wcs);
-	    wcs->toWorld(xpix, ypix, xw, yw);
-	  }
+	//  maps coords to field's tangent plane
+	double xw, yw;
+	if (wcs) {
+	  Assert(wcs);
+	  wcs->toWorld(xpix, ypix, xw, yw);
+	} else {
+	  // Already have RA, Dec, just project them
+	  fields[fieldNumber]->projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*DEGREE, 
+										 vy[iObj]*DEGREE ));
+	  fields[fieldNumber]->projection->getLonLat(xw, yw);
+	  // Matching program will speak degrees, not radians:
+	  xw /= DEGREE;
+	  yw /= DEGREE;
+	}
 
-	  allPoints.push_back(Point(xw, yw, extensionNumber, vid[iObj], exposureNumber));
-	  if (isStar[iObj])
-	    starCatalog->add(allPoints.back());
-	  else
-	    galaxyCatalog->add(allPoints.back());
-	} // end object loop
+	allPoints.push_back(Point(xw, yw, iextn, vid[iObj], exposureNumber));
 
-	if (wcs) delete wcs;
-	
-	extensionNumber++;
-      } // end input extension loop
-    } // end input file loop
+	// Now we match!!!!
+	if (isStar[iObj])
+	  starCatalog->add(allPoints.back());
+	else
+	  galaxyCatalog->add(allPoints.back());
+      } // end object loop
+
+      if (wcs) delete wcs;
+    } // end input extension loop
 
     if (inputPmc) delete inputPmc;
-    // Delete all the ExtensionAttributes:
-    for (list<ExtensionAttributeBase*>::iterator i = attributes.begin();
-	 i != attributes.end();
-	 ++i) 
-      delete *i;
 
     cerr << "*** Read " << allPoints.size() << " objects" << endl;
 
-    //  Write fields - field centers are given in degrees.
+    //  Write all of our tables to output file
     {
+      // Fields
       FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::OverwriteFile, "Fields");
-      FTable ff=ft.use();
-      vector<string> names;
-      vector<double> ra;
-      vector<double> dec;
-      for (int i=0; i<fields.size(); i++) {
-	names.push_back(fields[i]->name);
-	fields[i]->projection->setLonLat(0.,0.);
-	astrometry::SphericalICRS pole(*fields[i]->projection);
-	double r,d;
-	pole.getLonLat(r,d);
-	ra.push_back( r/DEGREE);
-	dec.push_back( d/DEGREE);
-      }
-      ff.addColumn(names, "Name");
-      ff.addColumn(ra, "RA");
-      ff.addColumn(dec, "Dec");
+      ft.copy(fieldTable);
     }
-
-    //  Write exposure information to output table
     {
+      // Exposures
       FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Exposures");
-      FTable ff=ft.use();
-      vector<string> names;
-      vector<double> ra;
-      vector<double> dec;
-      for (int i=0; i<exposureNames.size(); i++) {
-	names.push_back(exposureNames.nameOf(i));
-	astrometry::SphericalICRS pole = exposurePointings[i];
-	double r,d;
-	pole.getLonLat(r,d);
-	ra.push_back( r/DEGREE);
-	dec.push_back( d/DEGREE);
-      }
-      ff.addColumn(names, "Name");
-      ff.addColumn(ra, "RA");
-      ff.addColumn(dec, "Dec");
-      ff.addColumn(exposureFields, "FieldNumber");
-      ff.addColumn(exposureInstruments, "InstrumentNumber");
+      ft.copy(exposureTable);
     }
 
-    //  Write instrument information to output table
     for (int i=0; i<instruments.size(); i++) {
-      // Append new table for each instrument
-      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
-      ft.setName("Instrument");
-      ft.setVersion(i+1); // might use this later, or put into extension name???
-      FTable ff = ft.use();
-      Instrument& inst = instruments[i];
-      ff.header()->replace("Name", inst.name, "Instrument name");
-      ff.header()->replace("Number", i, "Instrument number");
-      const int nDevices = inst.size();
-      vector<string> devnames(nDevices);
+      // Instrument tables
+      // Update the device bounds in the table first
+      const Instrument& inst = *instruments[i];
+      int nDevices = inst.size();
       vector<double> vxmin(nDevices);
       vector<double> vxmax(nDevices);
       vector<double> vymin(nDevices);
       vector<double> vymax(nDevices);
       for (int j=0; j<nDevices; j++) {
-	devnames[j] = inst[j].name;
 	vxmin[j] = floor(inst[j].getXMin());
 	vxmax[j] = ceil(inst[j].getXMax());
 	vymin[j] = floor(inst[j].getYMin());
 	vymax[j] = ceil(inst[j].getYMax());
       }
-      ff.addColumn(devnames, "Name");
-      ff.addColumn(vxmin, "XMin");
-      ff.addColumn(vxmax, "XMax");
-      ff.addColumn(vymin, "YMin");
-      ff.addColumn(vymax, "YMax");
+      instrumentTables[i].writeCells(vxmin, "XMin");
+      instrumentTables[i].writeCells(vxmax, "XMax");
+      instrumentTables[i].writeCells(vymin, "YMin");
+      instrumentTables[i].writeCells(vymax, "YMax");
+
+      FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
+      ft.setName("Instrument");
+      ft.setVersion(i+1); // might use this later, or put into extension name???
+      ft.copy(instrumentTables[i]);
     }
 
-    //  Write the extension catalog to output file
     {
+      // Extension table
       FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Extensions");
       ft.copy(extensionTable);
     }
 
+    // Now write all the match catalogs
     long matchCount = 0;
     long pointCount = 0;
     //  Loop over fields
@@ -988,6 +599,10 @@ main(int argc,
     // Clean up
     for (int i=0; i<fields.size(); i++)
       delete fields[i];
+    for (int i=0; i<instruments.size(); i++)
+      delete instruments[i];
+    for (int i=0; i<exposures.size(); i++)
+      delete exposures[i];
 
   } catch (std::runtime_error &m) {
     quit(m,1);
