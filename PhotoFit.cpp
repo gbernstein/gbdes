@@ -376,11 +376,15 @@ main(int argc, char *argv[])
       vector<double> dec;
       vector<int> fieldNumber;
       vector<int> instrumentNumber;
+      vector<double> airmass;
+      vector<double> exptime;
       ff.readCells(names, "Name");
       ff.readCells(ra, "RA");
       ff.readCells(dec, "Dec");
       ff.readCells(fieldNumber, "fieldNumber");
       ff.readCells(instrumentNumber, "InstrumentNumber");
+      ff.readCells(airmass, "Airmass");
+      ff.readCells(exptime, "Exptime");
       exposureColorPriorities = vector<int>(names.size(), -1);
       for (int i=0; i<names.size(); i++) {
 	spaceReplace(names[i]);
@@ -412,6 +416,8 @@ main(int argc, char *argv[])
 	  expo = new Exposure(names[i],gn);
 	  expo->field = fieldNumber[i];
 	  expo->instrument = instrumentNumber[i];
+	  expo->airmass = airmass[i];
+	  expo->exptime = exptime[i];
 	} else {
 	  expo = 0;
 	}
@@ -433,7 +439,7 @@ main(int argc, char *argv[])
     for (int i=0; i<extensionTable.nrows(); i++) {
       Extension* extn = new Extension;
       int iExposure;
-      extensionTable.readCell(iExposure, "ExposureNumber", i);
+      extensionTable.readCell(iExposure, "Exposure", i);
 
       if (iExposure < 0 || iExposure >= exposures.size()) {
 	cerr << "Extension " << i << " has invalid exposure number " << iExposure << endl;
@@ -460,17 +466,14 @@ main(int argc, char *argv[])
       extensions.push_back(extn);
       extn->exposure = iExposure;
       int iDevice;
-      extensionTable.readCell(iDevice, "DeviceNumber", i);
+      extensionTable.readCell(iDevice, "Device", i);
       extn->device = iDevice;
-      // Assume an airmass column is in the extension table.
-      // Values <1 mean (including a default 0) mean it's not available.
-      double airmass;
-      extensionTable.readCell(airmass, "Airmass", i);
-      extn->airmass = airmass;
+      extn->airmass = exposures[extn->exposure]->airmass;
+      extn->magshift = +2.5*log10(exposures[extn->exposure]->exptime);
 
       string s;
-      extensionTable.readCell(s, "WCS", i);
-      if (stringstuff::nocaseEqual(s, "ICRS")) {
+      extensionTable.readCell(s, "WCSIN", i);
+      if (stringstuff::nocaseEqual(s, "_ICRS")) {
 	// Create a Wcs that just takes input as RA and Dec in degrees;
 	astrometry::IdentityMap identity;
 	astrometry::SphericalICRS icrs;
@@ -646,7 +649,7 @@ main(int argc, char *argv[])
 	// Make sure our canonical exposure has all devices:
 	set<long> vexp;
 	vexp.insert(canonicalExposure);
-	FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
+	FTable exts = extensionTable.extractRows("Exposure", vexp);
 	if (exts.nrows() != inst->nDevices) {
 	  cerr << "Canonical exposure " << exposures[canonicalExposure]->name
 	       << " for Instrument " << inst->name
@@ -666,7 +669,7 @@ main(int argc, char *argv[])
 	  // Filter the extension table for this exposure:
 	  set<long> vexp;
 	  vexp.insert(*i);
-	  FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
+	  FTable exts = extensionTable.extractRows("Exposure", vexp);
 	  // Stop here if this exposure has right number of extensions (exactly 1 per device):
 	  if (exts.nrows() == inst->nDevices) {
 	    canonicalExposure = *i;
@@ -949,7 +952,8 @@ main(int argc, char *argv[])
 			       << " seeking " << extn.keepers.size()
 			       << " objects" << endl;
       int hduNumber;
-      extensionTable.readCell(hduNumber, "HDUNumber", iext);
+      //**      extensionTable.readCell(hduNumber, "HDUNumber", iext);
+      extensionTable.readCell(hduNumber, "Extension", iext);
       string xKey;
       extensionTable.readCell(xKey, "xKey", iext);
       string yKey;
@@ -1027,7 +1031,8 @@ main(int argc, char *argv[])
 			  d->args.xExposure, d->args.yExposure);
 
 	// Get the mag input and its error
-	d->magIn = getTableDouble(ff, magKey, magKeyElement, magColumnIsDouble,irow);
+	d->magIn = getTableDouble(ff, magKey, magKeyElement, magColumnIsDouble,irow)
+	  + extn.magshift;
 	double sigma = getTableDouble(ff, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
 
 	// Map to output and estimate output error
@@ -1065,7 +1070,8 @@ main(int argc, char *argv[])
 				<< "/" << colorExtensions.size()
 				<< " from " << filename << endl;
       int hduNumber;
-      extensionTable.readCell(hduNumber, "HDUNumber", iext);
+      //**      extensionTable.readCell(hduNumber, "HDUNumber", iext);
+      extensionTable.readCell(hduNumber, "Extension", iext);
       string idKey;
       extensionTable.readCell(idKey, "idKey", iext);
       string colorExpression;
