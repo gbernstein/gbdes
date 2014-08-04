@@ -494,9 +494,9 @@ if __name__=='__main__':
             
             eHeader = None
             for iextn in range(1,len(fits)):
-                if fits[iextn].header['EXTNAME'] == 'LDAC_HEADER':
+                if fits[iextn].header['EXTNAME'] == 'LDAC_IMHEAD':
                     # For LDAC header extension, we just read header and move on
-                    eHeader = gmbpy.utilities.readLDACHeader(fits, iextn)
+                    eHeader = gmbpy.utilities.readLDACHeader(fitsname, iextn)
                 else:
                     if eHeader == None:
                         # This should be a catalog extension.  Get its header
@@ -602,7 +602,8 @@ if __name__=='__main__':
                     if wcsin.strip()=='_HEADER':
                         # Retrieve the header from FITS WCS information in headers
                         wcshdr = gmbpy.utilities.extractWCS( [pHeader, eHeader])
-                        extn['WCSIN'] = wcshdr.tostring(sep='\n',padding=False,endcard=False)
+                        extn['WCSIN'] = wcshdr.tostring(sep='\n',
+                                                        padding=False,endcard=True) + '\n'
                     else:
                         extn['WCSIN'] = wcsin
                         
@@ -617,8 +618,9 @@ if __name__=='__main__':
                     # We are done with this extension.  Clear out the extension header
                     eHeader = None
                     extensions.append(extn)
+                pass  ## Ends the if/else on LDAC format catalogs
 
-            fits.close()
+            fits.close() ## End the 
 
     # Completed loop through all input files from all globs
     # Get rid of fields with only 1 exposure:
@@ -706,7 +708,9 @@ if __name__=='__main__':
     data = []
     for e in extensions:
         data.append(e['WCSIN'])
-    cols.append(pf.Column(name='WCSIN',format='PA',array=data))
+#    cols.append(pf.Column(name='WCSIN',format='PA',array=data))
+# Astropy Code seems to screw up variable-length arrays, at least in 0.2.4
+    cols.append(pf.Column(name='WCSIN',format=py_to_fits(data),array=data))
 
     # Now create a column for every other attribute we have
     for k,a in attributes.items():

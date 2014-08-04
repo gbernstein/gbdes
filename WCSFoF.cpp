@@ -98,15 +98,18 @@ struct Instrument: public vector<Device> {
     for (int i=0; i<ft.nrows(); i++) {
       Device d;
       ft.readCell(d.name,"Name",i);
-      double tmp;
-      ft.readCell(tmp,"XMin",i);
-      d.setXMin(tmp);
-      ft.readCell(tmp,"XMax",i);
-      d.setXMax(tmp);
-      ft.readCell(tmp,"YMin",i);
-      d.setYMin(tmp);
-      ft.readCell(tmp,"YMax",i);
-      d.setYMax(tmp);
+      double xmin, xmax, ymin, ymax;
+      ft.readCell(xmin,"XMin",i);
+      ft.readCell(xmax,"XMax",i);
+      ft.readCell(ymin,"YMin",i);
+      ft.readCell(ymax,"YMax",i);
+      if (xmin!=0. || xmax!=0. || ymin!=0. || ymax!=0.) {
+	// initialize bounds if there are some, otherwise leave undefined
+	d.setXMin(xmin);
+	d.setXMax(xmax);
+	d.setYMin(ymin);
+	d.setYMax(ymax);
+      }
       push_back(d);
     }
   }
@@ -355,6 +358,7 @@ main(int argc,
       } else {
 	// Assume that wcsin is a FITS WCS specification
 	Header wcsHead;
+	//	wcsin += "\nEND\n";  //*** hack to fix problem in astropy.io.fits
 	istringstream wcsStream(wcsin);
 	if (!(wcsStream >> wcsHead)) {
 	  cerr << "Error reading WCS/header from WCSIN at extension " << iextn << endl;
