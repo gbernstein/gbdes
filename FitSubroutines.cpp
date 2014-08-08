@@ -142,7 +142,7 @@ ExtensionObjectSet::operator()(int extensionNumber, long objectNumber) const {
 void
 loadPixelMapParser() {
   // put all new kinds of PixelMap atoms here:
-  astrometry::PixelMapCollection::registerMapType<astrometry::TemplateMap1d>();
+  astrometry::PixelMapCollection::registerMapType<astrometry::TemplateMap>();
 }
 
 void

@@ -160,9 +160,6 @@ main(int argc, char *argv[])
 			 "Output FITS binary catalog", "wcscat.fits");
     parameters.addMember("outWcs",&outWcs, def,
 			 "Output serialized Wcs systems", "wcsfit.wcs");
-
-    // ?? a grammar to define instrument map forms beyond polynomial?
-    // ?? distinct outputs for each extension's Wcs and TPV fits?
   }
 
   // Positional accuracy (in degrees) demanded of numerical solutions for inversion of 
@@ -186,7 +183,7 @@ main(int argc, char *argv[])
     // Teach PixelMapCollection about new kinds of PixelMaps:
     loadPixelMapParser();
 
-    // First is a regex map from instrument names to the names of their PhotoMaps
+    // First is a regex map from instrument names to the names of their PixelMaps
     RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
 							     "renameInstruments");
 
@@ -352,8 +349,8 @@ main(int argc, char *argv[])
       extensionTable.readCell(j, "DeviceNumber", i);
       extn->device = j;
       string s;
-      extensionTable.readCell(s, "WCS", i);
-      if (stringstuff::nocaseEqual(s, "ICRS")) {
+      extensionTable.readCell(s, "WCSIn", i);
+      if (stringstuff::nocaseEqual(s, "_ICRS")) {
 	// Create a Wcs that just takes input as RA and Dec in degrees;
 	IdentityMap identity;
 	SphericalICRS icrs;
@@ -362,7 +359,7 @@ main(int argc, char *argv[])
 	istringstream iss(s);
 	PixelMapCollection pmcTemp;
 	if (!pmcTemp.read(iss)) {
-	  cerr << "Did not find Wcs format for ???" << endl;
+	  cerr << "Could not deserialize starting WCS for extension #" << i << endl;
 	  exit(1);
 	}
 	string wcsName = pmcTemp.allWcsNames().front();
@@ -370,10 +367,6 @@ main(int argc, char *argv[])
       }
       // destination projection is field projection:
       extn->startWcs->reprojectTo(*fieldProjections[exposures[extn->exposure]->field]);
-
-      string tpvOutFile;
-      extensionTable.readCell(tpvOutFile, "TPVOut", i);
-      extn->tpvOutFile = tpvOutFile;
     }
 
     /////////////////////////////////////////////////////
@@ -505,7 +498,7 @@ main(int argc, char *argv[])
 	}
       } // end exposure loop
 
-      // Do we need a canonical exposure? Only if we have an an uninitialized device map
+      // Do we need a canonical exposure? Only if we have an uninitialized device map
       bool needCanonical = false;
       for (int idev=0; idev<deviceMapsExist.size(); idev++)
 	if (!deviceMapsExist[idev]) {
@@ -556,7 +549,7 @@ main(int argc, char *argv[])
 	}
 
 	if (canonicalExposure < 0) {
-	  cerr << "Could not find exposure with all devices for intrument "
+	  cerr << "Could not find canonical exposure with all devices for instrument "
 	       << inst->name << endl;
 	  exit(1);
 	}
@@ -1132,43 +1125,6 @@ main(int argc, char *argv[])
       }
     }
 
-    // Save the new header files
-    
-    // Keep track of those we've already written to:
-    set<string> alreadyOpened;
-
-    // accuracy of SCAMP-format fit to real solution:
-    const double SCAMPTolerance=0.0001*ARCSEC/DEGREE;
-  
-    for (int iext=0; iext<extensions.size(); iext++) {
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
-      if (expo.instrument < 0) continue;
-      Instrument& inst = *instruments[expo.instrument];
-      // Open file for new ASCII headers  ??? Save serialized per exposure too??
-      string newHeadName = extn.tpvOutFile;
-      bool overwrite = false;
-      if ( alreadyOpened.find(newHeadName) == alreadyOpened.end()) {
-	overwrite = true;
-	alreadyOpened.insert(newHeadName);
-      }
-      ofstream newHeads(newHeadName.c_str(), overwrite ? 
-			ios::out : (ios::out | ios::in | ios::ate));
-      if (!newHeads) {
-	cerr << "WARNING: could not open new header file " << newHeadName << endl;
-	cerr << "...Continuing with program" << endl;
-	continue;
-      }
-      // Fit the TPV system to a projection about the field's pointing center:
-      expo.projection->setLonLat(0.,0.);
-      Wcs* tpv = fitTPV(inst.domains[extn.device],
-			*extn.wcs,
-			*expo.projection,
-			"NoName",
-			SCAMPTolerance);
-      newHeads << writeTPV(*tpv);
-      delete tpv;
-    }
 
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
@@ -1497,17 +1453,23 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
   } else if (stringstuff::nocaseEqual(type,"Linear")) {
     pm = new LinearMap(name);
 
-  } else if (stringstuff::nocaseEqual(type,"Template")) {
-    string filename;
-    iss >> filename;
-    ifstream ifs(filename.c_str());
-    if (!ifs) 
-      throw runtime_error("Could not open file for building TemplateMap1d <" + filename + ">");
-    pm = TemplateMap1d::create(ifs, name);
   } else if (stringstuff::nocaseEqual(type,"Identity")) {
     pm = new IdentityMap;
+
+  } else if (stringstuff::nocaseEqual(type,"Template")) {
+    string filename;
+    string lowname;
+    string highname;
+    double xSplit;
+    iss >> filename >> lowname;
+    if (iss >> highname >> xSplit) {
+      pm = new TemplateMap(xSplit, lowname, highname, filename, name);
+    } else {
+      pm = new TemplateMap(lowname, filename, name);
+    }
+
   } else {
-    throw runtime_error("Unknown type of PixelMap: <" + type + ">");
+    throw runtime_error("Unknown PixelMap type in model parser: <" + type + ">");
   }
   return pm;
 }
