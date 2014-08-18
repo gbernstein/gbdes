@@ -2,7 +2,11 @@
 * Allow for fixed scaling of unity on templates, both photo & astro
 * Update documentation: PixelMap.tex and the fitting classes.
 * Document PhotoFit, MakeColors and all their parameters.
-* Clean up instrument name translation
 * Fix PhotoFit etc so that they use the  native projection center of WCS to define
   exposure coordinates.  Or find a way to make this instrument coordinates instead of exposure coords.
 * Gracefully recenter all the exposure's RA's and Dec's.
+
+* Write YAML to TPV fitter program.
+
+* Add PiecewiseMap with nodes as free parameters.
+
