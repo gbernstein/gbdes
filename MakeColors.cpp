@@ -510,7 +510,7 @@ main(int argc, char *argv[])
     for (int i=0; i<extensionTable.nrows(); i++) {
       Extension* extn = new Extension;
       int iExposure;
-      extensionTable.readCell(iExposure, "ExposureNumber", i);
+      extensionTable.readCell(iExposure, "Exposure", i);
 
       if (!exposures[iExposure]) {
 	// This extension is not in an exposure of interest.  Skip it.

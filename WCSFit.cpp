@@ -344,9 +344,9 @@ main(int argc, char *argv[])
       extensions.push_back(new Extension);
       Extension* extn = extensions.back();
       int j;
-      extensionTable.readCell(j, "ExposureNumber", i);
+      extensionTable.readCell(j, "Exposure", i);
       extn->exposure = j;
-      extensionTable.readCell(j, "DeviceNumber", i);
+      extensionTable.readCell(j, "Device", i);
       extn->device = j;
       string s;
       extensionTable.readCell(s, "WCSIn", i);
@@ -520,7 +520,7 @@ main(int argc, char *argv[])
 	// Make sure our canonical exposure has all devices:
 	set<long> vexp;
 	vexp.insert(canonicalExposure);
-	FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
+	FTable exts = extensionTable.extractRows("Exposure", vexp);
 	if (exts.nrows() != inst->nDevices) {
 	  cerr << "Canonical exposure " << exposures[canonicalExposure]->name
 	       << " for Instrument " << inst->name
@@ -540,7 +540,7 @@ main(int argc, char *argv[])
 	  // Filter the extension table for this exposure:
 	  set<long> vexp;
 	  vexp.insert(*i);
-	  FTable exts = extensionTable.extractRows("ExposureNumber", vexp);
+	  FTable exts = extensionTable.extractRows("Exposure", vexp);
 	  // Stop here if this exposure has right number of extensions (exactly 1 per device):
 	  if (exts.nrows() == inst->nDevices) {
 	    canonicalExposure = *i;
@@ -879,12 +879,12 @@ main(int argc, char *argv[])
     // and collecting needed information into the Detection structures
     for (int iext = 0; iext < extensions.size(); iext++) {
       string filename;
-      extensionTable.readCell(filename, "Filename", iext);
+      extensionTable.readCell(filename, "FILENAME", iext);
       /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
 			       << "/" << extensions.size()
 			       << " from " << filename << endl;
       int hduNumber;
-      extensionTable.readCell(hduNumber, "HDUNumber", iext);
+      extensionTable.readCell(hduNumber, "EXTENSION", iext);
       string xKey;
       extensionTable.readCell(xKey, "xKey", iext);
       string yKey;
