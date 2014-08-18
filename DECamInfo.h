@@ -39,7 +39,7 @@ namespace decam {
     astrometry::PixelMapCollection pmc;
     double centerX;
     double centerY;
-    astrometry::Wcs* wcs;
+    astrometry::PixelMap* pixmap;
     static string referenceMap;
   };
 
