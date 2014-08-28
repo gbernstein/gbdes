@@ -496,7 +496,8 @@ if __name__=='__main__':
             for iextn in range(1,len(fits)):
                 if fits[iextn].header['EXTNAME'] == 'LDAC_IMHEAD':
                     # For LDAC header extension, we just read header and move on
-                    eHeader = gmbpy.utilities.readLDACHeader(fitsname, iextn)
+                    # eHeader = gmbpy.utilities.readLDACHeader(fitsname, iextn)
+                    eHeader = gmbpy.utilities.headerFromString(fits[iextn].data[0][0])
                 else:
                     if eHeader == None:
                         # This should be a catalog extension.  Get its header

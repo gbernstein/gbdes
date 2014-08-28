@@ -559,10 +559,13 @@ main(int argc, char *argv[])
       // Now we create new PixelMaps for each Device that does not already have one.
       for (int idev=0; idev < inst->nDevices; idev++) {
 	if (deviceMapsExist[idev]) continue;
-
+	// Allow substitution of device name into the deviceModel string:
+	string thisModel = stringstuff::regexReplace("DEVICE", 
+						     inst->deviceNames.nameOf(idev), 
+						     deviceModel);
 	// Create a new PixelMap for this device. 
 	PixelMap* pm=0;
-	list<string> pmCodes = stringstuff::split(deviceModel,'+');
+	list<string> pmCodes = stringstuff::split(thisModel,'+');
 	if (pmCodes.size() == 1) {
 	  pm = pixelMapDecode(pmCodes.front(),inst->mapNames[idev], worldTolerance);
 	} else if (pmCodes.size() > 1) {
