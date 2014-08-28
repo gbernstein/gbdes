@@ -487,7 +487,7 @@ if __name__=='__main__':
 
         for fitsname in files:
             print "Reading", fitsname
-            fits = pf.open(fitsname)
+            fits = pf.open(fitsname, memmap=True)
             # Primary extension can have a useful header but no table data
             pHeader = fits[0].header
             pHeader[filenameSignal] = fitsname

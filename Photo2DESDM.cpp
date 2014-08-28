@@ -78,7 +78,14 @@ main(int argc, char *argv[])
     cerr << "Working on " << i->first << endl;
     if (useNorms) cerr << "Using norm " << i->second.norm << endl;
 
-    photometry::SubMap* devPhoto = photomaps.issueMap(photoPrefix + i->first);
+    photometry::SubMap* devPhoto=0;
+    try {
+      devPhoto = photomaps.issueMap(photoPrefix + i->first);
+    } catch (photometry::PhotometryError& m) {
+      cerr << "Missing, skipping" << endl;
+      devPhoto = 0;
+    }
+    if (!devPhoto) continue;
 
     int ccdNum = i->second.ccdnum;
     Image<> starflat(bpix, 1.);
