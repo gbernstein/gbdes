@@ -13,6 +13,7 @@
 #include "Random.h"
 #include "Match.h"
 #include "TemplateMap.h"
+#include "PieceMap.h"
 
 using namespace std;
 using namespace astrometry;
@@ -1291,7 +1292,7 @@ main(int argc, char *argv[])
 	yw.push_back(d->yw);
 	double sigmaWorld=0.5*(d->clipsqx + d->clipsqy);
 	sigmaWorld = (sigmaWorld > 0.) ? 1./sqrt(sigmaWorld) : 0.;
-	sigw.push_back(sigmaWorld);
+	sigw.push_back(sigmaWorld*1000.*DEGREE/ARCSEC);
 
 	// Calculate residuals if we have a centroid for the match:
 	double xcpix=0., ycpix=0.;
@@ -1469,6 +1470,28 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
       pm = new TemplateMap(xSplit, lowname, highname, filename, name);
     } else {
       pm = new TemplateMap(lowname, filename, name);
+    }
+
+  } else if (stringstuff::nocaseEqual(type,"Piecewise")) {
+    string axis;
+    double argStart;
+    double argStep;
+    int argCount;
+    iss >> axis >> argStart >> argStep >> argCount;
+    if (stringstuff::nocaseEqual(axis, "X")) {
+      pm = new PieceMap(name, argStart, argStep, argCount,
+			PieceMap::X);
+    } else if (stringstuff::nocaseEqual(axis, "Y")) {
+	pm = new PieceMap(name, argStart, argStep, argCount,
+			  PieceMap::Y);
+    } if (stringstuff::nocaseEqual(axis, "R")) {
+      double xCenter;
+      double yCenter;
+      iss >> xCenter >> yCenter;
+      pm = new PieceMap(name, argStart, argStep, argCount,
+			PieceMap::R, xCenter, yCenter);
+    } else {
+      throw runtime_error("Bad axis type in PieceMap device spec: " + axis);
     }
 
   } else {
