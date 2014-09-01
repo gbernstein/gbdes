@@ -535,8 +535,12 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	  blank = false;
 	  break;
 	}
-      if (blank) 
+      if (blank) {
 	cerr << "***No constraints on row " << i << endl;
+	string badAtom = pmc.atomHavingParameter(i);
+	cerr << "Serialized version of the degenerate map:" << endl;
+	pmc.writeMap(cerr, badAtom);
+      }
     }
   }
 }

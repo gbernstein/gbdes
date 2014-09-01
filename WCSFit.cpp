@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <algorithm>
 
 #include "Std.h"
 #include "Astrometry.h"
@@ -612,31 +613,32 @@ main(int argc, char *argv[])
 	// map from pixel coordinates to world coords=projection in exposure frame
 	extn.startWcs->reprojectTo(*expo.projection);
 
-	// ??? The following should be put into a subroutine and able to do nonlinear fit:
 	{
-	  const int nGridPoints=400;	// Number of test points for map initialization
+	  const int nGridPoints=512;	// Number of test points for map initialization
+	  /**/cerr << "Initializing pixel map " << inst->mapNames[idev] << endl;
 
 	  Bounds<double> b=inst->domains[idev];
-	  double step = sqrt(b.area()/nGridPoints);
-	  int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
-	  int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
-	  double xstep = (b.getXMax()-b.getXMin())/nx;
-	  double ystep = (b.getYMax()-b.getYMin())/ny;
+	  // Distribute points equally in x and y, but shuffle the y coords
+	  // so that the points fill the rectangle
+	  vector<int> vx(nGridPoints);
+	  for (int i=0; i<vx.size(); i++) vx[i]=i;
+	  vector<int> vy = vx;
+	  std::random_shuffle(vy.begin(), vy.end());
+	  double xstep = (b.getXMax()-b.getXMin())/nGridPoints;
+	  double ystep = (b.getYMax()-b.getYMin())/nGridPoints;
 	  list<Detection*> testPoints;
 
-	  for (int ix=0; ix<=nx; ix++) {
-	    for (int iy=0; iy<=ny; iy++) {
-	      double xpix = b.getXMin() + ix*xstep;
-	      double ypix = b.getYMin() + iy*ystep;
-	      double xw, yw;
-	      extn.startWcs->toWorld(xpix, ypix, xw, yw);
-	      Detection* d = new Detection;
-	      d->xpix = xpix;
-	      d->ypix = ypix;
-	      d->xw = xw;
-	      d->yw = yw;
-	      testPoints.push_back(d);
-	    }
+	  for (int i=0; i<vx.size(); i++) {
+	    double xpix = b.getXMin() + (vx[i]+0.5)*xstep;
+	    double ypix = b.getXMin() + (vy[i]+0.5)*ystep;
+	    double xw, yw;
+	    extn.startWcs->toWorld(xpix, ypix, xw, yw);
+	    Detection* d = new Detection;
+	    d->xpix = xpix;
+	    d->ypix = ypix;
+	    d->xw = xw;
+	    d->yw = yw;
+	    testPoints.push_back(d);
 	  }
 
 	  const double testPointSigma = 0.01*ARCSEC/DEGREE; // "errors" on world coords of test points
@@ -707,7 +709,7 @@ main(int argc, char *argv[])
 	// Build test points
 	list<Detection*> testPoints;
 
-	const int nGridPoints=400;	// Number of test points for map initialization
+	const int nGridPoints=800;	// Number of test points for map initialization
 	int pointsPerDevice = nGridPoints / inst->nDevices + 1;
 
 	// Get points from each extension that is part of this exposure
@@ -1484,7 +1486,7 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
     } else if (stringstuff::nocaseEqual(axis, "Y")) {
 	pm = new PieceMap(name, argStart, argStep, argCount,
 			  PieceMap::Y);
-    } if (stringstuff::nocaseEqual(axis, "R")) {
+    } else if (stringstuff::nocaseEqual(axis, "R")) {
       double xCenter;
       double yCenter;
       iss >> xCenter >> yCenter;
