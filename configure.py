@@ -68,6 +68,7 @@ import astropy.units as u
 import re
 import importlib
 import glob
+import subprocess
 import gmbpy.utilities
 
 import astropy
@@ -82,6 +83,21 @@ def getDegree(a):
         return a.degrees
     else:
         return a.degree
+
+# Another annoyance: astropy.io.fits will not read a head without reading data.
+# This function kludges by calling the cfitsio example program to generate
+# an ASCII header file that is read in
+def getHeader(fits, iextn, filename):
+    # This would be the easy way:
+    # return fits[iextn].header
+    cmd = ['listhead']  #CFITSIO example program expected in path
+    cmd.append('{:s}[{:d}]'.format(filename,iextn))
+    f = open('junk','w')
+    subprocess.call(cmd, stdout=f)
+    f.close()
+    f = open('junk')
+    f.readline()
+    return gmbpy.utilities.headerFromString(f)
 
 # These instrument names have special meaning.  "Observations" with these instruments
 # do not require a device name.
@@ -489,22 +505,23 @@ if __name__=='__main__':
             print "Reading", fitsname
             fits = pf.open(fitsname, memmap=True)
             # Primary extension can have a useful header but no table data
-            pHeader = fits[0].header
+            pHeader = getHeader(fits,0,fitsname)
             pHeader[filenameSignal] = fitsname
             
             eHeader = None
             for iextn in range(1,len(fits)):
-                if fits[iextn].header['EXTNAME'] == 'LDAC_IMHEAD':
+                tmphead = getHeader(fits, iextn, fitsname)
+                if tmphead['EXTNAME'] == 'LDAC_IMHEAD':
                     # For LDAC header extension, we just read header and move on
                     # eHeader = gmbpy.utilities.readLDACHeader(fitsname, iextn)
                     eHeader = gmbpy.utilities.headerFromString(fits[iextn].data[0][0])
                 else:
                     if eHeader == None:
                         # This should be a catalog extension.  Get its header
-                        eHeader = fits[iextn].header
+                        eHeader = tmphead
                     else:
                         # This should be the objects part of an LDAC pair
-                        if fits[iextn].header['EXTNAME'] != 'LDAC_OBJECTS':
+                        if tmphead['EXTNAME'] != 'LDAC_OBJECTS':
                             print 'ERROR: Did not get expected LDAC_OBJECTS at extn',iextn,\
                                 'of file',fitsname
                             sys.exit(1)

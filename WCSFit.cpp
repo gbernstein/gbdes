@@ -420,6 +420,7 @@ main(int argc, char *argv[])
 	  cerr << "Could not open file " + loadFile + " holding existing PixelMaps" << endl;
 	  exit(1);
 	}
+	/**/cerr << "Reading pmcInstrument from " << loadFile << endl;
 	pmcInstrument.read(ifs);
       }
 
@@ -776,6 +777,7 @@ main(int argc, char *argv[])
 	  delete *i;
       } // end solution for this exposure map
 
+      /**/cerr << "Done with map initialization for instrument " << inst->name << endl;
     } // End instrument loop
 
     // Freeze the parameters of all the fixed maps
@@ -793,6 +795,7 @@ main(int argc, char *argv[])
 	// being done.  Coordinates are fixed to xpix = xw.
 	// Build a simple Wcs that takes its name from the field
 	SphericalICRS icrs;
+	/**/cerr << "Checking out an ICRS map" << endl;
 	mapCollection.defineWcs(fieldNames.nameOf(ifield), icrs, IdentityMap().getName(),
 				DEGREE);
 	extn.wcs = mapCollection.issueWcs(fieldNames.nameOf(ifield));
@@ -805,6 +808,7 @@ main(int argc, char *argv[])
 	// Real instrument, make a map combining its exposure with its Device map:
 	string wcsName = expo.name + "/" 
 	  + instruments[expo.instrument]->deviceNames.nameOf(extn.device);
+	/**/cerr << "Checking out " << wcsName << endl;
 	list<string> mapElements;
 	// The map itself is the device map:
 	mapElements.push_back(instruments[expo.instrument]->mapNames[extn.device]);

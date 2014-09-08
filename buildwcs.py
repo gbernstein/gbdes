@@ -72,6 +72,7 @@ def instruments(names, sharedName, polyDict):
 
     skip = ['N30','S30']
     all = {}
+    all['PixelMapCollection'] = 'Constructed by buildwcs.py'
     for detpos in ccdnums.keys():
         # First, for each device have a common left/right glowing edge
         if detpos in skip:

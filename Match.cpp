@@ -540,6 +540,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	string badAtom = pmc.atomHavingParameter(i);
 	cerr << "Serialized version of the degenerate map:" << endl;
 	pmc.writeMap(cerr, badAtom);
+	cerr << "Startindex is " << pmc.issueMap(badAtom)->startIndex(0) <<endl;
       }
     }
   }
