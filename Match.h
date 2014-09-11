@@ -1,7 +1,7 @@
 // Match objects from multiple catalogs together
 // And then adjust parameters of their PixelMaps to minimize
 // differences from mean world coordinates.
-//  Derived from the acs/Match code.
+
 #ifndef MATCH_H
 #define MATCH_H
 

@@ -1,5 +1,3 @@
-* update the TemplateMaps
-* Allow for fixed scaling of unity on templates, both photo & astro
 * Update documentation: PixelMap.tex and the fitting classes.
 * Document PhotoFit, MakeColors and all their parameters.
 * Fix PhotoFit etc so that they use the  native projection center of WCS to define
@@ -8,5 +6,20 @@
 
 * Write YAML to TPV fitter program.
 
-* Add PiecewiseMap with nodes as free parameters.
+* Speed up fitting by trying successive Newton steps (with fixed quadratic) instead of Marquardt (on newton branch)
 
+* Implement Piecewise for Photo.
+
+* WCSFit to only selected instruments
+
+* WCSFit able to fix parameters of any component map, not just instrument or device
+
+* Roll back alpha while clipping instead of recalculating full matrix again
+
+* Able to turn off the clip-entire-match step at the end?
+
+* Why is issueMap so slow?
+
+* Write local-transformation code.
+
+* Reduce chunk size in WCSFit

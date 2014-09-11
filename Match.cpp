@@ -443,7 +443,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   AlphaUpdater updater(alpha, pmc, NumberOfLocks);
 
 #ifdef _OPENMP
-  const int chunk=10000;
+  const int chunk=2000;
   vector<Match*> vi(mlist.size());
 
 #pragma omp parallel reduction(+:newChisq) 
@@ -549,6 +549,8 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 double
 CoordAlign::fitOnce(bool reportToCerr) {
   DVector p = getParams();
+  // ??? This is the place to try a Newton iteration before Marquardt.
+  // ??? And also to do a signal that alpha should be fixed for all iterations.
   Marquardt<CoordAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
   marq.setSaveMemory();
