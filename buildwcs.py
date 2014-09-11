@@ -66,8 +66,8 @@ def instruments(names, sharedName, polyDict):
     deciphered YAML stored in the dictionary polyDict.
     """
 
-    leftRange = (30,160)
-    rightRange = (1888, 2018)
+    leftRange = (11,171)
+    rightRange = (1878, 2038)
     xStep = 10.
 
     skip = ['N30','S30']
@@ -78,18 +78,18 @@ def instruments(names, sharedName, polyDict):
         if detpos in skip:
             continue
         if detpos=='S31':
-            xmin = 50
+            xmin = 41
         elif detpos=='N8':
-            xmin = 40
+            xmin = 51
         else:
             xmin = leftRange[0]
         leftName = sharedName + '/' + detpos + '/left'
         all[leftName] = newXEdge(xmin, leftRange[1], xStep)
 
         if detpos in ['S29','S25']:
-            xmax = 2008
+            xmax = 2018
         elif detpos in ['N15','N25']:
-            xmax = 1988
+            xmax = 1998
         else:
             xmax = rightRange[1]
         rightName = sharedName + '/' + detpos + '/right'
