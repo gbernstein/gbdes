@@ -528,7 +528,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 #endif
   chisq = newChisq;
 
-  {
+  if (!reuseAlpha) {
     //***** Code that will be useful in spotting unconstrained parameters:
     for (int i = 0; i<alpha.nrows(); i++) {
       bool blank = true;
@@ -561,8 +561,15 @@ CoordAlign::fitOnce(bool reportToCerr) {
     int nP = pmc.nParams();
     DVector beta(nP, 0.);
     tmv::SymMatrix<double> alpha(nP, 0.);
+
+    Stopwatch timer;
+    timer.start();
     (*this)(p, oldChisq, beta, alpha);
-    /**/cerr << "fitOnce starting chisq " << oldChisq << endl;
+    timer.stop();
+    /**/cerr << "fitOnce starting chisq " << oldChisq 
+	     << " alpha time " << timer << endl;
+    timer.reset();
+    timer.start();
 
     // Set alpha for in-place Cholesky
     alpha.divideUsing(tmv::CH);   // Use Cholesky decomposition for fastest inversion
@@ -579,9 +586,14 @@ CoordAlign::fitOnce(bool reportToCerr) {
       int dof;
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
+      timer.stop();
       /**/cerr << "Newton iteration #" << newtonIter << " yields chisq " << newChisq 
 	       << " / " << dof 
+	       << " in time " << timer << " sec"
 	       << endl;
+      timer.reset();
+      timer.start();
+
       // Give up on Newton if chisq went up non-trivially
       if (newChisq > oldChisq * 1.0001) break;
       else if ((oldChisq - newChisq) < oldChisq * relativeTolerance) {

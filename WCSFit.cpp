@@ -16,6 +16,10 @@
 #include "TemplateMap.h"
 #include "PieceMap.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 using namespace std;
 using namespace astrometry;
 using namespace stringstuff;
@@ -890,6 +894,13 @@ main(int argc, char *argv[])
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
+
+    // Should be safe to multithread this loop as different threads write
+    // only to distinct parts of memory.  Perhaps protect the FITS table read?
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,4)
+#endif
     for (int iext = 0; iext < extensions.size(); iext++) {
       string filename;
       extensionTable.readCell(filename, "FILENAME", iext);
@@ -937,8 +948,14 @@ main(int argc, char *argv[])
       neededColumns.push_back(yKey);
       neededColumns.push_back(errKey);
 
-      FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
-      FTable ff = ft.extract(0, -1, neededColumns);
+      FTable ff;
+#ifdef _OPENMP
+#pragma omp critical(fitsio)
+#endif
+      {
+	FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
+	ff = ft.extract(0, -1, neededColumns);
+      }
       vector<long> id;
       if (useRows) {
 	id.resize(ff.nrows());
