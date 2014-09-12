@@ -802,7 +802,7 @@ main(int argc, char *argv[])
 	// And have this Wcs reproject into field coordinates, then save as a SubMap
 	// and re-issue for use in this extension.
 	extn.wcs->reprojectTo(*fieldProjections[ifield]);
-	mapCollection.learnMap(*extn.wcs);
+	mapCollection.learnMap(*extn.wcs, false, false);
 	extn.map = mapCollection.issueMap(fieldNames.nameOf(ifield));
       } else {
 	// Real instrument, make a map combining its exposure with its Device map:
@@ -823,10 +823,13 @@ main(int argc, char *argv[])
 
 	// Reproject this Wcs into the field system and get a SubMap including reprojection:
 	extn.wcs->reprojectTo(*fieldProjections[ifield]);
-	mapCollection.learnMap(*extn.wcs);
+	mapCollection.learnMap(*extn.wcs, false, false);
 	extn.map = mapCollection.issueMap(wcsName);
       }
     } // Extension loop
+
+    // Recalculate all parameter indices
+    mapCollection.rebuildParameterVector();
 
     /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()
 	     << " with " << mapCollection.nParams() << " free parameters."

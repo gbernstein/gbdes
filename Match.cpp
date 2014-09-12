@@ -443,7 +443,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   AlphaUpdater updater(alpha, pmc, NumberOfLocks);
 
 #ifdef _OPENMP
-  const int chunk=10000;
+  const int chunk=2000;
   vector<Match*> vi(mlist.size());
 
 #pragma omp parallel reduction(+:newChisq) 
