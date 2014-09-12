@@ -220,12 +220,11 @@ struct iRange {
 int
 Match::accumulateChisq(double& chisq,
 		       DVector& beta,
-		       AlphaUpdater& updater) {
-		       //**		       tmv::SymMatrix<double>& alpha) {
+		       AlphaUpdater& updater,
+		       bool reuseAlpha) {
   double xmean, ymean;
   double xW, yW;
   int nP = beta.size();
-  //**  Assert(alpha.nrows()==nP);
 
   // No contributions to fit for <2 detections:
   if (nFit<=1) return 0;
@@ -289,67 +288,71 @@ Match::accumulateChisq(double& chisq,
       dxmean.subVector(ip, ip+np) += wxi*dx;
       dymean.subVector(ip, ip+np) += wyi*dy;
 
-      // The alpha matrix: a little messy because of symmetry
-      //**      alpha.subSymMatrix(ip, ip+np) += wxi*(dx ^ dx));
-      //**      alpha.subSymMatrix(ip, ip+np) += wxi*(dy ^ dy));
-      updater.rankOneUpdate(mapNumber, ip, dx, 
-			    mapNumber, ip, dx, wxi);
-      updater.rankOneUpdate(mapNumber, ip, dy, 
-			    mapNumber, ip, dy, wyi);
+      if (!reuseAlpha) {
+	// Increment the alpha matrix
+	//**      alpha.subSymMatrix(ip, ip+np) += wxi*(dx ^ dx));
+	//**      alpha.subSymMatrix(ip, ip+np) += wxi*(dy ^ dy));
+	updater.rankOneUpdate(mapNumber, ip, dx, 
+			      mapNumber, ip, dx, wxi);
+	updater.rankOneUpdate(mapNumber, ip, dy, 
+			      mapNumber, ip, dy, wyi);
 
-      int istart2 = istart+np;
-      for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
-	int ip2=(*i)->map->startIndex(iMap2);
-	int np2=(*i)->map->nSubParams(iMap2);
-	int mapNumber2 = (*i)->map->mapNumber(iMap2);
-	if (np2==0) continue;
-	tmv::VectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
-	tmv::VectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
-	// Note that subMatrix here will not cross diagonal:
-	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wxi*(dx ^ dx2);
-	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wyi*(dy ^ dy2);
-	updater.rankOneUpdate(mapNumber2, ip2, dx2, 
-			      mapNumber,  ip,  dx, wxi);
-	updater.rankOneUpdate(mapNumber2, ip2, dy2, 
-			      mapNumber,  ip,  dy, wyi);
-	istart2+=np2;
+	int istart2 = istart+np;
+	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
+	  int ip2=(*i)->map->startIndex(iMap2);
+	  int np2=(*i)->map->nSubParams(iMap2);
+	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
+	  if (np2==0) continue;
+	  tmv::VectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
+	  tmv::VectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
+	  // Note that subMatrix here will not cross diagonal:
+	  //**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wxi*(dx ^ dx2);
+	  //**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wyi*(dy ^ dy2);
+	  updater.rankOneUpdate(mapNumber2, ip2, dx2, 
+				mapNumber,  ip,  dx, wxi);
+	  updater.rankOneUpdate(mapNumber2, ip2, dy2, 
+				mapNumber,  ip,  dy, wyi);
+	  istart2+=np2;
+	}
       }
       istart+=np;
     } // outer parameter segment loop
     if (dxyi[ipt]) {delete dxyi[ipt]; dxyi[ipt]=0;}
   } // object loop
 
-  // Subtract effects of derivatives on mean
-  /*  We want to do this, but without touching the entire alpha matrix every time:
-  alpha -=  (dxmean ^ dxmean)/xW;
-  alpha -=  (dymean ^ dymean)/yW;
-  */
+  if (!reuseAlpha) {
+    // Subtract effects of derivatives on mean
+    /*  We want to do this, but without touching the entire alpha matrix every time:
+	alpha -=  (dxmean ^ dxmean)/xW;
+	alpha -=  (dymean ^ dymean)/yW;
+    */
 
-  // Do updates parameter block by parameter block
-  for (map<int,iRange>::iterator m1=mapsTouched.begin();
-       m1 != mapsTouched.end();
-       ++m1) {
-    int map1 = m1->first;
-    int i1 = m1->second.startIndex;
-    int n1 = m1->second.nParams;
-    if (n1<=0) continue;
-    for (map<int, iRange>::iterator m2=m1;
-	 m2 != mapsTouched.end();
-	 ++m2) {
-      int map2 = m2->first;
-      int i2 = m2->second.startIndex;
-      int n2 = m2->second.nParams;
-      if (n2<=0) continue;
-      tmv::VectorView<double> dx1 = dxmean.subVector(i1, i1+n1);
-      tmv::VectorView<double> dx2 = dxmean.subVector(i2, i2+n2);
-      tmv::VectorView<double> dy1 = dymean.subVector(i1, i1+n1);
-      tmv::VectorView<double> dy2 = dymean.subVector(i2, i2+n2);
-      updater.rankOneUpdate(map2, i2, dx2,
-			    map1, i1, dx1, -1./xW);
-      updater.rankOneUpdate(map2, i2, dy2,
-			    map1, i1, dy1, -1./yW);
+    // Do updates parameter block by parameter block
+    for (map<int,iRange>::iterator m1=mapsTouched.begin();
+	 m1 != mapsTouched.end();
+	 ++m1) {
+      int map1 = m1->first;
+      int i1 = m1->second.startIndex;
+      int n1 = m1->second.nParams;
+      if (n1<=0) continue;
+      for (map<int, iRange>::iterator m2=m1;
+	   m2 != mapsTouched.end();
+	   ++m2) {
+	int map2 = m2->first;
+	int i2 = m2->second.startIndex;
+	int n2 = m2->second.nParams;
+	if (n2<=0) continue;
+	tmv::VectorView<double> dx1 = dxmean.subVector(i1, i1+n1);
+	tmv::VectorView<double> dx2 = dxmean.subVector(i2, i2+n2);
+	tmv::VectorView<double> dy1 = dymean.subVector(i1, i1+n1);
+	tmv::VectorView<double> dy2 = dymean.subVector(i2, i2+n2);
+	updater.rankOneUpdate(map2, i2, dx2,
+			      map1, i1, dx1, -1./xW);
+	updater.rankOneUpdate(map2, i2, dy2,
+			      map1, i1, dy1, -1./yW);
+      }
     }
-  }
+  } // Finished putting terms from mean into alpha
 
   return 2*(nFit-1);
 }
@@ -428,7 +431,8 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
 
 void
 CoordAlign::operator()(const DVector& p, double& chisq,
-		       DVector& beta, tmv::SymMatrix<double>& alpha) {
+		       DVector& beta, tmv::SymMatrix<double>& alpha,
+		       bool reuseAlpha) {
   int nP = pmc.nParams();
   Assert(p.size()==nP);
   Assert(beta.size()==nP);
@@ -504,8 +508,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	   << endl;
     }
     if ( m->getReserved() ) continue;	//skip reserved objects
-    //**    m->accumulateChisq(newChisq, newBeta, alpha);
-    m->accumulateChisq(newChisq, newBeta, updater);
+    m->accumulateChisq(newChisq, newBeta, updater, reuseAlpha);
   }
 #pragma omp critical(beta)
   beta += newBeta;
@@ -520,8 +523,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 				<< endl;
     matchCtr++;
     if ( m->getReserved() ) continue;	//skip reserved objects
-    //**    m->accumulateChisq(newChisq, beta, alpha);
-    m->accumulateChisq(newChisq, beta, updater);
+    m->accumulateChisq(newChisq, beta, updater, reuseAlpha);
   }
 #endif
   chisq = newChisq;
@@ -549,8 +551,52 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 double
 CoordAlign::fitOnce(bool reportToCerr) {
   DVector p = getParams();
-  // ??? This is the place to try a Newton iteration before Marquardt.
-  // ??? And also to do a signal that alpha should be fixed for all iterations.
+  // First will try doing Newton iterations, keeping a fixed Hessian.
+  // If it increases chisq or takes too long to converge, we will 
+  // go into the Marquardt solver.
+
+  {
+    // Get chisq, beta, alpha at starting parameters
+    double oldChisq = 0.;
+    int nP = pmc.nParams();
+    DVector beta(nP, 0.);
+    tmv::SymMatrix<double> alpha(nP, 0.);
+    (*this)(p, oldChisq, beta, alpha);
+    /**/cerr << "fitOnce starting chisq " << oldChisq << endl;
+
+    // Set alpha for in-place Cholesky
+    alpha.divideUsing(tmv::CH);   // Use Cholesky decomposition for fastest inversion
+    alpha.divideInPlace();  // In-place avoids doubling memory needs
+
+    const int MAX_NEWTON_STEPS = 8;
+    int newtonIter = 0;
+    for (int newtonIter = 0; newtonIter < MAX_NEWTON_STEPS; newtonIter++) {
+      beta /= alpha;
+      DVector newP = p + beta;
+      setParams(newP);
+      // Get chisq at the new parameters
+      remap();
+      int dof;
+      double maxDev;
+      double newChisq = chisqDOF(dof, maxDev);
+      /**/cerr << "Newton iteration #" << newtonIter << " yields chisq " << newChisq 
+	       << " / " << dof 
+	       << endl;
+      // Give up on Newton if chisq went up non-trivially
+      if (newChisq > oldChisq * 1.0001) break;
+      else if ((oldChisq - newChisq) < oldChisq * relativeTolerance) {
+	// Newton has converged, so we're done.
+	return newChisq;
+      }
+      // Want another Newton iteration, but keep alpha as before
+      p = newP;
+      (*this)(p, oldChisq, beta, alpha, true);
+    }
+    // If we reach this place, Newton is going backwards or nowhere, slowly.
+    // So just give it up.
+  }
+
+  // ??? Signal that alpha should be fixed for all iterations of Marquardt?
   Marquardt<CoordAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
   marq.setSaveMemory();

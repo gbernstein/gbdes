@@ -79,11 +79,14 @@ namespace astrometry {
     void centroid(double& x, double& y) const;
     void centroid(double& x, double& y, 
 		  double& wtx, double &wty) const;
+
+    // Increment chisq, beta, and alpha for this match.
     // Returned integer is the DOF count.  This *does* remap points being fitted.
+    // reuseAlpha=true will skip the incrementing of alpha.
     int accumulateChisq(double& chisq,
-			 DVector& beta,
-			//**tmv::SymMatrix<double>& alpha);
-			AlphaUpdater& updater);
+			DVector& beta,
+			AlphaUpdater& updater,
+			bool reuseAlpha=false);
    
     // sigmaClip returns true if clipped, 
     // and deletes the clipped guy if 2nd arg is true.  
@@ -131,8 +134,11 @@ namespace astrometry {
     void setParams(const DVector& p) {pmc.setParams(p);}
     DVector getParams() const {return pmc.getParams();}
     int nParams() const {return pmc.nParams();}
+    // This is the calculation of normal equation components used in fitting.
+    // reuseAlpha=true will leave alpha unchanged, way faster.
     void operator()(const DVector& params, double& chisq,
-		    DVector& beta, tmv::SymMatrix<double>& alpha);
+		    DVector& beta, tmv::SymMatrix<double>& alpha,
+		    bool reuseAlpha=false);
     void setRelTolerance(double tol) {relativeTolerance=tol;}
     // Return count of useful (un-clipped) Matches & Detections.
     // Count either reserved or non-reserved objects, and require minMatches useful
