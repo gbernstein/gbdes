@@ -113,7 +113,7 @@ testTemplateMap: testTemplateMap.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testPrep: testPrep.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-test: test.o ExtensionAttribute.o $(OBJ)
+test: test.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testFT: testFT.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

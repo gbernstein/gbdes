@@ -37,7 +37,7 @@ def newXEdge(xStart, xEnd, dx):
     argStep = (xEnd - xStart) / nSteps
     argStart = xStart - argStep
     values = [0.,0.]
-    for i in range(nSteps):
+    for i in range(nSteps+1):
         values.append(0.)
     out = {}
     out['Type']='Piecewise'
@@ -66,7 +66,7 @@ def instruments(names, sharedName, polyDict):
     deciphered YAML stored in the dictionary polyDict.
     """
 
-    leftRange = (30,160)
+    leftRange = (31,161)
     rightRange = (1888, 2018)
     xStep = 10.
 
@@ -77,19 +77,17 @@ def instruments(names, sharedName, polyDict):
         # First, for each device have a common left/right glowing edge
         if detpos in skip:
             continue
-        if detpos=='S31':
-            xmin = 50
-        elif detpos=='N8':
-            xmin = 40
+        if detpos=='N8':
+            xmin = 61
         else:
             xmin = leftRange[0]
         leftName = sharedName + '/' + detpos + '/left'
         all[leftName] = newXEdge(xmin, leftRange[1], xStep)
 
-        if detpos in ['S29','S25']:
+        if detpos in ['S29']:
             xmax = 2008
-        elif detpos in ['N15','N25']:
-            xmax = 1988
+        elif detpos in ['N25']:
+            xmax = 1998
         else:
             xmax = rightRange[1]
         rightName = sharedName + '/' + detpos + '/right'
