@@ -440,7 +440,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   setParams(p);
   double newChisq=0.;
   beta.setZero();
-  alpha.setZero();
+  if (!reuseAlpha) alpha.setZero();
   int matchCtr=0;
 
   const int NumberOfLocks = 2000;
@@ -566,8 +566,7 @@ CoordAlign::fitOnce(bool reportToCerr) {
     timer.start();
     (*this)(p, oldChisq, beta, alpha);
     timer.stop();
-    /**/cerr << "fitOnce starting chisq " << oldChisq 
-	     << " alpha time " << timer << endl;
+    /**/cerr << "..fitOnce alpha time " << timer << endl;
     timer.reset();
     timer.start();
 
@@ -587,7 +586,7 @@ CoordAlign::fitOnce(bool reportToCerr) {
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
       timer.stop();
-      /**/cerr << "Newton iteration #" << newtonIter << " yields chisq " << newChisq 
+      /**/cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
 	       << " / " << dof 
 	       << " in time " << timer << " sec"
 	       << endl;
