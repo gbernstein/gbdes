@@ -159,7 +159,7 @@ Match::clipAll() {
   for (list<Detection*>::iterator i=elist.begin();
        i!=elist.end();
        ++i) 
-    (*i)->isClipped = true;
+    if (*i) (*i)->isClipped = true;
   nFit = 0;
 }
 

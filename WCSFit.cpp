@@ -799,7 +799,7 @@ main(int argc, char *argv[])
 	// being done.  Coordinates are fixed to xpix = xw.
 	// Build a simple Wcs that takes its name from the field
 	SphericalICRS icrs;
-	/**/cerr << "Checking out an ICRS map" << endl;
+
 	mapCollection.defineWcs(fieldNames.nameOf(ifield), icrs, IdentityMap().getName(),
 				DEGREE);
 	extn.wcs = mapCollection.issueWcs(fieldNames.nameOf(ifield));
@@ -812,7 +812,7 @@ main(int argc, char *argv[])
 	// Real instrument, make a map combining its exposure with its Device map:
 	string wcsName = expo.name + "/" 
 	  + instruments[expo.instrument]->deviceNames.nameOf(extn.device);
-	/**/cerr << "Checking out " << wcsName << endl;
+
 	list<string> mapElements;
 	// The map itself is the device map:
 	mapElements.push_back(instruments[expo.instrument]->mapNames[extn.device]);
@@ -1120,6 +1120,7 @@ main(int argc, char *argv[])
 	  cout << "--Starting strict tolerance passes, clipping full matches" << endl;
 	  oldthresh = thresh;
 	  nclip = ca.sigmaClip(thresh, false, true);
+	  //**/nclip = ca.sigmaClip(thresh, false, false);
 	  cout << "Clipped " << nclip
 	       << " matches " << endl;
 	  continue;
@@ -1130,6 +1131,7 @@ main(int argc, char *argv[])
       }
       oldthresh = thresh;
       nclip = ca.sigmaClip(thresh, false, clipEntireMatch || !coarsePasses);
+      //**nclip = ca.sigmaClip(thresh, false, false);
       if (nclip==0 && coarsePasses) {
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
@@ -1181,6 +1183,8 @@ main(int argc, char *argv[])
 	     << " matches " << endl;
       } while (nclip>0);
     }
+
+    /**/cerr << "Done clipping reserved" << endl;
 
     //////////////////////////////////////
     // Output data and calculate some statistics
@@ -1378,6 +1382,8 @@ main(int argc, char *argv[])
       im = matches.erase(im);
     } // end match loop
 
+    /**/cerr << "Done collecting residuals" << endl;
+
     // Write remaining results to output table:
     outTable.writeCells(sequence, "SequenceNumber", pointCount);
     outTable.writeCells(catalogNumber, "Extension", pointCount);
@@ -1395,6 +1401,8 @@ main(int argc, char *argv[])
     outTable.writeCells(sigpix, "sigPix", pointCount);
     outTable.writeCells(sigw, "sigW", pointCount);
     outTable.writeCells(wtFrac, "wtFrac", pointCount);
+
+    /**/cerr << "Done writing cells" << endl;
 
     // Print summary statistics for each exposure
     cout << "#    Exp    N    DOF    dx    +-    dy    +-   RMS chi_red  "
