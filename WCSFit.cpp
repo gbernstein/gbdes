@@ -1139,8 +1139,6 @@ main(int argc, char *argv[])
       }
       cout << "Clipped " << nclip
 	   << " matches " << endl;
-      long int dcount=0;
-      long int mcount=0;
       
     } while (coarsePasses || nclip>0);
   
