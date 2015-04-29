@@ -73,31 +73,16 @@ import gmbpy.utilities
 
 import astropy
 # Major annoyance: incompatible interfaces in astropy
-oldAstropy = int(astropy.__version__.split('.')[1])<3
-if oldAstropy:
-    ICRS = cc.ICRSCoordinates
-else:
-    ICRS = cc.ICRS
+oldAstropy = int(astropy.__version__.split('.')[0])==0 \
+  and int(astropy.__version__.split('.')[1])<3
 def getDegree(a):
     if oldAstropy:
         return a.degrees
     else:
         return a.degree
 
-# Another annoyance: astropy.io.fits will not read a head without reading data.
-# This function kludges by calling the cfitsio example program to generate
-# an ASCII header file that is read in
 def getHeader(fits, iextn, filename):
-    # This would be the easy way:
-    # return fits[iextn].header
-    cmd = ['listhead']  #CFITSIO example program expected in path
-    cmd.append('{:s}[{:d}]'.format(filename,iextn))
-    f = open('junk','w')
-    subprocess.call(cmd, stdout=f)
-    f.close()
-    f = open('junk')
-    f.readline()
-    return gmbpy.utilities.headerFromString(f)
+    return fits[iextn].header
 
 # These instrument names have special meaning.  "Observations" with these instruments
 # do not require a device name.
@@ -147,8 +132,10 @@ class Field:
     def __init__(self, name, coords, radius, index=-1):
         # Expecting construction from a dictionary
         self.name = name
-#        self.coords = cc.ICRS(coords,unit=(u.hourangle,u.degree))
-        self.coords = ICRS(coords,unit=(u.hourangle,u.degree))
+        if oldAstropy:
+            self.coords = ICRS(coords,unit=(u.hourangle,u.degree))
+        else:
+            self.coords = cc.SkyCoord(coords,unit=(u.hourangle,u.degree),frame='icrs')
         self.radius = float(radius)
         self.index = int(index)
         return
@@ -549,8 +536,7 @@ if __name__=='__main__':
                     dec = attributes['DEC'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     # ??? Check for RA already in degrees?
                     if ra!=None and dec!=None:
-#                        icrs = cc.ICRS(ra=ra,dec=dec,unit=(u.hourangle,u.degree))
-                        icrs = ICRS(ra=ra,dec=dec,unit=(u.hourangle,u.degree))
+                        icrs = cc.SkyCoord(ra=ra,dec=dec,unit=(u.hourangle,u.degree),frame='icrs')
                     else:
                         icrs = None
                     airmass = attributes['AIRMASS'](expo, primaryHeader=pHeader, extnHeader=eHeader)
@@ -592,6 +578,7 @@ if __name__=='__main__':
                             field=None
                             minDistance = 0.
                             for k,f in fields.items():
+                                print expo,k,'distance:',f.distance(icrs)
                                 if field==None or f.distance(icrs)<minDistance:
                                     field = k
                                     minDistance = f.distance(icrs)
