@@ -75,6 +75,20 @@ string ccdData =
   "S31  3    2049 16385	  \n"
   "# N30 61   24577 12289 dead CCD  \n ";
 
+Bounds<int>
+decam::datasec(const string detpos, const string amp) {
+  if ( (detpos[0]=='S' && amp=="A") ||
+       (detpos[0]=='N' && amp=="B") ) {
+    return Bounds<int>(1025,2048,1,4096);
+  } else if ( (detpos[0]=='S' && amp=="B") ||
+	      (detpos[0]=='N' && amp=="A") ) {
+    return Bounds<int>(1,1024,1,4096);
+  } else {
+    throw std::runtime_error("datasec() has bad detpos/amp combination " +
+			     detpos + "/" + amp);
+  }
+}
+
 map<string,Device>
 decam::decamInfo() {
   map<string,Device> info;

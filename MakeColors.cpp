@@ -468,6 +468,8 @@ main(int argc, char *argv[])
       ff.writeCell(0., "Dec", magTableExposureNumber);
       ff.writeCell(0, "FieldNumber", magTableExposureNumber);
       ff.writeCell(TAG_INSTRUMENT, "InstrumentNumber", magTableExposureNumber);
+      // ??? Following line fails if the NAME column is not wide enough for magOutFile
+      // ??? Might need to reproduce the column as true variable-length string.
       ff.writeCell(magOutFile, "Name", magTableExposureNumber);
       ff.writeCell(1., "Airmass", magTableExposureNumber);
       ff.writeCell(1., "Exptime", magTableExposureNumber);
