@@ -101,6 +101,8 @@ main(int argc, char *argv[])
     starflat.header()->append("OBSTYPE", s);
     s = "IMAGE ";
     starflat.header()->append("DES_EXT", s);
+    s = "SCI";
+    starflat.header()->append("EXTNAME", s);
     starflat.header()->addHistory("Created from starflat solution " + photoFile);
 
     // Loop over pixels

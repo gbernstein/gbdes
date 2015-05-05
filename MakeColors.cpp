@@ -833,7 +833,7 @@ main(int argc, char *argv[])
     // and adding the magnitude and color table entries to the matches
     // Also will append each one to the output file
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
-      /**/cerr << "Ready to start calculating catalog extension" << inputTables << " " 
+      /**/cerr << "Ready to start calculating catalog extension " << inputTables << " " 
 	       << catalogHDUs[icat] << endl;
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
       // Append extension to output and adopt the input data
