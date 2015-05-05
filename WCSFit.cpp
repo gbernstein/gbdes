@@ -52,7 +52,7 @@ string usage=
 
 // parameter canonicalExposures is a string with
 // <exposureID>, ....
-// where ares are exposures that will be given an identity exposure map.  There must be
+// which are are exposures that will be given an identity exposure map.  There must be
 // 0 or 1 of these specified for any instrument that has Instrument Map with free parameters.
 // Default is to find an exposure that has data in all devices and use it.
 // Will have an error if there is more than one constraint on any Instrument.

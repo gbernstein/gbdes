@@ -6,6 +6,7 @@
 #include <iomanip>
 
 #include "StringStuff.h"
+#include "Statistics.h"
 
 #include "FitsImage.h"
 #include "PhotoMapCollection.h"
@@ -93,6 +94,7 @@ main(int argc, char *argv[])
     starflat.header()->append("CCDNUM", ccdNum);
     starflat.header()->append("DETPOS", i->first);
     starflat.header()->append("FILTER", filter);
+    starflat.header()->append("BAND", filter);
     time_t now;
     time(&now);
     string date = ctime(&now);
@@ -101,6 +103,8 @@ main(int argc, char *argv[])
     starflat.header()->append("OBSTYPE", s);
     s = "IMAGE ";
     starflat.header()->append("DES_EXT", s);
+    s = "SCI";
+    starflat.header()->append("EXTNAME", s);
     starflat.header()->addHistory("Created from starflat solution " + photoFile);
 
     // Loop over pixels
@@ -116,6 +120,21 @@ main(int argc, char *argv[])
       }
 
     if (useNorms) starflat *= i->second.norm;
+
+    // Calculate the median value of each amplifier and store in header
+    // Subsample the pixels in the useful image region at 4x4.
+    std::vector<float> v;
+    Bounds<int> b = decam::datasec(i->first,"A") & bDevice;
+    for (int iy = b.getYMin(); iy <= b.getYMax(); iy+=4)
+      for (int ix = b.getXMin(); ix <= b.getXMax(); ix+=4)
+	v.push_back(starflat(ix,iy));
+    starflat.header()->append("FLATMEDA", stats::median(v));
+    v.clear();
+    b = decam::datasec(i->first,"B") & bDevice;
+    for (int iy = b.getYMin(); iy <= b.getYMax(); iy+=4)
+      for (int ix = b.getXMin(); ix <= b.getXMax(); ix+=4)
+	v.push_back(starflat(ix,iy));
+    starflat.header()->append("FLATMEDB", stats::median(v));
 
     // Add fake WCS to enable array display with DS9 (as per Yanny message 24 Jan 2014)
     starflat.header()->append("CRVAL1",0.);

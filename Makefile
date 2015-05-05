@@ -65,6 +65,8 @@ OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
 
 all: depend subs
 
+bfcorrect: bfcorrect.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 Photo2DESDM: Photo2DESDM.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 CorrectFlat: CorrectFlat.o DECamInfo.o $(OBJ)
@@ -80,6 +82,8 @@ DrawRegnault: DrawRegnault.o $(OBJ)
 ApplyPhoto: ApplyPhoto.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ApplyWCS: ApplyWCS.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+TabulatePixmap: TabulatePixmap.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 UnFlattenCatalog: UnFlattenCatalog.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

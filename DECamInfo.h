@@ -3,6 +3,7 @@
 #define DECAMINFO_H
 
 #include <map>
+#include "Std.h"
 #include "Bounds.h"
 #include "Wcs.h"
 #include "PixelMapCollection.h"
@@ -20,6 +21,11 @@ namespace decam {
   // Return a DETPOS-indexed container of Devices - unit norms
   std::map<string,Device> decamInfo();
 
+  // Function to return the 1-indexed, inclusive bounds of pixels in trimmed
+  // image read from designated amplifier.
+  Bounds<int>
+  datasec(const string detpos, const string amp);
+  
   // Load a set of normalizations from a file into the Device map 
   void getDeviceNorms(string filename, std::map<string,Device>& devices);
 
