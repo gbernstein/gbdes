@@ -116,7 +116,7 @@ main(int argc, char *argv[])
 	args.xDevice = ix;
 	args.yDevice = iy;
 	double photo = devPhoto->forward(0., args);
-	starflat(ix, iy) = pow(10., -0.4*photo);
+	starflat(ix, iy) = pow(10., 0.4*photo);
       }
 
     if (useNorms) starflat *= i->second.norm;
