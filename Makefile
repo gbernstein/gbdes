@@ -57,7 +57,8 @@ SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpo
 	$(ASTROMETRY)/SerializeProjection.o $(ASTROMETRY)/TemplateMap.o \
 	$(ASTROMETRY)/PieceMap.o \
 	$(PHOTOMETRY)/PhotoMap.o $(PHOTOMETRY)/PhotoMapCollection.o $(PHOTOMETRY)/SubMap.o \
-	$(PHOTOMETRY)/PhotoMatch.o $(PHOTOMETRY)/PhotoPrior.o $(PHOTOMETRY)/PhotoTemplate.o
+	$(PHOTOMETRY)/PhotoMatch.o $(PHOTOMETRY)/PhotoPrior.o $(PHOTOMETRY)/PhotoTemplate.o \
+	$(PHOTOMETRY)/PhotoPiecewise.o
 
 SRC = $(shell ls *.cpp)
 

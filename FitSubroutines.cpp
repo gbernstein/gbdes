@@ -4,6 +4,7 @@
 #include <list>
 #include "Pset.h"
 #include "PhotoTemplate.h"
+#include "PhotoPiecewise.h"
 #include "TemplateMap.h"
 #include "PieceMap.h"
 #include "PixelMapCollection.h"
@@ -150,8 +151,8 @@ loadPixelMapParser() {
 void
   loadPhotoMapParser() {
   // put all new kinds of PhotoMap atoms here:
-  photometry::PhotoMapCollection::registerMapType<photometry::PhotoTemplate1d>();
-  photometry::PhotoMapCollection::registerMapType<photometry::PhotoRings>();
+  photometry::PhotoMapCollection::registerMapType<photometry::PhotoTemplate>();
+  photometry::PhotoMapCollection::registerMapType<photometry::PhotoPiecewise>();
 }
 
 int 

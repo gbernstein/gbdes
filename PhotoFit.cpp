@@ -16,6 +16,7 @@
 #include "PhotoMapCollection.h"
 #include "PhotoInstrument.h"
 #include "PhotoTemplate.h"
+#include "PhotoPiecewise.h"
 
 using namespace std;
 using namespace stringstuff;
@@ -546,7 +547,7 @@ main(int argc, char *argv[])
 	  cerr << "Could not open file " + loadFile + " holding existing PhotoMaps" << endl;
 	  exit(1);
 	}
-	pmcInstrument.read(ifs);
+	pmcInstrument.read(ifs);  // ??? wasteful to re-read full existing map file for every instrument
       }
 
       for (int idev=0; idev<inst->nDevices; idev++) {
@@ -1658,18 +1659,38 @@ PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType argTyp
       poly->setParams(p);
       pm = poly;
     }
-  } else if (stringstuff::nocaseEqual(type,"Template1d")) {
+  } else if (stringstuff::nocaseEqual(type,"Template")) {
     string filename;
-    iss >> filename;
-    pm = new PhotoTemplate1d(filename,name);
-    // Start with template coefficient of 1.
-    pm->setParams(DVector(1,1.));
-  } else if (stringstuff::nocaseEqual(type,"Rings")) {
-    string fileLeft, fileRight;
-    iss >> fileLeft >> fileRight;
-    pm = new PhotoRings(fileLeft, fileRight,name);
-    // Start with template coefficient of 1.
-    pm->setParams(DVector(1,1.));
+    string lowname;
+    string highname;
+    double xSplit;
+    iss >> filename >> lowname;
+    if (iss >> highname >> xSplit) {
+      pm = new PhotoTemplate(xSplit, lowname, highname, filename, name);
+    } else {
+      pm = new PhotoTemplate(lowname, filename, name);
+    }
+  } else if (stringstuff::nocaseEqual(type,"Piecewise")) {
+    string axis;
+    double argStart;
+    double argEnd;
+    double argStep;
+    iss >> axis >> argStart >> argEnd >> argStep;
+    if (stringstuff::nocaseEqual(axis, "X")) {
+      pm = new PhotoPiecewise(name, argStart, argEnd, argStep,
+			      PhotoPiecewise::X);
+    } else if (stringstuff::nocaseEqual(axis, "Y")) {
+      pm = new PhotoPiecewise(name, argStart, argEnd, argStep,
+			      PhotoPiecewise::Y);
+    } else if (stringstuff::nocaseEqual(axis, "R")) {
+      double xCenter;
+      double yCenter;
+      iss >> xCenter >> yCenter;
+      pm = new PhotoPiecewise(name, argStart, argEnd, argStep,
+			      PhotoPiecewise::R, xCenter, yCenter);
+    } else {
+      throw runtime_error("Bad axis type in PhotoPiecewise device spec: " + axis);
+    }
   } else if (stringstuff::nocaseEqual(type,"Constant")) {
     pm = new ConstantMap(0., name);
   } else if (stringstuff::nocaseEqual(type,"Identity")) {
