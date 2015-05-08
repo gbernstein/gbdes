@@ -578,7 +578,6 @@ if __name__=='__main__':
                             field=None
                             minDistance = 0.
                             for k,f in fields.items():
-                                print expo,k,'distance:',f.distance(icrs)
                                 if field==None or f.distance(icrs)<minDistance:
                                     field = k
                                     minDistance = f.distance(icrs)

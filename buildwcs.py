@@ -39,6 +39,7 @@ def newXEdge(xStart, xEnd, dx):
     values = [0.,0.]
     for i in range(nSteps+1):
         values.append(0.)
+    # print "***",xStart, xEnd, dx, nSteps, argStart, len(values)
     out = {}
     out['Type']='Piecewise'
     out['Axis'] = 'X'
@@ -70,7 +71,7 @@ def instruments(names, sharedName, polyDict):
     rightRange = (1888, 2018)
     xStep = 10.
 
-    skip = ['N30','S30']
+    skip = ['N30']
     all = {}
     all['PixelMapCollection'] = 'Constructed by buildwcs.py'
     for detpos in ccdnums.keys():

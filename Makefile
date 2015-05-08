@@ -6,7 +6,7 @@
 #BOOST_DIR
 # GBTOOLS_DIR (defaults to ../gbtools if not in environment)
 
-GBTOOLS_DIR = ../gbtools
+# GBTOOLS_DIR = ../gbtools
 
 export CXX
 export TMV_DIR
