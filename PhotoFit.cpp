@@ -693,6 +693,10 @@ main(int argc, char *argv[])
 	string thisModel = stringstuff::regexReplace("DEVICE", 
 						     inst->deviceNames.nameOf(idev), 
 						     deviceModel);
+	// And the instrument name as well:
+	thisModel = stringstuff::regexReplace("INST", 
+					      inst->name,
+					      thisModel);
 	learnParsedMap(thisModel, inst->mapNames[idev], mapCollection);
       } // end loop creating PhotoMaps for all Devices.
 
