@@ -755,6 +755,13 @@ main(int argc, char *argv[])
 
     } // End instrument loop
 
+    // Check all map components to see if they match one to be frozen.
+    {
+      vector<string> allNames = mapCollection.allMapNames();
+      for (int i=0; i<allNames.size(); i++) 
+	if (regexMatchAny(fixMapList, allNames[i]))
+	  fixedMapNames.push_back(allNames[i]);
+    }
     // Freeze the parameters of all the fixed maps
     mapCollection.setFixed(fixedMapNames, true);
 

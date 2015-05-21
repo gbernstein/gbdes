@@ -1,7 +1,3 @@
-/**
-TODO: Use EXPTIME to adjust magnitudes.
-**/
-
 // Program to use photometric and astrometric solutions to 
 // produce catalogs of selected magnitudes and colors for objects matched by WCSFoF.
 // An output FOF catalog is produced that augments the input FOF catalog with appropriate
@@ -430,6 +426,14 @@ main(int argc, char *argv[])
       vector<double> exptime;
 
       ff.readCells(names, "Name");
+      /* Here I need to get rid of this column and then re-add it, because the
+       * string columns are being stored as fixed-length by Python code, and
+       * I may be appending new strings that are longer.  So need to redeclare the
+       * column as variable-length.
+       */
+      ff.eraseColumn("Name");
+      ff.addColumn(names,"Name");
+      
       ff.readCells(ra, "RA");
       ff.readCells(dec, "Dec");
       ff.readCells(fieldNumber, "fieldNumber");
