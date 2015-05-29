@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <algorithm>
 
 #include "Std.h"
 #include "Astrometry.h"
@@ -85,6 +86,17 @@ readPriors(string filename,
 	   const vector<Extension*>& extensions, 
 	   const vector<long>& detectionsPerExposure);
 
+class ExposureNameSorter {
+public:
+  ExposureNameSorter(const vector<Exposure*>& exposures): ve(exposures) {}
+  bool operator()(int i1, int i2) const {
+    LessNoCase lnc;
+    return lnc(ve[i1]->name, ve[i2]->name);
+  }
+private:
+  const vector<Exposure*>& ve;
+};
+
 // Class to accumulate residual statistics
 class Accum {
 public:
@@ -96,7 +108,7 @@ public:
   int n;
   double sum_x;
   double sum_y;
-  double sum_dof;
+  double chisq;
   Accum();
   void add(const Detection* d, double magoff=0., double dof=1.);
   double rms() const;
@@ -1538,6 +1550,8 @@ main(int argc, char *argv[])
 	sig = (sig > 0.) ? 1./sqrt(sig) : 0.;
 	sigMag.push_back(sig);
 
+	dofPerPt = 1. - wtFrac.back();
+	
 	if (mean!=0.) {
 	  // Accumulate statistics for meaningful residuals
 	  if (dofPerPt >= 0. && !d->isClipped) {
@@ -1596,24 +1610,30 @@ main(int argc, char *argv[])
     // Now for standard output, an exposure-by-exposure table.
 
     // Print summary statistics for each exposure
-    cout << "#    Exp    N    DOF    dmag    +-    RMS chi_red   xExposure    yExposure \n"
-	 << "#                      |.....millimag....|          |.......degrees......|"
+    cout << "#    Exp         N    RMS   chi_red   xExposure    yExposure \n"
+	 << "#                                    |.......degrees......|"
 	 << endl;
-    for (int iexp=0; iexp<exposures.size(); iexp++) {
+    // Sort the exposures by name lexical order
+    vector<int> ii(exposures.size(),0);
+    for (int i=0; i<ii.size(); i++) ii[i] = i;
+    std::sort(ii.begin(), ii.end(), ExposureNameSorter(exposures));
+      
+    for (int i=0; i<ii.size(); i++) {
+      int iexp = ii[i];
       if (!exposures[iexp]) continue;
-      cout << "Fit     " << setw(3) << iexp
+      cout << "Fit     " << setw(3) << exposures[iexp]->name
 	   << " " << vaccFit[iexp].summary()
 	   << endl;
       if (reserveFraction > 0. && vaccReserve[iexp].n > 0) 
-	  cout << "Reserve " << setw(3) << iexp
+	  cout << "Reserve " << setw(3) << exposures[iexp]->name
 	       << " " << vaccReserve[iexp].summary()
 	       << endl;
     } // exposure summary loop
     
     // Output summary data for reference catalog and detections
     cout << "# " << endl;
-    cout << "#                   N    DOF    dmag    +-    RMS chi_red \n"
-	 << "#                             |.....millimag....|         "
+    cout << "#                   N    DOF  RMS chi_red \n"
+	 << "#                                           "
 	 << endl;
     cout << "Reference fit     " << refAccFit.summary() << endl;
     if (reserveFraction>0. && refAccReserve.n>0)
@@ -1758,7 +1778,7 @@ learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
 Accum::Accum(): sum_m(0.), sum_mw(0.),
 		sum_mm(0.), sum_mmw(0.),
 		sum_w(0.),
-		sum_dof(0.), 
+		chisq(0.), 
 		sum_x(0.), sum_y(0.),
 		n(0) {}
 void 
@@ -1769,7 +1789,7 @@ Accum::add(const Detection* d, double magoff, double dof) {
   sum_mm += dm * dm;
   sum_mmw += dm * dm *d->wt;
   sum_w += d->wt;
-  sum_dof += dof;
+  chisq += dm * dm * d->wt / dof;
   sum_x += d->args.xExposure;
   sum_y += d->args.yExposure;
   ++n;
@@ -1780,7 +1800,7 @@ Accum::rms() const {
 }
 double 
 Accum::reducedChisq() const {
-  return sum_dof>0 ? sum_mmw/sum_dof : 0.;
+  return n>0 ? chisq / n : 0.;
 }
 string 
 Accum::summary() const {
@@ -1795,9 +1815,8 @@ Accum::summary() const {
   }
   oss << setw(4) << n 
       << fixed << setprecision(1)
-      << " " << setw(6) << sum_dof
-      << " " << setw(5) << dm*1000.
-      << " " << setw(5) << sigm*1000.
+    /** << " " << setw(5) << dm*1000.
+	<< " " << setw(5) << sigm*1000.**/
       << " " << setw(5) << rms()*1000.
       << setprecision(2) 
       << " " << setw(5) << reducedChisq()
