@@ -1554,7 +1554,7 @@ main(int argc, char *argv[])
 	
 	if (mean!=0.) {
 	  // Accumulate statistics for meaningful residuals
-	  if (dofPerPt >= 0. && !d->isClipped) {
+	  if (dofPerPt > 0. && !d->isClipped) {
 	    int exposureNumber = extensions[d->catalogNumber]->exposure;
 	    Exposure* expo = exposures[exposureNumber];
 	    if (m->getReserved()) {
@@ -1614,18 +1614,20 @@ main(int argc, char *argv[])
 	 << "#                                    |.......degrees......|"
 	 << endl;
     // Sort the exposures by name lexical order
-    vector<int> ii(exposures.size(),0);
-    for (int i=0; i<ii.size(); i++) ii[i] = i;
+    vector<int> ii;
+    for (int i=0; i<exposures.size(); i++)
+      if (exposures[i])
+	ii.push_back(i);
     std::sort(ii.begin(), ii.end(), ExposureNameSorter(exposures));
       
     for (int i=0; i<ii.size(); i++) {
       int iexp = ii[i];
       if (!exposures[iexp]) continue;
-      cout << "Fit     " << setw(3) << exposures[iexp]->name
+      cout << "Fit     " << setw(10) << exposures[iexp]->name
 	   << " " << vaccFit[iexp].summary()
 	   << endl;
       if (reserveFraction > 0. && vaccReserve[iexp].n > 0) 
-	  cout << "Reserve " << setw(3) << exposures[iexp]->name
+	  cout << "Reserve " << setw(10) << exposures[iexp]->name
 	       << " " << vaccReserve[iexp].summary()
 	       << endl;
     } // exposure summary loop
@@ -1813,7 +1815,7 @@ Accum::summary() const {
     x = sum_x / n;
     y = sum_y / n;
   }
-  oss << setw(4) << n 
+  oss << setw(5) << n 
       << fixed << setprecision(1)
     /** << " " << setw(5) << dm*1000.
 	<< " " << setw(5) << sigm*1000.**/
