@@ -98,7 +98,7 @@ WCSFit: WCSFit.o Match.o MapFit.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 PhotoFit: PhotoFit.o ReadPhotoPriors.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-MakeColors: MakeColors.o $(OBJ)
+MagColor: MagColor.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

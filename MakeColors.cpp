@@ -472,8 +472,6 @@ main(int argc, char *argv[])
       ff.writeCell(0., "Dec", magTableExposureNumber);
       ff.writeCell(0, "FieldNumber", magTableExposureNumber);
       ff.writeCell(TAG_INSTRUMENT, "InstrumentNumber", magTableExposureNumber);
-      // ??? Following line fails if the NAME column is not wide enough for magOutFile
-      // ??? Might need to reproduce the column as true variable-length string.
       ff.writeCell(magOutFile, "Name", magTableExposureNumber);
       ff.writeCell(1., "Airmass", magTableExposureNumber);
       ff.writeCell(1., "Exptime", magTableExposureNumber);
@@ -570,6 +568,7 @@ main(int argc, char *argv[])
       // Get the photometric solution too
       extn->map = photomaps.issueMap(mapName);
       if (extn->map->needsColor()) {
+	// ????? check that color exists??
 	cerr << "MakeColors is not able to use the PhotoMap <" << mapName
 	     << "> because it requires color information." << endl;
 	exit(1);
