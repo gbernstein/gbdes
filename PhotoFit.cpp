@@ -791,7 +791,7 @@ main(int argc, char *argv[])
 	expo.mapName = expo.name;
       } else {
 	// No freedom in the reference magnitude map:
-	expo.mapName = IdentityMap::mapType();
+	expo.mapName = IdentityMap::type();
       }
     }
 

@@ -1,3 +1,18 @@
+* Astrometric PieceMap cleanup to match photometric
+
+* Put defaults into all PixelMaps
+
+* Have a CAL_PATH environment variable for tree rings & other files
+
+* Get rid of USE_YAML from astrometry
+
+* Freeze unconstrained parameters in astrometric solutions
+
+* Hex values read for Expressions.
+
+* New nightwise priors using time structure functions
+* Atmospheric parameters for nightly priors?
+
 * Update documentation: PixelMap.tex and the fitting classes.
 * Document PhotoFit, MakeColors and all their parameters.
 * Fix PhotoFit etc so that they use the  native projection center of WCS to define
@@ -7,8 +22,6 @@
 * Write YAML to TPV fitter program.
 
 * Speed up fitting by trying successive Newton steps (with fixed quadratic) instead of Marquardt (on newton branch)
-
-* Implement Piecewise for Photo.
 
 * WCSFit to only selected instruments
 

@@ -47,15 +47,14 @@ LIBS = -lm $(LIB_DIRS) -lyaml-cpp -lboost_regex -lfftw3 -lcfitsio -ltmv_symband 
 
 SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpolant.o \
 	$(UTILITIES)/fft.o $(UTILITIES)/Table.o $(UTILITIES)/Pset.o $(UTILITIES)/Poly2d.o \
-	$(UTILITIES)/Expressions.o \
+	$(UTILITIES)/Expressions.o $(UTILITIES)/Lookup1d.o \
 	$(IMAGES)/FITS.o $(IMAGES)/Header.o $(IMAGES)/Hdu.o $(IMAGES)/FitsTable.o \
 	$(IMAGES)/FTable.o $(IMAGES)/FTableExpression.o \
 	$(IMAGES)/Image.o $(IMAGES)/FitsImage.o \
 	$(IMAGES)/HeaderFromStream.o \
 	$(ASTROMETRY)/PixelMap.o $(ASTROMETRY)/Astrometry.o $(ASTROMETRY)/PolyMap.o \
 	$(ASTROMETRY)/SubMap.o $(ASTROMETRY)/Wcs.o $(ASTROMETRY)/PixelMapCollection.o \
-	$(ASTROMETRY)/SerializeProjection.o $(ASTROMETRY)/TemplateMap.o \
-	$(ASTROMETRY)/PieceMap.o \
+	$(ASTROMETRY)/TemplateMap.o $(ASTROMETRY)/PieceMap.o \
 	$(PHOTOMETRY)/PhotoMap.o $(PHOTOMETRY)/PhotoMapCollection.o $(PHOTOMETRY)/SubMap.o \
 	$(PHOTOMETRY)/PhotoMatch.o $(PHOTOMETRY)/PhotoPrior.o $(PHOTOMETRY)/PhotoTemplate.o \
 	$(PHOTOMETRY)/PhotoPiecewise.o
