@@ -14,7 +14,7 @@
 #include "Random.h"
 #include "Match.h"
 #include "TemplateMap.h"
-#include "PieceMap.h"
+#include "PiecewiseMap.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -1511,19 +1511,19 @@ PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
     int argCount;
     iss >> axis >> argStart >> argStep >> argCount;
     if (stringstuff::nocaseEqual(axis, "X")) {
-      pm = new PieceMap(name, argStart, argStep, argCount,
-			PieceMap::X);
+      pm = new PiecewiseMap(name, argStart, argStep, argCount,
+			PiecewiseMap::X);
     } else if (stringstuff::nocaseEqual(axis, "Y")) {
-	pm = new PieceMap(name, argStart, argStep, argCount,
-			  PieceMap::Y);
+	pm = new PiecewiseMap(name, argStart, argStep, argCount,
+			  PiecewiseMap::Y);
     } else if (stringstuff::nocaseEqual(axis, "R")) {
       double xCenter;
       double yCenter;
       iss >> xCenter >> yCenter;
-      pm = new PieceMap(name, argStart, argStep, argCount,
-			PieceMap::R, xCenter, yCenter);
+      pm = new PiecewiseMap(name, argStart, argStep, argCount,
+			PiecewiseMap::R, xCenter, yCenter);
     } else {
-      throw runtime_error("Bad axis type in PieceMap device spec: " + axis);
+      throw runtime_error("Bad axis type in PiecewiseMap device spec: " + axis);
     }
 
   } else {

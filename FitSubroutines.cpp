@@ -6,7 +6,7 @@
 #include "PhotoTemplate.h"
 #include "PhotoPiecewise.h"
 #include "TemplateMap.h"
-#include "PieceMap.h"
+#include "PiecewiseMap.h"
 #include "PixelMapCollection.h"
 #include "PhotoMapCollection.h"
 
@@ -145,7 +145,7 @@ void
 loadPixelMapParser() {
   // put all new kinds of PixelMap atoms here:
   astrometry::PixelMapCollection::registerMapType<astrometry::TemplateMap>();
-  astrometry::PixelMapCollection::registerMapType<astrometry::PieceMap>();
+  astrometry::PixelMapCollection::registerMapType<astrometry::PiecewiseMap>();
 }
 
 void

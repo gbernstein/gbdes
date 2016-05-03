@@ -54,7 +54,7 @@ SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpo
 	$(IMAGES)/HeaderFromStream.o \
 	$(ASTROMETRY)/PixelMap.o $(ASTROMETRY)/Astrometry.o $(ASTROMETRY)/PolyMap.o \
 	$(ASTROMETRY)/SubMap.o $(ASTROMETRY)/Wcs.o $(ASTROMETRY)/PixelMapCollection.o \
-	$(ASTROMETRY)/TemplateMap.o $(ASTROMETRY)/PieceMap.o \
+	$(ASTROMETRY)/TemplateMap.o $(ASTROMETRY)/PiecewiseMap.o \
 	$(PHOTOMETRY)/PhotoMap.o $(PHOTOMETRY)/PhotoMapCollection.o $(PHOTOMETRY)/SubMap.o \
 	$(PHOTOMETRY)/PhotoMatch.o $(PHOTOMETRY)/PhotoPrior.o $(PHOTOMETRY)/PhotoTemplate.o \
 	$(PHOTOMETRY)/PhotoPiecewise.o

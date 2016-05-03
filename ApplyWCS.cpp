@@ -8,7 +8,7 @@
 #include "Astrometry.h"
 #include "PixelMapCollection.h"
 #include "TemplateMap.h"
-#include "PieceMap.h"
+#include "PiecewiseMap.h"
 #include "Header.h"
 #include "TPVMap.h"
 using namespace std;
@@ -39,7 +39,7 @@ main(int argc, char *argv[])
 
     // put all new kinds of PixelMaps we might be deserializing here:
     PixelMapCollection::registerMapType<astrometry::TemplateMap>();
-    PixelMapCollection::registerMapType<astrometry::PieceMap>();
+    PixelMapCollection::registerMapType<astrometry::PiecewiseMap>();
 
     int iarg=1;
     vector<Wcs*> wcs(2, (Wcs*) 0);
