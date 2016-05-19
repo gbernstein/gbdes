@@ -258,7 +258,7 @@ main(int argc, char *argv[])
 	  if (success && coloroffset.size() == 2) {
 	    // get offset
 	    istringstream iss(coloroffset.back());
-	    success = (iss >> c.offset);
+	    success = static_cast<bool>(iss >> c.offset);
 	  }
 	  // split up the color term at -
 	  if (success) {
