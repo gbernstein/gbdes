@@ -68,9 +68,9 @@ main(int argc, char *argv[])
   Bounds<double> bExpo;
   for (map<string,Device>::iterator i = devices.begin();
        i != devices.end();
-       ++i) 
-      bExpo += i->second.b;
-
+       ++i) {
+    bExpo += i->second.b;
+  }
   // Make the Image
   Bounds<int> bImage( static_cast<int> (floor(bExpo.getXMin()/pixelScale)),
 		      static_cast<int> (ceil(bExpo.getXMax()/pixelScale)),

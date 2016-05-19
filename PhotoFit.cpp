@@ -508,7 +508,6 @@ main(int argc, char *argv[])
       // ??? or use the field center for reference exposures ???
     }
 
-
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
     /////////////////////////////////////////////////////
@@ -794,6 +793,8 @@ main(int argc, char *argv[])
 	expo.mapName = IdentityMap::type();
       }
     }
+
+    /***** ??? Problem with name of Identity map if DEVICE map is Identity***/
 
     // Now construct a SubMap for every extension
     for (int iext=0; iext<extensions.size(); iext++) {
