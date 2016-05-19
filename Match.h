@@ -53,13 +53,16 @@ namespace astrometry {
     static bool isFit(const Detection* e);
   public:
     Match(Detection* e);
+    typedef list<Detection*>::iterator iterator;
+    typedef list<Detection*>::const_iterator const_iterator;
+
     // Add and remove automatically update itsMatch of the Detection
     void add(Detection* e);
     void remove(Detection* e);
     // Remove a Detection from the match given an iterator to it,
     // optionally deleting the Detection:
-    list<Detection*>::iterator erase(list<Detection*>::iterator i,
-				     bool deleteDetection=false);
+    iterator erase(list<Detection*>::iterator i,
+		   bool deleteDetection=false);
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
     void clear(bool deleteDetections=false);
@@ -100,8 +103,6 @@ namespace astrometry {
     // Does *not* remap the points.
     double chisq(int& dof, double& maxDeviateSq) const;
 
-    typedef list<Detection*>::iterator iterator;
-    typedef list<Detection*>::const_iterator const_iterator;
     iterator begin() {return elist.begin();}
     iterator end() {return elist.end();}
     const_iterator begin() const {return elist.begin();}

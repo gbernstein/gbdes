@@ -122,8 +122,8 @@ Match::remove(Detection* e) {
   if ( isFit(e) ) nFit--;
 }
 
-list<Detection*>::iterator 
-Match::erase(list<Detection*>::iterator i,
+Match::iterator 
+Match::erase(iterator i,
 	     bool deleteDetection) {
   if (isFit(*i)) nFit--;
   if (deleteDetection) delete *i;
@@ -133,7 +133,7 @@ Match::erase(list<Detection*>::iterator i,
 
 void
 Match::clear(bool deleteDetections) {
-  for (list<Detection*>::iterator i=elist.begin();
+  for (auto i = elist.begin();
        i!=elist.end();
        ++i) {
     if (deleteDetections)
@@ -148,7 +148,7 @@ Match::clear(bool deleteDetections) {
 void
 Match::countFit() {
   nFit = 0;
-  for (list<Detection*>::iterator i=elist.begin();
+  for (auto i=elist.begin();
        i!=elist.end();
        ++i)
     if (isFit(*i)) nFit++;
@@ -156,7 +156,7 @@ Match::countFit() {
 
 void
 Match::clipAll() {
-  for (list<Detection*>::iterator i=elist.begin();
+  for (auto i=elist.begin();
        i!=elist.end();
        ++i) 
     if (*i) (*i)->isClipped = true;
@@ -179,7 +179,7 @@ Match::centroid(double& x, double& y,
   double swx, swy;
   swx = swy =0.;
   wtx = wty = 0.;
-  for (list<Detection*>::const_iterator i=elist.begin();
+  for (auto i=elist.begin();
        i!=elist.end();
        ++i) {
     if (!isFit(*i)) continue;
@@ -203,7 +203,7 @@ Match::centroid(double& x, double& y,
 
 void
 Match::remap() {
-  for (list<Detection*>::iterator i=elist.begin(); 
+  for (auto i=elist.begin(); 
        i!=elist.end(); 
        ++i) 
     (*i)->map->toWorld((*i)->xpix, (*i)->ypix,
@@ -215,7 +215,7 @@ struct iRange {
   iRange(int i=0, int n=0): startIndex(i), nParams(n) {}
   int startIndex;
   int nParams;
-};
+}; 
 
 int
 Match::accumulateChisq(double& chisq,
@@ -232,7 +232,7 @@ Match::accumulateChisq(double& chisq,
   // Update mapping and save derivatives for each detection:
   vector<DMatrix*> dxyi(elist.size(), 0);
   int ipt=0;
-  for (list<Detection*>::iterator i=elist.begin(); 
+  for (auto i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
     if (!isFit(*i)) continue;
@@ -257,7 +257,7 @@ Match::accumulateChisq(double& chisq,
 
   map<int, iRange> mapsTouched;
   ipt = 0;
-  for (list<Detection*>::iterator i=elist.begin(); 
+  for (auto i=elist.begin(); 
        i!=elist.end(); 
        ++i, ipt++) {
     if (!isFit(*i)) continue;
