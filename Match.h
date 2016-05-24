@@ -61,7 +61,7 @@ namespace astrometry {
     void remove(Detection* e);
     // Remove a Detection from the match given an iterator to it,
     // optionally deleting the Detection:
-    iterator erase(list<Detection*>::iterator i,
+    iterator erase(iterator i,
 		   bool deleteDetection=false);
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:

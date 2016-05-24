@@ -133,13 +133,11 @@ Match::erase(iterator i,
 
 void
 Match::clear(bool deleteDetections) {
-  for (auto i = elist.begin();
-       i!=elist.end();
-       ++i) {
+  for (auto i : elist) {
     if (deleteDetections)
-      delete *i;
+      delete i;
     else
-      (*i)->itsMatch = 0;
+      i->itsMatch = 0;
   }
   elist.clear();
   nFit = 0;
@@ -148,18 +146,15 @@ Match::clear(bool deleteDetections) {
 void
 Match::countFit() {
   nFit = 0;
-  for (auto i=elist.begin();
-       i!=elist.end();
-       ++i)
-    if (isFit(*i)) nFit++;
+  for (auto i : elist)
+    if (isFit(i)) nFit++;
 }
 
 void
 Match::clipAll() {
-  for (auto i=elist.begin();
-       i!=elist.end();
-       ++i) 
-    if (*i) (*i)->isClipped = true;
+  for (auto i : elist)
+    if (i)
+      i->isClipped = true;
   nFit = 0;
 }
 
@@ -179,14 +174,12 @@ Match::centroid(double& x, double& y,
   double swx, swy;
   swx = swy =0.;
   wtx = wty = 0.;
-  for (auto i=elist.begin();
-       i!=elist.end();
-       ++i) {
-    if (!isFit(*i)) continue;
-    double xx = (*i)->xw;
-    double yy = (*i)->yw;
-    double wx = (*i)->wtx;
-    double wy = (*i)->wty;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    double xx = i->xw;
+    double yy = i->yw;
+    double wx = i->wtx;
+    double wy = i->wty;
     swx += xx*wx;
     wtx += wx;
     swy += yy*wy;
@@ -196,19 +189,16 @@ Match::centroid(double& x, double& y,
   y = swy/wty;
 }
 
+void
+Match::remap() {
+  for (auto i : elist) 
+    i->map->toWorld(i->xpix, i->ypix,
+		    i->xw, i->yw);
+}
 
 ///////////////////////////////////////////////////////////
 // Coordinate-matching routines
 ///////////////////////////////////////////////////////////
-
-void
-Match::remap() {
-  for (auto i=elist.begin(); 
-       i!=elist.end(); 
-       ++i) 
-    (*i)->map->toWorld((*i)->xpix, (*i)->ypix,
-		       (*i)->xw, (*i)->yw);
-}
 
 // A structure that describes a range of parameters
 struct iRange {
@@ -232,39 +222,34 @@ Match::accumulateChisq(double& chisq,
   // Update mapping and save derivatives for each detection:
   vector<DMatrix*> dxyi(elist.size(), 0);
   int ipt=0;
-  for (auto i=elist.begin(); 
-       i!=elist.end(); 
-       ++i, ipt++) {
-    if (!isFit(*i)) continue;
-    int npi = (*i)->map->nParams();
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    int npi = i->map->nParams();
     double xw, yw;
     if (npi>0) {
       dxyi[ipt] = new DMatrix(2,npi);
-      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
-			       xw, yw,
-			       *dxyi[ipt]);
+      i->map->toWorldDerivs(i->xpix, i->ypix,
+			    xw, yw,
+			    *dxyi[ipt]);
     } else {
-      (*i)->map->toWorld((*i)->xpix, (*i)->ypix, xw, yw);
+      i->map->toWorld(i->xpix, i->ypix, xw, yw);
     }
-    (*i)->xw = xw;
-    (*i)->yw = yw;
+    i->xw = xw;
+    i->yw = yw;
   }
 
   centroid(xmean,ymean, xW, yW);
   DVector dxmean(nP, 0.);
   DVector dymean(nP, 0.);
 
-
   map<int, iRange> mapsTouched;
   ipt = 0;
-  for (auto i=elist.begin(); 
-       i!=elist.end(); 
-       ++i, ipt++) {
-    if (!isFit(*i)) continue;
-    double wxi=(*i)->wtx;
-    double wyi=(*i)->wty;
-    double xi=(*i)->xw;
-    double yi=(*i)->yw;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    double wxi=i->wtx;
+    double wyi=i->wty;
+    double xi=i->xw;
+    double yi=i->yw;
 
     chisq += 
       (xi-xmean)*(xi-xmean)*wxi
@@ -272,11 +257,11 @@ Match::accumulateChisq(double& chisq,
 
     // Accumulate derivatives:
     int istart=0;
-    for (int iMap=0; iMap<(*i)->map->nMaps(); iMap++) {
-      int ip=(*i)->map->startIndex(iMap);
-      int np=(*i)->map->nSubParams(iMap);
+    for (int iMap=0; iMap<i->map->nMaps(); iMap++) {
+      int ip=i->map->startIndex(iMap);
+      int np=i->map->nSubParams(iMap);
       if (np==0) continue;
-      int mapNumber = (*i)->map->mapNumber(iMap);
+      int mapNumber = i->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
       tmv::VectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
@@ -298,10 +283,10 @@ Match::accumulateChisq(double& chisq,
 			      mapNumber, ip, dy, wyi);
 
 	int istart2 = istart+np;
-	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
-	  int ip2=(*i)->map->startIndex(iMap2);
-	  int np2=(*i)->map->nSubParams(iMap2);
-	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
+	for (int iMap2=iMap+1; iMap2<i->map->nMaps(); iMap2++) {
+	  int ip2=i->map->startIndex(iMap2);
+	  int np2=i->map->nSubParams(iMap2);
+	  int mapNumber2 = i->map->mapNumber(iMap2);
 	  if (np2==0) continue;
 	  tmv::VectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
 	  tmv::VectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
@@ -364,15 +349,14 @@ Match::sigmaClip(double sigThresh,
   double xmean, ymean;
   if (nFit<=1) return false;
   double maxSq=0.;
-  list<Detection*>::iterator worst=elist.end();
+  Detection* worst=0;
   centroid(xmean,ymean);
-  for (list<Detection*>::iterator i=elist.begin(); 
-       i!=elist.end(); ++i) {
-    if (!isFit(*i)) continue;
-    double xi = (*i)->xw;
-    double yi = (*i)->yw;
-    double clipx = (*i)->clipsqx;
-    double clipy = (*i)->clipsqy;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    double xi = i->xw;
+    double yi = i->yw;
+    double clipx = i->clipsqx;
+    double clipy = i->clipsqy;
     double devSq = (xi-xmean)*(xi-xmean)*clipx
       + (yi-ymean)*(yi-ymean)*clipy;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
@@ -382,21 +366,21 @@ Match::sigmaClip(double sigThresh,
     }
   }
 
-  if (worst != elist.end()) {
+  if (worst) {
 #ifdef DEBUG
-    cerr << "clipped " << (*worst)->catalogNumber
-	 << " / " << (*worst)->objectNumber 
-	 << " at " << (*worst)->xw << "," << (*worst)->yw 
-	 << " resid " << setw(6) << ((*worst)->xw-xmean)*DEGREE/ARCSEC
-	 << " " << setw(6) << ((*worst)->yw-ymean)*DEGREE/ARCSEC
-	 << " sigma " << DEGREE/ARCSEC/sqrt((*worst)->clipsqx)
+    cerr << "clipped " << worst->catalogNumber
+	 << " / " << worst->objectNumber 
+	 << " at " << worst->xw << "," << worst->yw 
+	 << " resid " << setw(6) << (worst->xw-xmean)*DEGREE/ARCSEC
+	 << " " << setw(6) << (worst->yw-ymean)*DEGREE/ARCSEC
+	 << " sigma " << DEGREE/ARCSEC/sqrt(worst->clipsqx)
 	 << endl;
 #endif
       if (deleteDetection) {
-	delete *worst;
-	elist.erase(worst);
+	elist.remove(worst);
+	delete worst;
       }	else {
-	(*worst)->isClipped = true;
+	worst->isClipped = true;
       }
       nFit--;
       return true;
@@ -412,14 +396,12 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
   double chi=0.;
   if (nFit<=1) return chi;
   centroid(xmean,ymean);
-  for (list<Detection*>::const_iterator i=elist.begin(); 
-       i!=elist.end(); 
-       ++i) {
-    if (!isFit(*i)) continue;
-    double xi = (*i)->xw;
-    double yi = (*i)->yw;
-    double wxi = (*i)->wtx;
-    double wyi = (*i)->wty;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    double xi = i->xw;
+    double yi = i->yw;
+    double wxi = i->wtx;
+    double wyi = i->wty;
     double cc = (xi-xmean)*(xi-xmean)*wxi
       + (yi-ymean)*(yi-ymean)*wyi;
     maxDeviateSq = MAX(cc , maxDeviateSq);
@@ -469,10 +451,8 @@ CoordAlign::operator()(const DVector& p, double& chisq,
       int iChunk=0;
       int iRound=0;
       int j=0;  
-      for (list<Match*>::const_iterator i=mlist.begin();
-	   i != mlist.end();
-	   ++i) {
-	vi[j] = *i;
+      for (auto i : mlist) {
+	vi[j] = i;
 	j++;
 	if (j%chunk==0 && iRound < nRounds) {
 	  // We have just finished writing a chunk's worth of
@@ -499,14 +479,6 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 #pragma omp for schedule(dynamic,chunk) 
   for (int j=0; j<vi.size(); j++) {
     Match* m = vi[j];
-
-    //**    if (j%chunk==0) {
-    if (false) {
-#pragma omp critical (output)
-      cerr << "# Thread " << omp_get_thread_num()
-	   << "# accumulating chisq at match # " << j 
-	   << endl;
-    }
     if ( m->getReserved() ) continue;	//skip reserved objects
     m->accumulateChisq(newChisq, newBeta, updater, reuseAlpha);
   }
@@ -514,12 +486,11 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   beta += newBeta;
   }
 #else
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
-    Match* m = *i;
+  // Without OPENMP, just loop through all matches:
+  for (auto i : mlist) {
+    Match* m = i;
     if (matchCtr%10000==0) cerr << "# accumulating chisq at match # " 
-				<< matchCtr  //**<< " newChisq " << newChisq
+				<< matchCtr 
 				<< endl;
     matchCtr++;
     if ( m->getReserved() ) continue;	//skip reserved objects
@@ -619,10 +590,8 @@ CoordAlign::fitOnce(bool reportToCerr) {
 
 void
 CoordAlign::remap() {
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i)
-    (*i)->remap();
+  for (auto i : mlist)
+    i->remap();
 }
 
 int
@@ -633,15 +602,13 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   Stopwatch timer;
   timer.start();
 
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
+  for (auto i : mlist) {
     // Skip this one if it's reserved and doReserved=false,
     // or vice-versa
-    if (doReserved ^ (*i)->getReserved()) continue;
-    if ( (*i)->sigmaClip(sigThresh)) {
+    if (doReserved ^ i->getReserved()) continue;
+    if ( i->sigmaClip(sigThresh)) {
       nclip++;
-      if (clipEntireMatch) (*i)->clipAll();
+      if (clipEntireMatch) i->clipAll();
     }
   }
   timer.stop();
@@ -656,13 +623,11 @@ CoordAlign::chisqDOF(int& dof, double& maxDeviate,
   maxDeviate=0.;
   double chisq=0.;
   // ??? parallelize this loop!
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
+  for (auto i : mlist) {
     // Skip this one if it's reserved and doReserved=false,
     // or vice-versa
-    if (doReserved ^ (*i)->getReserved()) continue;
-    chisq += (*i)->chisq(dof, maxDeviate);
+    if (doReserved ^ i->getReserved()) continue;
+    chisq += i->chisq(dof, maxDeviate);
   }
   maxDeviate = sqrt(maxDeviate);
   if (!doReserved) dof -= pmc.nParams();
@@ -674,13 +639,11 @@ CoordAlign::count(long int& mcount, long int& dcount,
 		  bool doReserved, int minMatches) const {
   mcount = 0;
   dcount = 0;
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
-    if (((*i)->getReserved() ^ doReserved) 
-	|| (*i)->fitSize() < minMatches) continue;
+  for (auto i : mlist) {
+    if ((i->getReserved() ^ doReserved) 
+	|| i->fitSize() < minMatches) continue;
     mcount++;
-    dcount+=(*i)->fitSize();
+    dcount+=i->fitSize();
   }
 }
 void
@@ -688,15 +651,14 @@ CoordAlign::count(long int& mcount, long int& dcount,
                   bool doReserved, int minMatches, long catalog) const {
   mcount = 0;
   dcount = 0;
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
-    if (((*i)->getReserved() ^ doReserved)
-        || (*i)->fitSize() < minMatches) continue;
+  for (auto i : mlist) {
+    if ((i->getReserved() ^ doReserved)
+        || i->fitSize() < minMatches) continue;
 
     int ddcount=0;
-    for(list<Detection*>::iterator d=(*i)->begin(); d != (*i)->end(); ++d) {
-      if(!((*d)->isClipped) && (*d)->catalogNumber==catalog)
+    for(auto d : *i) {
+      /**=(*i)->begin(); d != (*i)->end(); ++d) {**/
+      if(!(d->isClipped) && d->catalogNumber==catalog)
             ddcount++;
     }
 
