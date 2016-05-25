@@ -1120,7 +1120,6 @@ main(int argc, char *argv[])
 	  cout << "--Starting strict tolerance passes, clipping full matches" << endl;
 	  oldthresh = thresh;
 	  nclip = ca.sigmaClip(thresh, false, true);
-	  //**/nclip = ca.sigmaClip(thresh, false, false);
 	  cout << "Clipped " << nclip
 	       << " matches " << endl;
 	  continue;
@@ -1131,7 +1130,6 @@ main(int argc, char *argv[])
       }
       oldthresh = thresh;
       nclip = ca.sigmaClip(thresh, false, clipEntireMatch || !coarsePasses);
-      //**nclip = ca.sigmaClip(thresh, false, false);
       if (nclip==0 && coarsePasses) {
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
@@ -1154,7 +1152,6 @@ main(int argc, char *argv[])
 	mapCollection.write(ofs);
       }
     }
-
 
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
@@ -1183,8 +1180,6 @@ main(int argc, char *argv[])
 	     << " matches " << endl;
       } while (nclip>0);
     }
-
-    /**/cerr << "Done clipping reserved" << endl;
 
     //////////////////////////////////////
     // Output data and calculate some statistics
@@ -1382,8 +1377,6 @@ main(int argc, char *argv[])
       im = matches.erase(im);
     } // end match loop
 
-    /**/cerr << "Done collecting residuals" << endl;
-
     // Write remaining results to output table:
     outTable.writeCells(sequence, "SequenceNumber", pointCount);
     outTable.writeCells(catalogNumber, "Extension", pointCount);
@@ -1401,8 +1394,6 @@ main(int argc, char *argv[])
     outTable.writeCells(sigpix, "sigPix", pointCount);
     outTable.writeCells(sigw, "sigW", pointCount);
     outTable.writeCells(wtFrac, "wtFrac", pointCount);
-
-    /**/cerr << "Done writing cells" << endl;
 
     // Print summary statistics for each exposure
     cout << "#    Exp    N    DOF    dx    +-    dy    +-   RMS chi_red  "

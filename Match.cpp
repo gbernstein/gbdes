@@ -222,20 +222,20 @@ Match::accumulateChisq(double& chisq,
   // Update mapping and save derivatives for each detection:
   vector<DMatrix*> dxyi(elist.size(), 0);
   int ipt=0;
-  for (auto i : elist) {
-    if (!isFit(i)) continue;
-    int npi = i->map->nParams();
+  for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
+    if (!isFit(*i)) continue;
+    int npi = (*i)->map->nParams();
     double xw, yw;
     if (npi>0) {
       dxyi[ipt] = new DMatrix(2,npi);
-      i->map->toWorldDerivs(i->xpix, i->ypix,
+      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
 			    xw, yw,
 			    *dxyi[ipt]);
     } else {
-      i->map->toWorld(i->xpix, i->ypix, xw, yw);
+      (*i)->map->toWorld((*i)->xpix, (*i)->ypix, xw, yw);
     }
-    i->xw = xw;
-    i->yw = yw;
+    (*i)->xw = xw;
+    (*i)->yw = yw;
   }
 
   centroid(xmean,ymean, xW, yW);
@@ -244,12 +244,12 @@ Match::accumulateChisq(double& chisq,
 
   map<int, iRange> mapsTouched;
   ipt = 0;
-  for (auto i : elist) {
-    if (!isFit(i)) continue;
-    double wxi=i->wtx;
-    double wyi=i->wty;
-    double xi=i->xw;
-    double yi=i->yw;
+  for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
+    if (!isFit(*i)) continue;
+    double wxi=(*i)->wtx;
+    double wyi=(*i)->wty;
+    double xi=(*i)->xw;
+    double yi=(*i)->yw;
 
     chisq += 
       (xi-xmean)*(xi-xmean)*wxi
@@ -257,11 +257,11 @@ Match::accumulateChisq(double& chisq,
 
     // Accumulate derivatives:
     int istart=0;
-    for (int iMap=0; iMap<i->map->nMaps(); iMap++) {
-      int ip=i->map->startIndex(iMap);
-      int np=i->map->nSubParams(iMap);
+    for (int iMap=0; iMap<(*i)->map->nMaps(); iMap++) {
+      int ip=(*i)->map->startIndex(iMap);
+      int np=(*i)->map->nSubParams(iMap);
       if (np==0) continue;
-      int mapNumber = i->map->mapNumber(iMap);
+      int mapNumber = (*i)->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
       tmv::VectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
@@ -283,10 +283,10 @@ Match::accumulateChisq(double& chisq,
 			      mapNumber, ip, dy, wyi);
 
 	int istart2 = istart+np;
-	for (int iMap2=iMap+1; iMap2<i->map->nMaps(); iMap2++) {
-	  int ip2=i->map->startIndex(iMap2);
-	  int np2=i->map->nSubParams(iMap2);
-	  int mapNumber2 = i->map->mapNumber(iMap2);
+	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
+	  int ip2=(*i)->map->startIndex(iMap2);
+	  int np2=(*i)->map->nSubParams(iMap2);
+	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
 	  if (np2==0) continue;
 	  tmv::VectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
 	  tmv::VectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
@@ -657,7 +657,6 @@ CoordAlign::count(long int& mcount, long int& dcount,
 
     int ddcount=0;
     for(auto d : *i) {
-      /**=(*i)->begin(); d != (*i)->end(); ++d) {**/
       if(!(d->isClipped) && d->catalogNumber==catalog)
             ddcount++;
     }

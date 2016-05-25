@@ -16,7 +16,7 @@ export FFTW_DIR
 export YAML_DIR
 
 # OPTFLAGS will be exported for subdir makes
-OPTFLAGS = -O3 -DASSERT -DUSE_YAML
+OPTFLAGS = -O3 -DASSERT
 export OPTFLAGS
 
 
