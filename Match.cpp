@@ -21,81 +21,6 @@ using std::set;
 using namespace astrometry;
 
 
-/////////////////////////////////////////////////////////////
-///// Class that regulates rank-one updates to small portions of
-///// the giant alpha symmetric matrix, allowing finer-grained locking
-/////////////////////////////////////////////////////////////
-class astrometry::AlphaUpdater {
-public:
-  AlphaUpdater(tmv::SymMatrix<double>& alpha_,
-	       const PixelMapCollection& pmc_,
-	       int nLocks=0): alpha(alpha_), pmc(pmc_) {
-#ifdef _OPENMP
-    // Decide how many map elements per lock
-    nMaps = pmc.nFreeMaps();
-    int nBlocks = nMaps*(nMaps+1)/2;
-    if (nLocks > nBlocks || nLocks<=0) {
-      blockLength = 1;
-      nLocks = nBlocks;
-    } else {
-      blockLength = nBlocks / nLocks;
-      nLocks = (nBlocks+blockLength-1) / blockLength;
-    }
-    locks.resize(nLocks);
-    // build array of locks
-    for (int i=0; i<locks.size(); i++)
-      omp_init_lock(&locks[i]);
-#endif
-  }
-  ~AlphaUpdater() {
-#ifdef _OPENMP    // Release locks
-    for (int i=0; i<locks.size(); i++)
-      omp_destroy_lock(&locks[i]);
-#endif
-  }
-  // Update submatrix with corner at (startIndex1,startIndex2) with += scalar * v1 ^ v2
-  // map[12] are sequence numbers of map components in the PixelMapCollection, used
-  // to divide the matrix into blocks for locking in multithreaded case
-  void rankOneUpdate(int map1, int startIndex1, tmv::VectorView<double>& v1, 
-		     int map2, int startIndex2, tmv::VectorView<double>& v2,
-		     double scalar=1.) {
-    if (v1.size() <= 0 || v2.size() <=0) return;	// Nothing to add.
-    bool diagonal = (map1 == map2);
-    bool swapVectors = (map1 < map2);
-
-#ifdef _OPENMP
-    // Get the block index corresponding to these 2 keys
-    int block = (swapVectors ? (map2*(map2+1)/2 + map1) : (map1*(map1+1)/2 + map2))
-      / blockLength;
-    Assert(block < locks.size());
-    // Set lock for its region - will wait here if busy!
-    omp_set_lock(&locks[block]);
-    // Pre-multiply the vectors?
-#endif
-    if (diagonal) {
-      alpha.subSymMatrix(startIndex1, startIndex1 + v1.size()) += scalar * v1 ^ v1;
-    } else if (swapVectors) {
-      alpha.subMatrix(startIndex2, startIndex2+v2.size(),
-		      startIndex1, startIndex1+v1.size()) += scalar * v2 ^ v1;
-    } else {
-      alpha.subMatrix(startIndex1, startIndex1+v1.size(),
-		      startIndex2, startIndex2+v2.size()) += scalar * v1 ^ v2;
-    }
-#ifdef _OPENMP
-    omp_unset_lock(&locks[block]);
-#endif
-  }
-private:
-  tmv::SymMatrix<double>& alpha;
-  const PixelMapCollection& pmc;
-#ifdef _OPENMP
-  int nLocks;
-  int blockLength;
-  int nMaps;
-  // Lock array
-  vector<omp_lock_t> locks;
-#endif
-};
 
 bool
 Match::isFit(const Detection* e) {
@@ -264,8 +189,8 @@ Match::accumulateChisq(double& chisq,
       int mapNumber = (*i)->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
-      tmv::VectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
-      tmv::VectorView<double> dy=dxyi[ipt]->row(1,istart,istart+np);
+      tmv::ConstVectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
+      tmv::ConstVectorView<double> dy=dxyi[ipt]->row(1,istart,istart+np);
       beta.subVector(ip, ip+np) -= wxi*(xi-xmean)*dx;
       beta.subVector(ip, ip+np) -= wyi*(yi-ymean)*dy;
 
@@ -288,8 +213,8 @@ Match::accumulateChisq(double& chisq,
 	  int np2=(*i)->map->nSubParams(iMap2);
 	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
 	  if (np2==0) continue;
-	  tmv::VectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
-	  tmv::VectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
+	  tmv::ConstVectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
+	  tmv::ConstVectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
 	  // Note that subMatrix here will not cross diagonal:
 	  //**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wxi*(dx ^ dx2);
 	  //**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wyi*(dy ^ dy2);
@@ -426,7 +351,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   int matchCtr=0;
 
   const int NumberOfLocks = 2000;
-  AlphaUpdater updater(alpha, pmc, NumberOfLocks);
+  AlphaUpdater updater(alpha, pmc.nFreeMaps(), NumberOfLocks);
 
 #ifdef _OPENMP
   const int chunk=2000;
@@ -509,11 +434,13 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	  break;
 	}
       if (blank) {
-	cerr << "***No constraints on row " << i << endl;
+	cerr << "***No constraints on row " << i 
+	     << ", freezing it" << endl;
+	alpha(i,i) = 1.;
+	beta[i] = 0.;
 	string badAtom = pmc.atomHavingParameter(i);
 	cerr << "Serialized version of the degenerate map:" << endl;
 	pmc.writeMap(cerr, badAtom);
-	cerr << "Startindex is " << pmc.issueMap(badAtom)->startIndex(0) <<endl;
       }
     }
   }

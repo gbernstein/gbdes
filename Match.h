@@ -16,10 +16,9 @@ using std::list;
 #include "Astrometry.h"
 #include "PixelMap.h"
 #include "PixelMapCollection.h"
+#include "AlphaUpdater.h"
 
 namespace astrometry {
-
-  class AlphaUpdater; // Used only in Match.cpp ???
 
   class Match;  // Forward declaration
 
