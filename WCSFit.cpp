@@ -800,8 +800,11 @@ main(int argc, char *argv[])
 	// Build a simple Wcs that takes its name from the field
 	SphericalICRS icrs;
 
-	mapCollection.defineWcs(fieldNames.nameOf(ifield), icrs, IdentityMap().getName(),
-				DEGREE);
+	if (!mapCollection.wcsExists(fieldNames.nameOf(ifield))) {
+	  mapCollection.defineWcs(fieldNames.nameOf(ifield), icrs, 
+				  IdentityMap().getName(),
+				  DEGREE);
+	}
 	extn.wcs = mapCollection.issueWcs(fieldNames.nameOf(ifield));
 	// And have this Wcs reproject into field coordinates, then save as a SubMap
 	// and re-issue for use in this extension.
@@ -946,7 +949,8 @@ main(int argc, char *argv[])
 	neededColumns.push_back(idKey);
       neededColumns.push_back(xKey);
       neededColumns.push_back(yKey);
-      neededColumns.push_back(errKey);
+      if (!isTag)
+	neededColumns.push_back(errKey);
 
       FTable ff;
 #ifdef _OPENMP
@@ -969,7 +973,8 @@ main(int argc, char *argv[])
       bool errorColumnIsDouble = true;
       try {
 	double d;
-	ff.readCell(d, errKey, 0);
+	if (!isTag)
+	  ff.readCell(d, errKey, 0);
       } catch (img::FTableError& e) {
 	errorColumnIsDouble = false;
       }
@@ -988,7 +993,9 @@ main(int argc, char *argv[])
 	ff.readCell(d->xpix, xKey, irow);
 	ff.readCell(d->ypix, yKey, irow);
 	double sigma;
-	if (errorColumnIsDouble) {
+	if (isTag) {
+	  sigma = 0.;  // Don't need sigma for tags
+	} else if (errorColumnIsDouble) {
 	  ff.readCell(sigma, errKey, irow);
 	} else {
 	  float f;
