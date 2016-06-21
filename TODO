@@ -1,7 +1,5 @@
 * Fix bug in *Fit where device map is Identity (and hence has this name).
 
-* Astrometric PieceMap cleanup to match photometric
-
 * Put defaults into all PixelMaps
 
 * Have a CAL_PATH environment variable for tree rings & other files
@@ -38,3 +36,18 @@
 * Write local-transformation code.
 
 * Reduce chunk size in WCSFit
+
+* Put copyParams into PMC
+
+* Subroutinize various things in WCSFit to clean up main() code.
+
+DONE ON WCSFIT:
+* Astrometric PieceMap cleanup to match photometric
+
+* Let Identity have different names;
+
+* PMC recognizes things with 0 parameters as fixed
+
+* Put dependsOn into PMC
+
+

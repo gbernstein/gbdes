@@ -35,10 +35,9 @@ public:
   }
   // Everything cleaned up in destructor:
   ~Instrument() {}
-private:
-  // Hide:
-  Instrument(const Instrument& rhs);
-  void operator=(const Instrument& rhs);
+  // No copying:
+  Instrument(const Instrument& rhs) =delete;
+  void operator=(const Instrument& rhs) =delete;
 };
 
 // Class that represents a single pointing of the telescope:
@@ -48,16 +47,13 @@ public:
   Exposure(const string& name_, const SphericalCoords& coords): 
     name(name_), projection(coords.duplicate()) {}
   ~Exposure() {delete projection;}
-  string name;
+  string name;   // The exposure map will have this name too.
   SphericalCoords* projection;	// Projection relating world coords to sky for this exposure
   int  field;
   int  instrument;
-  string reprojectName;	// name of the ReprojectionMap from world coords to field coords
-  string mapName;	// name of PixelMap from instrument coords into world coord system
-private:
-  // Hide:
-  Exposure(const Exposure& rhs);
-  void operator=(const Exposure& rhs);
+  // No copying:
+  Exposure(const Exposure& rhs) =delete;
+  void operator=(const Exposure& rhs) =delete;
 };
 
 // Class that represents an catalog of objects from a single device on single exposure.
@@ -67,8 +63,10 @@ public:
   Extension(): map(0), wcs(0), startWcs(0) {}
   int exposure;
   int device;
+  string wcsName;      // Name of final WCS (and map into field coordinates)
+  string basemapName;  // Name of map from pixel coords to exposure's projected coords
   SubMap* map;	  // The total map from pixel coordinates to field coordinates.
-  Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates.
+  Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates = basemap + field projection
   Wcs* startWcs;  // Input Wcs for this extension (owned by this class)
   std::map<long, Detection*> keepers;  // The objects from this catalog that we will use
   ~Extension() {
