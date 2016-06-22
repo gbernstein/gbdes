@@ -62,7 +62,7 @@ SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpo
 
 SRC = $(shell ls *.cpp)
 
-OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
+OBJ =  TPVMap.o FitSubroutines.o FitDefaulted.o $(SUBOBJ)
 
 all: depend subs
 

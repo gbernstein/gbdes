@@ -44,11 +44,11 @@ public:
 
 class Exposure {
 public:
-  Exposure(const string& name_, const SphericalCoords& coords): 
+  Exposure(const string& name_, const astrometry::SphericalCoords& coords): 
     name(name_), projection(coords.duplicate()) {}
   ~Exposure() {delete projection;}
   string name;   // The exposure map will have this name too.
-  SphericalCoords* projection;	// Projection relating world coords to sky for this exposure
+  astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for exposure
   int  field;
   int  instrument;
   // No copying:
@@ -65,10 +65,10 @@ public:
   int device;
   string wcsName;      // Name of final WCS (and map into field coordinates)
   string basemapName;  // Name of map from pixel coords to exposure's projected coords
-  SubMap* map;	  // The total map from pixel coordinates to field coordinates.
-  Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates = basemap + field projection
-  Wcs* startWcs;  // Input Wcs for this extension (owned by this class)
-  std::map<long, Detection*> keepers;  // The objects from this catalog that we will use
+  astrometry::SubMap* map;	  // The total map from pixel coordinates to field coordinates.
+  astrometry::Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates = basemap + field projection
+  astrometry::Wcs* startWcs;  // Input Wcs for this extension (owned by this class)
+  std::map<long, astrometry::Detection*> keepers;  // The objects from this catalog that we will use
   ~Extension() {
     if (startWcs) delete startWcs;
   }

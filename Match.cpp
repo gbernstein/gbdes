@@ -568,7 +568,9 @@ CoordAlign::count(long int& mcount, long int& dcount,
   dcount = 0;
   for (auto i : mlist) {
     if ((i->getReserved() ^ doReserved) 
-	|| i->fitSize() < minMatches) continue;
+	|| i->fitSize() < minMatches) {
+      continue;
+    }
     mcount++;
     dcount+=i->fitSize();
   }
