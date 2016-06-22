@@ -39,6 +39,8 @@
 
 * Put copyParams into PMC
 
+* Write fitDefaulted function
+
 * Subroutinize various things in WCSFit to clean up main() code.
 
 DONE ON WCSFIT:

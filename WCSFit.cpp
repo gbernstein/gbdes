@@ -70,6 +70,16 @@ string usage=
 #include "Instrument.h"
 #include "FitSubroutines.h"
 
+// Function that will using starting WCS to fit all of the defaulted
+// maps used by the selected extensions.  Then will put the
+// initialized parameters back into the PMC and clear the defaulted flag.
+extern
+void fitDefaulted(PixelMapCollection& pmc,
+		  set<Extension*> useThese,
+		  const vector<Instrument*>& instruments,
+		  const vector<Exposure*>& exposures);
+
+
 // Statistics-accumulator class.  Defined after main()
 class Accum {
 public:
@@ -886,454 +896,64 @@ main(int argc, char *argv[])
       }
     } // end instrument loop
     
-    exit(1);
     
     // Initialize defaulted maps, one exposure at a time, starting
-    // with the ones that solve for devices.  The defaulted status
+    // with the ones that solve for devices, then all the others.
+    // The defaulted status
     // in the mapCollection should be getting updated as we go.
+    for (int i=0; i<exposures.size(); i++)
+      exposuresToInitialize.push_back(i);
 
+    for (auto iExpo : exposuresToInitialize) {
+      //   Find all defaulted extensions using this exposure
+      set<Extension*> defaultedExtensions;
+      for (auto extnptr : extensions) {
+	if (extnptr->exposure != iExpo)
+	  continue;
+	if (mapCollection.getDefaulted(extnptr->basemapName))
+	  defaultedExtensions.insert(extnptr);
+      }
+      if (!defaultedExtensions.empty())
+	// If the exposure has any defaulted maps, initialize them
+	fitDefaulted(mapCollection,
+		     defaultedExtensions,
+		     instruments,
+		     exposures);
+    }
 
     // Now fix all map elements requested to be fixed, checking for
     // any remaining defaulted maps at this time.
-
+    {
+      set<string> fixTheseMaps;
+      bool defaultProblem=false;
+      for (auto iName : mapCollection.allMapNames()) {
+	if (regexMatchAny(fixMapList, iName))
+	  fixTheseMaps.insert(iName);
+	if (mapCollection.getDefaulted(iName)) {
+	  cerr << "Logic error: after all intializations, still have map "
+	       << iName
+	       << " as defaulted."
+	       << endl;
+	  defaultProblem = true;
+	}
+      }
+      if (defaultProblem) exit(1);
+      
+      // Add names of all devices of instruments on the fixMapList
+      for (auto instptr : instruments) {
+	if (regexMatchAny(fixMapList, instptr->name)) {
+	  // Loop through all devices
+	  for (int i=0; i<instptr->nDevices; i++) {
+	    string devMap = instptr->name + "/" + instptr->deviceNames.nameOf(i);
+	    // Freeze the device's map if it's in use
+	    if (mapCollection.mapExists(devMap))
+	      fixTheseMaps.insert(devMap);
+	  }
+	}
+      }
+      mapCollection.setFixed(fixTheseMaps);
+    }
     
-
-
-
-
-
-
-    // Steps will be:
-    // (1) Assemble a YAML file from the input mapspec YAML file(s) that encodes
-    //   all the PixelMaps for all of the data we are fitting, along with any
-    //   known input parameters.  Then deserialize this into an initial PixelMapCollection.
-    // (2) Check for shift degeneracy: does each field have one fixed map (e.g. reference)?
-    // (3) Check for instrument/exposure degeneracy.  If there are exposures having both
-    //   freedom in both the instrument and exposure solutions, we will need have at least
-    //   one exposure designated as "canonical" for the instrument to have Identity map
-    //   in exposure solution.  Convert Exposure map for canonical to Identity.
-    // (4) Make sure canonical exposure(s) have initialized Exposure solution
-    // (5) Use canonical to initialize any defaulted Device maps
-    // (6) Initialize Exposure solutions for all exposures with defaulted ones
-    // (7) Make initialized WCS for all Extensions, have PMC learn them and issue
-    //   realizations.
-
-
-
-
-    // Logic now for initializing instrument maps:
-    // 1) Assign a name to each instrument map; either it's name of instrument,
-    //    or we have a mapping from input parameters
-    // 2) If the instrument name is something we were told to reuse:
-    //        * get its form and values from the input map libraries for each device
-    // 3) If not reusing, make new maps for each device.
-    //        * Select canonical exposure either from cmd line or finding one
-    //        * set reference exposure's map to identity
-    //        * fit the initial instrument map to starting map.
-    // 4) Fit initial exposure maps for each exposure that is not already canonical.
-    // 5) Freeze parameters of all map elements specified in input.
-
-    // Create a PixelMapCollection to hold all the components of the PixelMaps.
-
-    // This is list of PixelMaps whose parameters will be held fixed during fitting:
-    set<string> fixedMapNames;
-
-    // Set up coordinate maps for each instrument & exposure
-    for (int iinst=0; iinst<instruments.size(); iinst++) {
-      Instrument* inst = instruments[iinst];
-
-      // (1) choose a name to be used for this Instrument's PixelMap:
-      string mapName = inst->name;
-
-      // (2) See if this instrument has a map that we are re-using, and if params are fixed
-      string loadFile = mapName;
-      bool loadExistingMaps = true; //???existingMapFinder(loadFile);
-      bool fixInstrumentParameters = regexMatchAny(fixMapList, mapName);
-
-      // (3) decide for all devices whether they are looked up, or need creating,
-      //     and whether they are fixed
-      vector<bool> deviceMapsExist(inst->nDevices, loadExistingMaps);
-      vector<bool> fixDeviceMaps(inst->nDevices, fixInstrumentParameters);
-
-      PixelMapCollection pmcInstrument;
-      if (loadExistingMaps) {
-	ifstream ifs(loadFile.c_str());
-	if (!ifs) {
-	  cerr << "Could not open file " + loadFile + " holding existing PixelMaps" << endl;
-	  exit(1);
-	}
-	/**/cerr << "Reading pmcInstrument from " << loadFile << endl;
-	pmcInstrument.read(ifs);
-      }
-
-      for (int idev=0; idev<inst->nDevices; idev++) {
-	string devMapName = mapName + '/' + inst->deviceNames.nameOf(idev);
-	inst->mapNames[idev] = devMapName;
-	// A PixelMap file for Device overrides one for the Instrument
-	string devLoadFile = devMapName;
-	if (true) { //***(existingMapFinder(devLoadFile)) {
-	  deviceMapsExist[idev] = true;
-	} else if (deviceMapsExist[idev]) {
-	  // Already have a map file from the Instrument
-	  devLoadFile = loadFile;
-	}
-	if (regexMatchAny(fixMapList, devMapName))
-	  fixDeviceMaps[idev] = true;
-
-	if (fixDeviceMaps[idev] && !deviceMapsExist[idev]) {
-	  cerr << "WARNING: Requested fixed parameters for Device map "
-	       << devMapName
-	       << " that does not have initial values.  Ignoring request to fix params."
-	       << endl;
-	}
-
-	// Done with this device for now if we have no existing map to read.
-	if (!deviceMapsExist[idev]) continue;
-	  
-	// Load the PixelMap for this device if it is to be extracted from a file.
-	// We will not be throwing exceptions for duplicate names
-	PixelMap* deviceMap;
-	if (devLoadFile==loadFile) {
-	  // Get map from the Instrument's collection:
-	  deviceMap = pmcInstrument.issueMap(devMapName);
-	  mapCollection.learnMap(*deviceMap);
-	} else {
-	  // Device has its own serialized file:
-	  PixelMapCollection pmcDev;
-	  ifstream ifs(devLoadFile.c_str());
-	  if (!ifs) {
-	    cerr << "Could not open file " + devLoadFile + " holding existing PixelMaps" << endl;
-	    exit(1);
-	  }
-	  pmcDev.read(ifs);
-	  deviceMap = pmcDev.issueMap(devMapName);
-	  mapCollection.learnMap(*deviceMap);
-	}
-
-	if (fixDeviceMaps[idev])
-	  fixedMapNames.insert(devMapName);
-      } // end of device loop
-
-      // Canonical exposure will be used to initialize new Device maps.
-      // And its Exposure map will be fixed at identity if none of the Device's maps are
-      // fixed at initial values;  we assume that any single device being fixed will
-      // break degeneracy between Exposure and Instrument models.
-
-      // First find all exposures from this instrument,
-      // and find if one is canonical;
-      long canonicalExposure = -1;
-      list<long> exposuresWithInstrument;
-      for (long iexp = 0; iexp < exposures.size(); iexp++) {
-	if (exposures[iexp]->instrument == iinst) {
-	  exposuresWithInstrument.push_back(iexp);
-	  if (regexMatchAny(canonicalExposureList, exposures[iexp]->name)) {
-	    if (canonicalExposure < 0) {
-	      // This is our canonical exposure
-	      canonicalExposure = iexp;
-	    } else {
-	      // Duplicate canonical exposures is an error
-	      cerr << "More than one canonical exposure for instrument " 
-		   << inst->name << ": " << endl;
-	      cerr << exposures[canonicalExposure]->name
-		   << " and " << exposures[iexp]->name
-		   << endl;
-	      exit(1);
-	    }
-	  }
-	}
-      } // end exposure loop
-
-      // Do we need a canonical exposure? Only if we have an uninitialized device map
-      bool needCanonical = false;
-      for (int idev=0; idev<deviceMapsExist.size(); idev++)
-	if (!deviceMapsExist[idev]) {
-	  needCanonical = true;
-	  break;
-	}
-
-      // Or if none of the devices have their parameters fixed
-      bool noDevicesFixed = true;
-      for (int idev=0; idev<deviceMapsExist.size(); idev++)
-	if (deviceMapsExist[idev] && fixDeviceMaps[idev]) {
-	  noDevicesFixed = false;
-	  break;
-	}
-
-      if (noDevicesFixed) needCanonical = true;
-
-      if (needCanonical && canonicalExposure > 0) {
-	// Make sure our canonical exposure has all devices:
-	set<long> vexp;
-	vexp.insert(canonicalExposure);
-	FTable exts = extensionTable.extractRows("Exposure", vexp);
-	if (exts.nrows() != inst->nDevices) {
-	  cerr << "Canonical exposure " << exposures[canonicalExposure]->name
-	       << " for Instrument " << inst->name
-	       << " only has " << exts.nrows()
-	       << " devices out of " << inst->nDevices
-	       << endl;
-	  exit(1);
-	}
-      }
-
-      if (needCanonical && canonicalExposure < 0) {
-	// Need canonical but don't have one.  
-	// Find an exposure that has all devices for this Instrument.
-	for (list<long>::const_iterator i = exposuresWithInstrument.begin();
-	     i != exposuresWithInstrument.end();
-	     ++i) {
-	  // Filter the extension table for this exposure:
-	  set<long> vexp;
-	  vexp.insert(*i);
-	  FTable exts = extensionTable.extractRows("Exposure", vexp);
-	  // Stop here if this exposure has right number of extensions (exactly 1 per device):
-	  if (exts.nrows() == inst->nDevices) {
-	    canonicalExposure = *i;
-	    break; 
-	  }
-	}
-
-	if (canonicalExposure < 0) {
-	  cerr << "Could not find canonical exposure with all devices for instrument "
-	       << inst->name << endl;
-	  exit(1);
-	}
-
-      } // end finding a canonical exposure for the Instrument
-
-      // Now we create new PixelMaps for each Device that does not already have one.
-      /***
-      for (int idev=0; idev < inst->nDevices; idev++) {
-	if (deviceMapsExist[idev]) continue;
-	// Allow substitution of device name into the deviceModel string:
-	string thisModel = stringstuff::regexReplace("DEVICE", 
-						     inst->deviceNames.nameOf(idev), 
-						     deviceModel);
-	// Create a new PixelMap for this device. 
-	PixelMap* pm=0;
-	list<string> pmCodes = stringstuff::split(thisModel,'+');
-	if (pmCodes.size() == 1) {
-	  pm = pixelMapDecode(pmCodes.front(),inst->mapNames[idev], worldTolerance);
-	} else if (pmCodes.size() > 1) {
-	  // Build a compound SubMap with desired maps in order:
-	  int index = 0;
-	  list<PixelMap*> pmList;
-	  for (list<string>::const_iterator ipm = pmCodes.begin();
-	       ipm != pmCodes.end();
-	       ++ipm, ++index) {
-	    ostringstream oss;
-	    // Components will have index number appended to device map name:
-	    oss << inst->mapNames[idev] << "_" << index;
-	    pmList.push_back(pixelMapDecode(*ipm, oss.str(), worldTolerance));
-	  }
-	  pm = new SubMap(pmList, inst->mapNames[idev]);
-	  // Delete the original components, which have now been duplicated in SubMap:
-	  for (list<PixelMap*>::iterator ipm=pmList.begin();
-	       ipm != pmList.end();
-	       ++ipm)
-	    delete *ipm;
-	} else {
-	  cerr << "Empty deviceModel specification" << endl;
-	  exit(1);
-	}
-
-	// Find extension that has this Device for canonical Exposure:
-	long iextn;
-	for (iextn=0; iextn<extensions.size(); iextn++)
-	  if (extensions[iextn]->exposure == canonicalExposure
-	      && extensions[iextn]->device == idev) break;
-	if (iextn >= extensions.size()) {
-	  cerr << "Did not find extension for canonical exposure " 
-	       << exposures[canonicalExposure]->name
-	       << " and device " << inst->deviceNames.nameOf(idev)
-	       << endl;
-	  exit(1);
-	}
-
-	Exposure& expo=*exposures[canonicalExposure];
-	Extension& extn = *extensions[iextn];
-
-	// Initialize the new PixelMap so that it is best fit to the canonical exposures'
-	// map from pixel coordinates to world coords=projection in exposure frame
-	extn.startWcs->reprojectTo(*expo.projection);
-
-	{
-	  const int nGridPoints=512;	// Number of test points for map initialization
-	  cerr << "Initializing pixel map " << inst->mapNames[idev] << endl;
-
-	  Bounds<double> b=inst->domains[idev];
-	  // Distribute points equally in x and y, but shuffle the y coords
-	  // so that the points fill the rectangle
-	  vector<int> vx(nGridPoints);
-	  for (int i=0; i<vx.size(); i++) vx[i]=i;
-	  vector<int> vy = vx;
-	  std::random_shuffle(vy.begin(), vy.end());
-	  double xstep = (b.getXMax()-b.getXMin())/nGridPoints;
-	  double ystep = (b.getYMax()-b.getYMin())/nGridPoints;
-	  list<Detection*> testPoints;
-
-	  for (int i=0; i<vx.size(); i++) {
-	    double xpix = b.getXMin() + (vx[i]+0.5)*xstep;
-	    double ypix = b.getXMin() + (vy[i]+0.5)*ystep;
-	    double xw, yw;
-	    extn.startWcs->toWorld(xpix, ypix, xw, yw);
-	    Detection* d = new Detection;
-	    d->xpix = xpix;
-	    d->ypix = ypix;
-	    d->xw = xw;
-	    d->yw = yw;
-	    testPoints.push_back(d);
-	  }
-
-	  const double testPointSigma = 0.01*ARCSEC/DEGREE; // "errors" on world coords of test points
-	  mapFit(testPoints, pm, testPointSigma);
-
-	  // Clear out the testPoints:
-	  for (list<Detection*>::iterator i = testPoints.begin();
-	       i != testPoints.end();
-	       ++i)
-	    delete *i;
-	} // Done initializing parameters of new PixelMap
-
-	// Save this map into the collection
-	mapCollection.learnMap(*pm);
-	delete pm;
-      } // end loop creating PixelMaps for all Devices.
-
-      *****/
-      // Now create an exposure map for all exposures with this instrument,
-      // and set initial parameters by fitting to input WCS map.
-
-      for (list<long>::const_iterator i= exposuresWithInstrument.begin();
-	   i != exposuresWithInstrument.end();
-	   ++i) {
-	int iexp = *i;
-	Exposure& expo = *exposures[iexp];
-	PixelMap* warp=0;
-	// First we check to see if we are going to use an existing exposure map:
-	string loadFile = expo.name;
-	if (true) { //****existingMapFinder(loadFile)) {
-	  // Adopt the existing map for this exposure:
-	  PixelMapCollection pmcExpo;
-	  ifstream ifs(loadFile.c_str());
-	  if (!ifs) {
-	    cerr << "Could not open serialized map file " 
-		 << loadFile
-		 << endl;
-	    exit(1);
-	  }
-	  pmcExpo.read(ifs);
-	  warp = pmcExpo.issueMap(expo.name);
-	  mapCollection.learnMap(*warp);
-	  expo.name = warp->getName();
-	  // If this imported map is to be held fixed, add it to the list:
-	  if (regexMatchAny(fixMapList, expo.name))
-	    fixedMapNames.insert(expo.name);
-
-	  // We're done with this exposure if we have pre-set map for it.
-	  continue;
-	}
-
-	if (iexp == canonicalExposure && noDevicesFixed) {
-	  /**/cerr << "Giving identity map to canonical exposure " << expo.name <<endl;
-	  // Give this canonical exposure identity map to avoid degeneracy with Instrument
-	  expo.name = IdentityMap().getName();
-	  continue;
-	}
-	
-	// We will create a new exposure map and then initialize it
-	// ??? Potentially more sophisticated here
-	/***/int exposureOrder=1;
-	if (exposureOrder==1) 
-	  warp = new LinearMap(expo.name);
-	else
-	  warp = new PolyMap(exposureOrder, expo.name, worldTolerance);
-	expo.name = expo.name;
-	// Set numerical-derivative step to 1 arcsec, polynomial is working in degrees:
-	warp->setPixelStep(ARCSEC/DEGREE);
-
-	// Build test points
-	list<Detection*> testPoints;
-
-	const int nGridPoints=800;	// Number of test points for map initialization
-	int pointsPerDevice = nGridPoints / inst->nDevices + 1;
-
-	// Get points from each extension that is part of this exposure
-	for (long iextn=0; iextn<extensions.size(); iextn++) {
-	  if (extensions[iextn]->exposure != iexp) continue;
-	  Extension& extn = *extensions[iextn];
-	  int idev = extn.device;
-	  Bounds<double> b=inst->domains[idev];
-	  double step = sqrt(b.area()/pointsPerDevice);
-	  int nx = static_cast<int> (ceil((b.getXMax()-b.getXMin())/step));
-	  int ny = static_cast<int> (ceil((b.getYMax()-b.getYMin())/step));
-	  double xstep = (b.getXMax()-b.getXMin())/nx;
-	  double ystep = (b.getYMax()-b.getYMin())/ny;
-	  // starting pixel map for the first exposure with this instrument
-	  if (!extn.startWcs) {
-	    cerr << "Failed to get starting Wcs for device "
-		 << inst->deviceNames.nameOf(idev)
-		 << " in exposure " << expo.name
-		 << endl;
-	    exit(1);
-	  }
-	  extn.startWcs->reprojectTo(*expo.projection);
-	  PixelMap* devpm = mapCollection.issueMap(inst->mapNames[idev]);
-	
-	  for (int ix=0; ix<=nx; ix++) {
-	    for (int iy=0; iy<=ny; iy++) {
-	      double xpix = b.getXMin() + ix*xstep;
-	      double ypix = b.getYMin() + iy*ystep;
-	      double xw, yw;
-	      // Map coordinates into the exposure projection = world:
-	      extn.startWcs->toWorld(xpix, ypix, xw, yw);
-	      // And process the pixel coordinates through Instrument map:
-	      devpm->toWorld(xpix,ypix,xpix,ypix);
-	      Detection* d = new Detection;
-	      d->xpix = xpix;
-	      d->ypix = ypix;
-	      d->xw = xw;
-	      d->yw = yw;
-	      testPoints.push_back(d);
-	    }
-	  } // finish collecting test points for this extension
-	} // finish extension loop for this exposure
-	
-	double testPointSigma = 0.01*ARCSEC/DEGREE; // 10 mas scale for "errors" on the test point positions
-	mapFit(testPoints, warp, testPointSigma);
-	
-	// Insert the Exposure map into the collection
-	mapCollection.learnMap(*warp);
-
-	// Check for fixed maps
-	if (regexMatchAny(fixMapList, warp->getName())) {
-	  cerr << "WARNING: Requested fixed parameters for Exposure map "
-	       << warp->getName()
-	       << " that does not have initial values.  Ignoring request to fix params."
-	       << endl;
-	}
-
-	delete warp;
-
-	// Clear out the testPoints:
-	for (list<Detection*>::iterator i = testPoints.begin();
-	     i != testPoints.end();
-	     ++i)
-	  delete *i;
-      } // end solution for this exposure map
-
-      /**/cerr << "Done with map initialization for instrument " << inst->name << endl;
-    } // End instrument loop
-
-    // Freeze the parameters of all the fixed maps
-    mapCollection.setFixed(fixedMapNames, true);
-
-    // Now construct Wcs and a reprojected SubMap for every extension
-
-    // and save SubMap for it
-    for (int iext=0; iext<extensions.size(); iext++) {
-    } // Extension loop
-
     // Recalculate all parameter indices
     mapCollection.rebuildParameterVector();
 
@@ -1341,6 +961,8 @@ main(int argc, char *argv[])
 	     << " with " << mapCollection.nParams() << " free parameters."
 	     << endl;
 
+
+    /**/exit(1);
 
     //////////////////////////////////////////////////////////
     // Read in all the data
