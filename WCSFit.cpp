@@ -322,8 +322,14 @@ main(int argc, char *argv[])
       spaceReplace(instrumentName);
       Assert(instrumentNumber < instruments.size());
       Instrument* instptr = new Instrument(instrumentName);
+      string band;
+      if (!ff.header()->getValue("Band",band)) {
+	instptr->band = instptr->name;  // Use instrument name for BAND if not found
+      } else {
+	spaceReplace(band);
+	instptr->band = band;
+      }
       instruments[instrumentNumber] = instptr;
-      
       vector<string> devnames;
       vector<double> vxmin;
       vector<double> vxmax;
@@ -424,7 +430,7 @@ main(int argc, char *argv[])
 	d["INSTRUMENT"] = instruments[expo.instrument]->name;
 	d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extn->device);
 	d["EXPOSURE"] = expo.name;
-	// ??? d["BAND"] = instruments[expo.instrument]->band;
+	d["BAND"] = instruments[expo.instrument]->band;
 	extn->wcsName = d["EXPOSURE"] + "/" + d["DEVICE"];
 	extn->basemapName = extn->wcsName + "/base";
 	  
@@ -444,6 +450,7 @@ main(int argc, char *argv[])
       istringstream iss(inputYAML.dump());
       if (!pmcInit->read(iss)) {
 	cerr << "Failure parsing the initial YAML map specs" << endl;
+	/**/cerr << inputYAML.dump() << endl;
 	exit(1);
       }
     }
@@ -718,7 +725,7 @@ main(int argc, char *argv[])
 	d["INSTRUMENT"] = instruments[expo.instrument]->name;
 	d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extnptr->device);
 	d["EXPOSURE"] = expo.name;
-	// ??? d["BAND"] = instruments[expo.instrument]->band;
+	d["BAND"] = instruments[expo.instrument]->band;
       }
       if (!inputYAML.addMap(extnptr->basemapName,d)) {
 	cerr << "Input YAML files do not have complete information for map "

@@ -33,6 +33,8 @@
 
 * Subroutinize various things in WCSFit to clean up main() code.
 
+* Make freezing of parameters sticky and more economical.
+
 DONE ON WCSFIT:
 * Astrometric PieceMap cleanup to match photometric
 
@@ -51,5 +53,7 @@ DONE ON WCSFIT:
 * Fix bug in *Fit where device map is Identity (and hence has this name).
 
 * Put defaults into all PixelMaps
+
+* Get BAND for each exposure or instrument or whatever
 
 

@@ -62,7 +62,7 @@ SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpo
 
 SRC = $(shell ls *.cpp)
 
-OBJ =  TPVMap.o FitSubroutines.o FitDefaulted.o $(SUBOBJ)
+OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
 
 all: depend subs
 
@@ -94,7 +94,7 @@ FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFoF: WCSFoF.o ExtensionAttribute.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFit: WCSFit.o Match.o MapFit.o $(OBJ)
+WCSFit: WCSFit.o Match.o MapFit.o FitDefaulted.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 PhotoFit: PhotoFit.o ReadPhotoPriors.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

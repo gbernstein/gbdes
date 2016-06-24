@@ -10,8 +10,8 @@ the C++ programs that follow in the pipeline.
 """
 FITS column names will be given in ALL CAPS.  These are also the names of "Attributes" that
 are given to each extension.
-In the yaml file, we'll do First Letter Cap for the 3 big categories, but expect lowercase for all
-map keys otherwise.
+In the yaml file, we'll do First Letter Cap for the 3 big categories, but expect
+lowercase for all map keys otherwise.
 
 Fields:
 - name:
@@ -47,8 +47,10 @@ Attributes we'll require as WCSFoF needs them:
            'YKEY','IDKEY'
 
 WCSFit requires:
+'BAND'
 
 PhotoFit requires:
+'AIRMASS','MJD'
 
 Special values:
 EXPOSURE = _FILENAME  to pull the exposure name from the filename
@@ -93,7 +95,7 @@ specialInstruments={'REFERENCE':-1,'TAG':-2}
 # being written to the output table, or belong to Exposure rather than Extension
 # and hence should not be written to Extension table.
 specialAttributes =('FILENAME','EXTENSION','EXPOSURE','INSTRUMENT','FIELD',\
-                    'DEVICE','RA','DEC','AIRMASS','EXPTIME','MJD','WCSIN')
+                    'DEVICE','RA','DEC','AIRMASS','EXPTIME','MJD','WCSIN','BAND')
 
 headerIndicator = "<"
 # Character at start of a attribute value that indicates lookup in header                    
@@ -165,17 +167,20 @@ def buildFieldTable(fields):
         v.index = index
         index += 1
         
-    hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
-                       pf.Column(name='RA',format=py_to_fits(ra),array=ra),
-                       pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
-                       pf.Column(name='RADIUS',format=py_to_fits(radius),array=radius)]))
-    hdu.header['EXTNAME'] = 'Fields'
+    hdu = pf.BinTableHDU.from_columns(\
+        pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
+                     pf.Column(name='RA',format=py_to_fits(ra),array=ra),
+                     pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
+                     pf.Column(name='RADIUS',format=py_to_fits(radius),array=radius)]),
+                     name = 'Fields')
+#    hdu.header['EXTNAME'] = 'Fields'
     return hdu
 
 class Instrument:
-    def __init__(self, name, index=-3):
+    def __init__(self, name, index=-3, band=None):
         # Start with an empty dictionary of device names
         self.name = name
+        self.band = band
         self.devices = {}
         self.index = index
         return
@@ -198,18 +203,25 @@ def buildInstrumentTable(inst):
             sys.exit(1)
     # Make an array of zeros to build the [xy]Min/Max columns
     z = [0. for n in names]
-    hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(names),array=names),
-                                    pf.Column(name='XMIN',format=py_to_fits(z),array=z),
-                                    pf.Column(name='XMAX',format=py_to_fits(z),array=z),
-                                    pf.Column(name='YMIN',format=py_to_fits(z),array=z),
-                                    pf.Column(name='YMAX',format=py_to_fits(z),array=z)]));
+    hdu = pf.BinTableHDU.from_columns(\
+        pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(names),array=names),
+                     pf.Column(name='XMIN',format=py_to_fits(z),array=z),
+                     pf.Column(name='XMAX',format=py_to_fits(z),array=z),
+                     pf.Column(name='YMIN',format=py_to_fits(z),array=z),
+                     pf.Column(name='YMAX',format=py_to_fits(z),array=z)]),
+                     name='Instrument')
     hdu.header['NAME'] = inst.name
+    if inst.band is None:
+        hdu.header['BAND'] = inst.name
+    else:
+        hdu.header['BAND'] = inst.band
     hdu.header['NUMBER'] = inst.index
-    hdu.header['EXTNAME'] = 'Instrument'
+    #hdu.header['EXTNAME'] = 'Instrument'
     return hdu
 
 class Exposure:
-    def __init__(self, name, coords, field, instrument, exptime=None, airmass=None, mjd=None, index=-1):
+    def __init__(self, name, coords, field, instrument, exptime=None, \
+                 airmass=None, mjd=None, index=-1):
         self.name = name
         self.coords = coords
         self.field = field
@@ -258,17 +270,18 @@ def buildExposureTable(exposures, fields, instruments):
         airmass.append(e.airmass)
         mjd.append(e.mjd)
         exptime.append(e.exptime)
-    hdu = pf.new_table(pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
-                       pf.Column(name='RA',format=py_to_fits(ra),array=ra),
-                       pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
-                       pf.Column(name='FIELDNUMBER',format=py_to_fits(field),array=field),
-                       pf.Column(name='INSTRUMENTNUMBER',format=py_to_fits(inst),\
-                                 array=inst),
-                       pf.Column(name="MJD",format=py_to_fits(mjd),array=mjd),
-                       pf.Column(name="AIRMASS",format=py_to_fits(airmass),array=airmass),
-                       pf.Column(name="EXPTIME",format=py_to_fits(exptime),array=exptime) ]))
-
-    hdu.header['EXTNAME'] = 'Exposures'
+    hdu = pf.BinTableHDU.from_columns(\
+        pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
+                     pf.Column(name='RA',format=py_to_fits(ra),array=ra),
+                     pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
+                     pf.Column(name='FIELDNUMBER',format=py_to_fits(field),array=field),
+                     pf.Column(name='INSTRUMENTNUMBER',format=py_to_fits(inst),\
+                               array=inst),
+                     pf.Column(name="MJD",format=py_to_fits(mjd),array=mjd),
+                     pf.Column(name="AIRMASS",format=py_to_fits(airmass),array=airmass),
+                     pf.Column(name="EXPTIME",format=py_to_fits(exptime),array=exptime) ]),
+                     name = 'Exposures')
+    # hdu.header['EXTNAME'] = 'Exposures'
     return hdu
 
 class AttributeFinder:
@@ -345,8 +358,8 @@ class AttributeFinder:
 class Attribute:
     """
     Class is a list of AttributeFinders which all encode a given keyword.
-    They are added in order of increasing priority.  We will each one (in reverse order) to
-    see if it can assign a value to the attribute, and take the first one that succeeds.
+    They are added in order of increasing priority.  We will try each one (in reverse order)
+    to see if it can assign a value to the attribute, and take the first one that succeeds.
     """
     def __init__(self, first):
         self.seq = [first]
@@ -540,6 +553,7 @@ if __name__=='__main__':
                     else:
                         icrs = None
                     airmass = attributes['AIRMASS'](expo, primaryHeader=pHeader, extnHeader=eHeader)
+                    band = attributes['BAND'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     exptime = attributes['EXPTIME'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     field = attributes['FIELD'](expo, primaryHeader=pHeader, extnHeader=eHeader)
                     mjd = attributes['MJD'](expo, primaryHeader=pHeader, extnHeader=eHeader)
@@ -581,12 +595,23 @@ if __name__=='__main__':
                                 if field==None or f.distance(icrs)<minDistance:
                                     field = k
                                     minDistance = f.distance(icrs)
-                            exposures[expo] = Exposure(expo, icrs, field, inst, airmass=airmass,
+                            exposures[expo] = Exposure(expo, icrs, field, inst, \
+                                                       airmass=airmass,
                                                        exptime=exptime, mjd=mjd)
 
                     # Add new instrument if needed
                     if inst not in instruments and inst not in specialInstruments:
-                        instruments[inst] = Instrument(inst)
+                        instruments[inst] = Instrument(inst, band=band)
+                    # Check that extension BAND matches the instrument's band,
+                    # or set the instrument BAND name if it has been None
+                    if inst not in specialInstruments and band is not None:
+                        if instruments[inst].band is None:
+                            instruments[inst].band = band
+                        elif instruments[inst].band != band:
+                            print "ERROR: Band",band,"does not match instrument",\
+                              instruments[inst].name,"band",inst.band,\
+                              "in catalog file",fitsname
+                            sys.exit(1)
                         
                     # Get device name, not needed for special devices
                     dev  = attributes['DEVICE'](expo, primaryHeader=pHeader, extnHeader=eHeader)
@@ -624,7 +649,7 @@ if __name__=='__main__':
                     extensions.append(extn)
                 pass  ## Ends the if/else on LDAC format catalogs
 
-            fits.close() ## End the 
+            fits.close() ## End the reading of this catalog's extensions
 
     # Completed loop through all input files from all globs
     # Get rid of fields with only 1 exposure:
@@ -723,8 +748,9 @@ if __name__=='__main__':
             cols.append(colForAttribute(extensions, a.key))
 
     # Add the EXTENSION table as an HDU
-    thdu = pf.new_table(pf.ColDefs(cols))
-    thdu.header['EXTNAME'] = 'Extensions'
+    thdu = pf.BinTableHDU.from_columns(pf.ColDefs(cols),
+                                      name='Extensions')
+    #thdu.header['EXTNAME'] = 'Extensions'
     outfits.append(thdu)
     
     # Write to FITS file

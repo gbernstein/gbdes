@@ -350,6 +350,13 @@ main(int argc, char *argv[])
 	Assert(instrumentNumber < instruments.size());
 	Instrument* instptr = new Instrument(instrumentName);
 	instruments[instrumentNumber] = instptr;
+	string band;
+	if (!ff.header()->getValue("Band",band)) {
+	  instptr->band = instptr->name;  // Use instrument name for BAND if not found
+	} else {
+	  spaceReplace(band);
+	  instptr->band = band;
+	}
       
 	vector<string> devnames;
 	vector<double> vxmin;

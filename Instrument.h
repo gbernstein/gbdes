@@ -18,8 +18,9 @@
 class Instrument {
 public:
   Instrument(string name_=""):
-    name(name_), nDevices(0) {}
+    name(name_), nDevices(0), band(name_) {}
   string name;
+  string band;		// "band" could be more generic than instrument name.
   int nDevices;
   NameIndex deviceNames;	// Names of all devices that exist for this instrument
   vector<string> mapNames;	// Names of instrument PixelMaps for each device
