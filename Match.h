@@ -116,6 +116,8 @@ namespace astrometry {
     list<Match*>& mlist;
     PixelMapCollection& pmc;
     double relativeTolerance;
+    set<int> frozenParameters;  // Keep track of degenerate parameters
+    map<string, set<int>> frozenMaps; // Which atoms have which params frozen
   public:
     CoordAlign(PixelMapCollection& pmc_,
 	       list<Match*>& mlist_): mlist(mlist_),

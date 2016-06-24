@@ -920,12 +920,12 @@ main(int argc, char *argv[])
 	if (mapCollection.getDefaulted(extnptr->basemapName))
 	  defaultedExtensions.insert(extnptr);
       }
-      if (!defaultedExtensions.empty())
-	// If the exposure has any defaulted maps, initialize them
+      if (!defaultedExtensions.empty()) {
 	fitDefaulted(mapCollection,
 		     defaultedExtensions,
 		     instruments,
 		     exposures);
+      }
     }
 
     // Now fix all map elements requested to be fixed, checking for

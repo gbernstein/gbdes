@@ -36,9 +36,12 @@ fitDefaulted(PixelMapCollection& pmc,
     else
       fixAtoms.insert(mapname);
   }
-  /**/cerr << "defaulted Atoms:" ;
-  /**/for (auto name : defaultedAtoms) cerr << " " << name;
-  /**/cerr << endl;
+  // If the exposure has any defaulted maps, initialize them
+  /**/if (true) {
+    cerr << "Initializing maps " ;
+    for (auto name : defaultedAtoms) cerr << name << " ";
+    cerr << endl;
+  }
   pmcFit.learnMap(IdentityMap());  // Make sure we know this one
   pmcFit.setFixed(fixAtoms);
   pmcFit.rebuildParameterVector();
@@ -112,14 +115,12 @@ fitDefaulted(PixelMapCollection& pmc,
   // Build CoordAlign object and solve for defaulted parameters
   CoordAlign ca(pmcFit, matches);
   ca.setRelTolerance(0.01);  // weaker tolerance for fit convergence
-  ca.fitOnce();
+  ca.fitOnce(false);
   
   // Copy defaulted parameters back into the parent pmc.
   for (auto mapname : defaultedAtoms) {
-    /**/cerr << "Copying initialized parameters for " << mapname << endl;
     auto pm = pmcFit.cloneMap(mapname);
     pmc.copyParamsFrom(*pm);
-    /**/cerr << pm->getParams() << endl;
     delete pm;
   }
 

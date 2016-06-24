@@ -425,7 +425,8 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   chisq = newChisq;
 
   if (!reuseAlpha) {
-    //***** Code that will be useful in spotting unconstrained parameters:
+    // Code to spot unconstrained parameters:
+    set<string> newlyFrozenMaps;
     for (int i = 0; i<alpha.nrows(); i++) {
       bool blank = true;
       for (int j=0; j<alpha.ncols(); j++)
@@ -434,16 +435,42 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	  break;
 	}
       if (blank) {
-	cerr << "***No constraints on row " << i 
-	     << ", freezing it" << endl;
+	string badAtom = pmc.atomHavingParameter(i);
+	// Add to (or make) a list of the frozen parameters in this atom
+	frozenMaps[badAtom].insert(i);
+	// Will print messages for those atoms just frozen on this iteration
+	if (frozenMaps[badAtom].size()==1)
+	  newlyFrozenMaps.insert(badAtom);
 	alpha(i,i) = 1.;
 	beta[i] = 0.;
-	string badAtom = pmc.atomHavingParameter(i);
-	cerr << "Serialized version of the degenerate map:" << endl;
-	pmc.writeMap(cerr, badAtom);
+      } else {
+	// Something is weird if a frozen parameter is now constrained
+	if (frozenParameters.count(i)>0) {
+	  string badAtom = pmc.atomHavingParameter(i);
+	  FormatAndThrow<AstrometryError>() << "Frozen parameter " << i
+					    << " in map " << badAtom
+					    << " became constrained??";
+	}
       }
+    } // End alpha row loop
+
+    for (auto badAtom : newlyFrozenMaps) {
+      // Print message about freezing parameters
+      int startIndex, nParams;
+      pmc.parameterIndicesOf(badAtom, startIndex, nParams);
+      cerr << "Freezing " << frozenMaps[badAtom].size()
+	   << " of " << nParams
+	   << " parameters in map " << badAtom;
+      if (frozenMaps[badAtom].size() < nParams) {
+	// Give the parameter indices
+	cerr << " (";
+	for (auto i : frozenMaps[badAtom])
+	  cerr << i - startIndex;
+	cerr << ")";
+      }
+      cerr << endl;
     }
-  }
+  } // End degenerate parameter check
 }
 
 double
@@ -484,10 +511,12 @@ CoordAlign::fitOnce(bool reportToCerr) {
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
       timer.stop();
-      /**/cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
-	       << " / " << dof 
-	       << " in time " << timer << " sec"
-	       << endl;
+      if (reportToCerr) {
+	cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
+	     << " / " << dof 
+	     << " in time " << timer << " sec"
+	     << endl;
+      }
       timer.reset();
       timer.start();
 
