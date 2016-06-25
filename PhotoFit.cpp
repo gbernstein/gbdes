@@ -10,8 +10,6 @@
 #include "StringStuff.h"
 #include "Pset.h"
 #include "PixelMapCollection.h"
-#include "TemplateMap.h"
-#include "TPVMap.h"
 #include "Random.h"
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
@@ -19,12 +17,13 @@
 #include "PhotoTemplate.h"
 #include "PhotoPiecewise.h"
 
+#include "FitSubroutines.h"
+
 using namespace std;
 using namespace stringstuff;
 using namespace photometry;
 using img::FTable;
 
-#include "FitSubroutines.h"
 
 string usage=
   "PhotoFit: Refine photometric solutions for a matched set of catalogs.\n"

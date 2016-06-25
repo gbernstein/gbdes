@@ -465,7 +465,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	// Give the parameter indices
 	cerr << " (";
 	for (auto i : frozenMaps[badAtom])
-	  cerr << i - startIndex;
+	  cerr << i - startIndex << " ";
 	cerr << ")";
       }
       cerr << endl;

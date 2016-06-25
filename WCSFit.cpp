@@ -10,12 +10,13 @@
 #include "StringStuff.h"
 #include "Pset.h"
 #include "PixelMapCollection.h"
-#include "TPVMap.h"
 #include "Random.h"
-#include "Match.h"
-#include "TemplateMap.h"
-#include "PiecewiseMap.h"
 #include "YAMLCollector.h"
+#include "Match.h"
+#include "Instrument.h"
+
+#include "FitSubroutines.h"
+#include "WcsSubs.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -65,92 +66,6 @@ string usage=
 
 // Note that pixel maps for devices within instrument will get names <instrument>/<device>.
 // And Wcs's for individual exposures' extension will get names <exposure>/<device>.
-
-
-#include "Instrument.h"
-#include "FitSubroutines.h"
-
-// Function that will using starting WCS to fit all of the defaulted
-// maps used by the selected extensions.  Then will put the
-// initialized parameters back into the PMC and clear the defaulted flag.
-extern
-void fitDefaulted(PixelMapCollection& pmc,
-		  set<Extension*> useThese,
-		  const vector<Instrument*>& instruments,
-		  const vector<Exposure*>& exposures);
-
-
-// Statistics-accumulator class.  Defined after main()
-class Accum {
-public:
-  double sumx;
-  double sumy;
-  double sumxx;
-  double sumyy;
-  double sumxxw;
-  double sumyyw;
-  double sumxw;
-  double sumyw;
-  double sumwx;
-  double sumwy;
-  int n;
-  double xpix;
-  double ypix;
-  double xw;
-  double yw;
-  double sumdof;
-  Accum();
-  void add(const Detection* d, double xoff=0., double yoff=0., double dof=1.);
-  double rms() const;
-  double reducedChisq() const;
-  string summary() const;
-};
-
-// This function is used to find degeneracies between exposures and device maps.
-// Start with list of free & fixed devices as initial degen/ok, same for exposures.
-// Will consider as "ok" any device used in an "ok" exposure and vice-versa.
-// The last argument says which exposure/device pairs are used together.
-void
-findDegeneracies(set<int>& degenerateDevices,
-		 set<int>& okDevices,
-		 set<int>& degenerateExposures,
-		 set<int>& okExposures,
-		 const vector<set<int>>& exposuresUsingDevice) {
-  
-  // Device/exposures with degeneracy broken this round
-  auto nowOkDevices = okDevices;
-  auto nowOkExposures = okExposures;
-  while (!(nowOkDevices.empty() && nowOkExposures.empty())) {
-    // Mark as ok any exposures using an ok device
-    for (auto iDev : nowOkDevices) {
-      for (auto iExpo: exposuresUsingDevice[iDev]) {
-	if (degenerateExposures.erase(iExpo)>0) {
-	  // Newly non-degenerate exposure.  Change category
-	  nowOkExposures.insert(iExpo);
-	  okExposures.insert(iExpo);
-	}
-      }
-    }
-    nowOkDevices.clear();
-
-    // Now mark as ok any device that is used by a non-degenerate exposure
-    for (auto iDev : degenerateDevices) {
-      for (auto iExpo : exposuresUsingDevice[iDev]) {
-	if (nowOkExposures.count(iExpo)>0) {
-	  // Mark device as not degenerate after all
-	  nowOkDevices.insert(iDev);
-	  break;
-	}
-      }
-    }
-    nowOkExposures.clear();
-    for (auto iDev: nowOkDevices) {
-      degenerateDevices.erase(iDev);
-      okDevices.insert(iDev);
-    }
-  }
-  return;
-}
 
 int
 main(int argc, char *argv[])
@@ -1576,140 +1491,4 @@ main(int argc, char *argv[])
   }
 }
 
-/////////////////////////////////////////////////////////
-PixelMap* pixelMapDecode(string code, string name, double worldTolerance) {
-  istringstream iss(code);
-  string type;
-  iss >> type;
-  PixelMap* pm;
-  if (stringstuff::nocaseEqual(type,"Poly")) {
-    int xOrder, yOrder;
-    if (!(iss >> xOrder)) 
-      throw runtime_error("Could not decode PolyMap spec: <" + code + ">");
-    if ( (iss >> yOrder)) {
-      if (xOrder==1 && yOrder==1) {
-	LinearMap* lin = new LinearMap(name);
-	lin->setToIdentity();
-	pm = lin;
-      } else {
-	PolyMap* poly = new PolyMap(xOrder, yOrder,name);
-	poly->setWorldTolerance(worldTolerance);
-	// Set PolyMap to identity for starters to not be degenerate:
-	poly->setToIdentity();
-	pm = poly;
-      }
-    } else {
-      if (xOrder==1) {
-	LinearMap* lin = new LinearMap(name);
-	lin->setToIdentity();
-	pm = lin;
-      } else {
-	PolyMap* poly = new PolyMap(xOrder, name);
-	poly->setWorldTolerance(worldTolerance);
-	poly->setToIdentity();
-	pm = poly;
-      }
-    }
-  } else if (stringstuff::nocaseEqual(type,"Linear")) {
-    pm = new LinearMap(name);
-
-  } else if (stringstuff::nocaseEqual(type,"Identity")) {
-    pm = new IdentityMap;
-
-  } else if (stringstuff::nocaseEqual(type,"Template")) {
-    string filename;
-    string lowname;
-    string highname;
-    double xSplit;
-    iss >> filename >> lowname;
-    if (iss >> highname >> xSplit) {
-      pm = new TemplateMap(xSplit, lowname, highname, filename, name);
-    } else {
-      pm = new TemplateMap(lowname, filename, name);
-    }
-
-  } else if (stringstuff::nocaseEqual(type,"Piecewise")) {
-    string axis;
-    double argStart;
-    double argStep;
-    int argCount;
-    iss >> axis >> argStart >> argStep >> argCount;
-    if (stringstuff::nocaseEqual(axis, "X")) {
-      pm = new PiecewiseMap(name, argStart, argStep, argCount,
-			PiecewiseMap::X);
-    } else if (stringstuff::nocaseEqual(axis, "Y")) {
-	pm = new PiecewiseMap(name, argStart, argStep, argCount,
-			  PiecewiseMap::Y);
-    } else if (stringstuff::nocaseEqual(axis, "R")) {
-      double xCenter;
-      double yCenter;
-      iss >> xCenter >> yCenter;
-      pm = new PiecewiseMap(name, argStart, argStep, argCount,
-			PiecewiseMap::R, xCenter, yCenter);
-    } else {
-      throw runtime_error("Bad axis type in PiecewiseMap device spec: " + axis);
-    }
-
-  } else {
-    throw runtime_error("Unknown PixelMap type in model parser: <" + type + ">");
-  }
-  return pm;
-}
-
-Accum::Accum(): sumxw(0.), sumyw(0.), 
-		sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
-		sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
-		sumdof(0.), xpix(0.), ypix(0.), xw(0.), yw(0.),
-		n(0) {}
-void 
-Accum::add(const Detection* d, double xoff, double yoff, double dof) {
-  sumx += (d->xw-xoff);
-  sumy += (d->yw-yoff);
-  sumxw += (d->xw-xoff)*d->wtx;
-  sumyw += (d->yw-yoff)*d->wty;
-  sumxxw += (d->xw-xoff)*(d->xw-xoff)*d->wtx;
-  sumyyw += (d->yw-yoff)*(d->yw-yoff)*d->wty;
-  sumxx += (d->xw-xoff)*(d->xw-xoff);
-  sumyy += (d->yw-yoff)*(d->yw-yoff);
-  sumwx += d->wtx;
-  sumwy += d->wty;
-  sumdof += dof;
-  ++n;
-}
-double 
-Accum::rms() const {
-  return n > 0 ? sqrt( (sumxx+sumyy)/(2.*n)) : 0.;
-}
-double
-Accum::reducedChisq() const {
-  return sumdof>0 ? (sumxxw+sumyyw)/(2.*sumdof) : 0.;
-}
-string 
-Accum::summary() const {
-  ostringstream oss;
-  double dx = 0., dy = 0., sigx=0., sigy=0.;
-  if (n>0) {
-    dx = sumxw / sumwx;
-    sigx = 1./sqrt(sumwx);
-    dy = sumyw / sumwy;
-    sigy = 1./sqrt(sumwy);
-  }
-  oss << setw(4) << n 
-      << fixed << setprecision(1)
-      << " " << setw(6) << sumdof
-      << " " << setw(5) << dx*1000.*DEGREE/ARCSEC 
-      << " " << setw(5) << sigx*1000.*DEGREE/ARCSEC
-      << " " << setw(5) << dy*1000.*DEGREE/ARCSEC 
-      << " " << setw(5) << sigy*1000.*DEGREE/ARCSEC
-      << " " << setw(5) << rms()*1000.*DEGREE/ARCSEC
-      << setprecision(2) 
-      << " " << setw(5) << reducedChisq()
-      << setprecision(0) << noshowpoint
-      << " " << setw(5) << xpix 
-      << " " << setw(5) << ypix
-      << setprecision(5) << showpoint << showpos
-      << " " << setw(9) << xw 
-      << " " << setw(9) << yw ;
-  return oss.str();
-}
 

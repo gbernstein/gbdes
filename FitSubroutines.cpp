@@ -223,3 +223,49 @@ getTableDouble(img::FTable f, string key, int elementNumber, bool isDouble, long
   }
   return out;
 }
+
+// This function is used to find degeneracies between exposures and device maps.
+// Start with list of free & fixed devices as initial degen/ok, same for exposures.
+// Will consider as "ok" any device used in an "ok" exposure and vice-versa.
+// The last argument says which exposure/device pairs are used together.
+void
+findDegeneracies(set<int>& degenerateDevices,
+		 set<int>& okDevices,
+		 set<int>& degenerateExposures,
+		 set<int>& okExposures,
+		 const vector<set<int>>& exposuresUsingDevice) {
+  
+  // Device/exposures with degeneracy broken this round
+  auto nowOkDevices = okDevices;
+  auto nowOkExposures = okExposures;
+  while (!(nowOkDevices.empty() && nowOkExposures.empty())) {
+    // Mark as ok any exposures using an ok device
+    for (auto iDev : nowOkDevices) {
+      for (auto iExpo: exposuresUsingDevice[iDev]) {
+	if (degenerateExposures.erase(iExpo)>0) {
+	  // Newly non-degenerate exposure.  Change category
+	  nowOkExposures.insert(iExpo);
+	  okExposures.insert(iExpo);
+	}
+      }
+    }
+    nowOkDevices.clear();
+
+    // Now mark as ok any device that is used by a non-degenerate exposure
+    for (auto iDev : degenerateDevices) {
+      for (auto iExpo : exposuresUsingDevice[iDev]) {
+	if (nowOkExposures.count(iExpo)>0) {
+	  // Mark device as not degenerate after all
+	  nowOkDevices.insert(iDev);
+	  break;
+	}
+      }
+    }
+    nowOkExposures.clear();
+    for (auto iDev: nowOkDevices) {
+      degenerateDevices.erase(iDev);
+      okDevices.insert(iDev);
+    }
+  }
+  return;
+}

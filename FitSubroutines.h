@@ -1,4 +1,6 @@
 // Constants and subroutines shared by the astrometric and photometric matching/fitting codes
+// WCSFit and PhotoFit
+
 #ifndef FITSUBROUTINES_H
 #define FITSUBROUTINES_H
 
@@ -97,5 +99,16 @@ int elementNumber(string& key);
 bool isDouble(img::FTable f, string key, int elementNumber);
 // Retrieve a double-valued number from either float or double column, element of array or scalar cell
 double getTableDouble(img::FTable f, string key, int elementNumber, bool isDouble, long irow);
+
+// This function is used to find degeneracies between exposures and device maps.
+// Start with list of free & fixed devices as initial degen/ok, same for exposures.
+// Will consider as "ok" any device used in an "ok" exposure and vice-versa.
+// The last argument says which exposure/device pairs are used together.
+void
+findDegeneracies(set<int>& degenerateDevices,
+		 set<int>& okDevices,
+		 set<int>& degenerateExposures,
+		 set<int>& okExposures,
+		 const vector<set<int>>& exposuresUsingDevice);
 
 #endif
