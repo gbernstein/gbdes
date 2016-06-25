@@ -143,6 +143,22 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 				    list<string>& useInstrumentList,
 				    string inputTables,
 				    string outCatalog,
-				    bool outputCatalogAlreadyOpen);
+				    bool& outputCatalogAlreadyOpen);
+
+// Read the Exposure table into an array.
+// Uses the instruments table.
+// Fills the exposureColorPriorities table using the useColorPriorities
+// list of regexes to establish priority order.
+// useReference exposures is set if we want to use exposures from REFERENCE instrument.
+// last Boolean is as above.
+vector<Exposure*>
+readExposures(const vector<Instrument*>& instruments,
+	      vector<int>& exposureColorPriorities,
+	      const list<string>&  useColorList,
+	      string inputTables,
+	      string outCatalog,
+	      bool useReferenceExposures,
+	      bool& outputCatalogAlreadyOpen);
+
 
 #endif

@@ -228,75 +228,18 @@ main(int argc, char *argv[])
 		      outputCatalogAlreadyOpen);
     
 
-    // Read in the table of exposures
-    vector<Exposure*> exposures;
     // This vector will hold the color-priority value of each exposure.  -1 means an exposure
     // that does not hold color info.
     vector<int> exposureColorPriorities;
-    {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
-      FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
-      if (!outputCatalogAlreadyOpen) {
-	outFlags = outFlags + FITS::OverwriteFile;
-	outputCatalogAlreadyOpen = true;
-      }
-      FITS::FitsTable out(outCatalog, outFlags, "Exposures");
-      FTable ff = ft.extract();
-      out.adopt(ff);
-      vector<string> names;
-      vector<double> ra;
-      vector<double> dec;
-      vector<int> fieldNumber;
-      vector<int> instrumentNumber;
-      vector<double> airmass;
-      vector<double> exptime;
-      ff.readCells(names, "Name");
-      ff.readCells(ra, "RA");
-      ff.readCells(dec, "Dec");
-      ff.readCells(fieldNumber, "fieldNumber");
-      ff.readCells(instrumentNumber, "InstrumentNumber");
-      ff.readCells(airmass, "Airmass");
-      ff.readCells(exptime, "Exptime");
-      exposureColorPriorities = vector<int>(names.size(), -1);
-      for (int i=0; i<names.size(); i++) {
-	spaceReplace(names[i]);
-
-	// See if this exposure name matches any of the color exposures
-	int priority = 0;
-	for (list<string>::const_iterator j = useColorList.begin();
-	     j != useColorList.end();
-	     ++j, ++priority) {
-	  if (regexMatch(*j, names[i])) {
-	    // Yes: give this exposure a priority according to order of the exposure it first matches.
-	    exposureColorPriorities[i] = priority;
-	    continue;
-	  }
-	}
-	// Are we going to want magnitudes from this exposure?
-	// Yes, if it's a reference exposure with name given in useReferenceExposures
-	bool useThisExposure = instrumentNumber[i]==REF_INSTRUMENT 
-	  && regexMatchAny(useReferenceList, names[i]);
-	// or if it's a normal exposure using an instrument that has been included
-	useThisExposure = useThisExposure || (instrumentNumber[i]>=0 && 
-					      instruments[instrumentNumber[i]]);
-
-	Exposure* expo;
-	if (useThisExposure) {
-	  // The projection we will use for this exposure:
-	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
-										  dec[i]*DEGREE)));
-	  expo = new Exposure(names[i],gn);
-	  expo->field = fieldNumber[i];
-	  expo->instrument = instrumentNumber[i];
-	  expo->airmass = airmass[i];
-	  expo->exptime = exptime[i];
-	} else {
-	  expo = 0;
-	}
-	exposures.push_back(expo);
-      }
-    }
-
+    // Read in the table of exposures
+    vector<Exposure*> exposures =
+      readExposures(instruments,
+		    exposureColorPriorities,
+		    useColorList,
+		    inputTables,
+		    outCatalog,
+		    false, // Do not use reference exposures for photometry
+		    outputCatalogAlreadyOpen);
 
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;

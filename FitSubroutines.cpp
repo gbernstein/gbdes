@@ -297,10 +297,10 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 				    list<string>& useInstrumentList,
 				    string inputTables,
 				    string outCatalog,
-				    bool outputCatalogAlreadyOpen) {
+				    bool& outputCatalogAlreadyOpen) {
   vector<Instrument*> instruments;
-  for (int i=0; i<instrumentHDUs.size(); i++) {
-    FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
+  for (int iextn : instrumentHDUs) {
+    FITS::FitsTable ft(inputTables, FITS::ReadOnly, iextn);
     Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
 
     string instrumentName;
@@ -308,7 +308,7 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
     if (!ft.header()->getValue("Name", instrumentName)
 	|| !ft.header()->getValue("Number", instrumentNumber)) {
       cerr << "Could not read name and/or number of instrument at extension "
-	   << instrumentHDUs[i] << endl;
+	   << iextn << endl;
     }
     spaceReplace(instrumentName);
 
@@ -359,4 +359,81 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 
   return instruments;
 }
-  
+
+// Read the Exposure table into an array.
+vector<Exposure*>
+readExposures(const vector<Instrument*>& instruments,
+	      vector<int>& exposureColorPriorities,
+	      const list<string>&  useColorList,
+	      string inputTables,
+	      string outCatalog,
+	      bool useReferenceExposures,
+	      bool& outputCatalogAlreadyOpen) {
+
+  // Read the exposure table
+  FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
+  FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
+  if (!outputCatalogAlreadyOpen) {
+    outFlags = outFlags + FITS::OverwriteFile;
+    outputCatalogAlreadyOpen = true;
+  }
+  FITS::FitsTable out(outCatalog, outFlags, "Exposures");
+  img::FTable ff = ft.extract();
+  out.adopt(ff);
+  vector<string> names;
+  vector<double> ra;
+  vector<double> dec;
+  vector<int> fieldNumber;
+  vector<int> instrumentNumber;
+  vector<double> airmass;
+  vector<double> exptime;
+  // ??? Add MJD??
+  ff.readCells(names, "Name");
+  ff.readCells(ra, "RA");
+  ff.readCells(dec, "Dec");
+  ff.readCells(fieldNumber, "fieldNumber");
+  ff.readCells(instrumentNumber, "InstrumentNumber");
+  ff.readCells(airmass, "Airmass");
+  ff.readCells(exptime, "Exptime");
+
+  // Initialize our output arrays to not-in-use values
+  vector<Exposure*> exposures(names.size(), 0);
+  exposureColorPriorities = vector<int>(names.size(), -1);
+  for (int i=0; i<names.size(); i++) {
+    spaceReplace(names[i]);
+
+    // See if this exposure name matches any of the color exposures
+    int priority = 0;
+    for (auto j = useColorList.begin();
+	 j != useColorList.end();
+	 ++j, ++priority) {
+      if (stringstuff::regexMatch(*j, names[i])) {
+	// Yes: give this exposure a priority according to order of the exposure
+	// it first matches.
+	exposureColorPriorities[i] = priority;
+	break;  // First priority is given to lower numbers.
+      }
+    }
+    // Are we going to want use data this exposure?
+    // Yes, if it's a reference exposure and we are using references
+    bool useThisExposure = instrumentNumber[i]==REF_INSTRUMENT 
+      && useReferenceExposures;
+    // or if it's a normal exposure using an instrument that has been included
+    useThisExposure = useThisExposure || (instrumentNumber[i]>=0 && 
+					  instruments[instrumentNumber[i]]);
+
+    if (useThisExposure) {
+      // The projection we will use for this exposure:
+      astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
+										dec[i]*DEGREE)));
+      auto expo = new Exposure(names[i],gn);
+      expo->field = fieldNumber[i];
+      expo->instrument = instrumentNumber[i];
+      expo->airmass = airmass[i];
+      expo->exptime = exptime[i];
+      // ??? MJD
+      exposures[i] = expo;
+    }
+  } // End exposure loop
+  return exposures;
+}

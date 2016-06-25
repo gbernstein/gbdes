@@ -90,11 +90,9 @@ main(int argc, char *argv[])
   string outCatalog;
   string outWcs;
 
-#ifdef COLORS
   string colorExposures;
   double minColor;
   double maxColor;
-#endif
   
   Pset parameters;
   {
@@ -179,10 +177,8 @@ main(int argc, char *argv[])
     // have their parameters held fixed.
     list<string> useInstrumentList = splitArgument(useInstruments);
 
-#ifdef COLOR
     // The list of exposures that are considered valid sources of color information:
     list<string> useColorList = splitArgument(colorExposures);
-#endif
     
     // Objects to ignore on input:
     ExtensionObjectSet skipSet(skipFile);
@@ -214,10 +210,9 @@ main(int argc, char *argv[])
     inventoryFitsTables(inputTables, instrumentHDUs, catalogHDUs);
     
     
-    // Read in all the instrument extensions and their device info.
-    // This flag will be set if we have already opened (and overwritten) the
+    // This flag is set since we have already opened (and overwritten) the
     // output FITS catalog.
-    bool outputCatalogAlreadyOpen = false;
+    bool outputCatalogAlreadyOpen = true;
 
     // Read in all the instrument extensions and their device info from input
     // FITS file, save useful ones and write to output FITS file.
@@ -225,34 +220,19 @@ main(int argc, char *argv[])
       readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
 		      outputCatalogAlreadyOpen);
 
+    // This vector will hold the color-priority value of each exposure.  -1 means an exposure
+    // that does not hold color info.
+    vector<int> exposureColorPriorities;
     // Read in the table of exposures
-    vector<Exposure*> exposures;
-    {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Exposures");
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Exposures");
-      FTable ff = ft.extract();
-      out.adopt(ff);
-      vector<string> names;
-      vector<double> ra;
-      vector<double> dec;
-      vector<int> fieldNumber;
-      vector<int> instrumentNumber;
-      ff.readCells(names, "Name");
-      ff.readCells(ra, "RA");
-      ff.readCells(dec, "Dec");
-      ff.readCells(fieldNumber, "fieldNumber");
-      ff.readCells(instrumentNumber, "InstrumentNumber");
-      for (int i=0; i<names.size(); i++) {
-	// The projection we will use for this exposure:
-	Gnomonic gn(Orientation(SphericalICRS(ra[i]*DEGREE,dec[i]*DEGREE)));
-	spaceReplace(names[i]);
-	Exposure* expo = new Exposure(names[i],gn);
-	expo->field = fieldNumber[i];
-	expo->instrument = instrumentNumber[i];
-	exposures.push_back(expo);
-      }
-    }
-
+    vector<Exposure*> exposures =
+      readExposures(instruments,
+		    exposureColorPriorities,
+		    useColorList,
+		    inputTables,
+		    outCatalog,
+		    true, // Use reference exposures for astrometry
+		    outputCatalogAlreadyOpen);
+		    
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
     vector<Extension*> extensions;
