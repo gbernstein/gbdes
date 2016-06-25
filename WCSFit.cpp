@@ -70,24 +70,32 @@ string usage=
 int
 main(int argc, char *argv[])
 {
-  bool reFit;	// until we separate the statistics part ???
   double reserveFraction;
   int randomNumberSeed;
+  string skipFile;
+
   double clipThresh;
   double maxPixError;
   double pixSysError;
   double referenceSysError;
+
   int minMatches;
   bool clipEntireMatch;
-  string skipFile;
-  string outCatalog;
-  string catalogSuffix;
-  string newHeadSuffix;
   double chisqTolerance;
+
   string inputMaps;
   string fixMaps;
-  string canonicalExposures;
+  string useInstruments;
+
+  string outCatalog;
   string outWcs;
+
+#ifdef COLORS
+  string colorExposures;
+  double minColor;
+  double maxColor;
+#endif
+  
   Pset parameters;
   {
     const int def=PsetMember::hasDefault;
@@ -105,6 +113,8 @@ main(int argc, char *argv[])
 			 "Reference object additional error (arcsec)", 0.003, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
+    parameters.addMember("useInstruments",&useInstruments, def,
+			 "the instruments to include in fit","");
     parameters.addMemberNoValue("CLIPPING");
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
@@ -123,10 +133,17 @@ main(int argc, char *argv[])
 			 "list of YAML files specifying maps","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
-    parameters.addMember("canonicalExposures",&canonicalExposures, def,
-			 "list of exposures that will have identity exposure maps","");
 
-    parameters.addMemberNoValue("FILES");
+#ifdef COLORS
+    parameters.addMemberNoValue("COLORS");
+    parameters.addMember("colorExposures",&colorExposures, def,
+			 "exposures holding valid colors for stars","");
+    parameters.addMember("minColor",&minColor, def,
+			 "minimum value of color to be used",-10.);
+    parameters.addMember("maxColor",&maxColor, def,
+			 "maximum value of color to be used",+10.);
+#endif
+    parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "wcscat.fits");
     parameters.addMember("outWcs",&outWcs, def,
@@ -148,7 +165,7 @@ main(int argc, char *argv[])
     referenceSysError *= ARCSEC/DEGREE;
 
     /////////////////////////////////////////////////////
-    // Parse all the parameters describing maps etc. ????
+    // Parse all the parameters
     /////////////////////////////////////////////////////
 
     // Teach PixelMapCollection about new kinds of PixelMaps:
@@ -158,9 +175,15 @@ main(int argc, char *argv[])
     // have their parameters held fixed.
     list<string> fixMapList = splitArgument(fixMaps);
 
-    // And any exposures that will be designated as canonical
-    list<string> canonicalExposureList = splitArgument(canonicalExposures);
+    // The list of instruments that we will be matching together in this run:
+    // have their parameters held fixed.
+    list<string> useInstrumentList = splitArgument(useInstruments);
 
+#ifdef COLOR
+    // The list of exposures that are considered valid sources of color information:
+    list<string> useColorList = splitArgument(colorExposures);
+#endif
+    
     // Objects to ignore on input:
     ExtensionObjectSet skipSet(skipFile);
 
@@ -182,85 +205,25 @@ main(int argc, char *argv[])
     // All we care about fields are names and orientations:
     NameIndex fieldNames;
     vector<SphericalCoords*> fieldProjections;
-
-    {
-      FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite + FITS::OverwriteFile + FITS::Create, "Fields");
-      FTable ft = in.extract();
-      out.adopt(ft);
-      vector<double> ra;
-      vector<double> dec;
-      vector<string> name;
-      ft.readCells(name, "Name");
-      ft.readCells(ra, "RA");
-      ft.readCells(dec, "Dec");
-      for (int i=0; i<name.size(); i++) {
-	spaceReplace(name[i]);
-	fieldNames.append(name[i]);
-	Orientation orient(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
-	fieldProjections.push_back( new Gnomonic(orient));
-      }
-    }
+    // Read the Fields table from input, copy to a new output FITS file, extract needed info
+    readFields(inputTables, outCatalog, fieldNames, fieldProjections);
 
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
     vector<int> catalogHDUs;
-    {
-      // Find which extensions are instrument tables
-      FITS::FitsFile ff(inputTables);
-      for (int i=1; i<ff.HDUCount(); i++) {
-	FITS::Hdu h(inputTables, FITS::HDUAny, i);
-	if (stringstuff::nocaseEqual(h.getName(), "Instrument"))
-	  instrumentHDUs.push_back(i);
-	else if (stringstuff::nocaseEqual(h.getName(), "MatchCatalog"))
-	  catalogHDUs.push_back(i);
-      }
-    }
+    inventoryFitsTables(inputTables, instrumentHDUs, catalogHDUs);
+    
     
     // Read in all the instrument extensions and their device info.
-    vector<Instrument*> instruments(instrumentHDUs.size());
-    for (int i=0; i<instrumentHDUs.size(); i++) {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
-      // Append new table to output:
-      FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, -1);
-      out.setName("Instrument");
-      Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
-      FTable ff=ft.extract();
-      out.adopt(ff);
-      string instrumentName;
-      int instrumentNumber;
-      if (!ff.header()->getValue("Name", instrumentName)
-	  || !ff.header()->getValue("Number", instrumentNumber)) {
-	cerr << "Could not read name and/or number of instrument at extension "
-	     << instrumentHDUs[i] << endl;
-      }
-      spaceReplace(instrumentName);
-      Assert(instrumentNumber < instruments.size());
-      Instrument* instptr = new Instrument(instrumentName);
-      string band;
-      if (!ff.header()->getValue("Band",band)) {
-	instptr->band = instptr->name;  // Use instrument name for BAND if not found
-      } else {
-	spaceReplace(band);
-	instptr->band = band;
-      }
-      instruments[instrumentNumber] = instptr;
-      vector<string> devnames;
-      vector<double> vxmin;
-      vector<double> vxmax;
-      vector<double> vymin;
-      vector<double> vymax;
-      ff.readCells(devnames, "Name");
-      ff.readCells(vxmin, "XMin");
-      ff.readCells(vxmax, "XMax");
-      ff.readCells(vymin, "YMin");
-      ff.readCells(vymax, "YMax");
-      for (int j=0; j<devnames.size(); j++) {
-	spaceReplace(devnames[j]);
-	instptr->addDevice( devnames[j],
-			    Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
-      }
-    }
+    // This flag will be set if we have already opened (and overwritten) the
+    // output FITS catalog.
+    bool outputCatalogAlreadyOpen = false;
+
+    // Read in all the instrument extensions and their device info from input
+    // FITS file, save useful ones and write to output FITS file.
+    vector<Instrument*> instruments =
+      readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
+		      outputCatalogAlreadyOpen);
 
     // Read in the table of exposures
     vector<Exposure*> exposures;
@@ -558,12 +521,14 @@ main(int argc, char *argv[])
 	// See if any of the degenerate exposures were requested to
 	// be a canonical one
 	int canonicalExposure = -1;
+	/*** ??? get rid of this...
 	for (auto iExpo : degenerateExposures) {
 	  if (regexMatchAny(canonicalExposureList, exposures[iExpo]->name)) {
 	    canonicalExposure = iExpo;
 	    break;
 	  }
 	}
+	***/
 	// If not, find the exposure using the most degenerate devices
 	if (canonicalExposure < 0) {
 	  int maxDevices = 0;

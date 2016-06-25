@@ -16,6 +16,8 @@
 
 #include "Pset.h"
 #include "FTable.h"
+#include "FitsTable.h"
+#include "Instrument.h"
 
 using namespace std;
 
@@ -100,6 +102,20 @@ bool isDouble(img::FTable f, string key, int elementNumber);
 // Retrieve a double-valued number from either float or double column, element of array or scalar cell
 double getTableDouble(img::FTable f, string key, int elementNumber, bool isDouble, long irow);
 
+// Class to produce ordering for vector of points to objects
+// that have a public "name" member.
+template <class T>
+class NameSorter {
+public:
+  NameSorter(const vector<T*>& exposures): ve(exposures) {}
+  bool operator()(int i1, int i2) const {
+    LessNoCase lnc;
+    return lnc(ve[i1]->name, ve[i2]->name);
+  }
+private:
+  const vector<T*>& ve;
+};
+
 // This function is used to find degeneracies between exposures and device maps.
 // Start with list of free & fixed devices as initial degen/ok, same for exposures.
 // Will consider as "ok" any device used in an "ok" exposure and vice-versa.
@@ -110,5 +126,23 @@ findDegeneracies(set<int>& degenerateDevices,
 		 set<int>& degenerateExposures,
 		 set<int>& okExposures,
 		 const vector<set<int>>& exposuresUsingDevice);
+
+// Figure out which extensions of the FITS file inputTables
+// are Instrument or MatchCatalog extensions.
+void
+inventoryFitsTables(string inputTables,
+		    vector<int>& instrumentHDUs,
+		    vector<int>& catalogHDUs);
+
+// Read in all the instrument extensions and their device info from input
+// FITS file, save useful ones and write to output FITS file.
+// The useInstrumentList entries are regexes, empty means use all.
+// The final bool argument is set true if we have already created
+// the outCatalog FITS file.
+vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
+				    list<string>& useInstrumentList,
+				    string inputTables,
+				    string outCatalog,
+				    bool outputCatalogAlreadyOpen);
 
 #endif

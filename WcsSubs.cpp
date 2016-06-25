@@ -4,6 +4,7 @@
 #include "Instrument.h"
 #include "Match.h"
 #include "WcsSubs.h"
+#include "FitSubroutines.h"
 
 using namespace astrometry;
 
@@ -194,3 +195,27 @@ Accum::summary() const {
   return oss.str();
 }
 
+void
+readFields(string inputTables,
+	   string outCatalog,
+	   NameIndex& fieldNames,
+	   vector<astrometry::SphericalCoords*>& fieldProjections) {
+  FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
+  FITS::FitsTable out(outCatalog,
+		      FITS::ReadWrite + FITS::OverwriteFile + FITS::Create,
+		      "Fields");
+  img::FTable ft = in.extract();
+  out.adopt(ft);
+  vector<double> ra;
+  vector<double> dec;
+  vector<string> name;
+  ft.readCells(name, "Name");
+  ft.readCells(ra, "RA");
+  ft.readCells(dec, "Dec");
+  for (int i=0; i<name.size(); i++) {
+    spaceReplace(name[i]);
+    fieldNames.append(name[i]);
+    Orientation orient(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
+    fieldProjections.push_back( new Gnomonic(orient));
+  }
+}

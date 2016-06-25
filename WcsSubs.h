@@ -5,10 +5,17 @@
 #include <list>
 #include <set>
 #include "StringStuff.h"
+#include "NameIndex.h"
+#include "Astrometry.h"
+#include "FitsTable.h"
 
 // Load the classes needed
+#include "FitSubroutines.h"
 #include "PixelMapCollection.h"
+#include "Match.h"
 #include "Instrument.h"
+typedef ExtensionBase<astrometry::SubMap, astrometry::Detection> Extension;
+typedef ColorExtensionBase<astrometry::Match> ColorExtension;
 
 // Function that will using starting WCS to fit all of the defaulted
 // maps used by the selected extensions.  Then will put the
@@ -45,5 +52,11 @@ public:
   string summary() const;
 };
 
+// Read the Fields table from input, copy to output, extract needed info
+void
+readFields(string inputTables,
+	   string outCatalog,
+	   NameIndex& fieldNames,
+	   vector<astrometry::SphericalCoords*>& fieldProjections);
 
 #endif

@@ -11,13 +11,13 @@
 #include "Pset.h"
 #include "PixelMapCollection.h"
 #include "Random.h"
+#include "YAMLCollector.h"
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
-#include "PhotoInstrument.h"
-#include "PhotoTemplate.h"
-#include "PhotoPiecewise.h"
+#include "Instrument.h"
 
 #include "FitSubroutines.h"
+#include "PhotoSubs.h"
 
 using namespace std;
 using namespace stringstuff;
@@ -46,7 +46,7 @@ string usage=
 // Regexes ok; same caveats: no @ or , in names, whitespace stripped.
 
 // parameter fixMaps is a string with
-// <mapName>, ...
+<// <mapName>, ...
 // where any given mapName should have its parameters fixed at initial values during
 // the fitting.  Regexes allowed (no commas!).
 
@@ -65,90 +65,46 @@ string usage=
 // magKey and magErrKey can be of form COLUMN[#] when COLUMN is an array column (float or double)
 // and # is the element of this array that we want to use.
 
-// A function to parse strings describing PhotoMap models
-// Parameters of each constructed model are initialized to be close to identity transformation on mags.
-PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType arg=PhotoMap::Device);
-
 // Another function that takes a string of photoMapDecode-able atoms, separated by "+" signs, and
 // has the PhotoMapCollection learn this sequence, retrievable using mapName.
 // The argtype determines whether the models being built use Device or Exposure coordinates.
+/**
 void
 learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
 	       PhotoMap::ArgumentType argtype=PhotoMap::Device);
+**/
 
-
-// Function to produce a list of PhotoPriors from an input file
-list<PhotoPrior*>
-readPriors(string filename, 
-	   const vector<Instrument*>& instruments, 
-	   const vector<Exposure*>& exposures, 
-	   const vector<Extension*>& extensions, 
-	   const vector<long>& detectionsPerExposure);
-
-class ExposureNameSorter {
-public:
-  ExposureNameSorter(const vector<Exposure*>& exposures): ve(exposures) {}
-  bool operator()(int i1, int i2) const {
-    LessNoCase lnc;
-    return lnc(ve[i1]->name, ve[i2]->name);
-  }
-private:
-  const vector<Exposure*>& ve;
-};
-
-// Class to accumulate residual statistics
-class Accum {
-public:
-  double sum_m;
-  double sum_mw;
-  double sum_mm;
-  double sum_mmw;
-  double sum_w;
-  int n;
-  double sum_x;
-  double sum_y;
-  double chisq;
-  Accum();
-  void add(const Detection* d, double magoff=0., double dof=1.);
-  double rms() const;
-  double reducedChisq() const;
-  string summary() const;
-};
 
 int
 main(int argc, char *argv[])
 {
   double reserveFraction;
-  double clipThresh;
-  double priorClipThresh;
-  bool clipEntirePrior;
+  int randomNumberSeed;
   string skipFile;
+
+  double clipThresh;
   double maxMagError;
   double magSysError;
-  double referenceSysError;
+
   int minMatches;
+  bool clipEntirePrior;
   bool clipEntireMatch;
-  string exposureModel;
-  string deviceModel;
-  string outCatalog;
-  string catalogSuffix;
-  string newHeadSuffix;
+  double priorClipThresh;
   double chisqTolerance;
-  string renameInstruments;
+
+  string inputMaps;
+  string fixMaps;
+  string priorFiles;
   string useInstruments;
+
+  string outCatalog;
+  string outPhotFile;
+  string outPriorFile;
+
   string colorExposures;
-  string useReferenceExposures;
-  bool referenceColorTerm;
   double minColor;
   double maxColor;
-  bool requireColor;
-  string existingMaps;
-  string fixMaps;
-  string canonicalExposures;
-  string outPhotFile;
-  string priorFiles;
-  string outPriorFile;
-  int randomNumberSeed;
+
   Pset parameters;
   {
     const int def=PsetMember::hasDefault;
@@ -162,27 +118,17 @@ main(int argc, char *argv[])
 			 "cut objects with magnitude uncertainty above this", 0.05, 0.);
     parameters.addMember("magSysError",&magSysError, def | low,
 			 "additional systematic error for all detected mags", 0.002, 0.);
-    parameters.addMember("referenceSysError",&referenceSysError, def | low,
-			 "Reference object systematic error (mag)", 0.05, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "minimum number of detections for usable match", 2, 2);
     parameters.addMember("useInstruments",&useInstruments, def,
-			 "the instruments that are assumed to produce matching mags","");
-    parameters.addMember("useReferenceExposures",&useReferenceExposures, def,
-			 "names of reference exposures to be included in chi-squared","");
-    parameters.addMember("skipFile",&skipFile, def,
-			 "optional file holding extension/object of detections to ignore","");
+			 "the instruments to include in fit","");
     parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
 			 "exposures holding valid colors for stars","");
-    parameters.addMember("referenceColorTerm",&referenceColorTerm, def,
-			 "set true to admit a color coefficient for reference magnitudes",false);
     parameters.addMember("minColor",&minColor, def,
 			 "minimum value of color to be used",-10.);
     parameters.addMember("maxColor",&maxColor, def,
 			 "maximum value of color to be used",+10.);
-    parameters.addMember("requireColor",&requireColor, def,
-			 "set true to reject objects having no color datum", false);
     parameters.addMemberNoValue("CLIPPING");
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
@@ -192,6 +138,8 @@ main(int argc, char *argv[])
 			 "Clipping threshold (sigma)", 5., 2.);
     parameters.addMember("clipEntirePrior",&clipEntirePrior, def,
 			 "Discard entire night's prior if one outlier", false);
+    parameters.addMember("skipFile",&skipFile, def,
+			 "optional file holding extension/object of detections to ignore","");
     parameters.addMemberNoValue("FITTING");
     parameters.addMember("priorFiles", &priorFiles, def,
 			 "File(s) specifying any priors to apply to zeropoints and colors", "");
@@ -199,20 +147,12 @@ main(int argc, char *argv[])
 			 "Fraction of matches reserved from re-fit", 0., 0.);
     parameters.addMember("seed",&randomNumberSeed, def,
 			 "seed for reserving randomizer, <=0 to seed with time", 0);
-    parameters.addMember("exposureModel",&exposureModel, def,
-			 "Form of per-exposure map", "Constant");
-    parameters.addMember("deviceModel",&deviceModel, def,
-			 "Form of device map", "Poly 2");
     parameters.addMember("chisqTolerance",&chisqTolerance, def | lowopen,
 			 "Fractional change in chisq for convergence", 0.001, 0.);
-    parameters.addMember("renameInstruments",&renameInstruments, def,
-			 "list of new names to give to instruments for maps","");
-    parameters.addMember("existingMaps",&existingMaps, def,
-			 "list of photometric maps to draw from existing files","");
+    parameters.addMember("inputMaps",&inputMaps, def,
+			 "list of YAML files specifying maps","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
-    parameters.addMember("canonicalExposures",&canonicalExposures, def,
-			 "list of exposures that will have identity exposure maps","");
     parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "photo.fits");
@@ -232,7 +172,7 @@ main(int argc, char *argv[])
     string inputTables = argv[1];
 
     /////////////////////////////////////////////////////
-    // Parse all the parameters describing maps etc. 
+    // Parse all the parameters 
     /////////////////////////////////////////////////////
 
     
@@ -240,38 +180,10 @@ main(int argc, char *argv[])
     loadPhotoMapParser();
     loadPixelMapParser();
 
-    // First is a regex map from instrument names to the names of their PhotoMaps
-    RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
-							     "renameInstruments");
-
-    // Next is regex map from PhotoMap or instrument map names to files 
-    // from which we should de-serialize them
-    RegexReplacements existingMapFinder;
-    {
-      list<string> ls = split(existingMaps, DefaultListSeperator);
-      for (list<string>::const_iterator i = ls.begin();
-	   i != ls.end();
-	   ++i) {
-	if (i->empty()) continue;
-	list<string> ls2 = split(*i, '@');
-	if (ls2.size() != 2) {
-	  cerr << "existingMaps has bad spec: " << *i << endl;
-	  exit(1);
-	}
-	string regex = ls2.front();
-	string replacement = ls2.back();
-	stripWhite(regex);
-	stripWhite(replacement);
-	existingMapFinder.addRegex(regex, replacement);
-      }
-    }
 
     // This is list of regexes of PhotoMap names (or instrument names) that should
     // have their parameters held fixed.
     list<string> fixMapList = splitArgument(fixMaps);
-
-    // Regexes that match exposures to have identity exposure maps
-    list<string> canonicalExposureList = splitArgument(canonicalExposures);
 
     // The list of instruments that we will be matching together in this run:
     // have their parameters held fixed.
@@ -280,12 +192,16 @@ main(int argc, char *argv[])
     // The list of exposures that are considered valid sources of color information:
     list<string> useColorList = splitArgument(colorExposures);
 
-    // The list of reference exposures whose mags will be included in chi-squared
-    list<string> useReferenceList = splitArgument(useReferenceExposures);
-
     // Objects to ignore on input:
     ExtensionObjectSet skipSet(skipFile);
 
+    // Class that will build a starting YAML config for all extensions
+    YAMLCollector inputYAML(inputMaps, PhotoMapCollection::magicKey);
+    // Make sure inputYAML knows about the Identity transformation:
+    {
+      istringstream iss("Identity:\n  Type:  Identity\n");
+      inputYAML.addInput(iss);
+    }
     /////////////////////////////////////////////////////
     //  Read in properties of all Instruments, Devices, Exposures
     /////////////////////////////////////////////////////
@@ -296,18 +212,7 @@ main(int argc, char *argv[])
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
     vector<int> catalogHDUs;
-    {
-      // Find which extensions are instrument tables
-      FITS::FitsFile ff(inputTables);
-      for (int i=1; i<ff.HDUCount(); i++) {
-	FITS::Hdu h(inputTables, FITS::HDUAny, i);
-	if (stringstuff::nocaseEqual(h.getName(), "Instrument")) {
-	  instrumentHDUs.push_back(i);
-	} else if (stringstuff::nocaseEqual(h.getName(), "MatchCatalog")) {
-	  catalogHDUs.push_back(i);
-	}
-      }
-    }
+    inventoryFitsTables(inputTables, instrumentHDUs, catalogHDUs);
     
     /**/cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
 	     << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
@@ -316,64 +221,12 @@ main(int argc, char *argv[])
     // output FITS catalog.
     bool outputCatalogAlreadyOpen = false;
 
-    // Read in all the instrument extensions and their device info.
-    vector<Instrument*> instruments(instrumentHDUs.size(),0);
-    for (int i=0; i<instrumentHDUs.size(); i++) {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
-      // Append new table to output:
-      Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
-
-      string instrumentName;
-      int instrumentNumber;
-      if (!ft.header()->getValue("Name", instrumentName)
-	  || !ft.header()->getValue("Number", instrumentNumber)) {
-	cerr << "Could not read name and/or number of instrument at extension "
-	     << instrumentHDUs[i] << endl;
-      }
-      spaceReplace(instrumentName);
-      // Is this an instrument we are going to care about?
-      string name = instrumentName;
-      instrumentTranslator(name);  // Apply any name remapping specified.
-      
-      if (regexMatchAny(useInstrumentList, name))  {
-	// This is an instrument we will use.  Get its devices
-	FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
-	if (!outputCatalogAlreadyOpen) {
-	  outFlags = outFlags + FITS::OverwriteFile;
-	  outputCatalogAlreadyOpen = true;
-	}
-	FITS::FitsTable out(outCatalog, outFlags, -1);
-	out.setName("Instrument");
-	FTable ff=ft.extract();
-	out.adopt(ff);
-	Assert(instrumentNumber < instruments.size());
-	Instrument* instptr = new Instrument(instrumentName);
-	instruments[instrumentNumber] = instptr;
-	string band;
-	if (!ff.header()->getValue("Band",band)) {
-	  instptr->band = instptr->name;  // Use instrument name for BAND if not found
-	} else {
-	  spaceReplace(band);
-	  instptr->band = band;
-	}
-      
-	vector<string> devnames;
-	vector<double> vxmin;
-	vector<double> vxmax;
-	vector<double> vymin;
-	vector<double> vymax;
-	ff.readCells(devnames, "Name");
-	ff.readCells(vxmin, "XMin");
-	ff.readCells(vxmax, "XMax");
-	ff.readCells(vymin, "YMin");
-	ff.readCells(vymax, "YMax");
-	for (int j=0; j<devnames.size(); j++) {
-	  spaceReplace(devnames[j]);
-	  instptr->addDevice( devnames[j],
-			      Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
-	}
-      } // Done reading an instrument.
-    }
+    // Read in all the instrument extensions and their device info from input
+    // FITS file, save useful ones and write to output FITS file.
+    vector<Instrument*> instruments =
+      readInstruments(instrumentHDUs, useInstruments, inputTables, outCatalog,
+		      outputCatalogAlreadyOpen);
+    
 
     // Read in the table of exposures
     vector<Exposure*> exposures;
@@ -1625,7 +1478,7 @@ main(int argc, char *argv[])
     for (int i=0; i<exposures.size(); i++)
       if (exposures[i])
 	ii.push_back(i);
-    std::sort(ii.begin(), ii.end(), ExposureNameSorter(exposures));
+    std::sort(ii.begin(), ii.end(), NameSorter<Exposure>(exposures));
       
     for (int i=0; i<ii.size(); i++) {
       int iexp = ii[i];
@@ -1784,53 +1637,3 @@ learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
   delete pm;
 }
 
-Accum::Accum(): sum_m(0.), sum_mw(0.),
-		sum_mm(0.), sum_mmw(0.),
-		sum_w(0.),
-		chisq(0.), 
-		sum_x(0.), sum_y(0.),
-		n(0) {}
-void 
-Accum::add(const Detection* d, double magoff, double dof) {
-  double dm = d->magOut - magoff;
-  sum_m += dm;
-  sum_mw += dm * d->wt;
-  sum_mm += dm * dm;
-  sum_mmw += dm * dm *d->wt;
-  sum_w += d->wt;
-  chisq += dm * dm * d->wt / dof;
-  sum_x += d->args.xExposure;
-  sum_y += d->args.yExposure;
-  ++n;
-}
-double 
-Accum::rms() const {
-  return n > 0 ? sqrt( sum_mm/n ) : 0.;
-}
-double 
-Accum::reducedChisq() const {
-  return n>0 ? chisq / n : 0.;
-}
-string 
-Accum::summary() const {
-  ostringstream oss;
-  double dm = 0., sigm=0.;
-  double x=0., y=0.;
-  if (n>0) {
-    dm = sum_mw / sum_w;
-    sigm = 1./sqrt(sum_w);
-    x = sum_x / n;
-    y = sum_y / n;
-  }
-  oss << setw(5) << n 
-      << fixed << setprecision(1)
-    /** << " " << setw(5) << dm*1000.
-	<< " " << setw(5) << sigm*1000.**/
-      << " " << setw(5) << rms()*1000.
-      << setprecision(2) 
-      << " " << setw(5) << reducedChisq()
-      << setprecision(5) << showpoint << showpos
-      << " " << setw(9) << x 
-      << " " << setw(9) << y ;
-  return oss.str();
-}

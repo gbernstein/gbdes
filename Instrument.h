@@ -1,9 +1,9 @@
 #ifndef INSTRUMENT_H
 #define INSTRUMENT_H
-#include "Std.h"
-#include "Astrometry.h"
-#include "Match.h"
 #include <map>
+#include "Std.h"
+#include "Bounds.h"
+#include "Astrometry.h"
 #include "NameIndex.h"
 #include "PixelMapCollection.h"
 
@@ -52,28 +52,47 @@ public:
   astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for exposure
   int  field;
   int  instrument;
+  double airmass;
+  double exptime;
+  double mjd;  
   // No copying:
   Exposure(const Exposure& rhs) =delete;
   void operator=(const Exposure& rhs) =delete;
 };
 
 // Class that represents an catalog of objects from a single device on single exposure.
-// Will have originated from a single bintable HDU that we can access
-class Extension {
+// Will have originated from a single bintable HDU that we can access.
+// The template argument are SubMap, Detection from either astrometry or photometry.
+template <class T1, class T2>
+class ExtensionBase {
 public:
-  Extension(): map(0), wcs(0), startWcs(0) {}
+  ExtensionBase(): map(0), wcs(0), startWcs(0) {}
   int exposure;
   int device;
+  double magshift;	// Additive adjustment to all incoming mags (exposure time)
+
   string wcsName;      // Name of final WCS (and map into field coordinates)
   string basemapName;  // Name of map from pixel coords to exposure's projected coords
-  astrometry::SubMap* map;	  // The total map from pixel coordinates to field coordinates.
+  T1* map;	       // The map from pixel coordinates to field coordinates.
   astrometry::Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates = basemap + field projection
   astrometry::Wcs* startWcs;  // Input Wcs for this extension (owned by this class)
-  std::map<long, astrometry::Detection*> keepers;  // The objects from this catalog that we will use
-  ~Extension() {
+
+  std::map<long, T2*> keepers; // The objects from this Extension catalog that we will use
+  ~ExtensionBase() {
     if (startWcs) delete startWcs;
   }
-private:
+};
+
+// Class that represents an catalog of objects from a single device on single exposure
+// that will be used solely to extract color information.
+// The template argument is Match from either astrometry or photometry
+template <class T>
+class ColorExtensionBase {
+public:
+  ColorExtensionBase() {}
+  int priority;	// Rank of this catalog in heirarchy of colors.  Lower value takes priority.
+  // The objects from this catalog that we will use, and the matches they give colors for:
+  std::map<long, T*> keepers;  
 };
 
 #endif

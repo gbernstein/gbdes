@@ -29,6 +29,15 @@
 
 * Eliminate extensions with too few matched detections ??
 
+* No reference exposures in PhotoFit! One can add them as their own catalogs
+  and give identity or simple color PhotoMap.
+
+* Allow individual systematic errors per instrument or exposure?
+
+* Allow named Identity in PhotoMap.
+
+* Get MJD into exposure
+
 DONE ON WCSFIT:
 * Speed up fitting by trying successive Newton steps (with fixed quadratic) instead of Marquardt (on newton branch - done earlier than yaml stuff)
 

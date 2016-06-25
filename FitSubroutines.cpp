@@ -1,6 +1,7 @@
 // Constants and subroutines shared by the astrometric and photometric matching/fitting codes
 #include "FitSubroutines.h"
 #include "StringStuff.h"
+#include "Bounds.h"
 #include <list>
 #include "Pset.h"
 #include "PhotoTemplate.h"
@@ -9,6 +10,7 @@
 #include "PiecewiseMap.h"
 #include "PixelMapCollection.h"
 #include "PhotoMapCollection.h"
+#include "FitsTable.h"
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -269,3 +271,92 @@ findDegeneracies(set<int>& degenerateDevices,
   }
   return;
 }
+
+// Figure out which extensions of the FITS file inputTables
+// are Instrument or MatchCatalog extensions.
+void
+inventoryFitsTables(string inputTables,
+		    vector<int>& instrumentHDUs,
+		    vector<int>& catalogHDUs)  {
+  FITS::FitsFile ff(inputTables);
+  for (int i=1; i<ff.HDUCount(); i++) {
+    FITS::Hdu h(inputTables, FITS::HDUAny, i);
+    if (stringstuff::nocaseEqual(h.getName(), "Instrument"))
+      instrumentHDUs.push_back(i);
+    else if (stringstuff::nocaseEqual(h.getName(), "MatchCatalog"))
+      catalogHDUs.push_back(i);
+  }
+}
+
+// Read in all the instrument extensions and their device info from input
+// FITS file, save useful ones and write to output FITS file.
+// The useInstrumentList entries are regexes, empty means use all.
+// The final bool argument is set true if we have already created
+// the outCatalog FITS file.
+vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
+				    list<string>& useInstrumentList,
+				    string inputTables,
+				    string outCatalog,
+				    bool outputCatalogAlreadyOpen) {
+  vector<Instrument*> instruments;
+  for (int i=0; i<instrumentHDUs.size(); i++) {
+    FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
+    Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
+
+    string instrumentName;
+    int instrumentNumber;
+    if (!ft.header()->getValue("Name", instrumentName)
+	|| !ft.header()->getValue("Number", instrumentNumber)) {
+      cerr << "Could not read name and/or number of instrument at extension "
+	   << instrumentHDUs[i] << endl;
+    }
+    spaceReplace(instrumentName);
+
+    if (regexMatchAny(useInstrumentList, instrumentName))  {
+      // This is an instrument we will use.  Save to the output file first.
+      if (instrumentNumber >= instruments.size())
+	instruments.resize(instrumentNumber+1);
+
+      // Copy extension to output file:
+      FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
+      if (!outputCatalogAlreadyOpen) {
+	outFlags = outFlags + FITS::OverwriteFile;
+	outputCatalogAlreadyOpen = true;
+      }
+      FITS::FitsTable out(outCatalog, outFlags, -1);
+      out.setName("Instrument");
+      img::FTable ff=ft.extract();
+      out.adopt(ff);
+
+      Instrument* instptr = new Instrument(instrumentName);
+      instruments[instrumentNumber] = instptr;
+      string band;
+      if (!ff.header()->getValue("Band",band)) {
+	instptr->band = instptr->name;  // Use instrument name for BAND if not found
+      } else {
+	spaceReplace(band);
+	instptr->band = band;
+      }
+      
+      vector<string> devnames;
+      vector<double> vxmin;
+      vector<double> vxmax;
+      vector<double> vymin;
+      vector<double> vymax;
+      ff.readCells(devnames, "Name");
+      ff.readCells(vxmin, "XMin");
+      ff.readCells(vxmax, "XMax");
+      ff.readCells(vymin, "YMin");
+      ff.readCells(vymax, "YMax");
+      for (int j=0; j<devnames.size(); j++) {
+	spaceReplace(devnames[j]);
+	instptr->addDevice( devnames[j],
+			    Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
+      }
+      instruments[instrumentNumber] = instptr;
+    } // Done reading an instrument.
+  }
+
+  return instruments;
+}
+  
