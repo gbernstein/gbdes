@@ -73,7 +73,7 @@ public:
   double magshift;	// Additive adjustment to all incoming mags (exposure time)
 
   string wcsName;      // Name of final WCS (and map into field coordinates)
-  string basemapName;  // Name of map from pixel coords to exposure's projected coords
+  string mapName;      // Name of photometry map or astrometric map into exposure coords
   T1* map;	       // The map from pixel coordinates to field coordinates.
   astrometry::Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates = basemap + field projection
   astrometry::Wcs* startWcs;  // Input Wcs for this extension (owned by this class)

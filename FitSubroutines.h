@@ -20,6 +20,9 @@
 #include "Instrument.h"
 #include "YAMLCollector.h"
 
+#include "Match.h"
+#include "PhotoMatch.h"
+
 using namespace std;
 
 const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting)
@@ -34,6 +37,16 @@ const string colorErrorColumnName = "COLOR_ERR";
 
 // Here is the default character at which to split lists given in parameters strings
 const char DefaultListSeperator=',';
+
+struct Astro {
+  typedef astrometry::Detection Detection;
+  typedef astrometry::Match Match;
+  typedef astrometry::SubMap SubMap;
+  typedef ExtensionBase<SubMap, Detection> Extension;
+  typedef ColorExtensionBase<Match> ColorExtension;
+  typedef astrometry::PixelMapCollection Collection;
+  static const int isAstro = 1;
+};
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -176,9 +189,9 @@ readExtensions(img::FTable& extensionTable,
 // fix all maps in a photo/pixelMapCollection whose names match
 // any regex in the fixMapList.  Also any instrument whose name
 // matches gets all device maps fixed.
-template <class T>
+template <class S>
 void
-fixMapComponents(T& pmc,
+fixMapComponents(typename S::Collection& pmc,
 		 const list<string>& fixMapList,
 		 const vector<Instrument*>& instruments);
 
