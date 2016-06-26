@@ -69,6 +69,7 @@ public:
   ExtensionBase(): map(0), wcs(0), startWcs(0) {}
   int exposure;
   int device;
+  double airmass;
   double magshift;	// Additive adjustment to all incoming mags (exposure time)
 
   string wcsName;      // Name of final WCS (and map into field coordinates)

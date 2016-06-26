@@ -35,6 +35,7 @@
 * Allow individual systematic errors per instrument or exposure?
 
 * Allow named Identity in PhotoMap.
+* update treatment of "fixed" in PhotoMap plus other utility routines.
 
 * Get MJD into exposure
 

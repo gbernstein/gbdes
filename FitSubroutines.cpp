@@ -11,6 +11,8 @@
 #include "PixelMapCollection.h"
 #include "PhotoMapCollection.h"
 #include "FitsTable.h"
+#include "Match.h"
+#include "PhotoMatch.h"
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -437,3 +439,148 @@ readExposures(const vector<Instrument*>& instruments,
   } // End exposure loop
   return exposures;
 }
+
+template <class T>
+void
+fixMapComponents(T& pmc,
+		 const list<string>& fixMapList,
+		 const vector<Instrument*>& instruments) {
+  set<string> fixTheseMaps;
+  for (auto iName : pmc.allMapNames()) {
+    if (stringstuff::regexMatchAny(fixMapList, iName))
+      fixTheseMaps.insert(iName);
+  }
+  // Add names of all devices of instruments on the fixMapList
+  for (auto instptr : instruments) {
+    if (stringstuff::regexMatchAny(fixMapList, instptr->name)) {
+      // Loop through all devices
+      for (int i=0; i<instptr->nDevices; i++) {
+	string devMap = instptr->name + "/" + instptr->deviceNames.nameOf(i);
+	// Freeze the device's map if it's in use
+	if (pmc.mapExists(devMap))
+	  fixTheseMaps.insert(devMap);
+      }
+    }
+  }
+  pmc.setFixed(fixTheseMaps);
+}
+
+// Instantiate our 2 cases
+template
+void fixMapComponents<astrometry::PixelMapCollection>(astrometry::PixelMapCollection&,
+						      const list<string>&,
+						      const vector<Instrument*>&);
+/**
+template
+void fixMapComponents<photometry::PhotoMapCollection>(photometry::PhotoMapCollection&,
+						      const list<string>&,
+						      const vector<Instrument*>&);
+**/
+template <class TExtn, class TColor>
+vector<TExtn*>
+readExtensions(img::FTable& extensionTable,
+	       const vector<Instrument*>& instruments,
+	       const vector<Exposure*>& exposures,
+	       const vector<int>& exposureColorPriorities,
+	       vector<TColor*>& colorExtensions,
+	       astrometry::YAMLCollector& inputYAML) {
+      
+  vector<TExtn*> extensions(extensionTable.nrows(), 0);
+  colorExtensions = vector<TColor*>(extensionTable.nrows(), 0);
+  for (int i=0; i<extensionTable.nrows(); i++) {
+    int iExposure;
+    extensionTable.readCell(iExposure, "Exposure", i);
+
+    if (iExposure < 0 || iExposure >= exposures.size()) {
+      cerr << "Extension " << i << " has invalid exposure number " << iExposure << endl;
+      exit(1);
+    }
+
+    // Determine whether this extension might be used to provide colors
+    int colorPriority = exposureColorPriorities[iExposure];
+    if (colorPriority >= 0) {
+      auto* ce = new TColor;
+      ce->priority = colorPriority;
+      colorExtensions[i] = ce;
+    }
+	
+    if (!exposures[iExposure]) continue;
+    
+    TExtn* extn = new TExtn;
+    extn->exposure = iExposure;
+    const Exposure& expo = *exposures[iExposure];
+
+    int iDevice;
+    extensionTable.readCell(iDevice, "Device", i);
+    extn->device = iDevice;
+    extn->airmass = expo.airmass;
+    extn->magshift = +2.5*log10(expo.exptime);
+      
+    // Create the starting WCS for the exposure
+    string s;
+    extensionTable.readCell(s, "WCSIn", i);
+    if (stringstuff::nocaseEqual(s, "_ICRS")) {
+      // Create a Wcs that just takes input as RA and Dec in degrees;
+      astrometry::IdentityMap identity;
+      astrometry::SphericalICRS icrs;
+      extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", DEGREE);
+    } else {
+      istringstream iss(s);
+      astrometry::PixelMapCollection pmcTemp;
+      if (!pmcTemp.read(iss)) {
+	cerr << "Could not deserialize starting WCS for extension #" << i << endl;
+	exit(1);
+      }
+      string wcsName = pmcTemp.allWcsNames().front();
+      extn->startWcs = pmcTemp.cloneWcs(wcsName);
+    }
+
+    // destination projection for startWCS is the Exposure projection,
+    // so that any exposure-level magnitude corrections use this coord system
+    extn->startWcs->reprojectTo(*expo.projection);
+
+
+    // Extract the map specifications for this extension from the input
+    // YAML files.
+    if ( expo.instrument < 0) {
+      // Tag & reference exposures have no instruments and no fitting
+      // being done.  Coordinates are fixed to xpix = xw.
+      // WCS will be the same for everything in this field
+      // ???      extn->wcsName = fieldNames.nameOf(ifield);
+      extn->basemapName = astrometry::IdentityMap().getName();
+    } else {
+      // Real instrument, make a map combining its exposure with its Device map:
+      astrometry::YAMLCollector::Dictionary d;
+      d["INSTRUMENT"] = instruments[expo.instrument]->name;
+      d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extn->device);
+      d["EXPOSURE"] = expo.name;
+      d["BAND"] = instruments[expo.instrument]->band;
+      // This will be the name of the extension's final WCS and photometry map:
+      extn->wcsName = d["EXPOSURE"] + "/" + d["DEVICE"];
+      // And this is the name of the PixelMap underlying the WCS:
+      extn->basemapName = extn->wcsName + "/base";
+	  
+      if (!inputYAML.addMap(extn->basemapName,d)) {
+	cerr << "Input YAML files do not have complete information for map "
+	     << extn->basemapName
+	     << endl;
+	exit(1);
+      }
+    }
+  }  // End extension loop
+}
+
+#define INSTANTIATE(ns)				            \
+template                                                    \
+vector<ExtensionBase<ns::SubMap, ns::Detection>*>           \
+ readExtensions<ExtensionBase<ns::SubMap, ns::Detection>,   \
+                ColorExtensionBase<ns::Match>>              \
+              (img::FTable& extensionTable,		    \
+	       const vector<Instrument*>& instruments,      \
+	       const vector<Exposure*>& exposures,          \
+	       const vector<int>& exposureColorPriorities,  \
+	       vector<ColorExtensionBase<ns::Match>*>& colorExtensions,  \
+	       astrometry::YAMLCollector& inputYAML);
+
+INSTANTIATE(astrometry)
+INSTANTIATE(photometry)

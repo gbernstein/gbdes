@@ -243,77 +243,41 @@ main(int argc, char *argv[])
 
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
-    vector<Extension*> extensions;
-    vector<ColorExtension*> colorExtensions;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
       extensionTable = ft.extract();
       FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Extensions");
       out.copy(extensionTable);
     }
-    for (int i=0; i<extensionTable.nrows(); i++) {
-      Extension* extn = new Extension;
-      int iExposure;
-      extensionTable.readCell(iExposure, "Exposure", i);
+    vector<ColorExtension*> colorExtensions;
+    vector<Extension*> extensions;
 
-      if (iExposure < 0 || iExposure >= exposures.size()) {
-	cerr << "Extension " << i << " has invalid exposure number " << iExposure << endl;
-	exit(1);
-      }
-
-      // Determine whether this extension might be used to provide colors
-      int colorPriority = exposureColorPriorities[iExposure];
-      if (colorPriority < 0) {
-	colorExtensions.push_back(0);
-      } else {
-	ColorExtension* ce = new ColorExtension;
-	ce->priority = colorPriority;
-	colorExtensions.push_back(ce);
-      }
-	
-      if (!exposures[iExposure]) {
-	// Skip rest of this extension if we are not going to get mags from it
-	delete extn;
-	extn = 0;
-	extensions.push_back(extn);
-	continue;
-      }
-      extensions.push_back(extn);
-      extn->exposure = iExposure;
-      int iDevice;
-      extensionTable.readCell(iDevice, "Device", i);
-      extn->device = iDevice;
-      extn->airmass = exposures[extn->exposure]->airmass;
-      extn->magshift = +2.5*log10(exposures[extn->exposure]->exptime);
-
-      string s;
-      extensionTable.readCell(s, "WCSIN", i);
-      if (stringstuff::nocaseEqual(s, "_ICRS")) {
-	// Create a Wcs that just takes input as RA and Dec in degrees;
-	astrometry::IdentityMap identity;
-	astrometry::SphericalICRS icrs;
-	extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", DEGREE);
-      } else {
-	istringstream iss(s);
-	astrometry::PixelMapCollection pmcTemp;
-	if (!pmcTemp.read(iss)) {
-	  cerr << "Did not find WCS format for extension ???" << endl;
-	  exit(1);
-	}
-	string wcsName = pmcTemp.allWcsNames().front();
-	extn->startWcs = pmcTemp.cloneWcs(wcsName);
-      }
-
-      // destination projection is the Exposure projection, whose coords used for any
-      // exposure-level magnitude corrections
-      extn->startWcs->reprojectTo(*exposures[extn->exposure]->projection);
-      // ??? or use the field center for reference exposures ???
-    }
+    vector<ColorExtension*> colorExtensions;
+    vector<Extension*> extensions =
+      readExtensions<Extension, ColorExtension>(extensionTable,
+						instruments,
+						exposures,
+						exposureColorPriorities,
+						colorExtensions,
+						inputYAML);
 
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
     /////////////////////////////////////////////////////
 
+    // Now build a preliminary set of photo maps from the configured YAML files
+    PhotoMapCollection* pmcInit = new PixelMapCollection;
+    pmcInit->learnMap(IdentityMap(), false, false);
+    {
+      istringstream iss(inputYAML.dump());
+      if (!pmcInit->read(iss)) {
+	cerr << "Failure parsing the initial YAML map specs" << endl;
+	exit(1);
+      }
+    }
+
+    /**/cerr << "Successfully built initial PixelMapCollection" << endl;
+    
     // Logic now for initializing instrument maps:
     // 1) Assign a name to each instrument map; either it's name of instrument,
     //    or we have a mapping from input parameters

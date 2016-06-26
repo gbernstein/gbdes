@@ -235,71 +235,34 @@ main(int argc, char *argv[])
 		    
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
-    vector<Extension*> extensions;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
       extensionTable = ft.extract();
       FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Extensions");
       out.copy(extensionTable);
     }
-    for (int i=0; i<extensionTable.nrows(); i++) {
-      extensions.push_back(new Extension);
-      Extension* extn = extensions.back();
-      int j;
-      extensionTable.readCell(j, "Exposure", i);
-      extn->exposure = j;
-      Exposure& expo = *exposures[j];
-      extensionTable.readCell(j, "Device", i);
-      extn->device = j;
-      
-      // Create the starting WCS for the exposure
-      string s;
-      extensionTable.readCell(s, "WCSIn", i);
-      if (stringstuff::nocaseEqual(s, "_ICRS")) {
-	// Create a Wcs that just takes input as RA and Dec in degrees;
-	IdentityMap identity;
-	SphericalICRS icrs;
-	extn->startWcs = new Wcs(&identity, icrs, "ICRS_degrees", DEGREE);
-      } else {
-	istringstream iss(s);
-	PixelMapCollection pmcTemp;
-	if (!pmcTemp.read(iss)) {
-	  cerr << "Could not deserialize starting WCS for extension #" << i << endl;
-	  exit(1);
-	}
-	string wcsName = pmcTemp.allWcsNames().front();
-	extn->startWcs = pmcTemp.cloneWcs(wcsName);
-      }
-      // destination projection is field projection:
-      int ifield = expo.field;
-      extn->startWcs->reprojectTo(*fieldProjections[ifield]);
+    vector<ColorExtension*> colorExtensions;
+    vector<Extension*> extensions =
+      readExtensions<Extension, ColorExtension>(extensionTable,
+						instruments,
+						exposures,
+						exposureColorPriorities,
+						colorExtensions,
+						inputYAML);
 
-      // Extract the map specifications for this extension from the input
-      // YAML files.
-      if ( expo.instrument < 0) {
-	// Tag & reference exposures have no instruments and no fitting
-	// being done.  Coordinates are fixed to xpix = xw.
-	// WCS will be the same for everything in this field
-	extn->wcsName = fieldNames.nameOf(ifield);
-	extn->basemapName = IdentityMap().getName();
-      } else {
-	// Real instrument, make a map combining its exposure with its Device map:
-	YAMLCollector::Dictionary d;
-	d["INSTRUMENT"] = instruments[expo.instrument]->name;
-	d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extn->device);
-	d["EXPOSURE"] = expo.name;
-	d["BAND"] = instruments[expo.instrument]->band;
-	extn->wcsName = d["EXPOSURE"] + "/" + d["DEVICE"];
-	extn->basemapName = extn->wcsName + "/base";
-	  
-	if (!inputYAML.addMap(extn->basemapName,d)) {
-	  cerr << "Input YAML files do not have complete information for map "
-	       << extn->basemapName
-	       << endl;
-	  exit(1);
-	}
-      }
-    }  // End extension loop
+    // A special loop here to set the wcsname of reference extensions to the
+    // name of their field.
+    for (auto extnptr : extensions) {
+      if (!extnptr) continue;
+      const Exposure& expo = *exposures[extnptr->exposure];
+      if ( expo.instrument >= 0) continue;
+      int ifield = expo.field;
+      extnptr->wcsName = fieldNames.nameOf(ifield);
+    }
+
+    /////////////////////////////////////////////////////
+    //  Create and initialize all magnitude maps
+    /////////////////////////////////////////////////////
 
     // Now build a preliminary set of pixel maps from the configured YAML files
     PixelMapCollection* pmcInit = new PixelMapCollection;
@@ -308,7 +271,6 @@ main(int argc, char *argv[])
       istringstream iss(inputYAML.dump());
       if (!pmcInit->read(iss)) {
 	cerr << "Failure parsing the initial YAML map specs" << endl;
-	/**/cerr << inputYAML.dump() << endl;
 	exit(1);
       }
     }
@@ -316,29 +278,11 @@ main(int argc, char *argv[])
     /**/cerr << "Successfully built initial PixelMapCollection" << endl;
     
     // Check every map name against the list of those to fix.
-    {
-      set<string> fixTheseMaps;
-      for (auto iName : pmcInit->allMapNames()) {
-	if (regexMatchAny(fixMapList, iName))
-	  fixTheseMaps.insert(iName);
-      }
-      // Add names of all devices of instruments on the fixMapList
-      for (auto instptr : instruments) {
-	if (regexMatchAny(fixMapList, instptr->name)) {
-	  // Loop through all devices
-	  for (int i=0; i<instptr->nDevices; i++) {
-	    string devMap = instptr->name + "/" + instptr->deviceNames.nameOf(i);
-	    // Freeze the device's map if it's in use
-	    if (pmcInit->mapExists(devMap))
-	      fixTheseMaps.insert(devMap);
-	  }
-	}
-      }
-      pmcInit->setFixed(fixTheseMaps);
-    }
-
-    /**/cerr << "Done fixing maps" << endl;
-
+    // Includes all devices of any instruments on the fixMapList.
+    fixMapComponents(*pmcInit,
+		     fixMapList,
+		     instruments);
+    
     /////////////////////////////////////////////////////
     // First sanity check: Check for maps that are defaulted but fixed
     /////////////////////////////////////////////////////

@@ -18,6 +18,7 @@
 #include "FTable.h"
 #include "FitsTable.h"
 #include "Instrument.h"
+#include "YAMLCollector.h"
 
 using namespace std;
 
@@ -160,5 +161,25 @@ readExposures(const vector<Instrument*>& instruments,
 	      bool useReferenceExposures,
 	      bool& outputCatalogAlreadyOpen);
 
+// Read extensions from the table.
+// colorExtensions will get filled with ColorExtension objects for color data
+// inputYAML is set to produce YAML for all extensions being fit.
+template <class TExtn, class TColor>
+vector<TExtn*>
+readExtensions(img::FTable& extensionTable,
+	       const vector<Instrument*>& instruments,
+	       const vector<Exposure*>& exposures,
+	       const vector<int>& exposureColorPriorities,
+	       vector<TColor*>& colorExtensions,
+	       astrometry::YAMLCollector& inputYAML);
+
+// fix all maps in a photo/pixelMapCollection whose names match
+// any regex in the fixMapList.  Also any instrument whose name
+// matches gets all device maps fixed.
+template <class T>
+void
+fixMapComponents(T& pmc,
+		 const list<string>& fixMapList,
+		 const vector<Instrument*>& instruments);
 
 #endif
