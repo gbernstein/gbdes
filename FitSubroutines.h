@@ -214,4 +214,12 @@ findCanonical(Instrument& instr,
 	      vector<typename S::Extension*>& extensions,
 	      typename S::Collection& pmc);
 
+template <class S>
+void
+createMapCollection(const vector<Instrument*>& instruments,
+		    const vector<Exposure*>& exposures,
+		    const vector<typename S::Extension*> extensions,
+		    astrometry::YAMLCollector& inputYAML,
+		    typename S::Collection& pmc);
+
 #endif

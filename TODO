@@ -39,6 +39,8 @@
 
 * Get MJD into exposure
 
+*** Check propagation of Fixed, DependsOn for Color maps.
+
 DONE ON WCSFIT:
 * Speed up fitting by trying successive Newton steps (with fixed quadratic) instead of Marquardt (on newton branch - done earlier than yaml stuff)
 

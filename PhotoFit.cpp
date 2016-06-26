@@ -65,16 +65,6 @@ string usage=
 // magKey and magErrKey can be of form COLUMN[#] when COLUMN is an array column (float or double)
 // and # is the element of this array that we want to use.
 
-// Another function that takes a string of photoMapDecode-able atoms, separated by "+" signs, and
-// has the PhotoMapCollection learn this sequence, retrievable using mapName.
-// The argtype determines whether the models being built use Device or Exposure coordinates.
-/**
-void
-learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
-	       PhotoMap::ArgumentType argtype=PhotoMap::Device);
-**/
-
-
 int
 main(int argc, char *argv[])
 {
@@ -254,12 +244,12 @@ main(int argc, char *argv[])
 
     vector<ColorExtension*> colorExtensions;
     vector<Extension*> extensions =
-      readExtensions<Extension, ColorExtension>(extensionTable,
-						instruments,
-						exposures,
-						exposureColorPriorities,
-						colorExtensions,
-						inputYAML);
+      readExtensions<Photo>(extensionTable,
+			    instruments,
+			    exposures,
+			    exposureColorPriorities,
+			    colorExtensions,
+			    inputYAML);
 
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
@@ -278,289 +268,53 @@ main(int argc, char *argv[])
 
     /**/cerr << "Successfully built initial PixelMapCollection" << endl;
     
-    // Logic now for initializing instrument maps:
-    // 1) Assign a name to each instrument map; either it's name of instrument,
-    //    or we have a mapping from input parameters
-    // 2) If the instrument name is something we were told to reuse:
-    //        * get its form and values from the input map libraries for each device
-    // 3) If not reusing, make new maps for each device.
-    //        * Select canonical exposure either from cmd line or finding one
-    //        * set reference exposure's map to identity
-    //        * Initialize new map to identity.
-    // 4) Set initial exposure maps for each exposure that is not already canonical.
-    // 5) Freeze parameters of all map elements specified in input.
+    /////////////////////////////////////////////////////
+    // Now for each instrument, determine if we need a canonical
+    // exposure to break an exposure/instrument degeneracy.  If
+    // so, choose one, and replace its exposure map with Identity.
+    /////////////////////////////////////////////////////
 
-    // Create a PhotoMapCollection to hold all the components of the PhotoMaps.
-    PhotoMapCollection mapCollection;
-    // Create an identity map used by all reference catalogs
-    mapCollection.learnMap(IdentityMap());
+    // Here's where we'll collect the map definitions that override the
+    // inputs in order to eliminate degeneracies.
+    PhotoMapCollection pmcAltered;  
 
-    // This is list of PhotoMaps whose parameters will be held fixed during fitting:
-    list<string> fixedMapNames;
+    for (int iInst=0; iInst < instruments.size(); iInst++) {
+      if (!instruments[iInst]) continue;  // Not using instrument
+      auto& instr = *instruments[iInst];
 
-    // Set up coordinate maps for each instrument & exposure
-    for (int iinst=0; iinst<instruments.size(); iinst++) {
-      Instrument* inst = instruments[iinst];
-      if (!inst) continue; // Only using some instruments
+      int canonicalExposure =
+	findCanonical<Photo>(instr, iInst, exposures, extensions, *pmcInit);
 
-      // (1) choose a name to be used for this Instrument's PhotoMap:
-      string mapName = inst->name;
-      instrumentTranslator(mapName);  // Apply any remapping specified.
-
-      // (2) See if this instrument has a map that we are re-using, and if params are fixed
-      string loadFile = mapName;
-      bool loadExistingMaps = existingMapFinder(loadFile);
-      bool fixInstrumentParameters = regexMatchAny(fixMapList, mapName);
-
-      // (3) decide for all devices whether they are looked up, or need creating,
-      //     and whether they are fixed
-      vector<bool> deviceMapsExist(inst->nDevices, loadExistingMaps);
-      vector<bool> fixDeviceMaps(inst->nDevices, fixInstrumentParameters);
-
-      PhotoMapCollection pmcInstrument;
-      if (loadExistingMaps) {
-	ifstream ifs(loadFile.c_str());
-	if (!ifs) {
-	  cerr << "Could not open file " + loadFile + " holding existing PhotoMaps" << endl;
-	  exit(1);
-	}
-	pmcInstrument.read(ifs);  // ??? wasteful to re-read full existing map file for every instrument
-      }
-
-      for (int idev=0; idev<inst->nDevices; idev++) {
-	string devMapName = mapName + '/' + inst->deviceNames.nameOf(idev);
-	inst->mapNames[idev] = devMapName;
-	// A PhotoMap file for Device overrides one for the Instrument
-	string devLoadFile = devMapName;
-	if (existingMapFinder(devLoadFile)) {
-	  deviceMapsExist[idev] = true;
-	} else if (deviceMapsExist[idev]) {
-	  // Already have a map file from the Instrument
-	  devLoadFile = loadFile;
-	}
-	if (regexMatchAny(fixMapList, devMapName))
-	  fixDeviceMaps[idev] = true;
-
-	if (fixDeviceMaps[idev] && !deviceMapsExist[idev]) {
-	  cerr << "WARNING: Requested fixed parameters for Device map "
-	       << devMapName
-	       << " that does not have initial values.  Ignoring request to fix params."
-	       << endl;
-	}
-
-	// Done with this device for now if we have no existing map to read.
-	if (!deviceMapsExist[idev]) continue;
-	  
-	// Load the PhotoMap for this device if it is to be extracted from a file.
-	// We will not be throwing exceptions for duplicate names
-	PhotoMap* deviceMap;
-	if (devLoadFile==loadFile) {
-	  // Get map from the Instrument's collection:
-	  deviceMap = pmcInstrument.issueMap(devMapName);
-	  mapCollection.learnMap(*deviceMap);
-	} else {
-	  // Device has its own serialized file:
-	  PhotoMapCollection pmcDev;
-	  ifstream ifs(devLoadFile.c_str());
-	  if (!ifs) {
-	    cerr << "Could not open file " + devLoadFile + " holding existing PhotoMaps" << endl;
-	    exit(1);
-	  }
-	  pmcDev.read(ifs);
-	  deviceMap = pmcDev.issueMap(devMapName);
-	  mapCollection.learnMap(*deviceMap);
-	}
-
-	if (fixDeviceMaps[idev])
-	  fixedMapNames.push_back(devMapName);
-      } // end of device loop
-
-      // Canonical exposure will have its Exposure map will be fixed at identity 
-      // if none of the Device's maps are
-      // fixed at initial values;  we assume that any single device being fixed will
-      // break degeneracy between Exposure and Instrument models.
-
-      // First find all exposures from this instrument,
-      // and find if one is canonical;
-      long canonicalExposure = -1;
-      list<long> exposuresWithInstrument;
-      for (long iexp = 0; iexp < exposures.size(); iexp++) {
-	if (!exposures[iexp]) continue;  // Not using this exposure or its instrument
-	if (exposures[iexp]->instrument == iinst) {
-	  exposuresWithInstrument.push_back(iexp);
-	  if (regexMatchAny(canonicalExposureList, exposures[iexp]->name)) {
-	    if (canonicalExposure < 0) {
-	      // This is our canonical exposure
-	      canonicalExposure = iexp;
-	    } else {
-	      // Duplicate canonical exposures is an error
-	      cerr << "More than one canonical exposure for instrument " 
-		   << inst->name << ": " << endl;
-	      cerr << exposures[canonicalExposure]->name
-		   << " and " << exposures[iexp]->name
-		   << endl;
-	      exit(1);
-	    }
-	  }
-	}
-      } // end exposure loop
-
-      // Do we need a canonical exposure? Only if we have an an uninitialized device map
-      bool needCanonical = false;
-      for (int idev=0; idev<deviceMapsExist.size(); idev++)
-	if (!deviceMapsExist[idev]) {
-	  needCanonical = true;
-	  break;
-	}
-
-      // Or if none of the devices have their parameters fixed
-      bool noDevicesFixed = true;
-      for (int idev=0; idev<deviceMapsExist.size(); idev++)
-	if (deviceMapsExist[idev] && fixDeviceMaps[idev]) {
-	  noDevicesFixed = false;
-	  break;
-	}
-
-      if (noDevicesFixed) needCanonical = true;
-
-      if (needCanonical && canonicalExposure > 0) {
-	// Make sure our canonical exposure has all devices:
-	set<long> vexp;
-	vexp.insert(canonicalExposure);
-	FTable exts = extensionTable.extractRows("Exposure", vexp);
-	if (exts.nrows() != inst->nDevices) {
-	  cerr << "Canonical exposure " << exposures[canonicalExposure]->name
-	       << " for Instrument " << inst->name
-	       << " only has " << exts.nrows()
-	       << " devices out of " << inst->nDevices
-	       << endl;
-	  exit(1);
-	}
-      }
-
-      if (needCanonical && canonicalExposure < 0) {
-	// Need canonical but don't have one.  
-	// Find an exposure that has all devices for this Instrument.
-	for (list<long>::const_iterator i = exposuresWithInstrument.begin();
-	     i != exposuresWithInstrument.end();
-	     ++i) {
-	  // Filter the extension table for this exposure:
-	  set<long> vexp;
-	  vexp.insert(*i);
-	  FTable exts = extensionTable.extractRows("Exposure", vexp);
-	  // Stop here if this exposure has right number of extensions (exactly 1 per device):
-	  if (exts.nrows() == inst->nDevices) {
-	    canonicalExposure = *i;
-	    break; 
-	  }
-	}
-
-	if (canonicalExposure < 0) {
-	  cerr << "Could not find exposure with all devices for intrument "
-	       << inst->name << endl;
-	  exit(1);
-	}
-
-      } // end finding a canonical exposure for the Instrument
-
-      // Now we create new PhotoMaps for each Device that does not already have one.
-      for (int idev=0; idev < inst->nDevices; idev++) {
-	if (deviceMapsExist[idev]) continue;
-	// Allow substitution of device name into the deviceModel string:
-	string thisModel = stringstuff::regexReplace("DEVICE", 
-						     inst->deviceNames.nameOf(idev), 
-						     deviceModel);
-	// And the instrument name as well:
-	thisModel = stringstuff::regexReplace("INST", 
-					      inst->name,
-					      thisModel);
-	learnParsedMap(thisModel, inst->mapNames[idev], mapCollection);
-      } // end loop creating PhotoMaps for all Devices.
-
-      // Now create an exposure map for all exposures with this instrument,
-      // and set initial parameters to be identity map if not already given.
-
-      for (list<long>::const_iterator i= exposuresWithInstrument.begin();
-	   i != exposuresWithInstrument.end();
-	   ++i) {
-	int iexp = *i;
-	Exposure& expo = *exposures[iexp];
-	// First we check to see if we are going to use an existing exposure map:
-	string loadFile = expo.name;
-	if (existingMapFinder(loadFile)) {
-	  // Adopt the existing map for this exposure:
-	  PhotoMapCollection pmcExpo;
-	  ifstream ifs(loadFile.c_str());
-	  if (!ifs) {
-	    cerr << "Could not open serialized map file " 
-		 << loadFile
-		 << endl;
-	    exit(1);
-	  }
-	  pmcExpo.read(ifs);
-	  PhotoMap* expoMap = pmcExpo.issueMap(expo.name);
-	  mapCollection.learnMap(*expoMap);
-	  expo.mapName = expoMap->getName();
-	  // If this imported map is to be held fixed, add it to the list:
-	  if (regexMatchAny(fixMapList, expo.mapName))
-	    fixedMapNames.push_back(expo.mapName);
-
-	  // We're done with this exposure if we have pre-set map for it.
-	  continue;
-	}
-
-	if (iexp == canonicalExposure && noDevicesFixed) {
-	  // Give this canonical exposure identity map to avoid degeneracy with Instrument
-	  expo.mapName = IdentityMap().getName();
-	  /**/cerr << "Canonical exposure map for " << expo.name << endl;
-	  continue;
-	}
-	
-	// We will create a new exposure map 
-	learnParsedMap(exposureModel, expo.name, mapCollection, PhotoMap::Exposure);
-	expo.mapName = expo.name;
-
-	// Check for fixed maps
-	if (regexMatchAny(fixMapList, expo.mapName)) {
-	  cerr << "WARNING: Requested fixed parameters for Exposure map "
-	       << expo.name
-	       << " that does not have initial values.  Ignoring request to fix params."
-	       << endl;
-	}
-
-      } // end creation of this exposure map
-
+      if (canonicalExposure >= 0)
+	// Make a new map spec for the canonical exposure
+	pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
     } // End instrument loop
 
-    // Check all map components to see if they match one to be frozen.
+    // Add the altered maps specs to the input YAML specifications
     {
-      vector<string> allNames = mapCollection.allMapNames();
-      for (int i=0; i<allNames.size(); i++) 
-	if (regexMatchAny(fixMapList, allNames[i]))
-	  fixedMapNames.push_back(allNames[i]);
+      ostringstream oss;
+      pmcAltered.write(oss);
+      istringstream iss(oss.str());
+      inputYAML.addInput(iss, "", true); // Prepend these specs to others
     }
-    // Freeze the parameters of all the fixed maps
-    mapCollection.setFixed(fixedMapNames, true);
+    
+    // Do not need the preliminary PMC any more.
+    delete pmcInit;
+    pmcInit = 0;
+    // And clean out any old maps stored in the YAMLCollector
+    inputYAML.clearMaps();
 
-    // Register maps for all reference exposures being used:
-    for (long iexp =0; iexp < exposures.size(); iexp++) {
-      if (!exposures[iexp]) continue;	// Skip if exposure is not in used
-      Exposure& expo = *exposures[iexp];
-      if (expo.instrument != REF_INSTRUMENT) continue; // or if not a reference exposure
-      if (referenceColorTerm) {
-	// Every reference exposure will get a floating color coefficient
-	PhotoMap* pm = new ConstantMap;
-	pm = new ColorTerm(pm, expo.name);
-	mapCollection.learnMap(*pm);
-	delete pm;
-	expo.mapName = expo.name;
-      } else {
-	// No freedom in the reference magnitude map:
-	expo.mapName = IdentityMap::type();
-      }
-    }
+    // Make final map collection from the YAML
+    PhotoMapCollection mapCollection;
+    createMapCollection<Photo>(instruments,
+			       exposures,
+			       extensions,
+			       inputYAML,
+			       mapCollection);
 
-    /***** ??? Problem with name of Identity map if DEVICE map is Identity***/
+    /**/cerr << "Done making final mapCollection!" << endl;
+
+    // ?????
 
     // Now construct a SubMap for every extension
     for (int iext=0; iext<extensions.size(); iext++) {
@@ -1427,120 +1181,5 @@ main(int argc, char *argv[])
   } catch (std::runtime_error& m) {
     quit(m,1);
   }
-}
-
-/////////////////////////////////////////////////////////
-PhotoMap* photoMapDecode(string code, string name, PhotoMap::ArgumentType argType) {
-  istringstream iss(code);
-  bool isColorTerm = false;
-  string type;
-  iss >> type;
-  if (stringstuff::nocaseEqual(type,"Color")) {
-    isColorTerm = true;
-    iss >> type;
-  }
-  PhotoMap* pm;
-  if (stringstuff::nocaseEqual(type,"Poly")) {
-    int xOrder, yOrder;
-    if (!(iss >> xOrder)) 
-      throw runtime_error("Could not decode PolyMap spec: <" + code + ">");
-    if ( (iss >> yOrder)) {
-      PolyMap* poly = new PolyMap(xOrder, yOrder,argType, name);
-      // Set PolyMap to identity for starters:
-      DVector p = poly->getParams();
-      p.setZero();
-      poly->setParams(p);
-      pm = poly;
-    } else {
-      PolyMap* poly = new PolyMap(xOrder, argType, name);
-      // PolyMap has zero coefficients, identity on mags:
-      DVector p = poly->getParams();
-      p.setZero();
-      poly->setParams(p);
-      pm = poly;
-    }
-  } else if (stringstuff::nocaseEqual(type,"Template")) {
-    string filename;
-    string lowname;
-    string highname;
-    double xSplit;
-    iss >> filename >> lowname;
-    if (iss >> highname >> xSplit) {
-      pm = new PhotoTemplate(xSplit, lowname, highname, filename, name);
-    } else {
-      pm = new PhotoTemplate(lowname, filename, name);
-    }
-  } else if (stringstuff::nocaseEqual(type,"Piecewise")) {
-    string axis;
-    double argStart;
-    double argEnd;
-    double argStep;
-    iss >> axis >> argStart >> argEnd >> argStep;
-    if (stringstuff::nocaseEqual(axis, "X")) {
-      pm = new PhotoPiecewise(name, argStart, argEnd, argStep,
-			      PhotoPiecewise::X);
-    } else if (stringstuff::nocaseEqual(axis, "Y")) {
-      pm = new PhotoPiecewise(name, argStart, argEnd, argStep,
-			      PhotoPiecewise::Y);
-    } else if (stringstuff::nocaseEqual(axis, "R")) {
-      double xCenter;
-      double yCenter;
-      iss >> xCenter >> yCenter;
-      pm = new PhotoPiecewise(name, argStart, argEnd, argStep,
-			      PhotoPiecewise::R, xCenter, yCenter);
-    } else {
-      throw runtime_error("Bad axis type in PhotoPiecewise device spec: " + axis);
-    }
-  } else if (stringstuff::nocaseEqual(type,"Constant")) {
-    pm = new ConstantMap(0., name);
-  } else if (stringstuff::nocaseEqual(type,"Identity")) {
-    pm = new IdentityMap;
-  } else {
-    throw runtime_error("Unknown type of PhotoMap: <" + type + ">");
-  }
-  if (isColorTerm)
-    pm = new ColorTerm(pm, name);
-  return pm;
-}
-
-/////////////////////////////////////////////////////////////
-// Routine to take a string that specifies a PhotoMap sequence and enter such a map
-// into the PhotoMapCollection where it can be retrieved using mapName.
-// The string is a sequence of atoms parsable by photoMapDecode, separated by + signs.
-/////////////////////////////////////////////////////////////
-void
-learnParsedMap(string modelString, string mapName, PhotoMapCollection& pmc,
-	       PhotoMap::ArgumentType argtype) {
-  // Create a new PhotoMap. 
-  PhotoMap* pm=0;
-  list<string> pmCodes = stringstuff::split(modelString,'+');
-  if (pmCodes.size() == 1) {
-    pm = photoMapDecode(pmCodes.front(),mapName,argtype);
-  } else if (pmCodes.size() > 1) {
-    // Build a compound SubMap with desired maps in order:
-    int index = 0;
-    list<PhotoMap*> pmList;
-    for (list<string>::const_iterator ipm = pmCodes.begin();
-	 ipm != pmCodes.end();
-	 ++ipm, ++index) {
-      ostringstream oss;
-      // Components will have index number appended to device map name:
-      oss << mapName << "_" << index;
-      pmList.push_back(photoMapDecode(*ipm, oss.str(),argtype));
-    }
-    pm = new SubMap(pmList, mapName);
-    // Delete the original components, which have now been duplicated in SubMap:
-    for (list<PhotoMap*>::iterator ipm=pmList.begin();
-	 ipm != pmList.end();
-	 ++ipm)
-      delete *ipm;
-  } else {
-    cerr << "Empty deviceModel specification" << endl;
-    exit(1);
-  }
-
-  // Save this map into the collection
-  pmc.learnMap(*pm);
-  delete pm;
 }
 

@@ -14,8 +14,8 @@
 #include "PixelMapCollection.h"
 #include "Match.h"
 #include "Instrument.h"
-typedef ExtensionBase<astrometry::SubMap, astrometry::Detection> Extension;
-typedef ColorExtensionBase<astrometry::Match> ColorExtension;
+typedef Astro::Extension Extension;
+typedef Astro::ColorExtension ColorExtension;
 
 // Function that will using starting WCS to fit all of the defaulted
 // maps used by the selected extensions.  Then will put the

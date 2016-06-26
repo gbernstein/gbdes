@@ -243,12 +243,12 @@ main(int argc, char *argv[])
     }
     vector<ColorExtension*> colorExtensions;
     vector<Extension*> extensions =
-      readExtensions<Extension, ColorExtension>(extensionTable,
-						instruments,
-						exposures,
-						exposureColorPriorities,
-						colorExtensions,
-						inputYAML);
+      readExtensions<Astro>(extensionTable,
+			    instruments,
+			    exposures,
+			    exposureColorPriorities,
+			    colorExtensions,
+			    inputYAML);
 
     // A special loop here to set the wcsname of reference extensions to the
     // name of their field.
@@ -279,9 +279,9 @@ main(int argc, char *argv[])
     
     // Check every map name against the list of those to fix.
     // Includes all devices of any instruments on the fixMapList.
-    fixMapComponents(*pmcInit,
-		     fixMapList,
-		     instruments);
+    fixMapComponents<Astro>(*pmcInit,
+			    fixMapList,
+			    instruments);
     
     /////////////////////////////////////////////////////
     // First sanity check: Check for maps that are defaulted but fixed
@@ -309,8 +309,9 @@ main(int argc, char *argv[])
       vector<bool> fieldHasFree(fieldNames.size(), false);
       vector<bool> fieldHasFixed(fieldNames.size(), false);
       for (auto extnptr : extensions) {
+	if (!extnptr) continue; // Not in use
 	int field = exposures[extnptr->exposure]->field;
-	if (pmcInit->getFixed(extnptr->basemapName))
+	if (pmcInit->getFixed(extnptr->mapName))
 	  fieldHasFixed[field] = true;
 	else
 	  fieldHasFree[field] = true;
@@ -345,12 +346,11 @@ main(int argc, char *argv[])
       auto& instr = *instruments[iInst];
 
       int canonicalExposure =
-	findCanonical(instr, iInst, expoures, extensions, *pmcInit);
+	findCanonical<Astro>(instr, iInst, exposures, extensions, *pmcInit);
 
+      if (canonicalExposure >= 0)
 	// Make a new map spec for the canonical exposure
 	pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
-      } // End need of canonical exposure
-
     } // End instrument loop
 
     // Re-read all of the maps, assigning WCS to each extension this time
@@ -370,41 +370,19 @@ main(int argc, char *argv[])
     // And clean out any old maps stored in the YAMLCollector
     inputYAML.clearMaps();
     
-    // Add each extension's map to the YAML specification file
-    for (auto extnptr : extensions) {
-      Exposure& expo = *exposures[extnptr->exposure];
-      // Extract the map specifications for this extension from the input
-      // YAML files.
-      YAMLCollector::Dictionary d;
-      if ( expo.instrument >= 0) {
-	// Real instrument, need the translation dictionary
-	d["INSTRUMENT"] = instruments[expo.instrument]->name;
-	d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extnptr->device);
-	d["EXPOSURE"] = expo.name;
-	d["BAND"] = instruments[expo.instrument]->band;
-      }
-      if (!inputYAML.addMap(extnptr->basemapName,d)) {
-	cerr << "Input YAML files do not have complete information for map "
-	     << extnptr->basemapName
-	     << endl;
-	exit(1);
-      }
-    }  // End extension loop
-      
     // Make final map collection from the YAML
     PixelMapCollection mapCollection;
-    {
-      istringstream iss(inputYAML.dump());
-      if (!mapCollection.read(iss)) {
-	cerr << "Failure parsing the final YAML map specs" << endl;
-	exit(1);
-      }
-    }
+    createMapCollection<Astro>(instruments,
+			       exposures,
+			       extensions,
+			       inputYAML,
+			       mapCollection);
 
     /**/cerr << "Done making final mapCollection!" << endl;
 
     // Add WCS for every extension, and reproject into field coordinates
     for (auto extnptr : extensions) {
+      if (!extnptr) continue; // Not in use
       Exposure& expo = *exposures[extnptr->exposure];
       int ifield = expo.field;
       if ( expo.instrument < 0) {
@@ -415,7 +393,7 @@ main(int argc, char *argv[])
 	if (!mapCollection.wcsExists(extnptr->wcsName)) {
 	  // If we are the first reference/tag exposure in this field:
 	  mapCollection.defineWcs(extnptr->wcsName, icrs, 
-				  extnptr->basemapName,
+				  extnptr->mapName,
 				  DEGREE);
 	  auto wcs = mapCollection.issueWcs(extnptr->wcsName);
 	  // And have this Wcs reproject into field coordinates, learn as map
@@ -427,7 +405,7 @@ main(int argc, char *argv[])
       } else {
 	// Real instrument, WCS goes into its exposure coordinates
 	mapCollection.defineWcs(extnptr->wcsName, *expo.projection,
-				extnptr->basemapName,
+				extnptr->mapName,
 				DEGREE);
 	extnptr->wcs = mapCollection.issueWcs(extnptr->wcsName);
 
@@ -454,6 +432,7 @@ main(int argc, char *argv[])
     list<int> exposuresToInitialize;
 
     for (int iInst=0; iInst < instruments.size(); iInst++) {
+      if (!instruments[iInst]) continue; // Not in use
       auto& instr = *instruments[iInst];
       // Classify the device maps for this instrument
       set<int> defaultedDevices;
@@ -481,6 +460,7 @@ main(int argc, char *argv[])
 	
 
       for (int iExpo=0; iExpo < exposures.size(); iExpo++) {
+	if (!exposures[iExpo]) continue; // Not in use
 	if (exposures[iExpo]->instrument==iInst) {
 	  itsExposures.insert(iExpo);
 	  string mapName = exposures[iExpo]->name;
@@ -504,19 +484,20 @@ main(int argc, char *argv[])
       // solutions are used in coordination with which exposure solutions
       vector<set<int>> exposuresUsingDevice(instr.nDevices);
       for (auto extnptr : extensions) {
+	if (!extnptr) continue; // Not in use
 	int iExpo = extnptr->exposure;
 	if (itsExposures.count(iExpo)>0) {
 	  // Extension is from one of the instrument's exposures
 	  int iDev = extnptr->device;
-	  if (mapCollection.dependsOn(extnptr->basemapName, exposures[iExpo]->name)
-	      && mapCollection.dependsOn(extnptr->basemapName, instr.mapNames[iDev])) {
+	  if (mapCollection.dependsOn(extnptr->mapName, exposures[iExpo]->name)
+	      && mapCollection.dependsOn(extnptr->mapName, instr.mapNames[iDev])) {
 	    // If this extension's map uses both the exposure and device
 	    // maps, then enter this dependence into our sets
 	    exposuresUsingDevice[iDev].insert(iExpo);
 	    if (unusedExposures.count(iExpo)>0 ||
 		unusedDevices.count(iDev)>0) {
 	      cerr << "Logic problem: extension map "
-		   << extnptr->basemapName
+		   << extnptr->mapName
 		   << " is using allegedly unused exposure or device map"
 		   << endl;
 	      exit(1);
@@ -565,15 +546,17 @@ main(int argc, char *argv[])
     // The defaulted status
     // in the mapCollection should be getting updated as we go.
     for (int i=0; i<exposures.size(); i++)
-      exposuresToInitialize.push_back(i);
+      if (exposures[i])
+	exposuresToInitialize.push_back(i);
 
     for (auto iExpo : exposuresToInitialize) {
       //   Find all defaulted extensions using this exposure
       set<Extension*> defaultedExtensions;
       for (auto extnptr : extensions) {
+	if (!extnptr) continue; // Not in use
 	if (extnptr->exposure != iExpo)
 	  continue;
-	if (mapCollection.getDefaulted(extnptr->basemapName))
+	if (mapCollection.getDefaulted(extnptr->mapName))
 	  defaultedExtensions.insert(extnptr);
       }
       if (!defaultedExtensions.empty()) {
@@ -604,6 +587,7 @@ main(int argc, char *argv[])
       
       // Add names of all devices of instruments on the fixMapList
       for (auto instptr : instruments) {
+	if (!instptr) continue; // Not in use
 	if (regexMatchAny(fixMapList, instptr->name)) {
 	  // Loop through all devices
 	  for (int i=0; i<instptr->nDevices; i++) {
@@ -687,6 +671,7 @@ main(int argc, char *argv[])
 #pragma omp parallel for schedule(dynamic,4)
 #endif
     for (int iext = 0; iext < extensions.size(); iext++) {
+      if (!extensions[iext]) continue; // Skip unused 
       string filename;
       extensionTable.readCell(filename, "FILENAME", iext);
       /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
@@ -1190,6 +1175,7 @@ main(int argc, char *argv[])
 	 << "#                     |.....milliarcsec...........|                     |....degrees....|"
 	 << endl;
     for (int iexp=0; iexp<exposures.size(); iexp++) {
+      // ??? Sort here, omit unused exposures ???
       cout << "Fit     " << setw(3) << iexp
 	   << " " << vaccFit[iexp].summary()
 	   << endl;
@@ -1219,13 +1205,13 @@ main(int argc, char *argv[])
       delete fieldProjections[i];
     // Get rid of extensions
     for (int i=0; i<extensions.size(); i++)
-      delete extensions[i];
+      if (extensions[i]) delete extensions[i];
     // Get rid of exposures
     for (int i=0; i<exposures.size(); i++)
-      delete exposures[i];
+      if (exposures[i]) delete exposures[i];
     // Get rid of instruments
     for (int i=0; i<instruments.size(); i++)
-      delete instruments[i];
+      if (instruments[i]) delete instruments[i];
 
   } catch (std::runtime_error& m) {
     quit(m,1);

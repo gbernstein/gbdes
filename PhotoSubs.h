@@ -10,8 +10,8 @@
 #include "PhotoMapCollection.h"
 #include "PhotoMatch.h"
 #include "Instrument.h"
-typedef ExtensionBase<photometry::SubMap, photometry::Detection> Extension;
-typedef ColorExtensionBase<photometry::Match> ColorExtension;
+typedef Photo::Extension Extension;
+typedef Photo::ColorExtension ColorExtension;
 
 using namespace photometry;
 

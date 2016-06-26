@@ -452,6 +452,7 @@ fixMapComponents(typename S::Collection& pmc,
   }
   // Add names of all devices of instruments on the fixMapList
   for (auto instptr : instruments) {
+    if (!instpr) continue; // Not in use
     if (stringstuff::regexMatchAny(fixMapList, instptr->name)) {
       // Loop through all devices
       for (int i=0; i<instptr->nDevices; i++) {
@@ -729,6 +730,46 @@ findCanonical(Instrument& instr,
   return canonicalExposure;
 }
 
+// Add every extension's map to the YAMLCollector and then emit the
+// YAML and read into the MapCollection.
+// The names of all maps are already in the extension list.
+template <class S>
+void
+createMapCollection(const vector<Instrument*>& instruments,
+		    const vector<Exposure*>& exposures,
+		    const vector<typename S::Extension*> extensions,
+		    astrometry::YAMLCollector& inputYAML,
+		    typename S::Collection& pmc) {
+  for (auto extnptr : extensions) {
+    if (!extnptr) continue;  // Not in use.
+    auto& expo = *exposures[extnptr->exposure];
+    // Extract the map specifications for this extension from the input
+    // YAML files.
+    astrometry::YAMLCollector::Dictionary d;
+    if ( expo.instrument >= 0) {
+      // Real instrument, need the translation dictionary
+      d["INSTRUMENT"] = instruments[expo.instrument]->name;
+      d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extnptr->device);
+      d["EXPOSURE"] = expo.name;
+      d["BAND"] = instruments[expo.instrument]->band;
+      }
+      if (!inputYAML.addMap(extnptr->mapName,d)) {
+	cerr << "Input YAML files do not have complete information for map "
+	     << extnptr->mapName
+	     << endl;
+	exit(1);
+      }
+  }  // End extension loop
+      
+  {
+    istringstream iss(inputYAML.dump());
+    if (!pmc.read(iss)) {
+      cerr << "Failure parsing the final YAML map specs" << endl;
+      exit(1);
+    }
+  }
+}
+
 //////////////////////////////////////////////////////////////////
 // For those routines differing for Astro/Photo, here is where
 // we instantiate the two cases.
@@ -752,7 +793,13 @@ findCanonical<AP>(Instrument& instr,	\
 template void \
 fixMapComponents<AP>(AP::Collection&, \
 		     const list<string>&, \
-		     const vector<Instrument*>&);
+		     const vector<Instrument*>&); \
+template void \
+createMapCollection<AP>(const vector<Instrument*>& instruments, \
+			const vector<Exposure*>& exposures, \
+			const vector<AP::Extension*> extensions, \
+			astrometry::YAMLCollector& inputYAML,	 \
+			AP::Collection& pmc);
 
 INSTANTIATE(Astro)
 INSTANTIATE(Photo)
