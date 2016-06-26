@@ -21,7 +21,7 @@ fitDefaulted(PixelMapCollection& pmc,
   // Take all wcs's used by these extensions and copy them into
   // pmcFit
   for (auto extnptr : extensions) {
-    auto pm = pmc.cloneMap(extnptr->basemapName);
+    auto pm = pmc.cloneMap(extnptr->mapName);
     pmcFit.learnMap(*pm);
     delete pm;
   }
@@ -60,7 +60,7 @@ fitDefaulted(PixelMapCollection& pmc,
     extnptr->startWcs->reprojectTo(*expo.projection);
 
     // Get a realization of the extension's map
-    auto map = pmcFit.issueMap(extnptr->basemapName);
+    auto map = pmcFit.issueMap(extnptr->mapName);
     
     // Get the boundaries of the device it uses
     Bounds<double> b=instruments[expo.instrument]->domains[extnptr->device];
@@ -218,4 +218,47 @@ readFields(string inputTables,
     Orientation orient(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
     fieldProjections.push_back( new Gnomonic(orient));
   }
+}
+
+// Define and issue WCS for each extension in use, and set projection to
+// field coordinates.
+void setupWCS(const vector<SphericalCoords*>& fieldProjections,
+	      const vector<Instrument*>& instruments,
+	      const vector<Exposure*>& exposures,
+	      vector<Extension*>& extensions,
+	      PixelMapCollection& pmc) {
+  for (auto extnptr : extensions) {
+    if (!extnptr) continue; // Not in use
+    Exposure& expo = *exposures[extnptr->exposure];
+    int ifield = expo.field;
+    if ( expo.instrument < 0) {
+      // Tag & reference exposures have no instruments and no fitting
+      // being done.  Coordinates are fixed to xpix = xw.
+      // Build a simple Wcs that takes its name from the field
+      SphericalICRS icrs;
+      if (!pmc.wcsExists(extnptr->wcsName)) {
+	// If we are the first reference/tag exposure in this field:
+	pmc.defineWcs(extnptr->wcsName, icrs, 
+				extnptr->mapName,
+				DEGREE);
+	auto wcs = pmc.issueWcs(extnptr->wcsName);
+	// And have this Wcs reproject into field coordinates, learn as map
+	wcs->reprojectTo(*fieldProjections[ifield]);
+	pmc.learnMap(*wcs, false, false);
+      }
+      extnptr->wcs = pmc.issueWcs(extnptr->wcsName);
+      extnptr->map = pmc.issueMap(extnptr->wcsName);
+    } else {
+      // Real instrument, WCS goes into its exposure coordinates
+      pmc.defineWcs(extnptr->wcsName, *expo.projection,
+			      extnptr->mapName,
+			      DEGREE);
+      extnptr->wcs = pmc.issueWcs(extnptr->wcsName);
+
+      // Reproject this Wcs into the field system and get a SubMap including reprojection:
+      extnptr->wcs->reprojectTo(*fieldProjections[ifield]);
+      pmc.learnMap(*extnptr->wcs, false, false);
+      extnptr->map = pmc.issueMap(extnptr->wcsName);
+    }
+  } // end extension loop
 }

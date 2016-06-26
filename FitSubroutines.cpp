@@ -452,7 +452,7 @@ fixMapComponents(typename S::Collection& pmc,
   }
   // Add names of all devices of instruments on the fixMapList
   for (auto instptr : instruments) {
-    if (!instpr) continue; // Not in use
+    if (!instptr) continue; // Not in use
     if (stringstuff::regexMatchAny(fixMapList, instptr->name)) {
       // Loop through all devices
       for (int i=0; i<instptr->nDevices; i++) {
@@ -769,6 +769,8 @@ createMapCollection(const vector<Instrument*>& instruments,
     }
   }
 }
+
+
 
 //////////////////////////////////////////////////////////////////
 // For those routines differing for Astro/Photo, here is where

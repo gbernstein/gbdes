@@ -25,6 +25,13 @@ void fitDefaulted(astrometry::PixelMapCollection& pmc,
 		  const vector<Instrument*>& instruments,
 		  const vector<Exposure*>& exposures);
 
+// Define and issue WCS for each extension in use, and set projection to
+// field coordinates.
+void setupWCS(const vector<astrometry::SphericalCoords*>& fieldProjections,
+	      const vector<Instrument*>& instruments,
+	      const vector<Exposure*>& exposures,
+	      vector<Extension*>& extensions,
+	      astrometry::PixelMapCollection& pmc);
 
 // Statistics-accumulator class. 
 class Accum {

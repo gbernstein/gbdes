@@ -112,7 +112,7 @@ main(int argc, char *argv[])
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
     parameters.addMember("useInstruments",&useInstruments, def,
-			 "the instruments to include in fit","");
+			 "the instruments to include in fit",".*");
     parameters.addMemberNoValue("CLIPPING");
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
@@ -204,6 +204,8 @@ main(int argc, char *argv[])
     // Read the Fields table from input, copy to a new output FITS file, extract needed info
     readFields(inputTables, outCatalog, fieldNames, fieldProjections);
 
+    /**/cerr << "Done readFields" << endl;
+
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
     vector<int> catalogHDUs;
@@ -220,6 +222,8 @@ main(int argc, char *argv[])
       readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
 		      outputCatalogAlreadyOpen);
 
+    /**/cerr << "Done readInstruments" << endl;
+
     // This vector will hold the color-priority value of each exposure.  -1 means an exposure
     // that does not hold color info.
     vector<int> exposureColorPriorities;
@@ -232,6 +236,8 @@ main(int argc, char *argv[])
 		    outCatalog,
 		    true, // Use reference exposures for astrometry
 		    outputCatalogAlreadyOpen);
+
+    /**/cerr << "Done readExposures" << endl;
 		    
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
@@ -250,16 +256,22 @@ main(int argc, char *argv[])
 			    colorExtensions,
 			    inputYAML);
 
+    /**/cerr << "Done readExtensions" << endl;
+		    
     // A special loop here to set the wcsname of reference extensions to the
     // name of their field.
     for (auto extnptr : extensions) {
       if (!extnptr) continue;
+      /**/cerr << extnptr->exposure << endl;
       const Exposure& expo = *exposures[extnptr->exposure];
       if ( expo.instrument >= 0) continue;
       int ifield = expo.field;
-      extnptr->wcsName = fieldNames.nameOf(ifield);
+      /**/cerr << "Trying " << expo.name << " field " << ifield << endl;
+      extnptr->wcsName = fieldNames.nameOf(ifield); // ??? mapName instead???
     }
 
+    /**/cerr << "Done setting reference wcsNames" << endl;
+    
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
     /////////////////////////////////////////////////////
@@ -381,40 +393,7 @@ main(int argc, char *argv[])
     /**/cerr << "Done making final mapCollection!" << endl;
 
     // Add WCS for every extension, and reproject into field coordinates
-    for (auto extnptr : extensions) {
-      if (!extnptr) continue; // Not in use
-      Exposure& expo = *exposures[extnptr->exposure];
-      int ifield = expo.field;
-      if ( expo.instrument < 0) {
-	// Tag & reference exposures have no instruments and no fitting
-	// being done.  Coordinates are fixed to xpix = xw.
-	// Build a simple Wcs that takes its name from the field
-	SphericalICRS icrs;
-	if (!mapCollection.wcsExists(extnptr->wcsName)) {
-	  // If we are the first reference/tag exposure in this field:
-	  mapCollection.defineWcs(extnptr->wcsName, icrs, 
-				  extnptr->mapName,
-				  DEGREE);
-	  auto wcs = mapCollection.issueWcs(extnptr->wcsName);
-	  // And have this Wcs reproject into field coordinates, learn as map
-	  wcs->reprojectTo(*fieldProjections[ifield]);
-	  mapCollection.learnMap(*wcs, false, false);
-	}
-	extnptr->wcs = mapCollection.issueWcs(extnptr->wcsName);
-	extnptr->map = mapCollection.issueMap(extnptr->wcsName);
-      } else {
-	// Real instrument, WCS goes into its exposure coordinates
-	mapCollection.defineWcs(extnptr->wcsName, *expo.projection,
-				extnptr->mapName,
-				DEGREE);
-	extnptr->wcs = mapCollection.issueWcs(extnptr->wcsName);
-
-	// Reproject this Wcs into the field system and get a SubMap including reprojection:
-	extnptr->wcs->reprojectTo(*fieldProjections[ifield]);
-	mapCollection.learnMap(*extnptr->wcs, false, false);
-	extnptr->map = mapCollection.issueMap(extnptr->wcsName);
-      }
-    } // end extension loop
+    setupWCS(fieldProjections, instruments, exposures, extensions, mapCollection);
 
     /**/cerr << "Done defining all WCS's" << endl;
 

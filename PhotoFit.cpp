@@ -111,7 +111,7 @@ main(int argc, char *argv[])
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "minimum number of detections for usable match", 2, 2);
     parameters.addMember("useInstruments",&useInstruments, def,
-			 "the instruments to include in fit","");
+			 "the instruments to include in fit",".*");
     parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
 			 "exposures holding valid colors for stars","");
@@ -314,31 +314,19 @@ main(int argc, char *argv[])
 
     /**/cerr << "Done making final mapCollection!" << endl;
 
-    // ?????
-
     // Now construct a SubMap for every extension
-    for (int iext=0; iext<extensions.size(); iext++) {
-      if (!extensions[iext]) continue;  // not in use.
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
-      int ifield = expo.field;
+    for (auto extnptr : extensions) {
+      if (!extnptr) continue;  // not in use.
+      Exposure& expo = *exposures[extnptr->exposure];
       if ( expo.instrument < 0) {
 	// Reference exposures have no instruments, but possible color term per exposure
-	extn.map = mapCollection.issueMap(expo.mapName);
-      } else {
-	// Real instrument, make a map combining its exposure with its Device map:
-	string mapName = expo.name + "/" 
-	  + instruments[expo.instrument]->deviceNames.nameOf(extn.device);
-	list<string> mapElements;
-	// The extension map is the device map:
-	mapElements.push_back(instruments[expo.instrument]->mapNames[extn.device]);
-	// Followed by the exposure map:
-	mapElements.push_back(expo.mapName);
-
-	mapCollection.defineChain( mapName, mapElements);
-
-	extn.map = mapCollection.issueMap(mapName);
-      }
+	cerr << "Trying to make PhotoMap for reference exposure "
+	     << expo.name
+	     << endl;
+	exit(1);
+      } 
+      // Real instrument, make a map combining its exposure with its Device map:
+      extnptr->map = mapCollection.issueMap(extnptr->mapName);
     } // Extension loop
 
     /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()
