@@ -465,33 +465,17 @@ fixMapComponents(typename S::Collection& pmc,
   pmc.setFixed(fixTheseMaps);
 }
 
-// Instantiate our 2 cases
-template
-void fixMapComponents<Astro>(Astro::Collection&,
-			     const list<string>&,
-			     const vector<Instrument*>&);
-/**
-template
-void fixMapComponents<astrometry::PixelMapCollection>(astrometry::PixelMapCollection&,
-						      const list<string>&,
-						      const vector<Instrument*>&);
-template
-void fixMapComponents<photometry::PhotoMapCollection>(photometry::PhotoMapCollection&,
-						      const list<string>&,
-						      const vector<Instrument*>&);
-**/
-template <class TExtn, class TColor>
-vector<TExtn*>
+template <class S>
+vector<typename S::Extension*>
 readExtensions(img::FTable& extensionTable,
 	       const vector<Instrument*>& instruments,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
-	       vector<TColor*>& colorExtensions,
-	       astrometry::YAMLCollector& inputYAML,
-	       bool addBaseName) {
+	       vector<typename S::ColorExtension*>& colorExtensions,
+	       astrometry::YAMLCollector& inputYAML) {
       
-  vector<TExtn*> extensions(extensionTable.nrows(), 0);
-  colorExtensions = vector<TColor*>(extensionTable.nrows(), 0);
+  vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
+  colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
   for (int i=0; i<extensionTable.nrows(); i++) {
     int iExposure;
     extensionTable.readCell(iExposure, "Exposure", i);
@@ -504,14 +488,14 @@ readExtensions(img::FTable& extensionTable,
     // Determine whether this extension might be used to provide colors
     int colorPriority = exposureColorPriorities[iExposure];
     if (colorPriority >= 0) {
-      auto* ce = new TColor;
+      auto* ce = new typename S::ColorExtension;
       ce->priority = colorPriority;
       colorExtensions[i] = ce;
     }
 	
     if (!exposures[iExposure]) continue;
     
-    TExtn* extn = new TExtn;
+    typename S::Extension* extn = new typename S::Extension;
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];
 
@@ -564,15 +548,15 @@ readExtensions(img::FTable& extensionTable,
       extn->wcsName = d["EXPOSURE"] + "/" + d["DEVICE"];
       // And this is the name of the PixelMap underlying the WCS, or
       // the name of the photometric map (for which we do not want the "base" part).
-      if (addBaseName)
+      if (S::isAstro)
 	extn->mapName = extn->wcsName + "/base";
       else
 	extn->mapName = extn->wcsName;
 	
 	  
-      if (!inputYAML.addMap(extn->basemapName,d)) {
+      if (!inputYAML.addMap(extn->mapName,d)) {
 	cerr << "Input YAML files do not have complete information for map "
-	     << extn->basemapName
+	     << extn->mapName
 	     << endl;
 	exit(1);
       }
@@ -580,20 +564,6 @@ readExtensions(img::FTable& extensionTable,
   }  // End extension loop
 }
 
-#define INSTANTIATE(ns)				            \
-template                                                    \
-vector<ExtensionBase<ns::SubMap, ns::Detection>*>           \
- readExtensions<ExtensionBase<ns::SubMap, ns::Detection>,   \
-                ColorExtensionBase<ns::Match>>              \
-              (img::FTable& extensionTable,		    \
-	       const vector<Instrument*>& instruments,      \
-	       const vector<Exposure*>& exposures,          \
-	       const vector<int>& exposureColorPriorities,  \
-	       vector<ColorExtensionBase<ns::Match>*>& colorExtensions,  \
-	       astrometry::YAMLCollector& inputYAML);
-
-INSTANTIATE(astrometry)
-INSTANTIATE(photometry)
 
 // Routine to find an exposure that should have exposure map set to identity
 // to resolve exposure/device degeneracies in the model.  Returns <0 if
@@ -601,159 +571,188 @@ INSTANTIATE(photometry)
 // as input references to an Instrument (and its id number), the map collection
 // being studied, and the exposure/extension tables.
 
-/**
-template <class Collection, class Extn>
+template <class S>
 int
-findCanonical(const Instrument& instr,
+findCanonical(Instrument& instr,
 	      int iInst,
 	      vector<Exposure*>& exposures,
-	      vector<Extn*>& extensions,
-	      Collection& pmc)
+	      vector<typename S::Extension*>& extensions,
+	      typename S::Collection& pmc)
 {
+  // Classify the device maps for this instrument
+  set<int> fixedDevices;
+  set<int> freeDevices;
+  set<int> unusedDevices;
 
-
-      // Classify the device maps for this instrument
-      set<int> fixedDevices;
-      set<int> freeDevices;
-      set<int> unusedDevices;
-
-      // And the exposure maps as well:
-      set<int> fixedExposures;
-      set<int> freeExposures;
-      set<int> unusedExposures;
-      set<int> itsExposures;  // All exposure numbers using this instrument
+  // And the exposure maps as well:
+  set<int> fixedExposures;
+  set<int> freeExposures;
+  set<int> unusedExposures;
+  set<int> itsExposures;  // All exposure numbers using this instrument
       
-      for (int iDev=0; iDev<instr.nDevices; iDev++) {
-	string mapName = instr.name + "/" + instr.deviceNames.nameOf(iDev);
-	if (!pmcInit->mapExists(mapName)) {
-	  unusedDevices.insert(iDev);
-	  continue;
-	}
-	instr.mapNames[iDev] = mapName;
-	if (pmcInit->getFixed(mapName)) {
-	  fixedDevices.insert(iDev);
-	} else {
-	  freeDevices.insert(iDev);
-	}
+  for (int iDev=0; iDev<instr.nDevices; iDev++) {
+    string mapName = instr.name + "/" + instr.deviceNames.nameOf(iDev);
+    if (!pmc.mapExists(mapName)) {
+      unusedDevices.insert(iDev);
+      continue;
+    }
+    instr.mapNames[iDev] = mapName;
+    if (pmc.getFixed(mapName)) {
+      fixedDevices.insert(iDev);
+    } else {
+      freeDevices.insert(iDev);
+    }
+  }
+
+  for (int iExpo=0; iExpo < exposures.size(); iExpo++) {
+    if (!exposures[iExpo]) continue; // Skip unused
+    if (exposures[iExpo]->instrument==iInst) {
+      itsExposures.insert(iExpo);
+      string mapName = exposures[iExpo]->name;
+      if (!pmc.mapExists(mapName)) {
+	unusedExposures.insert(iExpo);
+      } else if (pmc.getFixed(mapName)) {
+	fixedExposures.insert(iExpo);
+      } else {
+	freeExposures.insert(iExpo);
       }
-	
+    }
+  }
 
-      for (int iExpo=0; iExpo < exposures.size(); iExpo++) {
-	if (exposures[iExpo]->instrument==iInst) {
-	  itsExposures.insert(iExpo);
-	  string mapName = exposures[iExpo]->name;
-	  if (!pmcInit->mapExists(mapName)) {
-	    unusedExposures.insert(iExpo);
-	  } else if (pmcInit->getFixed(mapName)) {
-	    fixedExposures.insert(iExpo);
-	  } else {
-	    freeExposures.insert(iExpo);
-	  }
-	}
-      }
+  //**/cerr << "Done collecting fixed/free" << endl;
 
-      //cerr << "Done collecting fixed/free" << endl;
-
-      // Now take an inventory of all extensions to see which device
-      // solutions are used in coordination with which exposure solutions
-      vector<set<int>> exposuresUsingDevice(instr.nDevices);
-      for (auto extnptr : extensions) {
-	int iExpo = extnptr->exposure;
-	if (itsExposures.count(iExpo)>0) {
-	  // Extension is from one of the instrument's exposures
-	  int iDev = extnptr->device;
-	  if (pmcInit->dependsOn(extnptr->basemapName, exposures[iExpo]->name)
-	      && pmcInit->dependsOn(extnptr->basemapName, instr.mapNames[iDev])) {
-	    // If this extension's map uses both the exposure and device
-	    // maps, then enter this dependence into our sets
-	    exposuresUsingDevice[iDev].insert(iExpo);
-	    if (unusedExposures.count(iExpo)>0 ||
-		unusedDevices.count(iDev)>0) {
-	      cerr << "Logic problem: extension map "
-		   << extnptr->basemapName
-		   << " is using allegedly unused exposure or device map"
-		   << endl;
-	      exit(1);
-	    }
-	  }
-	}
-      }
-
-      //**cerr << "Done building exposure/device graph" << endl;
-
-      // We have a degeneracy if there is a set of exposures and devices such
-      // that
-      // * the device maps and exposure maps are free
-      // * and the device maps are used only in exposures from this set
-      // * and the exposures contain only devices from this set.
-      // See here if such a subset exists, in which case we need
-      // to fix one of the exposure maps as a "canonical" exposure with
-      // Identity map.
-
-      // Split in-use devices into those potentially degenerate and those
-      // either fixed or tied to a fixed solution
-      auto degenerateDevices = freeDevices;
-      auto okDevices = fixedDevices;
-      auto degenerateExposures = freeExposures;
-      auto okExposures = fixedExposures;
-
-      // propagate "ok-ness" from devices to exposures and back until no more.
-      findDegeneracies(degenerateDevices,
-		       okDevices,
-		       degenerateExposures,
-		       okExposures,
-		       exposuresUsingDevice);
-      // We need a canonical exposure if there are degenerate device maps
-      bool needCanonical = !degenerateDevices.empty();
-      if (needCanonical) {
-	if (degenerateExposures.empty()) {
-	  cerr << "Logic problem: Instrument " << instr.name
-	       << " came up with degenerate devices but not exposures:"
+  // Now take an inventory of all extensions to see which device
+  // solutions are used in coordination with which exposure solutions
+  vector<set<int>> exposuresUsingDevice(instr.nDevices);
+  for (auto extnptr : extensions) {
+    if (!extnptr) continue; // Extension not in use.
+    int iExpo = extnptr->exposure;
+    if (itsExposures.count(iExpo)>0) {
+      // Extension is from one of the instrument's exposures
+      int iDev = extnptr->device;
+      if (pmc.dependsOn(extnptr->mapName, exposures[iExpo]->name)
+	  && pmc.dependsOn(extnptr->mapName, instr.mapNames[iDev])) {
+	// If this extension's map uses both the exposure and device
+	// maps, then enter this dependence into our sets
+	exposuresUsingDevice[iDev].insert(iExpo);
+	if (unusedExposures.count(iExpo)>0 ||
+	    unusedDevices.count(iDev)>0) {
+	  cerr << "Logic problem: extension map "
+	       << extnptr->mapName
+	       << " is using allegedly unused exposure or device map"
 	       << endl;
 	  exit(1);
 	}
-	// See if any of the degenerate exposures were requested to
-	// be a canonical one
-	int canonicalExposure = -1;
-	// If not, find the exposure using the most degenerate devices
-	if (canonicalExposure < 0) {
-	  int maxDevices = 0;
-	  for (auto iExpo : degenerateExposures) {
-	    int nDevices = 0;
-	    for (auto iDev : degenerateDevices) {
-	      if (exposuresUsingDevice[iDev].count(iExpo)>0)
-		nDevices++;
-	    }
-	    if (nDevices > maxDevices) {
-	      // Save this exposure as best to use, no need
-	      // to continue if it uses all devices.
-	      maxDevices = nDevices;
-	      canonicalExposure = iExpo;
-	      if (maxDevices==degenerateDevices.size())
-		break;
-	    }
-	  }
-	}
+      }
+    }
+  }
 
-	if (canonicalExposure < 0) {
-	  cerr << "Failed to locate a canonical exposure for " << instr.name
-	       << endl;
-	  exit(1);
-	}
-	cerr << "Selected " << exposures[canonicalExposure]->name
-	     << " as canonical for instrument " << instr.name
-	     << endl;
-	// Check that fixing this exposure map will resolve degeneracies.
-	degenerateExposures.erase(canonicalExposure);
-	okExposures.insert(canonicalExposure);
-	findDegeneracies(degenerateDevices,
-			 okDevices,
-			 degenerateExposures,
-			 okExposures,
-			 exposuresUsingDevice);
-	if (!degenerateDevices.empty()) {
-	  cerr << "But canonical did not resolve exposure/device degeneracy."
-	       << endl;
-	  exit(1);
-	}
-**/
+  //**/cerr << "Done building exposure/device graph" << endl;
+
+  // We have a degeneracy if there is a set of exposures and devices such
+  // that
+  // * the device maps and exposure maps are free
+  // * and the device maps are used only in exposures from this set
+  // * and the exposures contain only devices from this set.
+  // See here if such a subset exists, in which case we need
+  // to fix one of the exposure maps as a "canonical" exposure with
+  // Identity map.
+
+  // Split in-use devices into those potentially degenerate and those
+  // either fixed or tied to a fixed solution
+  auto degenerateDevices = freeDevices;
+  auto okDevices = fixedDevices;
+  auto degenerateExposures = freeExposures;
+  auto okExposures = fixedExposures;
+
+  // propagate "ok-ness" from devices to exposures and back until no more.
+  findDegeneracies(degenerateDevices,
+		   okDevices,
+		   degenerateExposures,
+		   okExposures,
+		   exposuresUsingDevice);
+
+  // If there are no degenerate device maps, we are done!
+  // Return a value indicating no canonical needed at all.
+  if (degenerateDevices.empty())
+    return -1;
+
+  if (degenerateExposures.empty()) {
+    cerr << "Logic problem: Instrument " << instr.name
+	 << " came up with degenerate devices but not exposures:"
+	 << endl;
+    exit(1);
+  }
+
+  int canonicalExposure = -1;
+  // Find the exposure using the most degenerate devices
+  {
+    int maxDevices = 0;
+    for (auto iExpo : degenerateExposures) {
+      int nDevices = 0;
+      for (auto iDev : degenerateDevices) {
+	if (exposuresUsingDevice[iDev].count(iExpo)>0)
+	  nDevices++;
+      }
+      if (nDevices > maxDevices) {
+	// Save this exposure as best to use, no need
+	// to continue if it uses all devices.
+	maxDevices = nDevices;
+	canonicalExposure = iExpo;
+	if (maxDevices==degenerateDevices.size())
+	  break;
+      }
+    }
+  }
+
+  if (canonicalExposure < 0) {
+    cerr << "Failed to locate a canonical exposure for " << instr.name
+	 << endl;
+    exit(1);
+  }
+  cerr << "Selected " << exposures[canonicalExposure]->name
+       << " as canonical for instrument " << instr.name
+       << endl;
+  // Check that fixing this exposure map will resolve degeneracies.
+  degenerateExposures.erase(canonicalExposure);
+  okExposures.insert(canonicalExposure);
+  findDegeneracies(degenerateDevices,
+		   okDevices,
+		   degenerateExposures,
+		   okExposures,
+		   exposuresUsingDevice);
+  if (!degenerateDevices.empty()) {
+    cerr << "But canonical did not resolve exposure/device degeneracy."
+	 << endl;
+    exit(1);
+  }
+  return canonicalExposure;
+}
+
+//////////////////////////////////////////////////////////////////
+// For those routines differing for Astro/Photo, here is where
+// we instantiate the two cases.
+//////////////////////////////////////////////////////////////////
+
+#define INSTANTIATE(AP) \
+template \
+vector<AP::Extension*> \
+readExtensions<AP> (img::FTable& extensionTable, \
+		    const vector<Instrument*>& instruments,	\
+		    const vector<Exposure*>& exposures,		   \
+		    const vector<int>& exposureColorPriorities,	     \
+		    vector<AP::ColorExtension*>& colorExtensions,    \
+		    astrometry::YAMLCollector& inputYAML); \
+template int \
+findCanonical<AP>(Instrument& instr,	\
+		  int iInst,			\
+		  vector<Exposure*>& exposures,	  \
+		  vector<AP::Extension*>& extensions,	\
+		  AP::Collection& pmc);
+template void \
+fixMapComponents<AP>(AP::Collection&, \
+		     const list<string>&, \
+		     const vector<Instrument*>&);
+
+INSTANTIATE(Astro)
+INSTANTIATE(Photo)

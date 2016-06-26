@@ -341,6 +341,7 @@ main(int argc, char *argv[])
     PixelMapCollection pmcAltered;  
 
     for (int iInst=0; iInst < instruments.size(); iInst++) {
+      if (!instruments[iInst]) continue;  // Not using instrument
       auto& instr = *instruments[iInst];
 
       int canonicalExposure =

@@ -38,6 +38,8 @@ const string colorErrorColumnName = "COLOR_ERR";
 // Here is the default character at which to split lists given in parameters strings
 const char DefaultListSeperator=',';
 
+// These structures are used so that we can write templated code that will work
+// for either astrometric or photometric fitting.
 struct Astro {
   typedef astrometry::Detection Detection;
   typedef astrometry::Match Match;
@@ -45,6 +47,15 @@ struct Astro {
   typedef ExtensionBase<SubMap, Detection> Extension;
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef astrometry::PixelMapCollection Collection;
+  static const int isAstro = 1;
+};
+struct Photo {
+  typedef photometry::Detection Detection;
+  typedef photometry::Match Match;
+  typedef photometry::SubMap SubMap;
+  typedef ExtensionBase<SubMap, Detection> Extension;
+  typedef ColorExtensionBase<Match> ColorExtension;
+  typedef photometry::PhotoMapCollection Collection;
   static const int isAstro = 1;
 };
 
@@ -177,13 +188,13 @@ readExposures(const vector<Instrument*>& instruments,
 // Read extensions from the table.
 // colorExtensions will get filled with ColorExtension objects for color data
 // inputYAML is set to produce YAML for all extensions being fit.
-template <class TExtn, class TColor>
-vector<TExtn*>
+template <class S>
+vector<typename S::Extension*>
 readExtensions(img::FTable& extensionTable,
 	       const vector<Instrument*>& instruments,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
-	       vector<TColor*>& colorExtensions,
+	       vector<typename S::ColorExtension*>& colorExtensions,
 	       astrometry::YAMLCollector& inputYAML);
 
 // fix all maps in a photo/pixelMapCollection whose names match
@@ -194,5 +205,13 @@ void
 fixMapComponents(typename S::Collection& pmc,
 		 const list<string>& fixMapList,
 		 const vector<Instrument*>& instruments);
+
+template <class S>
+int
+findCanonical(Instrument& instr,
+	      int iInst,
+	      vector<Exposure*>& exposures,
+	      vector<typename S::Extension*>& extensions,
+	      typename S::Collection& pmc);
 
 #endif
