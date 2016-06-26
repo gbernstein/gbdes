@@ -748,7 +748,7 @@ findCanonical<AP>(Instrument& instr,	\
 		  int iInst,			\
 		  vector<Exposure*>& exposures,	  \
 		  vector<AP::Extension*>& extensions,	\
-		  AP::Collection& pmc);
+		  AP::Collection& pmc); \
 template void \
 fixMapComponents<AP>(AP::Collection&, \
 		     const list<string>&, \
