@@ -262,11 +262,9 @@ main(int argc, char *argv[])
     // name of their field.
     for (auto extnptr : extensions) {
       if (!extnptr) continue;
-      /**/cerr << extnptr->exposure << endl;
       const Exposure& expo = *exposures[extnptr->exposure];
       if ( expo.instrument >= 0) continue;
       int ifield = expo.field;
-      /**/cerr << "Trying " << expo.name << " field " << ifield << endl;
       extnptr->wcsName = fieldNames.nameOf(ifield); // ??? mapName instead???
     }
 

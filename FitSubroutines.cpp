@@ -562,7 +562,9 @@ readExtensions(img::FTable& extensionTable,
 	exit(1);
       }
     }
+    extensions[i] = extn;
   }  // End extension loop
+  return extensions;
 }
 
 
