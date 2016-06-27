@@ -35,13 +35,14 @@
 * Allow individual systematic errors per instrument or exposure?
 
 * Allow named Identity in PhotoMap.
-* update treatment of "fixed" in PhotoMap plus other utility routines.
 
 * Get MJD into exposure
 
 *** Check propagation of Fixed, DependsOn for Color maps.
 
 * Fix up MagColors and the Apply* codes.
+
+* Big problem in YAML that WCS and Map cannot share a name.
 
 DONE ON WCSFIT:
 * Speed up fitting by trying successive Newton steps (with fixed quadratic) instead of Marquardt (on newton branch - done earlier than yaml stuff)
@@ -56,23 +57,24 @@ DONE ON WCSFIT:
 
 * Let Identity have different names;
 
+* Write fitDefaulted function
+
+* Fix bug in *Fit where device map is Identity (and hence has this name).
+
+* Put defaults into all PixelMaps
+
+* Make freezing of parameters sticky and more economical.
+
+DONE ON WCS & PHOTOFIT
 * PMC recognizes things with 0 parameters as fixed
 
 * Put dependsOn into PMC
 
 * WCSFit able to fix parameters of any component map, not just instrument or device
 
-* Write fitDefaulted function
-
 * Put copyParams into PMC
-
-* Fix bug in *Fit where device map is Identity (and hence has this name).
-
-* Put defaults into all PixelMaps
 
 * Get BAND for each exposure or instrument or whatever
 
-* Make freezing of parameters sticky and more economical.
-
-
+* update treatment of "fixed" in PhotoMap plus other utility routines.
 

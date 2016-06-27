@@ -405,118 +405,11 @@ main(int argc, char *argv[])
     // and choosing an exposure with which to initialize them.
     // The chosen exposure should have non-defaulted exposure solution.
 
-    // We'll put these into a list of exposures to de-default first.
-    list<int> exposuresToInitialize;
-
-    for (int iInst=0; iInst < instruments.size(); iInst++) {
-      if (!instruments[iInst]) continue; // Not in use
-      auto& instr = *instruments[iInst];
-      // Classify the device maps for this instrument
-      set<int> defaultedDevices;
-      set<int> initializedDevices;
-      set<int> unusedDevices;
-
-      // And the exposure maps as well:
-      set<int> defaultedExposures;
-      set<int> initializedExposures;
-      set<int> unusedExposures;
-      set<int> itsExposures;  // All exposure numbers using this instrument
-      
-      for (int iDev=0; iDev<instr.nDevices; iDev++) {
-	string mapName = instr.mapNames[iDev];
-	if (!mapCollection.mapExists(mapName)) {
-	  unusedDevices.insert(iDev);
-	  continue;
-	}
-	if (mapCollection.getDefaulted(mapName)) {
-	  defaultedDevices.insert(iDev);
-	} else {
-	  initializedDevices.insert(iDev);
-	}
-      }
-	
-
-      for (int iExpo=0; iExpo < exposures.size(); iExpo++) {
-	if (!exposures[iExpo]) continue; // Not in use
-	if (exposures[iExpo]->instrument==iInst) {
-	  itsExposures.insert(iExpo);
-	  string mapName = exposures[iExpo]->name;
-	  if (!mapCollection.mapExists(mapName)) {
-	    unusedExposures.insert(iExpo);
-	  } else if (mapCollection.getDefaulted(mapName)) {
-	    defaultedExposures.insert(iExpo);
-	  } else {
-	    initializedExposures.insert(iExpo);
-	  }
-	}
-      }
-
-      /**/cerr << "Done collecting initialized/defaulted" << endl;
-
-      // No need for any of this if there are no defaulted devices
-      if (defaultedDevices.empty())
-	continue;
-      
-      // Now take an inventory of all extensions to see which device
-      // solutions are used in coordination with which exposure solutions
-      vector<set<int>> exposuresUsingDevice(instr.nDevices);
-      for (auto extnptr : extensions) {
-	if (!extnptr) continue; // Not in use
-	int iExpo = extnptr->exposure;
-	if (itsExposures.count(iExpo)>0) {
-	  // Extension is from one of the instrument's exposures
-	  int iDev = extnptr->device;
-	  if (mapCollection.dependsOn(extnptr->mapName, exposures[iExpo]->name)
-	      && mapCollection.dependsOn(extnptr->mapName, instr.mapNames[iDev])) {
-	    // If this extension's map uses both the exposure and device
-	    // maps, then enter this dependence into our sets
-	    exposuresUsingDevice[iDev].insert(iExpo);
-	    if (unusedExposures.count(iExpo)>0 ||
-		unusedDevices.count(iDev)>0) {
-	      cerr << "Logic problem: extension map "
-		   << extnptr->mapName
-		   << " is using allegedly unused exposure or device map"
-		   << endl;
-	      exit(1);
-	    }
-	  }
-	}
-      }
-
-      /**/cerr << "Done building exposure/device graph" << endl;
-
-      // Find a non-defaulted exposure using all of the defaulted devices
-      int exposureForInitializing = -1;
-      for (auto iExpo : initializedExposures) {
-	bool hasAllDevices = true;
-	for (auto iDev : defaultedDevices) {
-	  if (exposuresUsingDevice[iDev].count(iExpo)==0) {
-	    hasAllDevices = false;
-	    break;
-	  }
-	}
-	if (hasAllDevices) {
-	  exposureForInitializing = iExpo;
-	  break;
-	}
-      }
-
-      if (exposureForInitializing < 0) {
-	cerr << "Could not find an exposure that can initialize defaulted devices \n"
-	     << "for instrument " << instr.name
-	     << endl;
-	cerr << "Write more code if you want to exploit more complex situations \n"
-	     << "where some non-defaulted devices can initialize a defaulted exposure."
-	     << endl;
-	exit(1);
-      } else {
-	exposuresToInitialize.push_back(exposureForInitializing);
-	cerr << "Using exposure " << exposures[exposureForInitializing]->name
-	     << " to initialize defaulted devices on instrument " << instr.name
-	     << endl;
-      }
-    } // end instrument loop
-    
+    list<int> exposuresToInitialize =
+      pickExposuresToInitialize(instruments,
+				exposures,
+				extensions,
+				mapCollection);
     
     // Initialize defaulted maps, one exposure at a time, starting
     // with the ones that solve for devices, then all the others.
@@ -544,41 +437,25 @@ main(int argc, char *argv[])
       }
     }
 
-    // Now fix all map elements requested to be fixed, checking for
-    // any remaining defaulted maps at this time.
-    {
-      set<string> fixTheseMaps;
-      bool defaultProblem=false;
-      for (auto iName : mapCollection.allMapNames()) {
-	if (regexMatchAny(fixMapList, iName))
-	  fixTheseMaps.insert(iName);
-	if (mapCollection.getDefaulted(iName)) {
-	  cerr << "Logic error: after all intializations, still have map "
-	       << iName
-	       << " as defaulted."
-	       << endl;
-	  defaultProblem = true;
-	}
+    // As a check, there should be no more defaulted maps
+    bool defaultProblem=false;
+    for (auto iName : mapCollection.allMapNames()) {
+      if (mapCollection.getDefaulted(iName)) {
+	cerr << "Logic error: after all intializations, still have map "
+	     << iName
+	     << " as defaulted."
+	     << endl;
+	defaultProblem = true;
       }
-      if (defaultProblem) exit(1);
-      
-      // Add names of all devices of instruments on the fixMapList
-      for (auto instptr : instruments) {
-	if (!instptr) continue; // Not in use
-	if (regexMatchAny(fixMapList, instptr->name)) {
-	  // Loop through all devices
-	  for (int i=0; i<instptr->nDevices; i++) {
-	    string devMap = instptr->name + "/" + instptr->deviceNames.nameOf(i);
-	    // Freeze the device's map if it's in use
-	    if (mapCollection.mapExists(devMap))
-	      fixTheseMaps.insert(devMap);
-	  }
-	}
-      }
-      mapCollection.setFixed(fixTheseMaps);
     }
+    if (defaultProblem) exit(1);
     
-    // Recalculate all parameter indices
+    // Now fix all map elements requested to be fixed
+    fixMapComponents<Astro>(mapCollection,
+			    fixMapList,
+			    instruments);
+    
+    // Recalculate all parameter indices - maps are ready to roll!
     mapCollection.rebuildParameterVector();
 
     /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()

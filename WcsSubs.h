@@ -33,6 +33,14 @@ void setupWCS(const vector<astrometry::SphericalCoords*>& fieldProjections,
 	      vector<Extension*>& extensions,
 	      astrometry::PixelMapCollection& pmc);
 
+// Analyze the PixelMap to find list of exposures that we can
+// initialize first to set up all defaulted device maps.
+list<int>
+pickExposuresToInitialize(const vector<Instrument*>& instruments,
+			  const vector<Exposure*>& exposures,
+			  const vector<Extension*>& extensions,
+			  astrometry::PixelMapCollection& pmc);
+
 // Statistics-accumulator class. 
 class Accum {
 public:

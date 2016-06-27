@@ -46,7 +46,7 @@ string usage=
 // Regexes ok; same caveats: no @ or , in names, whitespace stripped.
 
 // parameter fixMaps is a string with
-<// <mapName>, ...
+// <mapName>, ...
 // where any given mapName should have its parameters fixed at initial values during
 // the fitting.  Regexes allowed (no commas!).
 
@@ -186,7 +186,7 @@ main(int argc, char *argv[])
     ExtensionObjectSet skipSet(skipFile);
 
     // Class that will build a starting YAML config for all extensions
-    YAMLCollector inputYAML(inputMaps, PhotoMapCollection::magicKey);
+    astrometry::YAMLCollector inputYAML(inputMaps, PhotoMapCollection::magicKey);
     // Make sure inputYAML knows about the Identity transformation:
     {
       istringstream iss("Identity:\n  Type:  Identity\n");
@@ -214,7 +214,7 @@ main(int argc, char *argv[])
     // Read in all the instrument extensions and their device info from input
     // FITS file, save useful ones and write to output FITS file.
     vector<Instrument*> instruments =
-      readInstruments(instrumentHDUs, useInstruments, inputTables, outCatalog,
+      readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
 		      outputCatalogAlreadyOpen);
     
 
@@ -239,8 +239,6 @@ main(int argc, char *argv[])
       FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Extensions");
       out.copy(extensionTable);
     }
-    vector<ColorExtension*> colorExtensions;
-    vector<Extension*> extensions;
 
     vector<ColorExtension*> colorExtensions;
     vector<Extension*> extensions =
@@ -256,7 +254,7 @@ main(int argc, char *argv[])
     /////////////////////////////////////////////////////
 
     // Now build a preliminary set of photo maps from the configured YAML files
-    PhotoMapCollection* pmcInit = new PixelMapCollection;
+    PhotoMapCollection* pmcInit = new PhotoMapCollection;
     pmcInit->learnMap(IdentityMap(), false, false);
     {
       istringstream iss(inputYAML.dump());
@@ -329,6 +327,14 @@ main(int argc, char *argv[])
       extnptr->map = mapCollection.issueMap(extnptr->mapName);
     } // Extension loop
 
+    // Now fix all map elements requested to be fixed
+    fixMapComponents<Photo>(mapCollection,
+			    fixMapList,
+			    instruments);
+    
+    // Recalculate all parameter indices - maps are ready to roll!
+    mapCollection.rebuildParameterVector();
+    
     /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()
 	     << " with " << mapCollection.nParams() << " free parameters."
 	     << endl;
@@ -749,7 +755,7 @@ main(int argc, char *argv[])
 	Exposure& expo = *exposures[iExposure];
 	cerr << "WARNING: Exposure " << expo.name << " has no fitted detections.  Freezing its parameters."
 	     << endl;
-	mapCollection.setFixed(expo.mapName, true);
+	mapCollection.setFixed(expo.name, true);
       }
     }
 
