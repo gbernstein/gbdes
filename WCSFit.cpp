@@ -468,184 +468,44 @@ main(int argc, char *argv[])
     //////////////////////////////////////////////////////////
 
     // List of all Matches - they will hold pointers to all Detections too.
-    list<Match*> matches;    // ??? Store objects, not pointers??
+    list<Match*> matches;
+    
+    // Figure out which extensions' maps require a color entry to function
+    whoNeedsColor<Astro>(extensions);
+    
+    // Before reading objects, we want to set all starting WCS's to go into
+    // field coordinates.
+    for (auto extnptr : extensions) {
+      if (!extnptr) continue;
+      if (extnptr->exposure < 0) continue;
+      int ifield = exposures[extnptr->exposure]->field;
+      extnptr->startWcs->reprojectTo(*fieldProjections[ifield]);
+    }
 
+    /**/cerr << "Done reprojecting startWcs" << endl;
+    
     // Start by reading all matched catalogs, creating Detection and Match arrays, and 
     // telling each Extension which objects it should retrieve from its catalog
 
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
-      /**/cerr << "# Reading catalog extension " << catalogHDUs[icat] << endl;
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
       FTable ff = ft.use();
-      vector<int> seq;
-      vector<LONGLONG> extn;
-      vector<LONGLONG> obj;
-      ff.readCells(seq, "SequenceNumber");
-      ff.readCells(extn, "Extension");
-      ff.readCells(obj, "Object");
-      // Smaller collections for each match
-      vector<long> extns;
-      vector<long> objs;
-      for (int i=0; i<=seq.size(); i++) {
-	if ( (i==seq.size() || seq[i]==0) && !extns.empty()) {
-	  // Make a match from previous few entries
-	  Detection* d = new Detection;
-	  d->catalogNumber = extns[0];
-	  d->objectNumber = objs[0];
-	  matches.push_back(new Match(d));
-	  extensions[extns[0]]->keepers.insert(std::pair<long, Detection*>(objs[0], d));
-	  for (int j=1; j<extns.size(); j++) {
-	    d = new Detection;
-	    d->catalogNumber = extns[j];
-	    d->objectNumber = objs[j];
-	    matches.back()->add(d);
-	    extensions[extns[j]]->keepers.insert(std::pair<long, Detection*>(objs[j], d));
-	  }
-	  extns.clear();
-	  objs.clear();
-	} // Finished processing previous match
-	if (i>=seq.size()) break;
-	// Should we ignore this object?
-	if (skipSet(extn[i], obj[i])) continue;
-
-	// Add to things being used:
-	extns.push_back(extn[i]);
-	objs.push_back(obj[i]);
-      } // End loop of catalog entries
+      string dummy1, dummy2;
+      ff.getHdrValue("Field", dummy1);
+      ff.getHdrValue("Affinity", dummy2);
+      /**/cerr << "Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
+      
+      readMatches<Astro>(ff, matches, extensions, colorExtensions, skipSet, minMatches);
       
     } // End loop over input matched catalogs
 
+    /**/cerr << "Total match count: " << matches.size() << endl;
+
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
+    readObjects<Astro>(extensionTable, exposures, extensions, pixSysError, referenceSysError);
 
-    // Should be safe to multithread this loop as different threads write
-    // only to distinct parts of memory.  Perhaps protect the FITS table read?
-
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic,4)
-#endif
-    for (int iext = 0; iext < extensions.size(); iext++) {
-      if (!extensions[iext]) continue; // Skip unused 
-      string filename;
-      extensionTable.readCell(filename, "FILENAME", iext);
-      /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
-			       << "/" << extensions.size()
-			       << " from " << filename << endl;
-      int hduNumber;
-      extensionTable.readCell(hduNumber, "EXTENSION", iext);
-      string xKey;
-      extensionTable.readCell(xKey, "xKey", iext);
-      string yKey;
-      extensionTable.readCell(yKey, "yKey", iext);
-      string idKey;
-      extensionTable.readCell(idKey, "idKey", iext);
-      string errKey;
-      extensionTable.readCell(errKey, "errKey", iext);
-      double weight;
-      extensionTable.readCell(weight, "Weight", iext);
-
-      // Relevant structures for this extension
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
-
-      const SubMap* pixmap=extn.map;
-      bool isReference = (expo.instrument == REF_INSTRUMENT);
-      bool isTag = (expo.instrument == TAG_INSTRUMENT);
-
-      Wcs* startWcs = extn.startWcs;
-      startWcs->reprojectTo(*fieldProjections[expo.field]);
-
-      if (!startWcs) {
-	cerr << "Failed to find initial Wcs for device " 
-	     << instruments[expo.instrument]->deviceNames.nameOf(extn.device)
-	     << " of exposure " << expo.name
-	     << endl;
-	exit(1);
-      }
-
-      bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
-      // What we need to read from the FitsTable:
-      vector<string> neededColumns;
-      if (!useRows)
-	neededColumns.push_back(idKey);
-      neededColumns.push_back(xKey);
-      neededColumns.push_back(yKey);
-      if (!isTag)
-	neededColumns.push_back(errKey);
-
-      FTable ff;
-#ifdef _OPENMP
-#pragma omp critical(fitsio)
-#endif
-      {
-	FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
-	ff = ft.extract(0, -1, neededColumns);
-      }
-      vector<long> id;
-      if (useRows) {
-	id.resize(ff.nrows());
-	for (long i=0; i<id.size(); i++)
-	  id[i] = i;
-      } else {
-	ff.readCells(id, idKey);
-      }
-      Assert(id.size() == ff.nrows());
-
-      bool errorColumnIsDouble = true;
-      try {
-	double d;
-	if (!isTag)
-	  ff.readCell(d, errKey, 0);
-      } catch (img::FTableError& e) {
-	errorColumnIsDouble = false;
-      }
-
-      double sysError = isReference ? referenceSysError : pixSysError;
-
-      for (long irow = 0; irow < ff.nrows(); irow++) {
-	map<long, Detection*>::iterator pr = extn.keepers.find(id[irow]);
-	if (pr == extn.keepers.end()) continue; // Not a desired object
-
-	// Have a desired object now.  Fill its Detection structure
-	Detection* d = pr->second;
-	extn.keepers.erase(pr);
-
-	d->map = pixmap;
-	ff.readCell(d->xpix, xKey, irow);
-	ff.readCell(d->ypix, yKey, irow);
-	double sigma;
-	if (isTag) {
-	  sigma = 0.;  // Don't need sigma for tags
-	} else if (errorColumnIsDouble) {
-	  ff.readCell(sigma, errKey, irow);
-	} else {
-	  float f;
-	  ff.readCell(f, errKey, irow);
-	  sigma = f;
-	}
-
-	sigma = std::sqrt(sysError*sysError + sigma*sigma);
-	d->sigmaPix = sigma;
-	startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);
-	Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
-	// no clips on tags
-	double wt = isTag ? 0. : pow(sigma,-2.);
-	d->clipsqx = wt / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
-	d->clipsqy = wt / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
-	d->wtx = d->clipsqx * weight;
-	d->wty = d->clipsqy * weight;
-	    
-      } // End loop over catalog objects
-
-      if (!extn.keepers.empty()) {
-	cerr << "Did not find all desired objects in catalog " << filename
-	     << " extension " << hduNumber
-	     << endl;
-	exit(1);
-      }
-    } // end loop over catalogs to read
-	
-    cerr << "Done reading catalogs." << endl;
+    /**/cerr << "Done reading catalogs." << endl;
 
     // Make a pass through all matches to reserve as needed and purge 
     // those not wanted.  

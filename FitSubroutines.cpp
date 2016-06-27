@@ -772,8 +772,334 @@ createMapCollection(const vector<Instrument*>& instruments,
   }
 }
 
+template <class S>
+void
+whoNeedsColor(vector<typename S::Extension*> extensions) {
+  for (auto extnptr : extensions) {
+    if (extnptr) {
+      extnptr->needsColor = extnptr->map->needsColor();
+    }
+  }
+}
+	      
+// Read a MatchCatalog Extension, recording in each extension the
+// objects from it that need to be read from catalog.
+template <class S>
+void
+readMatches(img::FTable& table,
+	    list<typename S::Match*>& matches,
+	    vector<typename S::Extension*>& extensions,
+	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const ExtensionObjectSet& skipSet,
+	    int minMatches) {
 
+  vector<int> seq;
+  vector<LONGLONG> extn;
+  vector<LONGLONG> obj;
+  table.readCells(seq, "SequenceNumber");
+  table.readCells(extn, "Extension");
+  table.readCells(obj, "Object");
 
+  // Smaller collections for each match
+  vector<long> matchExtns;
+  vector<long> matchObjs;
+  // These variables determine what the highest-priority color information available
+  // in the match is so far.
+  long matchColorExtension = -1;
+  long matchColorObject = 0;
+  int colorPriority = -1;
+
+  for (int i=0; i<=seq.size(); i++) {
+    if (i>=seq.size() || seq[i]==0) {
+      // Processing the previous (or final) match.
+      int nValid = matchExtns.size();
+      if (matchColorExtension < 0) {
+	// There is no color information for this match. 
+	// Discard any detection which requires a color to produce its map:
+	nValid = 0;
+	for (int j=0; j<matchExtns.size(); j++) {
+	  Assert(extensions[matchExtns[j]]);
+	  if (extensions[matchExtns[j]]->needsColor) {
+	    // Mark this detection as useless
+	    matchExtns[j] = -1;
+	  } else {
+	    nValid++;
+	  }
+	}
+      }
+
+      if (nValid >= minMatches) {
+	// Make a match from the valid entries, and note need to get data for the detections and color
+	typename S::Match* m=0;
+	for (int j=0; j<matchExtns.size(); j++) {
+	  if (matchExtns[j]<0) continue;  // Skip detections starved of their color
+	  auto d = new typename S::Detection;
+	  d->catalogNumber = matchExtns[j];
+	  d->objectNumber = matchObjs[j];
+	  extensions[matchExtns[j]]->keepers.insert(std::pair<long,typename S::Detection*>
+						    (matchObjs[j], d));
+	  if (m)
+	    m->add(d);
+	  else
+	    m = new typename S::Match(d);
+	}
+	matches.push_back(m);
+
+	if (matchColorExtension >=0) {
+	  // Tell the color catalog that it needs to look this guy up:
+	  Assert(colorExtensions[matchColorExtension]);
+	  colorExtensions[matchColorExtension]->keepers.insert
+	    (std::pair<long,typename S::Match*>(matchColorObject,
+						matches.back()));
+	}
+      }
+      // Clear out previous Match:
+      matchExtns.clear();
+      matchObjs.clear();
+      matchColorExtension = -1;
+      colorPriority = -1;
+    } // Finished processing previous match
+
+    // If we done reading entries, quit this loop
+    if (i >= seq.size()) break;
+
+    // continue loop if this is an object to ignore
+    if ( skipSet(extn[i],obj[i]) ) continue;
+
+    // Note extn/obj number of detections with useful mag data
+    if (extensions[extn[i]]) {
+      // Record a Detection in a useful extension:
+      matchExtns.push_back(extn[i]);
+      matchObjs.push_back(obj[i]);
+    }
+
+    // Record if we've got color information here
+    if (colorExtensions[extn[i]]) {
+      int newPriority = colorExtensions[extn[i]]->priority;
+      if (newPriority >= 0 && (colorPriority < 0 || newPriority < colorPriority)) {
+	// This detection holds color info that we want
+	colorPriority = newPriority;
+	matchColorExtension = extn[i];
+	matchColorObject = obj[i];
+      }
+    }
+  } // End loop of catalog entries
+}
+
+// Subroutine to get what we want from a catalog entry for WCS fitting
+inline
+void
+Astro::fillDetection(Astro::Detection* d,
+		     img::FTable& table, long irow,
+		     double weight,
+		     string xKey, string yKey, string errKey,
+		     string magKey, string magErrKey,
+		     int magKeyElement, int magErrKeyElement,
+		     bool errorColumnIsDouble,
+		     bool magColumnIsDouble, bool magErrColumnIsDouble,
+		     double magshift,
+		     const astrometry::PixelMap* startWcs,
+		     double sysErrorSq,
+		     bool isTag) {
+  table.readCell(d->xpix, xKey, irow);
+  table.readCell(d->ypix, yKey, irow);
+
+  double sigma = isTag ? 0. : getTableDouble(table, errKey, -1, magColumnIsDouble,irow);
+  sigma = std::sqrt(sysErrorSq + sigma*sigma);
+  d->sigmaPix = sigma;
+
+  startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);
+  Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
+  // no clips on tags
+  double wt = isTag ? 0. : pow(sigma,-2.);
+  d->clipsqx = wt / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
+  d->clipsqy = wt / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
+  d->wtx = d->clipsqx * weight;
+  d->wty = d->clipsqy * weight;
+}
+
+// And a routine to get photometric information too
+inline
+void
+Photo::fillDetection(Photo::Detection* d,
+		     img::FTable& table, long irow,
+		     double weight,
+		     string xKey, string yKey, string errKey,
+		     string magKey, string magErrKey,
+		     int magKeyElement, int magErrKeyElement,
+		     bool errorColumnIsDouble,
+		     bool magColumnIsDouble, bool magErrColumnIsDouble,
+		     double magshift,
+		     const astrometry::PixelMap* startWcs,
+		     double sysErrorSq,
+		     bool isTag) {
+  table.readCell(d->args.xDevice, xKey, irow);
+  table.readCell(d->args.yDevice, yKey, irow);
+  startWcs->toWorld(d->args.xDevice, d->args.yDevice,
+		    d->args.xExposure, d->args.yExposure);
+
+  // Get the mag input and its error
+  d->magIn = getTableDouble(table, magKey, magKeyElement, magColumnIsDouble,irow)
+    + magshift;
+  double sigma = getTableDouble(table, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
+
+  // Map to output and estimate output error
+  d->magOut = d->map->forward(d->magIn, d->args);
+
+  sigma = std::sqrt(sysErrorSq + sigma*sigma);
+  d->sigmaMag = sigma;
+  sigma *= d->map->derivative(d->magIn, d->args);
+
+  // no clips on tags
+  double wt = isTag ? 0. : pow(sigma,-2.);
+  d->clipsq = wt;
+  d->wt = wt * weight;
+}
+
+// Read each Extension's objects' data from it FITS catalog
+// and place into Detection structures.
+template <class S>
+void readObjects(const img::FTable& extensionTable,
+		 const vector<Exposure*>& exposures,
+		 vector<typename S::Extension*>& extensions,
+		 double sysError,
+		 double referenceSysError) {
+
+  // Should be safe to multithread this loop as different threads write
+  // only to distinct parts of memory.  Protect the FITS table read though.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,CATALOG_THREADS)
+#endif
+  for (int iext = 0; iext < extensions.size(); iext++) {
+    if (!extensions[iext]) continue; // Skip unused 
+    // Relevant structures for this extension
+    typename S::Extension& extn = *extensions[iext];
+    Exposure& expo = *exposures[extn.exposure];
+    if (extn.keepers.empty()) continue; // or useless
+
+    string filename;
+    extensionTable.readCell(filename, "Filename", iext);
+    /**/if (iext%50==0) cerr << "# Reading object catalog " << iext
+			     << "/" << extensions.size()
+			     << " from " << filename 
+			     << " seeking " << extn.keepers.size()
+			     << " objects" << endl;
+    int hduNumber;
+    string xKey;
+    string yKey;
+    string idKey;
+    string magKey;
+    string magErrKey;
+    double weight;
+    string errKey;
+    extensionTable.readCell(hduNumber, "Extension", iext);
+    extensionTable.readCell(xKey, "xKey", iext);
+    extensionTable.readCell(yKey, "yKey", iext);
+    extensionTable.readCell(idKey, "idKey", iext);
+
+    if (S::isAstro) {
+      extensionTable.readCell(errKey, "errKey", iext);
+      extensionTable.readCell(weight, "Weight", iext);
+    } else {
+      extensionTable.readCell(magKey, "magKey", iext);
+      extensionTable.readCell(magErrKey, "magErrKey", iext);
+      extensionTable.readCell(weight, "magWeight", iext);
+    }
+    
+    const typename S::SubMap* sm=extn.map;
+
+    bool isReference = (expo.instrument == REF_INSTRUMENT);
+    bool isTag = (expo.instrument == TAG_INSTRUMENT);
+
+    double sysErrorSq = pow(isReference ? referenceSysError : sysError, 2.);
+    
+    astrometry::Wcs* startWcs = extn.startWcs;
+
+    if (!startWcs) {
+      cerr << "Failed to find initial Wcs for exposure " << expo.name
+	   << endl;
+      exit(1);
+    }
+
+    bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
+    // What we need to read from the FitsTable:
+    vector<string> neededColumns;
+    if (!useRows)
+      neededColumns.push_back(idKey);
+    neededColumns.push_back(xKey);
+    neededColumns.push_back(yKey);
+      
+    int magKeyElement;
+    int magErrKeyElement;
+    if (S::isAstro) {
+      if (!isTag)
+	neededColumns.push_back(errKey);
+    } else {
+      // Be willing to get an element of array-valued bintable cell
+      // for mag or magerr.  Syntax would be
+      // MAGAPER[4]  to get 4th (0-indexed) element of MAGAPER column
+      magKeyElement = elementNumber(magKey);
+      magErrKeyElement = elementNumber(magErrKey);
+      neededColumns.push_back(magKey);
+      neededColumns.push_back(magErrKey);
+    }
+    img::FTable ff;
+#ifdef _OPENMP
+#pragma omp critical(fitsio)
+#endif
+    {
+      FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
+      ff = ft.extract(0, -1, neededColumns);
+    }
+    vector<long> id;
+    if (useRows) {
+      id.resize(ff.nrows());
+      for (long i=0; i<id.size(); i++)
+	id[i] = i;
+    } else {
+      ff.readCells(id, idKey);
+    }
+    Assert(id.size() == ff.nrows());
+
+    bool magColumnIsDouble;
+    bool magErrColumnIsDouble;
+    bool errorColumnIsDouble;
+    double magshift = extn.magshift;
+
+    if (S::isAstro) {
+      errorColumnIsDouble = isDouble(ff, errKey, -1);
+    } else {
+      magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
+      magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
+    }
+
+    for (long irow = 0; irow < ff.nrows(); irow++) {
+      auto pr = extn.keepers.find(id[irow]);
+      if (pr == extn.keepers.end()) continue; // Not a desired object
+
+      // Have a desired object now.  Fill its Detection structure
+      typename S::Detection* d = pr->second;
+      extn.keepers.erase(pr);
+      d->map = sm;
+
+      S::fillDetection(d, ff, irow,
+		       weight,
+		       xKey, yKey, errKey, magKey, magErrKey,
+		       magKeyElement, magErrKeyElement,
+		       errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble,
+		       magshift,
+		       startWcs, sysErrorSq, isTag);
+    } // End loop over catalog objects
+
+    if (!extn.keepers.empty()) {
+      cerr << "Did not find all desired objects in catalog " << filename
+	   << " extension " << hduNumber
+	   << endl;
+      exit(1);
+    }
+  } // end loop over catalogs to read
+  
+}
 //////////////////////////////////////////////////////////////////
 // For those routines differing for Astro/Photo, here is where
 // we instantiate the two cases.
@@ -803,7 +1129,22 @@ createMapCollection<AP>(const vector<Instrument*>& instruments, \
 			const vector<Exposure*>& exposures, \
 			const vector<AP::Extension*> extensions, \
 			astrometry::YAMLCollector& inputYAML,	 \
-			AP::Collection& pmc);
+			AP::Collection& pmc); \
+template void							\
+whoNeedsColor<AP>(vector<AP::Extension*> extensions); \
+template void \
+readMatches<AP>(img::FTable& table, \
+		list<AP::Match*>& matches, \
+		vector<AP::Extension*>& extensions, \
+		vector<AP::ColorExtension*>& colorExtensions, \
+		const ExtensionObjectSet& skipSet, \
+		int minMatches); \
+template void \
+readObjects<AP>(const img::FTable& extensionTable, \
+		const vector<Exposure*>& exposures, \
+		vector<AP::Extension*>& extensions, \
+		double sysError, \
+		double referenceSysError);
 
 INSTANTIATE(Astro)
 INSTANTIATE(Photo)

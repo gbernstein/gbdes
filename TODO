@@ -25,12 +25,7 @@
 
 * Subroutinize various things in WCSFit to clean up main() code.
 
-* Get rid of canonicalExposure argument, can be done in input YAML instead.
-
 * Eliminate extensions with too few matched detections ??
-
-* No reference exposures in PhotoFit! One can add them as their own catalogs
-  and give identity or simple color PhotoMap.
 
 * Allow individual systematic errors per instrument or exposure?
 
@@ -45,6 +40,7 @@
 * Big problem in YAML that WCS and Map cannot share a name.
 
 DONE ON WCSFIT:
+
 * Speed up fitting by trying successive Newton steps (with fixed quadratic) instead of Marquardt (on newton branch - done earlier than yaml stuff)
 
 * Have a CAL_PATH environment variable for tree rings & other files
@@ -77,4 +73,9 @@ DONE ON WCS & PHOTOFIT
 * Get BAND for each exposure or instrument or whatever
 
 * update treatment of "fixed" in PhotoMap plus other utility routines.
+
+* No reference exposures in PhotoFit! One can add them as their own catalogs
+  and give identity or simple color PhotoMap.
+
+* Get rid of canonicalExposure argument, can be done in input YAML instead.
 

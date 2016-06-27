@@ -4,6 +4,9 @@
 #ifndef FITSUBROUTINES_H
 #define FITSUBROUTINES_H
 
+// Number of threads to use for reading catalogs
+#define CATALOG_THREADS 4
+
 #include <list>
 #include <set>
 #include "StringStuff.h"
@@ -47,6 +50,18 @@ struct Astro {
   typedef ExtensionBase<SubMap, Detection> Extension;
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef astrometry::PixelMapCollection Collection;
+  static void fillDetection(Detection* d,
+			    img::FTable& table, long irow,
+			    double weight,
+			    string xKey, string yKey, string errKey,
+			    string magKey, string magErrKey,
+			    int magKeyElement, int magErrKeyElement,
+			    bool errorColumnIsDouble,
+			    bool magColumnIsDouble, bool magErrColumnIsDouble,
+			    double magshift,
+			    const astrometry::PixelMap* startWcs,
+			    double sysErrorSq,
+			    bool isTag);
   static const int isAstro = 1;
 };
 struct Photo {
@@ -56,7 +71,19 @@ struct Photo {
   typedef ExtensionBase<SubMap, Detection> Extension;
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef photometry::PhotoMapCollection Collection;
-  static const int isAstro = 1;
+  static void fillDetection(Detection* d,
+			    img::FTable& table, long irow,
+			    double weight,
+			    string xKey, string yKey, string errKey,
+			    string magKey, string magErrKey,
+			    int magKeyElement, int magErrKeyElement,
+			    bool errorColumnIsDouble,
+			    bool magColumnIsDouble, bool magErrColumnIsDouble,
+			    double magshift,
+			    const astrometry::PixelMap* startWcs,
+			    double sysErrorSq,
+			    bool isTag);
+  static const int isAstro = 0;
 };
 
 // A helper function that strips white space from front/back of a string and replaces
@@ -221,5 +248,33 @@ createMapCollection(const vector<Instrument*>& instruments,
 		    const vector<typename S::Extension*> extensions,
 		    astrometry::YAMLCollector& inputYAML,
 		    typename S::Collection& pmc);
+
+// Set the bool in each Extension indicating whether its map uses color
+template <class S>
+void
+whoNeedsColor(vector<typename S::Extension*> extensions);
+	      
+// Read a MatchCatalog Extension, recording in each extension the
+// objects from it that need to be read from catalog.
+// skipSet can give objects to ignore;
+// Matches with less than minMatches useful inputs are discarded too.
+// Discards Detection if requires color but doesn't have it.
+template <class S>
+void
+readMatches(img::FTable& table,
+	    list<typename S::Match*>& matches,
+	    vector<typename S::Extension*>& extensions,
+	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const ExtensionObjectSet& skipSet,
+	    int minMatches);
+
+// Read each Extension's objects' data from it FITS catalog
+// and place into Detection structures.
+template <class S>
+void readObjects(const img::FTable& extensionTable,
+		 const vector<Exposure*>& exposures,
+		 vector<typename S::Extension*>& extensions,
+		 double sysError,
+		 double referenceSysError);
 
 #endif

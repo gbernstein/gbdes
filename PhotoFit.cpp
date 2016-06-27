@@ -347,6 +347,9 @@ main(int argc, char *argv[])
     // List of all Matches - they will hold pointers to all Detections too.
     list<Match*> matches;    
 
+    // Figure out which extensions' maps require a color entry to function
+    whoNeedsColor<Photo>(extensions);
+    
     // Start by reading all matched catalogs, creating Detection and Match arrays, and 
     // telling each Extension which objects it should retrieve from its catalog
 
@@ -366,109 +369,12 @@ main(int argc, char *argv[])
 	if (!stringstuff::nocaseEqual(affinity, stellarAffinity))
 	  continue;
       }
-      {
-	/**/ string dummy1, dummy2;
-	ff.getHdrValue("Field", dummy1);
-	ff.getHdrValue("Affinity", dummy2);
-	cerr << "Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
-      }
-      vector<int> seq;
-      vector<LONGLONG> extn;
-      vector<LONGLONG> obj;
-      ff.readCells(seq, "SequenceNumber");
-      ff.readCells(extn, "Extension");
-      ff.readCells(obj, "Object");
-
-      // Smaller collections for each match
-      vector<long> matchExtns;
-      vector<long> matchObjs;
-      // These variables determine what the highest-priority color information available
-      // in the match is so far.
-      long matchColorExtension = -1;
-      long matchColorObject = 0;
-      int colorPriority = -1;
-      for (int i=0; i<=seq.size(); i++) {
-	if (i>=seq.size() || seq[i]==0) {
-	  // Processing the previous (or final) match.
-	  int nValid = matchExtns.size();
-	  if (matchColorExtension < 0) {
-	    // There is no color information for this match. 
-	    if (requireColor) {
-	      // Match is to be discarded without any color information
-	      nValid = 0.;
-	    } else {
-	      // Just discard any detection which requires a color to produce its map:
-	      nValid = 0;
-	      for (int j=0; j<matchExtns.size(); j++) {
-		Assert(extensions[matchExtns[j]]);
-		if (extensions[matchExtns[j]]->map->needsColor()) {
-		  // Mark this detection as useless
-		  matchExtns[j] = -1;
-		} else {
-		  nValid++;
-		}
-	      }
-	    }
-	  }
-
-	  if (nValid >= minMatches) {
-	    // Make a match from the valid entries, and note need to get data for the detections and color
-	    int j=0;
-	    while (matchExtns[j]<0 && j<matchExtns.size()) ++j;  // Skip detections starved of their color
-	    Assert(j<matchExtns.size());
-	    Detection* d = new Detection;
-	    d->catalogNumber = matchExtns[j];
-	    d->objectNumber = matchObjs[j];
-	    matches.push_back(new Match(d));
-	    extensions[matchExtns[j]]->keepers.insert(std::pair<long, Detection*>(matchObjs[j], d));
-	    for (++j; j<matchExtns.size(); j++) {
-	      if (matchExtns[j]<0) continue;  // Skip detections needing unavailable color
-	      d = new Detection;
-	      d->catalogNumber = matchExtns[j];
-	      d->objectNumber = matchObjs[j];
-	      matches.back()->add(d);
-	      extensions[matchExtns[j]]->keepers.insert(std::pair<long, Detection*>(matchObjs[j], d));
-	    }
-	    if (matchColorExtension >=0) {
-	      // Tell the color catalog that it needs to look this guy up:
-	      Assert(colorExtensions[matchColorExtension]);
-	      colorExtensions[matchColorExtension]->keepers.insert
-		(std::pair<long,Match*>(matchColorObject,
-					matches.back()));
-	    }
-	  }
-	  // Clear out previous Match:
-	  matchExtns.clear();
-	  matchObjs.clear();
-	  matchColorExtension = -1;
-	  colorPriority = -1;
-	} // Finished processing previous match
-
-	// If we done reading entries, quit this loop
-	if (i >= seq.size()) break;
-
-	// continue loop if this is an object to ignore
-	if ( skipSet(extn[i],obj[i]) ) continue;
-
-	// Note extn/obj number of detections with useful mag data
-	if (extensions[extn[i]]) {
-	  // Record a Detection in a useful extension:
-	  matchExtns.push_back(extn[i]);
-	  matchObjs.push_back(obj[i]);
-	}
-
-	// Record if we've got color information here
-	if (colorExtensions[extn[i]]) {
-	  int newPriority = colorExtensions[extn[i]]->priority;
-	  if (newPriority >= 0 && (colorPriority < 0 || newPriority < colorPriority)) {
-	    // This detection holds color info that we want
-	    colorPriority = newPriority;
-	    matchColorExtension = extn[i];
-	    matchColorObject = obj[i];
-	  }
-	}
-	  
-      } // End loop of catalog entries
+      string dummy1, dummy2;
+      ff.getHdrValue("Field", dummy1);
+      ff.getHdrValue("Affinity", dummy2);
+      /**/cerr << "Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
+      
+      readMatches<Photo>(ff, matches, extensions, colorExtensions, skipSet, minMatches);
       
     } // End loop over input matched catalogs
 
@@ -476,126 +382,9 @@ main(int argc, char *argv[])
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
-    for (int iext = 0; iext < extensions.size(); iext++) {
-      if (!extensions[iext]) continue; // Skip unused 
-      // Relevant structures for this extension
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
-      if (extn.keepers.empty()) continue; // or useless
-
-      string filename;
-      extensionTable.readCell(filename, "Filename", iext);
-      /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
-			       << "/" << extensions.size()
-			       << " from " << filename 
-			       << " seeking " << extn.keepers.size()
-			       << " objects" << endl;
-      int hduNumber;
-      //**      extensionTable.readCell(hduNumber, "HDUNumber", iext);
-      extensionTable.readCell(hduNumber, "Extension", iext);
-      string xKey;
-      extensionTable.readCell(xKey, "xKey", iext);
-      string yKey;
-      extensionTable.readCell(yKey, "yKey", iext);
-      string idKey;
-      extensionTable.readCell(idKey, "idKey", iext);
-      string magKey;
-      extensionTable.readCell(magKey, "magKey", iext);
-      string magErrKey;
-      extensionTable.readCell(magErrKey, "magErrKey", iext);
-      double weight;
-      extensionTable.readCell(weight, "magWeight", iext);
-
-
-      const SubMap* sm=extn.map;
-      bool isReference = (expo.instrument == REF_INSTRUMENT);
-      bool isTag = (expo.instrument == TAG_INSTRUMENT);
-
-      astrometry::Wcs* startWcs = extn.startWcs;
-
-      if (!startWcs) {
-	cerr << "Failed to find initial Wcs for device " 
-	     << instruments[expo.instrument]->deviceNames.nameOf(extn.device)
-	     << " of exposure " << expo.name
-	     << endl;
-	exit(1);
-      }
-
-      bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
-      // What we need to read from the FitsTable:
-      vector<string> neededColumns;
-      if (!useRows)
-	neededColumns.push_back(idKey);
-      neededColumns.push_back(xKey);
-      neededColumns.push_back(yKey);
-      
-      // Be willing to get an element of array-valued bintable cell
-      // for mag or magerr.  Syntax would be
-      // MAGAPER[4]  to get 4th (0-indexed) element of MAGAPER column
-      int magKeyElement = elementNumber(magKey);
-      int magErrKeyElement = elementNumber(magErrKey);
-      neededColumns.push_back(magKey);
-      neededColumns.push_back(magErrKey);
-
-      FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
-      FTable ff = ft.extract(0, -1, neededColumns);
-      vector<long> id;
-      if (useRows) {
-	id.resize(ff.nrows());
-	for (long i=0; i<id.size(); i++)
-	  id[i] = i;
-      } else {
-	ff.readCells(id, idKey);
-      }
-      Assert(id.size() == ff.nrows());
-
-      bool magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
-      bool magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
-
-      double sysError = isReference ? referenceSysError : magSysError;
-
-      for (long irow = 0; irow < ff.nrows(); irow++) {
-	map<long, Detection*>::iterator pr = extn.keepers.find(id[irow]);
-	if (pr == extn.keepers.end()) continue; // Not a desired object
-
-	// Have a desired object now.  Fill its Detection structure
-	Detection* d = pr->second;
-	extn.keepers.erase(pr);
-	d->map = sm;
-
-	// Read the PhotometryArguments for this Detection:
-	ff.readCell(d->args.xDevice, xKey, irow);
-	ff.readCell(d->args.yDevice, yKey, irow);
-	startWcs->toWorld(d->args.xDevice, d->args.yDevice,
-			  d->args.xExposure, d->args.yExposure);
-
-	// Get the mag input and its error
-	d->magIn = getTableDouble(ff, magKey, magKeyElement, magColumnIsDouble,irow)
-	  + extn.magshift;
-	double sigma = getTableDouble(ff, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
-
-	// Map to output and estimate output error
-	d->magOut = sm->forward(d->magIn, d->args);
-
-	sigma = std::sqrt(sysError*sysError + sigma*sigma);
-	d->sigmaMag = sigma;
-	sigma *= sm->derivative(d->magIn, d->args);
-	// no clips on tags
-	double wt = isTag ? 0. : pow(sigma,-2.);
-	d->clipsq = wt;
-	d->wt = wt * weight;
-	    
-      } // End loop over catalog objects
-
-      if (!extn.keepers.empty()) {
-	cerr << "Did not find all desired objects in catalog " << filename
-	     << " extension " << hduNumber
-	     << endl;
-	exit(1);
-      }
-    } // end loop over catalogs to read
-	
-    cerr << "Done reading catalogs for magnitudes." << endl;
+    readObjects<Photo>(extensionTable, exposures, extensions, magSysError);
+    
+    /**/cerr << "Done reading catalogs for magnitudes." << endl;
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the PhotoArguments for Detections they match
