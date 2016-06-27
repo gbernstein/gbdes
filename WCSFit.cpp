@@ -132,7 +132,6 @@ main(int argc, char *argv[])
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
 
-#ifdef COLORS
     parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
 			 "exposures holding valid colors for stars","");
@@ -140,7 +139,7 @@ main(int argc, char *argv[])
 			 "minimum value of color to be used",-10.);
     parameters.addMember("maxColor",&maxColor, def,
 			 "maximum value of color to be used",+10.);
-#endif
+
     parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "wcscat.fits");
@@ -507,9 +506,28 @@ main(int argc, char *argv[])
 
     /**/cerr << "Done reading catalogs." << endl;
 
+    // Now loop again over all catalogs being used to supply colors,
+    // and insert colors into all the PhotoArguments for Detections they match
+    readColors<Astro>(extensionTable, colorExtensions);
+
     // Make a pass through all matches to reserve as needed and purge 
     // those not wanted.  
 
+    // Get rid of Detections with errors too high
+    purgeNoisyDetections<Astro>(maxPixError, matches, exposures, extensions);
+			 
+    // Get rid of Matches with too few detections
+
+    // Get rid of Matches with color out of range (note that default color is 0).
+    
+    // Reserve desired fraction of matches
+
+    // Find exposures whose parameters are free but have too few
+    // Detections being fit to the exposure model.
+
+    // Freeze parameters of an exposure model and clip all
+    // Detections that were going to use it.
+    
     {
       ran::UniformDeviate u;
       if (randomNumberSeed > 0)  u.Seed(randomNumberSeed);
@@ -797,7 +815,7 @@ main(int argc, char *argv[])
 
 	xpix.push_back(d->xpix);
 	ypix.push_back(d->ypix);
-	sigpix.push_back(d->sigmaPix);
+	sigpix.push_back(d->sigma);
 
 	xw.push_back(d->xw);
 	yw.push_back(d->yw);

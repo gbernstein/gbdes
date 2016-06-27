@@ -35,6 +35,8 @@ const int NO_INSTRUMENT=-3;
 const string stellarAffinity="STELLAR";
 
 const double NO_MAG_DATA = -100.;	// Value entered when there is no valid mag or color
+const double NODATA = photometry::PhotoArguments::NODATA;  // Signal for unknown color
+
 const string colorColumnName = "COLOR";
 const string colorErrorColumnName = "COLOR_ERR";
 
@@ -62,6 +64,13 @@ struct Astro {
 			    const astrometry::PixelMap* startWcs,
 			    double sysErrorSq,
 			    bool isTag);
+  static void setColor(Detection* d, double color) {
+    //** ?? Not implemented yet: d->color = color;
+  }
+  static double getColor(const Detection* d) {
+    //** ?? Not implemented yet: return d->color;
+    return 0.;
+  }
   static const int isAstro = 1;
 };
 struct Photo {
@@ -83,6 +92,12 @@ struct Photo {
 			    const astrometry::PixelMap* startWcs,
 			    double sysErrorSq,
 			    bool isTag);
+  static void setColor(Detection* d, double color) {
+    d->args.color = color;
+  }
+  static double getColor(const Detection* d) {
+    return d->args.color;
+  }
   static const int isAstro = 0;
 };
 
@@ -277,4 +292,58 @@ void readObjects(const img::FTable& extensionTable,
 		 double sysError,
 		 double referenceSysError);
 
+// Read color information from files marked as holding such, insert into
+// relevant Matches.
+template <class S>
+void
+readColors(img::FTable extensionTable,
+	   vector<typename S::ColorExtension*> colorExtensions);
+
+// Find all matched Detections that exceed allowable error, then
+// delete them from their Match and delete the Detection.
+// Does not apply to reference/tag detections.
+template <class S>
+void
+purgeNoisyDetections(double maxError,
+		     list<typename S::Match*>& matches,
+		     const vector<Exposure*>& exposures,
+		     const vector<typename S::Extension*>& extensions);
+
+// Get rid of Matches with too few Detections being fit: delete
+// the Match and all of its Detections.
+template <class S>
+void
+purgeSparseMatches(int minMatches,
+		   list<typename S::Match*>& matches);
+
+// Get rid of Matches with color outside of specified range.
+// Color is always ok if it has NODATA value.
+// Note that this even kills Detections that do not need a color for their maps.
+template <class S>
+void
+purgeBadColor(double minColor, double maxColor,
+	      list<typename S::Match*>& matches);
+
+template <class S>
+void
+reserveMatches(list<typename S::Match*>& matches,
+	       double reserveFraction,
+	       int randomNumberSeed);
+
+template <class S>
+map<string, long>
+findUnderpopulatedExposures(long minFitExposure,
+			    const list<typename S::Match*> matches,
+			    const vector<Exposure*> exposures,
+			    const vector<typename S::Extension*> extensions,
+			    const typename S::Collection& pmc);
+
+  // Fix the parameters of a map, and mark all Detections making
+// use of it as clipped so they will not be used in fitting
+template <class S>
+void
+freezeMap(string mapName,
+	  const list<typename S::Match*> matches,
+	  const vector<typename S::Extension*> extensions,
+	  typename S::Collection& pmc);
 #endif

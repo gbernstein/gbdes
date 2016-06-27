@@ -10,7 +10,6 @@
 #include "StringStuff.h"
 #include "Pset.h"
 #include "PixelMapCollection.h"
-#include "Random.h"
 #include "YAMLCollector.h"
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
@@ -388,78 +387,8 @@ main(int argc, char *argv[])
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the PhotoArguments for Detections they match
-    for (int iext = 0; iext < colorExtensions.size(); iext++) {
-      if (!colorExtensions[iext]) continue; // Skip unused 
-      ColorExtension& extn = *colorExtensions[iext];
-      if (extn.keepers.empty()) continue; // Not using any colors from this catalog
-      string filename;
-      extensionTable.readCell(filename, "Filename", iext);
-      /**/ cerr << "# Reading color catalog " << iext
-				<< "/" << colorExtensions.size()
-				<< " from " << filename << endl;
-      int hduNumber;
-      //**      extensionTable.readCell(hduNumber, "HDUNumber", iext);
-      extensionTable.readCell(hduNumber, "Extension", iext);
-      string idKey;
-      extensionTable.readCell(idKey, "idKey", iext);
-      string colorExpression;
-      try {
-	extensionTable.readCell(colorExpression, "colorExpression", iext);
-      } catch (img::FTableError& e) {
-	// If there is no colorExpression column, use a default:
-	colorExpression = "COLOR";
-      }
-      stripWhite(colorExpression);
-      if (colorExpression.empty()) {
-	cerr << "No colorExpression specified for filename " << filename
-	     << " HDU " << hduNumber
-	     << endl;
-	exit(1);
-      }
+    readColors<Photo>(extensionTable, colorExtensions);
 
-      // Read the entire catalog for this extension
-      FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
-      FTable ff = ft.use();
-
-      bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
-      vector<long> id;
-      if (useRows) {
-	id.resize(ff.nrows());
-	for (long i=0; i<id.size(); i++)
-	  id[i] = i;
-      } else {
-	ff.readCells(id, idKey);
-      }
-      Assert(id.size() == ff.nrows());
-
-      vector<double> color(id.size(), 0.);
-      ff.evaluate(color, colorExpression);
-
-      for (long irow = 0; irow < ff.nrows(); irow++) {
-	map<long, Match*>::iterator pr = extn.keepers.find(id[irow]);
-	if (pr == extn.keepers.end()) continue; // Not a desired object
-
-	// Have a desired object. Put the color into everything it matches
-	Match* m = pr->second;
-	extn.keepers.erase(pr);
-
-	for ( Match::iterator j = m->begin();
-	      j != m->end();
-	      ++j) 
-	  (*j)->args.color = color[irow];
-
-      } // End loop over catalog objects
-
-      if (!extn.keepers.empty()) {
-	cerr << "Did not find all desired objects in catalog " << filename
-	     << " extension " << hduNumber
-	     << " " << extn.keepers.size() << " left, first ID is "
-	     << extn.keepers.begin()->first
-	     << endl;
-	exit(1);
-      }
-    } // end loop over catalogs to read
-	
     cerr << "Done reading catalogs for colors." << endl;
 
     // Make a pass through all matches to reserve as needed and purge 
@@ -489,7 +418,7 @@ main(int argc, char *argv[])
 	while (j != (*im)->end()) {
 	  Detection* d = *j;
 	  // Keep it if mag error is small or if it's from a tag or reference "instrument"
-	  if ( d->sigmaMag > maxMagError
+	  if ( d->sigma > maxMagError
 	       && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
 	    j = (*im)->erase(j, true);  // will delete the detection too.
 	  } else {

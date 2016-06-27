@@ -28,7 +28,8 @@ namespace astrometry {
     long objectNumber;
     double xpix;
     double ypix;
-    double sigmaPix;
+    // ***??? add later:  double color; - also initialize to NODATA
+    double sigma;	// Uncertainty, in pixel units
     double xw;
     double yw;
     // weight, nominally inverse sigma squared in each world coord dimen:

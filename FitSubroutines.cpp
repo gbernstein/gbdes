@@ -13,6 +13,7 @@
 #include "FitsTable.h"
 #include "Match.h"
 #include "PhotoMatch.h"
+#include "Random.h"
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -906,7 +907,7 @@ Astro::fillDetection(Astro::Detection* d,
 
   double sigma = isTag ? 0. : getTableDouble(table, errKey, -1, magColumnIsDouble,irow);
   sigma = std::sqrt(sysErrorSq + sigma*sigma);
-  d->sigmaPix = sigma;
+  d->sigma = sigma;
 
   startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);
   Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
@@ -947,7 +948,7 @@ Photo::fillDetection(Photo::Detection* d,
   d->magOut = d->map->forward(d->magIn, d->args);
 
   sigma = std::sqrt(sysErrorSq + sigma*sigma);
-  d->sigmaMag = sigma;
+  d->sigma = sigma;
   sigma *= d->map->derivative(d->magIn, d->args);
 
   // no clips on tags
@@ -1100,6 +1101,236 @@ void readObjects(const img::FTable& extensionTable,
   } // end loop over catalogs to read
   
 }
+
+// Read color information from files marked as holding such, insert into
+// relevant Matches.
+template <class S>
+void
+readColors(img::FTable extensionTable,
+	   vector<typename S::ColorExtension*> colorExtensions) {
+
+  for (int iext = 0; iext < colorExtensions.size(); iext++) {
+    if (!colorExtensions[iext]) continue; // Skip unused 
+    auto& extn = *colorExtensions[iext];
+    if (extn.keepers.empty()) continue; // Not using any colors from this catalog
+    string filename;
+    extensionTable.readCell(filename, "Filename", iext);
+    /**/ cerr << "# Reading color catalog " << iext
+	      << "/" << colorExtensions.size()
+	      << " from " << filename << endl;
+    int hduNumber;
+    extensionTable.readCell(hduNumber, "Extension", iext);
+    string idKey;
+    extensionTable.readCell(idKey, "idKey", iext);
+    string colorExpression;
+    try {
+      extensionTable.readCell(colorExpression, "colorExpression", iext);
+    } catch (img::FTableError& e) {
+      // If there is no colorExpression column, use a default:
+      colorExpression = "COLOR";
+    }
+    stripWhite(colorExpression);
+    if (colorExpression.empty()) {
+      cerr << "No colorExpression specified for filename " << filename
+	   << " HDU " << hduNumber
+	   << endl;
+      exit(1);
+    }
+
+    // Read the entire catalog for this extension
+    FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
+    img::FTable ff = ft.use();
+
+    bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
+    vector<long> id;
+    if (useRows) {
+      id.resize(ff.nrows());
+      for (long i=0; i<id.size(); i++)
+	id[i] = i;
+    } else {
+      ff.readCells(id, idKey);
+    }
+    Assert(id.size() == ff.nrows());
+
+    vector<double> color(id.size(), 0.);
+    ff.evaluate(color, colorExpression);
+
+    for (long irow = 0; irow < ff.nrows(); irow++) {
+      auto pr = extn.keepers.find(id[irow]);
+      if (pr == extn.keepers.end()) continue; // Not a desired object
+
+      // Have a desired object. Put the color into everything it matches
+      typename S::Match* m = pr->second;
+      extn.keepers.erase(pr);
+
+      for ( auto detptr : *m)
+	S::setColor(detptr,color[irow]);
+
+    } // End loop over catalog objects
+
+    if (!extn.keepers.empty()) {
+      cerr << "Did not find all desired objects in catalog " << filename
+	   << " extension " << hduNumber
+	   << " " << extn.keepers.size() << " left, first ID is "
+	   << extn.keepers.begin()->first
+	   << endl;
+      exit(1);
+    }
+  } // end loop over catalogs to read
+}
+
+// Find all matched Detections that exceed allowable error, then
+// delete them from their Match and delete the Detection.
+// Does not apply to reference/tag detections.
+template <class S>
+void
+purgeNoisyDetections(double maxError,
+		     list<typename S::Match*>& matches,
+		     const vector<Exposure*>& exposures,
+		     const vector<typename S::Extension*>& extensions) {
+  for (auto mptr : matches) {
+    auto j=mptr->begin(); 
+    while (j != mptr->end()) {
+      auto d = *j; // Yields pointer to each detection
+      // Keep it if pixel error is small or if it's from a tag or reference "instrument"
+      if ( d->sigma > maxError
+	   && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
+	j = mptr->erase(j, true);  // will delete the detection too.
+      } else {
+	++j;
+      }
+    }
+  }
+}
+
+// Get rid of Matches with too few Detections being fit: delete
+// the Match and all of its Detections.
+template <class S>
+void
+purgeSparseMatches(int minMatches,
+		   list<typename S::Match*>& matches) {
+  auto im = matches.begin();
+  while (im != matches.end() ) {
+    if ( (*im)->fitSize() < minMatches) {
+      // Remove entire match if it's too small, and kill its Detections too
+      (*im)->clear(true);
+      im = matches.erase(im);
+    } else {
+      ++im;
+    }
+  }
+}
+
+// Get rid of Matches with color outside of specified range.
+// Color is always ok if it has NODATA value.
+// Note that this even kills Detections that do not need a color for their maps.
+template <class S>
+void
+purgeBadColor(double minColor, double maxColor,
+	      list<typename S::Match*>& matches) {
+  auto im = matches.begin();
+  while (im != matches.end() ) {
+    if ((*im)->size() > 0) {
+      // See if color is in range, using color from first Detection (they should
+      // all have the same color).
+      double color = S::getColor(*(*im)->begin());
+      if (color != NODATA && (color < minColor || color > maxColor)) {
+	// Remove entire match if it's too small, and kill its Detections too
+	(*im)->clear(true);
+	im = matches.erase(im);
+	continue;
+      }
+    }
+    ++im;
+  }
+}
+
+template <class S>
+void
+reserveMatches(list<typename S::Match*>& matches,
+	       double reserveFraction,
+	       int randomNumberSeed) {
+  ran::UniformDeviate u;
+  if (randomNumberSeed >0) u.Seed(randomNumberSeed);
+
+  for (auto mptr : matches)
+    mptr->setReserved( u < reserveFraction );
+}
+
+// Return a map of names of non-frozen exposure maps that
+// have fewer than minFitExposure fittable Detections using
+// them, also gives the number of fittable Detections they have.
+template <class S>
+map<string, long>
+findUnderpopulatedExposures(long minFitExposure,
+			    const list<typename S::Match*> matches,
+			    const vector<Exposure*> exposures,
+			    const vector<typename S::Extension*> extensions,
+			    const typename S::Collection& pmc) {
+  // First count up useful Detections in each extension:
+  vector<long> extnCounts(extensions.size(), 0);
+  for (auto mptr : matches)
+    if (!mptr->getReserved())
+      for (auto dptr : *mptr)
+	if (!dptr->isClipped)
+	  extnCounts[dptr->catalogNumber]++;
+
+  // Now for each exposure, add up extnCounts of all extensions
+  // that depend on a map with name of the exposure.
+  map<string, long> bad;
+  for (int iExpo=0; iExpo<exposures.size(); iExpo++) {
+    if (!exposures[iExpo]) continue; // Not in use
+    string expoName = exposures[iExpo]->name;
+    if (!pmc.mapExists(expoName) || pmc.getFixed(expoName)) continue; // No free map
+    long expoCounts=0;
+    for (int iExtn=0; iExtn<extensions.size(); iExtn++) {
+      if (extnCounts[iExtn]==0) continue;
+      if (pmc.dependsOn(extensions[iExtn]->mapName, expoName))
+	expoCounts += extnCounts[iExtn];
+    }
+    if (expoCounts < minFitExposure)
+      bad[expoName] = expoCounts;
+  }
+  return bad;
+}
+    
+
+// Fix the parameters of a map, and mark all Detections making
+// use of it as clipped so they will not be used in fitting
+template <class S>
+void
+freezeMap(string mapName,
+	  const list<typename S::Match*> matches,
+	  const vector<typename S::Extension*> extensions,
+	  typename S::Collection& pmc) {
+  // Nothing to do if map is already fixed or doesn't exist
+  if (!pmc.mapExists(mapName) || pmc.getFixed(mapName)) return;
+  
+  set<long> badExtensions;  // values of extensions using the map
+  for (int iExtn=0; iExtn<extensions.size(); iExtn++) {
+    if (!extensions[iExtn]) continue; // Not in use
+    if (pmc.dependsOn(extensions[iExtn]->mapName, mapName))
+      badExtensions.insert(iExtn);
+  }
+
+  // Now freeze the relevant map
+  pmc.setFixed(mapName);
+
+  // And now clip all of the affected Detections
+  if (badExtensions.empty()) return;  // nothing to do
+  for (auto mptr : matches)
+    if (!mptr->getReserved()) {
+      bool recount = false;
+      for (auto dptr : *mptr)
+	if (badExtensions.count(dptr->catalogNumber)>0) {
+	  dptr->isClipped = true;
+	  recount = true;
+	}
+      if (recount) mptr->countFit();
+    }
+}
+  
+			    
 //////////////////////////////////////////////////////////////////
 // For those routines differing for Astro/Photo, here is where
 // we instantiate the two cases.
@@ -1144,7 +1375,38 @@ readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<Exposure*>& exposures, \
 		vector<AP::Extension*>& extensions, \
 		double sysError, \
-		double referenceSysError);
+		double referenceSysError); \
+template void \
+readColors<AP>(img::FTable extensionTable, \
+	       vector<AP::ColorExtension*> colorExtensions);  \
+template void  \
+purgeNoisyDetections<AP>(double maxError,  \
+			 list<AP::Match*>& matches,  \
+			 const vector<Exposure*>& exposures,  \
+			 const vector<AP::Extension*>& extensions);  \
+template void  \
+purgeSparseMatches<AP>(int minMatches,  \
+		       list<AP::Match*>& matches);  \
+template void  \
+purgeBadColor<AP>(double minColor, double maxColor,  \
+		  list<AP::Match*>& matches);  \
+  \
+template void  \
+reserveMatches<AP>(list<AP::Match*>& matches,  \
+		   double reserveFraction,  \
+		   int randomNumberSeed);  \
+  \
+template map<string, long>  \
+findUnderpopulatedExposures<AP> (long minFitExposure,  \
+				 const list<AP::Match*> matches,  \
+				 const vector<Exposure*> exposures,  \
+				 const vector<AP::Extension*> extensions,  \
+				 const AP::Collection& pmc);  \
+template void  \
+freezeMap<AP>(string mapName,  \
+	      const list<AP::Match*> matches,  \
+	      const vector<AP::Extension*> extensions,  \
+	      AP::Collection& pmc); 
 
 INSTANTIATE(Astro)
 INSTANTIATE(Photo)

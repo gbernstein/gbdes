@@ -108,6 +108,8 @@ fitDefaulted(PixelMapCollection& pmc,
       dref->map = identityMap;
       dfit->map = map;
       
+      // ??? dfit->color = 0.;
+      // ??? dref->color = 0.; ??Problem if reference color is not zero?
       matches.push_back(new Match(dfit));
       matches.back()->add(dref);
     }
