@@ -10,7 +10,6 @@
 #include "StringStuff.h"
 #include "Pset.h"
 #include "PixelMapCollection.h"
-#include "Random.h"
 #include "YAMLCollector.h"
 #include "Match.h"
 #include "Instrument.h"
@@ -80,6 +79,7 @@ main(int argc, char *argv[])
   double referenceSysError;
 
   int minMatches;
+  int minFitExposures;
   bool clipEntireMatch;
   double chisqTolerance;
 
@@ -111,6 +111,8 @@ main(int argc, char *argv[])
 			 "Reference object additional error (arcsec)", 0.003, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
+    parameters.addMember("minFitExposures",&minFitExposures, def | low,
+			 "Minimum number of detections to fit exposure map", 200, 2);
     parameters.addMember("useInstruments",&useInstruments, def,
 			 "the instruments to include in fit",".*");
     parameters.addMemberNoValue("CLIPPING");
@@ -457,9 +459,9 @@ main(int argc, char *argv[])
     // Recalculate all parameter indices - maps are ready to roll!
     mapCollection.rebuildParameterVector();
 
-    /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()
-	     << " with " << mapCollection.nParams() << " free parameters."
-	     << endl;
+    cout << "Total number of free map elements " << mapCollection.nFreeMaps()
+	 << " with " << mapCollection.nParams() << " free parameters."
+	 << endl;
 
 
     //////////////////////////////////////////////////////////
@@ -508,74 +510,44 @@ main(int argc, char *argv[])
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the PhotoArguments for Detections they match
-    readColors<Astro>(extensionTable, colorExtensions);
+    //** ???    readColors<Astro>(extensionTable, colorExtensions);
 
-    // Make a pass through all matches to reserve as needed and purge 
-    // those not wanted.  
+    /**/cerr << "Done reading colors" << endl;
 
     // Get rid of Detections with errors too high
     purgeNoisyDetections<Astro>(maxPixError, matches, exposures, extensions);
 			 
     // Get rid of Matches with too few detections
+    purgeSparseMatches<Astro>(minMatches, matches);
 
     // Get rid of Matches with color out of range (note that default color is 0).
+    purgeBadColor<Astro>(minColor, maxColor, matches); // ??? Nop right now
     
+    /**/cerr << "Done purging defective detections and matches" << endl;
+
     // Reserve desired fraction of matches
+    if (reserveFraction>0.) 
+      reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);
 
     // Find exposures whose parameters are free but have too few
     // Detections being fit to the exposure model.
+    auto badExposures = findUnderpopulatedExposures<Astro>(minFitExposures,
+							   matches,
+							   exposures,
+							   extensions,
+							   mapCollection);
 
     // Freeze parameters of an exposure model and clip all
     // Detections that were going to use it.
-    
-    {
-      ran::UniformDeviate u;
-      if (randomNumberSeed > 0)  u.Seed(randomNumberSeed);
-      long dcount=0;
-      int dof=0;
-      double chi=0.;
-      double maxdev=0.;
+    for (auto i : badExposures) {
+      cout << "WARNING: Shutting down exposure map " << i.first
+	   << " with only " << i.second
+	   << " fitted detections "
+	   << endl;
+      freezeMap<Astro>(i.first, matches, extensions, mapCollection);
+    } 
 
-      list<Match*>::iterator im = matches.begin();
-      while (im != matches.end() ) {
-	// Remove Detections with too-large errors:
-	Match::iterator j=(*im)->begin();
-	while (j != (*im)->end()) {
-	  Detection* d = *j;
-	  // Keep it if pixel error is small or if it's from a tag or reference "instrument"
-	  if ( d->sigmaPix > maxPixError
-	       && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
-	    j = (*im)->erase(j, true);  // will delete the detection too.
-	  } else {
-	    ++j;
-	  }
-	}
-	(*im)->countFit(); // Recount the fittable objects after changing wts
-	int nFit = (*im)->fitSize();
-	if ( nFit < minMatches) {
-	  // Remove entire match if it's too small, and kill its Detections too
-	  (*im)->clear(true);
-	  im = matches.erase(im);
-	} else {
-	  // Still a good match.
-
-	  dcount += nFit;	// Count total good detections
-	  chi += (*im)->chisq(dof, maxdev);
-
-	  // Decide whether to reserve this match
-	  if (reserveFraction > 0.)
-	    (*im)->setReserved( u < reserveFraction );
-
-	  ++im;
-	}
-      } // End loop over all matches
-
-      cout << "Using " << matches.size() 
-	   << " matches with " << dcount << " total detections." << endl;
-      cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
-
-    } // End Match-culling section.
-
+    matchCensus<Astro>(matches);
 
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 
@@ -601,9 +573,9 @@ main(int argc, char *argv[])
 	double maxdev=0.;
 	int dof=0;
 	double chi= ca.chisqDOF(dof, maxdev, false);
-	cout << "Fitting " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
-	     << " sigma" << endl;
+	/**/cerr << "Fitting " << mcount << " matches with " << dcount << " detections "
+		 << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
+		 << " sigma" << endl;
       }
 
       // Do the fit here!!
@@ -613,21 +585,21 @@ main(int argc, char *argv[])
       int dof;
       ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
       double thresh = sqrt(chisq/dof) * clipThresh;
-      cout << "Final chisq: " << chisq 
-	   << " / " << dof << " dof, max deviation " << max
-	   << "  new clip threshold at: " << thresh << " sigma"
-	   << endl;
+      /**/cerr << "After iteration: chisq " << chisq 
+	       << " / " << dof << " dof, max deviation " << max
+	       << "  new clip threshold at: " << thresh << " sigma"
+	       << endl;
       if (thresh >= max || (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement)) {
 	// Sigma clipping is no longer doing much.  Quit if we are at full precision,
 	// else require full target precision and initiate another pass.
 	if (coarsePasses) {
 	  coarsePasses = false;
 	  ca.setRelTolerance(chisqTolerance);
-	  cout << "--Starting strict tolerance passes, clipping full matches" << endl;
+	  /**/cerr << "--Starting strict tolerance passes, clipping full matches" << endl;
 	  oldthresh = thresh;
 	  nclip = ca.sigmaClip(thresh, false, true);
-	  cout << "Clipped " << nclip
-	       << " matches " << endl;
+	  /**/cerr << "Clipped " << nclip
+		   << " matches " << endl;
 	  continue;
 	} else {
 	  // Done!
@@ -640,11 +612,11 @@ main(int argc, char *argv[])
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
 	ca.setRelTolerance(chisqTolerance);
-	cout << "No clipping--Starting strict tolerance passes, clipping full matches" << endl;
+	/**/cerr << "No clipping--Starting strict tolerance passes, clipping full matches" << endl;
 	continue;
       }
-      cout << "Clipped " << nclip
-	   << " matches " << endl;
+      /**/cerr << "Clipped " << nclip
+	       << " matches " << endl;
       
     } while (coarsePasses || nclip>0);
   
@@ -661,7 +633,7 @@ main(int argc, char *argv[])
 
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
-      cout << "** Clipping reserved matches: " << endl;
+      /**/cerr << "** Clipping reserved matches: " << endl;
       oldthresh = 0.;
       do {
 	// Report number of active Matches / Detections in each iteration:
@@ -671,19 +643,19 @@ main(int argc, char *argv[])
 	double max;
 	int dof=0;
 	double chisq= ca.chisqDOF(dof, max, true);
-	cout << "Clipping " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
-	     << " sigma" << endl;
+	/**/cerr << "Clipping " << mcount << " matches with " << dcount << " detections "
+		 << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
+		 << " sigma" << endl;
       
 	double thresh = sqrt(chisq/dof) * clipThresh;
-	cout << "  new clip threshold: " << thresh << " sigma"
-	     << endl;
+	/**/cerr << "  new clip threshold: " << thresh << " sigma"
+		 << endl;
 	if (thresh >= max) break;
 	if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
 	oldthresh = thresh;
 	nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
-	cout << "Clipped " << nclip
-	     << " matches " << endl;
+	/**/cerr << "Clipped " << nclip
+		 << " matches " << endl;
       } while (nclip>0);
     }
 

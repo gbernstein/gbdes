@@ -1211,6 +1211,7 @@ purgeSparseMatches(int minMatches,
 		   list<typename S::Match*>& matches) {
   auto im = matches.begin();
   while (im != matches.end() ) {
+    (*im)->countFit();
     if ( (*im)->fitSize() < minMatches) {
       // Remove entire match if it's too small, and kill its Detections too
       (*im)->clear(true);
@@ -1330,6 +1331,24 @@ freezeMap(string mapName,
     }
 }
   
+template <class S>
+void
+matchCensus(const list<typename S::Match*>& matches) {
+  // ??? Choice of whether to count reserved??
+  long dcount = 0;
+  int dof = 0;
+  double chi = 0.;
+  double maxdev = 0.;
+  for (auto mptr : matches) {
+    mptr->countFit();
+    dcount += mptr->fitSize();
+    chi += mptr->chisq(dof, maxdev);
+  }
+  cout << "Using " << matches.size() 
+       << " matches with " << dcount << " total detections." << endl;
+  cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
+}
+
 			    
 //////////////////////////////////////////////////////////////////
 // For those routines differing for Astro/Photo, here is where
@@ -1406,7 +1425,9 @@ template void  \
 freezeMap<AP>(string mapName,  \
 	      const list<AP::Match*> matches,  \
 	      const vector<AP::Extension*> extensions,  \
-	      AP::Collection& pmc); 
+	      AP::Collection& pmc);  \
+template void  \
+matchCensus<AP>(const list<AP::Match*>& matches);
 
 INSTANTIATE(Astro)
 INSTANTIATE(Photo)

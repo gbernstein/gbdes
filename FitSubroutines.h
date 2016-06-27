@@ -338,7 +338,7 @@ findUnderpopulatedExposures(long minFitExposure,
 			    const vector<typename S::Extension*> extensions,
 			    const typename S::Collection& pmc);
 
-  // Fix the parameters of a map, and mark all Detections making
+// Fix the parameters of a map, and mark all Detections making
 // use of it as clipped so they will not be used in fitting
 template <class S>
 void
@@ -346,4 +346,9 @@ freezeMap(string mapName,
 	  const list<typename S::Match*> matches,
 	  const vector<typename S::Extension*> extensions,
 	  typename S::Collection& pmc);
+
+// Report number of unclipped matches and their chisq
+template <class S>
+void
+matchCensus(const list<typename S::Match*>& matches);
 #endif

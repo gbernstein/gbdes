@@ -76,6 +76,7 @@ main(int argc, char *argv[])
   double magSysError;
 
   int minMatches;
+  int minFitExposures;
   bool clipEntirePrior;
   bool clipEntireMatch;
   double priorClipThresh;
@@ -109,6 +110,8 @@ main(int argc, char *argv[])
 			 "additional systematic error for all detected mags", 0.002, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "minimum number of detections for usable match", 2, 2);
+    parameters.addMember("minFitExposures",&minFitExposures, def | low,
+			 "Minimum number of detections to fit exposure map", 200, 2);
     parameters.addMember("useInstruments",&useInstruments, def,
 			 "the instruments to include in fit",".*");
     parameters.addMemberNoValue("COLORS");
