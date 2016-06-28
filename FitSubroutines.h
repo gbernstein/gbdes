@@ -52,6 +52,7 @@ struct Astro {
   typedef ExtensionBase<SubMap, Detection> Extension;
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef astrometry::PixelMapCollection Collection;
+  typedef astrometry::CoordAlign Align;
   static void fillDetection(Detection* d,
 			    img::FTable& table, long irow,
 			    double weight,
@@ -80,6 +81,7 @@ struct Photo {
   typedef ExtensionBase<SubMap, Detection> Extension;
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef photometry::PhotoMapCollection Collection;
+  typedef photometry::PhotoAlign Align;
   static void fillDetection(Detection* d,
 			    img::FTable& table, long irow,
 			    double weight,
@@ -224,6 +226,7 @@ readExposures(const vector<Instrument*>& instruments,
 	      const list<string>&  useColorList,
 	      string inputTables,
 	      string outCatalog,
+	      const list<string>& skipExposureList,
 	      bool useReferenceExposures,
 	      bool& outputCatalogAlreadyOpen);
 
@@ -351,4 +354,12 @@ freezeMap(string mapName,
 template <class S>
 void
 matchCensus(const list<typename S::Match*>& matches);
+
+// Map and clip reserved matches
+template <class S>
+void
+clipReserved(S::Align& ca,
+	     double clipThresh,
+	     double minimumImprovement,
+	     bool reportToCerr);
 #endif

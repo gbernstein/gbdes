@@ -86,6 +86,7 @@ main(int argc, char *argv[])
   string fixMaps;
   string priorFiles;
   string useInstruments;
+  string skipExposures;
 
   string outCatalog;
   string outPhotFile;
@@ -114,6 +115,8 @@ main(int argc, char *argv[])
 			 "Minimum number of detections to fit exposure map", 200, 2);
     parameters.addMember("useInstruments",&useInstruments, def,
 			 "the instruments to include in fit",".*");
+    parameters.addMember("skipExposures",&skipExposures, def,
+			 "exposures to ignore during fitting","");
     parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
 			 "exposures holding valid colors for stars","");
@@ -187,6 +190,9 @@ main(int argc, char *argv[])
     // Objects to ignore on input:
     ExtensionObjectSet skipSet(skipFile);
 
+    // Exposures to ignore:
+    list<string> skipExposureList = splitArgument(skipExposures);
+    
     // Class that will build a starting YAML config for all extensions
     astrometry::YAMLCollector inputYAML(inputMaps, PhotoMapCollection::magicKey);
     // Make sure inputYAML knows about the Identity transformation:
@@ -230,6 +236,7 @@ main(int argc, char *argv[])
 		    useColorList,
 		    inputTables,
 		    outCatalog,
+		    skipExposureList,
 		    false, // Do not use reference exposures for photometry
 		    outputCatalogAlreadyOpen);
 
@@ -559,7 +566,8 @@ main(int argc, char *argv[])
     {
       ofstream ofs(outPhotFile.c_str());
       if (!ofs) {
-	cerr << "Error trying to open output file for fitted photometry: " << outPhotFile << endl;
+	cerr << "Error trying to open output file for fitted photometry: "
+	     << outPhotFile << endl;
 	// *** will not quit before dumping output ***
       } else {
 	mapCollection.write(ofs, stringstuff::taggedCommandLine(argc,argv));
@@ -569,29 +577,7 @@ main(int argc, char *argv[])
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
       cout << "** Clipping reserved matches: " << endl;
-      oldthresh = 0.;
-      do {
-	// Report number of active Matches / Detections in each iteration:
-	long int mcount=0;
-	long int dcount=0;
-	ca.count(mcount, dcount, true, 2);
-	double max;
-	int dof=0;
-	double chisq= ca.chisqDOF(dof, max, true);
-	cout << "Clipping " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
-	     << " sigma" << endl;
-      
-	double thresh = sqrt(chisq/dof) * clipThresh;
-	cout << "  new clip threshold: " << thresh << " sigma"
-	     << endl;
-	if (thresh >= max) break;
-	if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
-	oldthresh = thresh;
-	nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
-	cout << "Clipped " << nclip
-	     << " matches " << endl;
-      } while (nclip>0);
+      clipReserved(ca, clipThresh, minimumImprovement, true);  //turn on cerr logging
     }
 
     //////////////////////////////////////

@@ -370,6 +370,7 @@ readExposures(const vector<Instrument*>& instruments,
 	      const list<string>&  useColorList,
 	      string inputTables,
 	      string outCatalog,
+	      const list<string>& skipExposureList,
 	      bool useReferenceExposures,
 	      bool& outputCatalogAlreadyOpen) {
 
@@ -405,6 +406,9 @@ readExposures(const vector<Instrument*>& instruments,
   for (int i=0; i<names.size(); i++) {
     spaceReplace(names[i]);
 
+    if (regexMatchAny(skipExposureList, names[i]))
+      continue;  // do not use exposures on the list.
+    
     // See if this exposure name matches any of the color exposures
     int priority = 0;
     for (auto j = useColorList.begin();
@@ -1349,7 +1353,43 @@ matchCensus(const list<typename S::Match*>& matches) {
   cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
 }
 
-			    
+// Map and clip reserved matches
+template <class S>
+void
+clipReserved(S::Align& ca,
+	     double clipThresh,
+	     double minimumImprovement,
+	     bool reportToCerr) {
+
+  double oldthresh = 0.;
+  do {
+    // Report number of active Matches / Detections in each iteration:
+    long int mcount=0;
+    long int dcount=0;
+    ca.count(mcount, dcount, true, 2);
+    double max;
+    int dof=0;
+    double chisq= ca.chisqDOF(dof, max, true);
+    if (reportToCerr) 
+      cerr << "Clipping " << mcount << " matches with " << dcount << " detections "
+	   << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
+	   << " sigma" << endl;
+      
+    double thresh = sqrt(chisq/dof) * clipThresh;
+    if (reportToCerr) 
+      cerr << "  new clip threshold: " << thresh << " sigma"
+	   << endl;
+    if (thresh >= max) break;
+    if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
+    oldthresh = thresh;
+    nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
+    if (reportToCerr) 
+      cerr << "Clipped " << nclip
+	   << " matches " << endl;
+  } while (nclip>0);
+}
+
+
 //////////////////////////////////////////////////////////////////
 // For those routines differing for Astro/Photo, here is where
 // we instantiate the two cases.
