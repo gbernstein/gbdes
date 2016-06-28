@@ -577,7 +577,8 @@ main(int argc, char *argv[])
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
       cout << "** Clipping reserved matches: " << endl;
-      clipReserved(ca, clipThresh, minimumImprovement, true);  //turn on cerr logging
+      clipReserved(ca, clipThresh, minimumImprovement,
+		   clipEntireMatch, true);  //turn on cerr logging
     }
 
     //////////////////////////////////////

@@ -961,6 +961,73 @@ Photo::fillDetection(Photo::Detection* d,
   d->wt = wt * weight;
 }
 
+inline
+void
+Astro::matchMean(const Astro::Match& m,
+		 double& mx, double& my, double& mmag,
+		 double& wtot) {
+  double wx,wy;
+  m.centroid(mx,my,wx,wy);
+  wtot = 0.5*(wx+wy); // Use mean weight
+}
+inline
+void
+Photo::matchMean(const Photo::Match& m,
+		 double& mx, double& my, double& mmag,
+		 double& wtot) {
+  m.getMean(mmag,wtot);
+}
+
+inline
+void
+Astro::getOutputA(const Astro::Detection& d,
+		  double mx, double my, double wtot,
+		  double& xp, double& yp, double& sigma,
+		  double& xerrpix, double& yerrpix,
+		  double& xw, double& yw, double& sigmaw,
+		  double& xerrw, double& yerrw,
+		  double& wf) {
+  wf = d.isClipped ? 0. : 0.5 * (d.wtx + d.wty) / wtot;  
+  sigmaw = 0.5*(d.clipsqx + d.clipsqy);
+  sigmaw = (sigmaw > 0.) ? 1./sqrt(sigmaw) : 0.;
+  xp = d.xpix;
+  yp = d.ypix;
+  xw = d.xw;
+  yw = d.yw;
+  sigma = 0.5*d.sigma;
+  
+  // Calculate residuals if we have a centroid for the match:
+  if (mx!=0. || my!=0.) {
+    double xcpix=xp, ycpix=yp;
+    Assert (d.map);
+    d.map->toPix(mx, my, xcpix, ycpix);  // *** Trap error ???
+    xerrw = xw - mx;
+    yerrw = yw - my;
+    xerrpix = xp - xcpix;
+    yerrpix = yp - ycpix;
+  }
+  return;
+}
+inline
+void
+Photo::getOutputP(const Photo::Detection& d,
+		  double mmag, double wtot,
+		  double& xDevice, double& yDevice,
+		  double& xExposure, double& yExposure,
+		  double& mag, double& magerr, double& sigma,
+		  double& wf) {
+  xDevice = d.args.xDevice;
+  yDevice = d.args.yDevice;
+  xExposure = d.args.xExposure;
+  yExposure = d.args.yExposure;
+  mag = d.magOut;
+  magerr = mmag==0. ? 0. : mag - mmag;
+  sigma = d.clipsq;
+  sigma = sigma>0. ? 1./sqrt(sigma) : 0.;
+  wf = d.isClipped ? 0. : d.wt / wtot;
+}
+  
+
 // Read each Extension's objects' data from it FITS catalog
 // and place into Detection structures.
 template <class S>
@@ -1356,12 +1423,14 @@ matchCensus(const list<typename S::Match*>& matches) {
 // Map and clip reserved matches
 template <class S>
 void
-clipReserved(S::Align& ca,
+clipReserved(typename S::Align& ca,
 	     double clipThresh,
 	     double minimumImprovement,
+	     bool clipEntireMatch,
 	     bool reportToCerr) {
 
   double oldthresh = 0.;
+  int nclip;
   do {
     // Report number of active Matches / Detections in each iteration:
     long int mcount=0;
@@ -1387,6 +1456,202 @@ clipReserved(S::Align& ca,
       cerr << "Clipped " << nclip
 	   << " matches " << endl;
   } while (nclip>0);
+}
+
+// Save fitting results (residual) to output FITS table.
+template <class S>
+void
+saveResults(const list<typename S::Match*>& matches,
+	    const vector<Instrument*> instruments,
+	    const vector<Exposure*> exposures,
+	    const vector<typename S::Extension*> extensions,
+	    string outCatalog) {
+      // Open the output bintable
+  string tablename = S::isAstro? "WCSOut" : "PhotoOut";
+  FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tablename);
+  img::FTable outTable = ft.use();;
+
+  // Create vectors that will be put into output table
+  // (create union of photo and astro columns)
+  vector<int> sequence;
+  outTable.addColumn(sequence, "SequenceNumber");
+  vector<long> catalogNumber;
+  outTable.addColumn(catalogNumber, "Extension");
+  vector<long> objectNumber;
+  outTable.addColumn(objectNumber, "Object");
+  vector<bool> clip;
+  outTable.addColumn(clip, "Clip");
+  vector<bool> reserve;
+  outTable.addColumn(reserve, "Reserve");
+  vector<float> xpix;
+  outTable.addColumn(xpix, "xPix");
+  vector<float> ypix;
+  outTable.addColumn(ypix, "yPix");
+  vector<float> wtFrac;
+  outTable.addColumn(wtFrac, "wtFrac");
+  vector<float> color;
+  outTable.addColumn(color, "Color");
+
+  // Astro columns:
+  vector<float> sigpix;
+  vector<float> xrespix;
+  vector<float> yrespix;
+  vector<float> xworld;
+  vector<float> yworld;
+  vector<float> sigw;
+  vector<float> xresw;
+  vector<float> yresw;
+
+  // Photo columns
+  vector<float> xExposure;
+  vector<float> yExposure;
+  vector<float> magOut;
+  vector<float> sigMag;
+  vector<float> magRes;
+  if (S::isAstro) {
+    outTable.addColumn(xrespix, "xresPix");
+    outTable.addColumn(sigpix, "sigPix");
+    outTable.addColumn(yrespix, "yresPix");
+    outTable.addColumn(xworld, "xW");
+    outTable.addColumn(yworld, "yW");
+    outTable.addColumn(sigw, "sigW");
+    outTable.addColumn(xresw, "xresW");
+    outTable.addColumn(yresw, "yresW");
+  } else {
+    outTable.addColumn(xExposure, "xExpo");
+    outTable.addColumn(yExposure, "yExpo");
+    outTable.addColumn(magOut, "magOut");
+    outTable.addColumn(sigMag, "sigMag");
+    outTable.addColumn(magRes, "magRes");
+  }  
+
+  // Cumulative counter for rows written to table:
+  long pointCount = 0;
+  // Write vectors to table when this many rows accumulate:
+  const long WriteChunk = 100000;
+
+  // Write all matches to output catalog, deleting them along the way
+  // and accumulating statistics of each exposure.
+  // 
+  for (auto im = matches.begin(); true; ++im) {
+    // First, write vectors to table if they've gotten big or we're at end
+    if ( sequence.size() >= WriteChunk || im==matches.end()) {
+      long nAdded = sequence.size();
+      // Common to photo and astro:
+      outTable.writeCells(sequence, "SequenceNumber", pointCount);
+      sequence.clear();
+      outTable.writeCells(catalogNumber, "Extension", pointCount);
+      catalogNumber.clear();
+      outTable.writeCells(objectNumber, "Object", pointCount);
+      objectNumber.clear();
+      outTable.writeCells(clip, "Clip", pointCount);
+      clip.clear();
+      outTable.writeCells(reserve, "Reserve", pointCount);
+      reserve.clear();
+      outTable.writeCells(xpix, "xPix", pointCount);
+      xpix.clear();
+      outTable.writeCells(ypix, "yPix", pointCount);
+      ypix.clear();
+      outTable.writeCells(wtFrac, "wtFrac", pointCount);
+      wtFrac.clear();
+      outTable.writeCells(color, "Color", pointCount);
+      color.clear();
+
+      if (S::isAstro) {
+	outTable.writeCells(xrespix, "xresPix", pointCount);
+	xrespix.clear();
+	outTable.writeCells(yrespix, "yresPix", pointCount);
+	yrespix.clear();
+	outTable.writeCells(xworld, "xW", pointCount);
+	xworld.clear();
+	outTable.writeCells(yworld, "yW", pointCount);
+	yworld.clear();
+	outTable.writeCells(xresw, "xresW", pointCount);
+	xresw.clear();
+	outTable.writeCells(yresw, "yresW", pointCount);
+	yresw.clear();
+	outTable.writeCells(sigpix, "sigPix", pointCount);
+	sigpix.clear();
+	outTable.writeCells(sigw, "sigW", pointCount);
+	sigw.clear();
+      } else {
+	outTable.writeCells(xExposure, "xExpo", pointCount);
+	xExposure.clear();
+	outTable.writeCells(yExposure, "yExpo", pointCount);
+	yExposure.clear();
+	outTable.writeCells(magOut, "magOut", pointCount);
+	magOut.clear();
+	outTable.writeCells(magRes, "magRes", pointCount);
+	magRes.clear();
+	outTable.writeCells(sigMag, "sigMag", pointCount);
+	sigMag.clear();
+      }
+      pointCount += nAdded;
+    }	// Done flushing the vectors to Table
+
+    if (im==matches.end()) break;
+
+    const typename S::Match& m = **im;
+    
+    // Get mean values and weights for the whole match
+    // (generic call that gets both mag & position)
+    double mx, my, mmag;
+    double wtot;
+    S::matchMean(m, mx,my,mmag, wtot);
+    // Calculate number of DOF per Detection coordinate after
+    // allowing for fit to centroid:
+	    
+    int detcount=0;
+    for (auto detptr : m) {
+      // Save common quantities
+      sequence.push_back(detcount);
+      ++detcount;
+      catalogNumber.push_back(detptr->catalogNumber);
+      objectNumber.push_back(detptr->objectNumber);
+      clip.push_back(detptr->isClipped);
+      reserve.push_back(m.getReserved());
+      color.push_back(S::getColor(detptr));
+
+      if (S::isAstro) {
+	// Variables needed to save for astrometry
+	double xp=0., yp=0., sigma=0., xerrpix=0., yerrpix=0.;
+	double xw=0., yw=0., xerrw=0., yerrw=0., sigmaw=0.;
+	double wf=0.;
+	S::getOutputA(*detptr, mx, my, wtot,
+		      xp, yp, sigma, xerrpix, yerrpix,
+		      xw, yw, sigmaw, xerrw, yerrw,
+		      wf);
+	xpix.push_back(xp);
+	ypix.push_back(yp);
+	sigpix.push_back(sigma);
+	xworld.push_back(xw);
+	yworld.push_back(yw);
+	xrespix.push_back(xerrpix);
+	yrespix.push_back(yerrpix);
+	// Put world residuals in milliarcsec
+	xresw.push_back(xerrw*1000.*DEGREE/ARCSEC);
+	yresw.push_back(yerrw*1000.*DEGREE/ARCSEC);
+	sigw.push_back(sigmaw*1000.*DEGREE/ARCSEC);
+	wtFrac.push_back(wf);
+      } else {
+	double xDevice=0., yDevice=0., xExpo=0., yExpo=0.;
+	double mag=0., magerr=0., sigma=0.;
+	double wf=0.;
+	S::getOutputP(*detptr, mmag, wtot,
+		      xDevice, yDevice, xExpo, yExpo,
+		      mag, magerr, sigma,
+		      wf);
+	xpix.push_back(xDevice);
+	ypix.push_back(yDevice);
+	xExposure.push_back(xExpo);
+	yExposure.push_back(yExpo);
+	magOut.push_back(mag);
+	magRes.push_back(magerr);
+	sigMag.push_back(sigma);
+	wtFrac.push_back(wf);
+      }
+    } // End detection loop
+  } // end match loop
 }
 
 
@@ -1467,7 +1732,19 @@ freezeMap<AP>(string mapName,  \
 	      const vector<AP::Extension*> extensions,  \
 	      AP::Collection& pmc);  \
 template void  \
-matchCensus<AP>(const list<AP::Match*>& matches);
+matchCensus<AP>(const list<AP::Match*>& matches);  \
+template void  \
+clipReserved<AP>(AP::Align& ca,  \
+		 double clipThresh,  \
+		 double minimumImprovement,  \
+		 bool clipEntireMatch,  \
+		 bool reportToCerr); \
+template void \
+saveResults<AP>(const list<AP::Match*>& matches, \
+		const vector<Instrument*> instruments, \
+		const vector<Exposure*> exposures, \
+		const vector<AP::Extension*> extensions, \
+		string outCatalog);
 
 INSTANTIATE(Astro)
 INSTANTIATE(Photo)

@@ -72,6 +72,25 @@ struct Astro {
     //** ?? Not implemented yet: return d->color;
     return 0.;
   }
+  static void matchMean(const Match& m,
+			double& mx, double& my, double& mmag,
+			double& wtot);
+  static void getOutputA(const Detection& d,
+			 double mx, double my, double wtot,
+			 double& xp, double& yp, double& sigma,
+			 double& xerrpix, double& yerrpix,
+			 double& xw, double& yw, double& sigmaw,
+			 double& xerrw, double& yerrw,
+			 double& wf);
+  static void getOutputP(const Detection& d,
+			 double mmag, double wtot,
+			 double& xDevice, double& yDevice,
+			 double& xExposure, double& yExposure,
+			 double& mag, double& magerr, double& sigma,
+			 double& wf) {
+    cerr << "ERROR: should never call Astro::getOutputP" << endl;
+    exit(1);
+  }
   static const int isAstro = 1;
 };
 struct Photo {
@@ -100,6 +119,25 @@ struct Photo {
   static double getColor(const Detection* d) {
     return d->args.color;
   }
+  static void matchMean(const Match& m,
+			double& mx, double& my, double& mmag,
+			double& wtot);
+  static void getOutputA(const Detection& d,
+			 double mx, double my, double wtot,
+			 double& xp, double& yp, double& sigma,
+			 double& xerrpix, double& yerrpix,
+			 double& xw, double& yw, double& sigmaw,
+			 double& xerrw, double& yerrw,
+			 double& wf) {
+    cerr << "ERROR: should never call Photo::getOutputA" << endl;
+    exit(1);
+  }
+  static void getOutputP(const Detection& d,
+			 double mmag, double wtot,
+			 double& xDevice, double& yDevice,
+			 double& xExposure, double& yExposure,
+			 double& mag, double& magerr, double& sigma,
+			 double& wf);
   static const int isAstro = 0;
 };
 
@@ -358,8 +396,19 @@ matchCensus(const list<typename S::Match*>& matches);
 // Map and clip reserved matches
 template <class S>
 void
-clipReserved(S::Align& ca,
+clipReserved(typename S::Align& ca,
 	     double clipThresh,
 	     double minimumImprovement,
+	     bool clipEntireMatch,
 	     bool reportToCerr);
 #endif
+
+// Save fitting results (residual) to output FITS table.
+template <class S>
+void
+saveResults(const list<typename S::Match*>& matches,
+	    const vector<Instrument*> instruments,
+	    const vector<Exposure*> exposures,
+	    const vector<typename S::Extension*> extensions,
+	    string outCatalog);
+		 
