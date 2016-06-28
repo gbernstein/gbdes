@@ -290,7 +290,7 @@ void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
 		 vector<typename S::Extension*>& extensions,
 		 double sysError,
-		 double referenceSysError);
+		 double referenceSysError=0.);
 
 // Read color information from files marked as holding such, insert into
 // relevant Matches.

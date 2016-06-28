@@ -27,7 +27,7 @@
 #include "PixelMapCollection.h"
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
-#include "PhotoInstrument.h"
+#include "PhotoSubs.h"
 
 using namespace std;
 using namespace stringstuff;
@@ -64,10 +64,10 @@ list<PhotoPrior*>
 readPriors(string filename, 
 	   const vector<Instrument*>& instruments, 
 	   const vector<Exposure*>& exposures, 
-	   const vector<Extension*>& extensions, 
-	   const vector<long>& detectionsPerExposure) {
+	   const vector<Extension*>& extensions ) {
+  //??	   const vector<long>& detectionsPerExposure) {
 
-  Assert(detectionsPerExposure.size() == exposures.size());
+  //??  Assert(detectionsPerExposure.size() == exposures.size());
 
   ifstream ifs(filename.c_str());
   if (!ifs) {
@@ -144,7 +144,7 @@ readPriors(string filename,
 	for (int iExpo = 0; iExpo < exposures.size(); iExpo++) {
 	  if (!exposures[iExpo]) continue;
 	  if (includedExposures.count(iExpo) > 0) continue; // Already have this exposure
-	  if (detectionsPerExposure[iExpo] <=0) continue; // Exclude no-data exposures
+	  //???	  if (detectionsPerExposure[iExpo] <=0) continue; // Exclude no-data exposures
 	  if (regexMatch(exposureRegex, exposures[iExpo]->name))
 	    matchingExposures.push_back(iExpo);
 	}

@@ -5,13 +5,9 @@
 
 * Update documentation: PixelMap.tex and the fitting classes.
 * Document PhotoFit, MakeColors and all their parameters.
-* Fix PhotoFit etc so that they use the  native projection center of WCS to define
-  exposure coordinates.  Or find a way to make this instrument coordinates instead of exposure coords.
 * Gracefully recenter all the exposure's RA's and Dec's.
 
 * Write YAML to TPV fitter program.
-
-* WCSFit to only selected instruments
 
 * Roll back alpha while clipping instead of recalculating full matrix again
 
@@ -25,23 +21,28 @@
 
 * Subroutinize various things in WCSFit to clean up main() code.
 
-* Eliminate extensions with too few matched detections ??
-
 * Allow individual systematic errors per instrument or exposure?
 
-* Allow named Identity in PhotoMap.
-
 * Get MJD into exposure
-
-*** Check propagation of Fixed, DependsOn for Color maps.
 
 * Fix up MagColors and the Apply* codes.
 
 * Big problem in YAML that WCS and Map cannot share a name.
 
+* Sort fit output by exposure name & show names in table
+
+* Color PixelMap
+
+* Allow compound color maps??
+
 DONE ON WCSFIT:
 
-* Speed up fitting by trying successive Newton steps (with fixed quadratic) instead of Marquardt (on newton branch - done earlier than yaml stuff)
+* Fix PhotoFit etc so that they use the  native projection center of WCS to define
+  exposure coordinates.  Or find a way to make this instrument coordinates instead
+  of exposure coords.  (done already?)
+
+* Speed up fitting by trying successive Newton steps (with fixed quadratic) instead
+  of Marquardt (on newton branch - done earlier than yaml stuff)
 
 * Have a CAL_PATH environment variable for tree rings & other files
 
@@ -50,8 +51,6 @@ DONE ON WCSFIT:
 * Freeze unconstrained parameters in astrometric solutions
 
 * Astrometric PieceMap cleanup to match photometric
-
-* Let Identity have different names;
 
 * Write fitDefaulted function
 
@@ -78,4 +77,14 @@ DONE ON WCS & PHOTOFIT
   and give identity or simple color PhotoMap.
 
 * Get rid of canonicalExposure argument, can be done in input YAML instead.
+
+* Eliminate extensions with too few matched detections ??
+
+* Let Identity have different names;
+
+* Check propagation of Fixed, DependsOn for Color maps.
+
+* Allow named Identity in PhotoMap.
+
+* WCSFit to only selected instruments
 

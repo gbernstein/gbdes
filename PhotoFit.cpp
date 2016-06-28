@@ -394,91 +394,48 @@ main(int argc, char *argv[])
 
     cerr << "Done reading catalogs for colors." << endl;
 
-    // Make a pass through all matches to reserve as needed and purge 
-    // those not wanted.  
+    /**/cerr << "Done reading catalogs." << endl;
 
-    // Also count fitted detections per exposure to freeze parameters of those without any detections
-    vector<long> detectionsPerExposure(exposures.size(), 0);
+    // Now loop again over all catalogs being used to supply colors,
+    // and insert colors into all the PhotoArguments for Detections they match
+    readColors<Photo>(extensionTable, colorExtensions);
 
-    {
-      ran::UniformDeviate u;
-      if (randomNumberSeed >0) u.Seed(randomNumberSeed);
-      long dcount=0;
-      int dof=0;
-      double chi=0.;
-      double maxdev=0.;
+    /**/cerr << "Done reading colors" << endl;
 
-      /**/cerr << "Before reserving, match count: " << matches.size() << endl;
-      list<Match*>::iterator im = matches.begin();
-      while (im != matches.end() ) {
-	// Decide whether to reserve this match
-	(*im)->countFit();
-	if (reserveFraction > 0.)
-	  (*im)->setReserved( u < reserveFraction );
+    // Get rid of Detections with errors too high
+    purgeNoisyDetections<Photo>(maxMagError, matches, exposures, extensions);
+			 
+    // Get rid of Matches with too few detections
+    purgeSparseMatches<Photo>(minMatches, matches);
 
-	// Remove Detections with too-large errors:
-	Match::iterator j=(*im)->begin();
-	while (j != (*im)->end()) {
-	  Detection* d = *j;
-	  // Keep it if mag error is small or if it's from a tag or reference "instrument"
-	  if ( d->sigma > maxMagError
-	       && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
-	    j = (*im)->erase(j, true);  // will delete the detection too.
-	  } else {
-	    ++j;
-	  }
-	}
-	int nFit = (*im)->fitSize();
+    // Get rid of Matches with color out of range (note that default color is 0).
+    purgeBadColor<Photo>(minColor, maxColor, matches); // ??? Nop right now
+    
+    /**/cerr << "Done purging defective detections and matches" << endl;
 
-	if ((*im)->size() > 0) {
-	  // See if color is in range, using color from first Detection (they should
-	  // all have the same color).
-	  double color = (*(*im)->begin())->args.color;
-	  if (color != PhotoArguments::NODATA && (color < minColor || color > maxColor))
-	    nFit = 0; // Kill the whole Match below.
-	}
+    // Reserve desired fraction of matches
+    if (reserveFraction>0.) 
+      reserveMatches<Photo>(matches, reserveFraction, randomNumberSeed);
 
-	if ( nFit < minMatches) {
-	  // Remove entire match if it's too small, and kill its Detections too
-	  (*im)->clear(true);
-	  im = matches.erase(im);
-	} else {
-	  // Still a good match.
+    // Find exposures whose parameters are free but have too few
+    // Detections being fit to the exposure model.
+    auto badExposures = findUnderpopulatedExposures<Photo>(minFitExposures,
+							   matches,
+							   exposures,
+							   extensions,
+							   mapCollection);
 
-	  dcount += nFit;	// Count total good detections
-	  chi += (*im)->chisq(dof, maxdev);
+    // Freeze parameters of an exposure model and clip all
+    // Detections that were going to use it.
+    for (auto i : badExposures) {
+      cout << "WARNING: Shutting down exposure map " << i.first
+	   << " with only " << i.second
+	   << " fitted detections "
+	   << endl;
+      freezeMap<Photo>(i.first, matches, extensions, mapCollection);
+    } 
 
-	  // Count up fitted Detections in each exposure from this Match
-	  if (!(*im)->getReserved()) {
-	    for (Match::iterator j = (*im)->begin();
-		 j != (*im)->end();
-		 ++j) {
-	      if ((*j)->isClipped || (*j)->wt<=0.) continue; // Not a fitted object
-	      int iExtn = (*j)->catalogNumber;
-	      int iExpo = extensions[iExtn]->exposure;
-	      detectionsPerExposure[iExpo]++;
-	    }
-	  }
-
-	  ++im;
-	}
-      } // End loop over all matches
-
-      cout << "Using " << matches.size() 
-	   << " matches with " << dcount << " total detections." << endl;
-      cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
-
-    } // End Match-culling section.
-
-    // Check for unconstrained exposures:
-    for (int iExposure = 0; iExposure < detectionsPerExposure.size(); iExposure++) {
-      if (detectionsPerExposure[iExposure] <= 0 && exposures[iExposure]) {
-	Exposure& expo = *exposures[iExposure];
-	cerr << "WARNING: Exposure " << expo.name << " has no fitted detections.  Freezing its parameters."
-	     << endl;
-	mapCollection.setFixed(expo.name, true);
-      }
-    }
+    matchCensus<Photo>(matches);
 
     ///////////////////////////////////////////////////////////
     // Construct priors
@@ -492,8 +449,8 @@ main(int argc, char *argv[])
       for (list<string>::const_iterator i = priorFileList.begin();
 	   i != priorFileList.end();
 	   ++i) {
-	list<PhotoPrior*> thisTime = readPriors(*i, instruments, exposures, extensions, 
-						detectionsPerExposure);
+	list<PhotoPrior*> thisTime = readPriors(*i, instruments, exposures, extensions);
+	//???						detectionsPerExposure);
 	priors.splice(priors.end(), thisTime);
       }
     }

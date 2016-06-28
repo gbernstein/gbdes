@@ -10,6 +10,8 @@
 #include "PhotoMapCollection.h"
 #include "PhotoMatch.h"
 #include "Instrument.h"
+#include "FitSubroutines.h"
+
 typedef Photo::Extension Extension;
 typedef Photo::ColorExtension ColorExtension;
 
@@ -20,8 +22,8 @@ list<PhotoPrior*>
 readPriors(string filename, 
 	   const vector<Instrument*>& instruments, 
 	   const vector<Exposure*>& exposures, 
-	   const vector<Extension*>& extensions, 
-	   const vector<long>& detectionsPerExposure);
+	   const vector<Extension*>& extensions);
+//???	   const vector<long>& detectionsPerExposure);
 
 
 // Class to accumulate residual statistics
