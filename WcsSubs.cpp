@@ -138,64 +138,6 @@ fitDefaulted(PixelMapCollection& pmc,
   return;
 }
 
-// Methods of the statistics-accumulator class
-
-Accum::Accum(): sumxw(0.), sumyw(0.), 
-		sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
-		sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
-		sumdof(0.), xpix(0.), ypix(0.), xw(0.), yw(0.),
-		n(0) {}
-void 
-Accum::add(const Detection* d, double xoff, double yoff, double dof) {
-  sumx += (d->xw-xoff);
-  sumy += (d->yw-yoff);
-  sumxw += (d->xw-xoff)*d->wtx;
-  sumyw += (d->yw-yoff)*d->wty;
-  sumxxw += (d->xw-xoff)*(d->xw-xoff)*d->wtx;
-  sumyyw += (d->yw-yoff)*(d->yw-yoff)*d->wty;
-  sumxx += (d->xw-xoff)*(d->xw-xoff);
-  sumyy += (d->yw-yoff)*(d->yw-yoff);
-  sumwx += d->wtx;
-  sumwy += d->wty;
-  sumdof += dof;
-  ++n;
-}
-double 
-Accum::rms() const {
-  return n > 0 ? sqrt( (sumxx+sumyy)/(2.*n)) : 0.;
-}
-double
-Accum::reducedChisq() const {
-  return sumdof>0 ? (sumxxw+sumyyw)/(2.*sumdof) : 0.;
-}
-string 
-Accum::summary() const {
-  ostringstream oss;
-  double dx = 0., dy = 0., sigx=0., sigy=0.;
-  if (n>0) {
-    dx = sumxw / sumwx;
-    sigx = 1./sqrt(sumwx);
-    dy = sumyw / sumwy;
-    sigy = 1./sqrt(sumwy);
-  }
-  oss << setw(4) << n 
-      << fixed << setprecision(1)
-      << " " << setw(6) << sumdof
-      << " " << setw(5) << dx*1000.*DEGREE/ARCSEC 
-      << " " << setw(5) << sigx*1000.*DEGREE/ARCSEC
-      << " " << setw(5) << dy*1000.*DEGREE/ARCSEC 
-      << " " << setw(5) << sigy*1000.*DEGREE/ARCSEC
-      << " " << setw(5) << rms()*1000.*DEGREE/ARCSEC
-      << setprecision(2) 
-      << " " << setw(5) << reducedChisq()
-      << setprecision(0) << noshowpoint
-      << " " << setw(5) << xpix 
-      << " " << setw(5) << ypix
-      << setprecision(5) << showpoint << showpos
-      << " " << setw(9) << xw 
-      << " " << setw(9) << yw ;
-  return oss.str();
-}
 
 void
 readFields(string inputTables,

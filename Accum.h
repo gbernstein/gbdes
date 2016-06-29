@@ -5,6 +5,7 @@
 
 #ifndef ACCUM_H
 #define ACCUM_H
+#include "Std.h"
 
 template <class S>
 class Accum {
@@ -19,22 +20,20 @@ public:
   double sumyw;
   double sumwx;
   double sumwy;
+  double sumw;
   double sum_m;
   double sum_mw;
   double sum_mm;
   double sum_mmw;
   int n;
-  double xpix;
-  double ypix;
-  double xw;
-  double yw;
+  double chisq;
   double sumdof;
   Accum();
   void add(const typename S::Detection* d, double xoff=0., double yoff=0., double dof=1.);
   double rms() const;
   double reducedChisq() const;
   string summary() const;
-  string header() const;
+  static string header();
 };
 
 

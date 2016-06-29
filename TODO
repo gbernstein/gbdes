@@ -19,8 +19,6 @@
 
 * Reduce chunk size in WCSFit
 
-* Subroutinize various things in WCSFit to clean up main() code.
-
 * Allow individual systematic errors per instrument or exposure?
 
 * Get MJD into exposure
@@ -29,36 +27,36 @@
 
 * Big problem in YAML that WCS and Map cannot share a name.
 
-* Sort fit output by exposure name & show names in table
-
 * Color PixelMap
 
-* Allow compound color maps??
+* Fix compound color maps??
+
+** Check arithmetic on Accum reduced chisq
+
+* Check for underfit exposure
+
+* print out matrix inversion time
 
 DONE ON WCSFIT:
 
 * Fix PhotoFit etc so that they use the  native projection center of WCS to define
   exposure coordinates.  Or find a way to make this instrument coordinates instead
-  of exposure coords.  (done already?)
+  of exposure coords.  (done earlier)
 
 * Speed up fitting by trying successive Newton steps (with fixed quadratic) instead
   of Marquardt (on newton branch - done earlier than yaml stuff)
 
-* Have a CAL_PATH environment variable for tree rings & other files
-
 * Get rid of USE_YAML from astrometry
-
-* Freeze unconstrained parameters in astrometric solutions
 
 * Astrometric PieceMap cleanup to match photometric
 
 * Write fitDefaulted function
 
-* Fix bug in *Fit where device map is Identity (and hence has this name).
-
 * Put defaults into all PixelMaps
 
 * Make freezing of parameters sticky and more economical.
+
+* catch map inversion error in Accum
 
 DONE ON WCS & PHOTOFIT
 * PMC recognizes things with 0 parameters as fixed
@@ -87,4 +85,14 @@ DONE ON WCS & PHOTOFIT
 * Allow named Identity in PhotoMap.
 
 * WCSFit to only selected instruments
+
+* Fix bug in *Fit where device map is Identity (and hence has this name).
+
+* Freeze unconstrained parameters in astrometric solutions
+
+* Have a CAL_PATH environment variable for tree rings & other files
+
+* Sort fit output by exposure name & show names in table
+
+* Subroutinize various things in WCSFit to clean up main() code.
 

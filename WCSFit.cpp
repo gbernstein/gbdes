@@ -366,9 +366,13 @@ main(int argc, char *argv[])
       int canonicalExposure =
 	findCanonical<Astro>(instr, iInst, exposures, extensions, *pmcInit);
 
-      if (canonicalExposure >= 0)
+      if (canonicalExposure >= 0) {
+	cout << "# Selected " << exposures[canonicalExposure]->name
+	     << " as canonical for instrument " << instr.name
+	     << endl;
 	// Make a new map spec for the canonical exposure
 	pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
+      }
     } // End instrument loop
 
     // Re-read all of the maps, assigning WCS to each extension this time
@@ -466,7 +470,7 @@ main(int argc, char *argv[])
     // Recalculate all parameter indices - maps are ready to roll!
     mapCollection.rebuildParameterVector();
 
-    cout << "Total number of free map elements " << mapCollection.nFreeMaps()
+    cout << "# Total number of free map elements " << mapCollection.nFreeMaps()
 	 << " with " << mapCollection.nParams() << " free parameters."
 	 << endl;
 
@@ -642,8 +646,8 @@ main(int argc, char *argv[])
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
       /**/cerr << "** Clipping reserved matches: " << endl;
-      clipReserved(ca, clipThresh, minimumImprovement,
-		   clipEntireMatch, true);  //turn on cerr logging
+      clipReserved<Astro>(ca, clipThresh, minimumImprovement,
+			  clipEntireMatch, true);  //turn on cerr logging
     }
 
     //////////////////////////////////////
@@ -653,9 +657,14 @@ main(int argc, char *argv[])
     // Save the pointwise fitting results
     saveResults<Astro>(matches, outCatalog);
     
+    /**/cerr << "Saved results to FITS table" << endl;
+    
     // Report summary of residuals to stdout
-    reportStatistics<Astro>(matches, exposures, extensions, cout)
+    reportStatistics<Astro>(matches, exposures, extensions, cout);
+
+    //////////////////////////////////////
     // Cleanup:
+    //////////////////////////////////////
 
     // Get rid of matches:
     for (auto im = matches.begin(); im!=matches.end(); ) {

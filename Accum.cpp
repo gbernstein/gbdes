@@ -5,16 +5,15 @@
 // Methods of the statistics-accumulator class
 
 template <class S>
-Accum::Accum(): sumxw(0.), sumyw(0.), 
-		sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
-		sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
-		sum_m(0.), sum_mw(0.), sum_mm(0.), sum_mmw(0.),
-		chisq(0.), xpix(0.), ypix(0.), xw(0.), yw(0.),
-		n(0) {}
+Accum<S>::Accum(): sumxw(0.), sumyw(0.), 
+		   sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
+		   sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
+		   sum_m(0.), sum_mw(0.), sum_mm(0.), sum_mmw(0.),
+		   chisq(0.), sumdof(0.), n(0) {}
 
 template <class S>
 void 
-Accum::add(const typename S::Detection* d, double xoff, double yoff, double dof) {
+Accum<S>::add(const typename S::Detection* d, double xoff, double yoff, double dof) {
   double dx = (d->xw-xoff);
   double dy = (d->yw-yoff);
   sumx += dx;
@@ -42,17 +41,17 @@ Accum<Photo>::add(const Photo::Detection* d, double xoff, double yoff, double do
   sum_mw += dm * d->wt;
   sum_mm += dm * dm;
   sum_mmw += dm * dm *d->wt;
-  sum_w += d->wt;
+  sumw += d->wt;
   chisq += dm * dm * d->wt / dof;
-  sum_x += d->args.xExposure;
-  sum_y += d->args.yExposure;
+  sumx += d->args.xExposure;
+  sumy += d->args.yExposure;
   sumdof += dof;
   ++n;
 }
 
 template <class S>
 double 
-Accum::rms() const {
+Accum<S>::rms() const {
   if (n==0)
     return 0.;
   else if (S::isAstro)
@@ -62,7 +61,7 @@ Accum::rms() const {
 }
 template <class S>
 double
-Accum::reducedChisq() const {
+Accum<S>::reducedChisq() const {
   if (sumdof==0)
     return 0.;
   else if (S::isAstro)
@@ -72,34 +71,27 @@ Accum::reducedChisq() const {
 }
 template <class S>
 string 
-Accum::summary() const {
+Accum<S>::summary() const {
   ostringstream oss;
-  double dx = 0., dy = 0., sigx=0., sigy=0.;
-  if (n>0) {
-    dx = sumxw / sumwx;
-    sigx = 1./sqrt(sumwx);
-    dy = sumyw / sumwy;
-    sigy = 1./sqrt(sumwy);
+  oss << setw(5) << n 
+      << fixed << setprecision(0) << noshowpoint
+      << " " << setw(6) << sumdof;
+  if (S::isAstro) {
+    oss << fixed << setprecision(1)
+	<< " " << setw(6) << rms()*1000.*DEGREE/ARCSEC;
+  } else {
+    oss << fixed << setprecision(1)
+	<< " " << setw(6) << rms()*1000.*DEGREE;
   }
-  oss << setw(4) << n 
-      << fixed << setprecision(1)
-      << " " << setw(6) << sumdof
-      << " " << setw(5) << dx*1000.*DEGREE/ARCSEC 
-      << " " << setw(5) << sigx*1000.*DEGREE/ARCSEC
-      << " " << setw(5) << dy*1000.*DEGREE/ARCSEC 
-      << " " << setw(5) << sigy*1000.*DEGREE/ARCSEC
-      << " " << setw(5) << rms()*1000.*DEGREE/ARCSEC
-      << setprecision(2) 
-      << " " << setw(5) << reducedChisq()
-      << setprecision(0) << noshowpoint
-      << " " << setw(5) << xpix 
-      << " " << setw(5) << ypix
-      << setprecision(5) << showpoint << showpos
-      << " " << setw(9) << xw 
-      << " " << setw(9) << yw ;
+  oss << fixed << setprecision(2) 
+      << " " << setw(6) << reducedChisq();
   return oss.str();
 }
-
+template <class S>
+string
+Accum<S>::header() {
+  return "  N     DOF    RMS  ChiRed";
+}
 // Instantiate both cases
 template
 class Accum<Astro>;

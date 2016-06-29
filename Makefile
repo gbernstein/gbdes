@@ -94,9 +94,9 @@ FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFoF: WCSFoF.o ExtensionAttribute.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFit: WCSFit.o Match.o MapFit.o WcsSubs.o $(OBJ)
+WCSFit: WCSFit.o Match.o MapFit.o WcsSubs.o Accum.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-PhotoFit: PhotoFit.o ReadPhotoPriors.o PhotoSubs.o Match.o $(OBJ)
+PhotoFit: PhotoFit.o ReadPhotoPriors.o PhotoSubs.o Match.o Accum.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 MagColor: MagColor.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

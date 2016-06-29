@@ -577,8 +577,8 @@ main(int argc, char *argv[])
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
       cout << "** Clipping reserved matches: " << endl;
-      clipReserved(ca, clipThresh, minimumImprovement,
-		   clipEntireMatch, true);  //turn on cerr logging
+      clipReserved<Photo>(ca, clipThresh, minimumImprovement,
+			  clipEntireMatch, true);  //turn on cerr logging
     }
 
     //////////////////////////////////////
@@ -597,235 +597,24 @@ main(int argc, char *argv[])
 	  (*i)->report(ofs);
 	}
       }
+      /**/cerr << "Wrote prior results to " << outPriorFile << endl;
     }
 
     //////////////////////////////////////
     // Output data and calculate some statistics
     //////////////////////////////////////
 
-    // Create Accum instances for fitted and reserved Detections on every
-    // exposure, plus total accumulator for all reference
-    // and all non-reference objects.
-    vector<Accum> vaccFit(exposures.size());
-    vector<Accum> vaccReserve(exposures.size());
-    Accum refAccFit;
-    Accum refAccReserve;
-    Accum accFit;
-    Accum accReserve;
-
-    // Open the output bintable
-    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, "PhotoOut");
-    FTable outTable = ft.use();;
-
-    // Create vectors that will be put into output table
-    vector<int> sequence;
-    outTable.addColumn(sequence, "SequenceNumber");
-    vector<long> catalogNumber;
-    outTable.addColumn(catalogNumber, "Extension");
-    vector<long> objectNumber;
-    outTable.addColumn(objectNumber, "Object");
-    vector<bool> clip;
-    outTable.addColumn(clip, "Clip");
-    vector<bool> reserve;
-    outTable.addColumn(reserve, "Reserve");
-    vector<float> xPix;
-    outTable.addColumn(xPix, "xPix");
-    vector<float> yPix;
-    outTable.addColumn(yPix, "yPix");
-    vector<float> xExposure;
-    outTable.addColumn(xExposure, "xExpo");
-    vector<float> yExposure;
-    outTable.addColumn(yExposure, "yExpo");
-    vector<float> color;
-    outTable.addColumn(color, "Color");
-
-    vector<float> magOut;
-    outTable.addColumn(magOut, "magOut");
-    vector<float> sigMag;
-    outTable.addColumn(sigMag, "sigMag");
-    vector<float> magRes;
-    outTable.addColumn(magRes, "magRes");
-
-    vector<float> wtFrac;
-    outTable.addColumn(wtFrac, "wtFrac");
-
-    // Cumulative counter for rows written to table:
-    long pointCount = 0;
-    // Write vectors to table when this many rows accumulate:
-    const long WriteChunk = 100000;
-
-    // Write all matches to output catalog, deleting them along the way
-    // and accumulating statistics of each exposure.
-    // 
-    list<Match*>::iterator im = matches.begin();
-    while ( im != matches.end()) {
-      // First, write current vectors to table if they've gotten big
-      if ( sequence.size() > WriteChunk) {
-	outTable.writeCells(sequence, "SequenceNumber", pointCount);
-	outTable.writeCells(catalogNumber, "Extension", pointCount);
-	outTable.writeCells(objectNumber, "Object", pointCount);
-	outTable.writeCells(clip, "Clip", pointCount);
-	outTable.writeCells(reserve, "Reserve", pointCount);
-	outTable.writeCells(xPix, "xPix", pointCount);
-	outTable.writeCells(yPix, "yPix", pointCount);
-	outTable.writeCells(xExposure, "xExpo", pointCount);
-	outTable.writeCells(yExposure, "yExpo", pointCount);
-	outTable.writeCells(color, "Color", pointCount);
-	outTable.writeCells(magOut, "magOut", pointCount);
-	outTable.writeCells(magRes, "magRes", pointCount);
-	outTable.writeCells(sigMag, "sigMag", pointCount);
-	outTable.writeCells(wtFrac, "wtFrac", pointCount);
-
-	pointCount += sequence.size();
-
-	sequence.clear();
-	catalogNumber.clear();
-	objectNumber.clear();
-	clip.clear();
-	reserve.clear();
-	xPix.clear();
-	yPix.clear();
-	xExposure.clear();
-	yExposure.clear();
-	color.clear();
-	magOut.clear();
-	magRes.clear();
-	sigMag.clear();
-	wtFrac.clear();
-      }	// Done flushing the vectors to Table
-
-      Match* m = *im;
-      double mean;
-      double wtot;
-      m->getMean(mean, wtot);
-      // Calculate number of DOF per Detection coordinate after
-      // allowing for fit to centroid:
-      int nFit = m->fitSize();
-      double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.;
-	    
-      int detcount=0;
-      for (Match::const_iterator idet=m->begin();
-	   idet != m->end();
-	   ++idet, ++detcount) {
-	const Detection* d = *idet;
-
-	// Prepare output quantities
-	sequence.push_back(detcount);
-	catalogNumber.push_back(d->catalogNumber);
-	objectNumber.push_back(d->objectNumber);
-	clip.push_back(d->isClipped);
-	reserve.push_back(m->getReserved());
-	wtFrac.push_back( d->isClipped ? 0. : d->wt / wtot);
-
-	xPix.push_back(d->args.xDevice);
-	yPix.push_back(d->args.yDevice);
-	xExposure.push_back(d->args.xExposure);
-	yExposure.push_back(d->args.yExposure);
-	color.push_back(d->args.color);
-
-	magOut.push_back(d->magOut);
-	// ?it's updated already, right??
-	magRes.push_back( mean==0. ? 0. : d->magOut - mean);
-	double sig=d->clipsq;
-	sig = (sig > 0.) ? 1./sqrt(sig) : 0.;
-	sigMag.push_back(sig);
-
-	dofPerPt = 1. - wtFrac.back();
-	
-	if (mean!=0.) {
-	  // Accumulate statistics for meaningful residuals
-	  if (dofPerPt > 0. && !d->isClipped) {
-	    int exposureNumber = extensions[d->catalogNumber]->exposure;
-	    Exposure* expo = exposures[exposureNumber];
-	    if (m->getReserved()) {
-	      if (expo->instrument==REF_INSTRUMENT) {
-		refAccReserve.add(d, mean, dofPerPt);
-		vaccReserve[exposureNumber].add(d, mean, dofPerPt);
-	      } else if (expo->instrument==TAG_INSTRUMENT) {
-		// do nothing
-	      } else {
-		accReserve.add(d, mean, dofPerPt);
-		vaccReserve[exposureNumber].add(d, mean, dofPerPt);
-	      }
-	    } else {
-	      // Not a reserved object:
-	      if (expo->instrument==REF_INSTRUMENT) {
-		refAccFit.add(d, mean, dofPerPt);
-		vaccFit[exposureNumber].add(d, mean, dofPerPt);
-	      } else if (expo->instrument==TAG_INSTRUMENT) {
-		// do nothing
-	      } else {
-		accFit.add(d, mean, dofPerPt);
-		vaccFit[exposureNumber].add(d, mean, dofPerPt);
-	      }
-	    }
-	  } // end statistics accumulation
-
-	} // End residuals calculation
-
-      } // End detection loop
-
-      // Done with this match, delete it with its Detections
-      m->clear(true);
-      // And get rid of match itself.
-      im = matches.erase(im);
-    } // end match loop
-
-    // Write remaining results to output table:
-    outTable.writeCells(sequence, "SequenceNumber", pointCount);
-    outTable.writeCells(catalogNumber, "Extension", pointCount);
-    outTable.writeCells(objectNumber, "Object", pointCount);
-    outTable.writeCells(clip, "Clip", pointCount);
-    outTable.writeCells(reserve, "Reserve", pointCount);
-    outTable.writeCells(xPix, "xPix", pointCount);
-    outTable.writeCells(yPix, "yPix", pointCount);
-    outTable.writeCells(xExposure, "xExpo", pointCount);
-    outTable.writeCells(yExposure, "yExpo", pointCount);
-    outTable.writeCells(color, "Color", pointCount);
-    outTable.writeCells(magOut, "magOut", pointCount);
-    outTable.writeCells(magRes, "magRes", pointCount);
-    outTable.writeCells(sigMag, "sigMag", pointCount);
-    outTable.writeCells(wtFrac, "wtFrac", pointCount);
-
-    // Now for standard output, an exposure-by-exposure table.
-
-    // Print summary statistics for each exposure
-    cout << "#    Exp         N    RMS   chi_red   xExposure    yExposure \n"
-	 << "#                                    |.......degrees......|"
-	 << endl;
-    // Sort the exposures by name lexical order
-    vector<int> ii;
-    for (int i=0; i<exposures.size(); i++)
-      if (exposures[i])
-	ii.push_back(i);
-    std::sort(ii.begin(), ii.end(), NameSorter<Exposure>(exposures));
-      
-    for (int i=0; i<ii.size(); i++) {
-      int iexp = ii[i];
-      if (!exposures[iexp]) continue;
-      cout << "Fit     " << setw(10) << exposures[iexp]->name
-	   << " " << vaccFit[iexp].summary()
-	   << endl;
-      if (reserveFraction > 0. && vaccReserve[iexp].n > 0) 
-	  cout << "Reserve " << setw(10) << exposures[iexp]->name
-	       << " " << vaccReserve[iexp].summary()
-	       << endl;
-    } // exposure summary loop
+    // Save the pointwise fitting results
+    saveResults<Photo>(matches, outCatalog);
     
-    // Output summary data for reference catalog and detections
-    cout << "# " << endl;
-    cout << "#                   N    DOF  RMS chi_red \n"
-	 << "#                                           "
-	 << endl;
-    cout << "Reference fit     " << refAccFit.summary() << endl;
-    if (reserveFraction>0. && refAccReserve.n>0)
-      cout << "Reference reserve " << refAccReserve.summary() << endl;
+    /**/cerr << "Saved results to FITS table" << endl;
+    
+    // Report summary of residuals to stdout
+    reportStatistics<Photo>(matches, exposures, extensions, cout);
 
-    cout << "Detection fit     " << accFit.summary() << endl;
-    if (reserveFraction>0. && accReserve.n>0)
-      cout << "Detection reserve " << accReserve.summary() << endl;
-
+    //////////////////////////////////////
     // Cleanup:
+    //////////////////////////////////////
 
     // Get rid of matches:
     for (auto im = matches.begin(); im!=matches.end(); ) {

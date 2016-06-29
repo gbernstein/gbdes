@@ -645,7 +645,7 @@ findCanonical(Instrument& instr,
 	exposuresUsingDevice[iDev].insert(iExpo);
 	if (unusedExposures.count(iExpo)>0 ||
 	    unusedDevices.count(iDev)>0) {
-	  cerr << "Logic problem: extension map "
+	  cerr << "ERROR: Logic problem: extension map "
 	       << extnptr->mapName
 	       << " is using allegedly unused exposure or device map"
 	       << endl;
@@ -718,9 +718,7 @@ findCanonical(Instrument& instr,
 	 << endl;
     exit(1);
   }
-  cerr << "Selected " << exposures[canonicalExposure]->name
-       << " as canonical for instrument " << instr.name
-       << endl;
+
   // Check that fixing this exposure map will resolve degeneracies.
   degenerateExposures.erase(canonicalExposure);
   okExposures.insert(canonicalExposure);
@@ -1000,7 +998,17 @@ Astro::getOutputA(const Astro::Detection& d,
   if (mx!=0. || my!=0.) {
     double xcpix=xp, ycpix=yp;
     Assert (d.map);
-    d.map->toPix(mx, my, xcpix, ycpix);  // *** Trap error ???
+    try {
+      d.map->toPix(mx, my, xcpix, ycpix);
+    } catch (astrometry::AstrometryError& e) {
+      cerr << "WARNING: toPix failure in map " << d.map->getName()
+	   << " at world coordinates (" << mx << "," << my << ")"
+	   << " approx pixel coordinates (" << xp << "," << yp << ")"
+	   << endl;
+      // Just set inverse map to pixel coords (i.e. zero pixel error reported)
+      xcpix = xp;
+      ycpix = yp;
+    }
     xerrw = xw - mx;
     yerrw = yw - my;
     xerrpix = xp - xcpix;
@@ -1680,7 +1688,7 @@ reportStatistics(const list<typename S::Match*>& matches,
     // Calculate number of DOF per Detection coordinate after
     // allowing for fit to centroid:
     int nFit = mptr->fitSize();
-    double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.;
+    double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.; // ???
 
     for (auto dptr : *mptr) {
       // Accumulate statistics for meaningful residuals
@@ -1713,34 +1721,40 @@ reportStatistics(const list<typename S::Match*>& matches,
     } // end Detection loop
   } // end match loop
 
-    // Print summary statistics for each exposure
-  cout << "#    Exp    N    DOF    dx    +-    dy    +-   RMS chi_red  "
-    "xpix  ypix      xw       yw \n"
-       << "#                     |.....milliarcsec...........|                     |....degrees....|"
+  // Sort the exposures by name lexical order
+  vector<int> ii;
+  for (int i=0; i<exposures.size(); i++)
+    if (exposures[i])
+      ii.push_back(i);
+  std::sort(ii.begin(), ii.end(), NameSorter<Exposure>(exposures));
+  
+  // Print summary statistics for each exposure
+  os << "#   Exposure           | " << Accum<S>::header() << endl;
+  for (int i=0; i<ii.size(); i++) {
+    int iexp = ii[i];
+    os << setw(3) << iexp
+       << " " << setw(10) << exposures[iexp]->name
+       << " Fit     | " << vaccFit[iexp].summary()
        << endl;
-  for (int iexp=0; iexp<exposures.size(); iexp++) {
-    // ??? Sort here, omit unused exposures ???
-    cout << "Fit     " << setw(3) << iexp
-	 << " " << vaccFit[iexp].summary()
-	 << endl;
-    if (vaccReserve[iexp].n > 0) 
-      cout << "Reserve " << setw(3) << iexp
-	   << " " << vaccReserve[iexp].summary()
+      if (vaccReserve[iexp].n > 0) 
+	os << setw(3) << iexp
+	   << " " << setw(10) << exposures[iexp]->name
+	   << " Reserve | " << vaccReserve[iexp].summary()
 	   << endl;
   } // exposure summary loop
-    
-    // Output summary data for reference catalog and detections
-  cout << "# " << endl;
-  cout << "#                   N    DOF    dm    +-    RMS chi_red  \n"
-       << "#                             |.....millimag......|         "
-       << endl;
-  cout << "Reference fit     " << refAccFit.summary() << endl;
-  if (refAccReserve.n>0)
-    cout << "Reference reserve " << refAccReserve.summary() << endl;
 
-  cout << "Detection fit     " << accFit.summary() << endl;
+  // Output summary data for reference catalog and detections
+
+  cout << "# ------------------------------------------------" << endl;
+  if (S::isAstro) {
+    // Only Astrometric fits have references
+    os << "Reference fit          | " << refAccFit.summary() << endl;
+    if (refAccReserve.n>0)
+      os << "Reference reserve      | " << refAccReserve.summary() << endl;
+  }
+  os << "Detection fit          | " << accFit.summary() << endl;
   if (accReserve.n>0)
-    cout << "Detection reserve " << accReserve.summary() << endl;
+    os << "Detection reserve      | " << accReserve.summary() << endl;
 }
 
 //////////////////////////////////////////////////////////////////

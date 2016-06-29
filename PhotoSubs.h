@@ -25,3 +25,4 @@ readPriors(string filename,
 	   const vector<Extension*>& extensions);
 //???	   const vector<long>& detectionsPerExposure);
 
+#endif
