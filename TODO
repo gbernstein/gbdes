@@ -13,8 +13,6 @@
 
 * Able to turn off the clip-entire-match step at the end?
 
-* Why is issueMap so slow?
-
 * Write local-transformation code.
 
 * Reduce chunk size in WCSFit
@@ -31,13 +29,13 @@
 
 * Fix compound color maps??
 
-** Check arithmetic on Accum reduced chisq
-
-* Check for underfit exposure
+* Check for underfit exposure after sigma clipping
 
 * print out matrix inversion time
 
-DONE ON WCSFIT:
+* is minMatch being used consistently for #matches total vs in fitted detections?
+
+-----------DONE ON WCSFIT:
 
 * Fix PhotoFit etc so that they use the  native projection center of WCS to define
   exposure coordinates.  Or find a way to make this instrument coordinates instead
@@ -54,11 +52,10 @@ DONE ON WCSFIT:
 
 * Put defaults into all PixelMaps
 
-* Make freezing of parameters sticky and more economical.
-
 * catch map inversion error in Accum
 
-DONE ON WCS & PHOTOFIT
+---------DONE ON WCS & PHOTOFIT
+
 * PMC recognizes things with 0 parameters as fixed
 
 * Put dependsOn into PMC
@@ -95,4 +92,10 @@ DONE ON WCS & PHOTOFIT
 * Sort fit output by exposure name & show names in table
 
 * Subroutinize various things in WCSFit to clean up main() code.
+
+* Make freezing of parameters sticky and more economical.
+
+* nan in photo chisq values, rms wrong too?
+
+* Check arithmetic on Accum reduced chisq
 

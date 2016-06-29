@@ -1412,7 +1412,7 @@ freezeMap(string mapName,
   
 template <class S>
 void
-matchCensus(const list<typename S::Match*>& matches) {
+matchCensus(const list<typename S::Match*>& matches, ostream& os) {
   // ??? Choice of whether to count reserved??
   long dcount = 0;
   int dof = 0;
@@ -1423,9 +1423,9 @@ matchCensus(const list<typename S::Match*>& matches) {
     dcount += mptr->fitSize();
     chi += mptr->chisq(dof, maxdev);
   }
-  cout << "Using " << matches.size() 
+  os << "# Using " << matches.size() 
        << " matches with " << dcount << " total detections." << endl;
-  cout << " chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
+  os << "#  chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
 }
 
 // Map and clip reserved matches
@@ -1688,33 +1688,33 @@ reportStatistics(const list<typename S::Match*>& matches,
     // Calculate number of DOF per Detection coordinate after
     // allowing for fit to centroid:
     int nFit = mptr->fitSize();
-    double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.; // ???
+    double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.;
 
     for (auto dptr : *mptr) {
       // Accumulate statistics for meaningful residuals
-      if (dofPerPt >= 0. && !dptr->isClipped) {
+      if (dofPerPt > 0. && !dptr->isClipped) {
 	int exposureNumber = extensions[dptr->catalogNumber]->exposure;
 	Exposure* expo = exposures[exposureNumber];
 	if (mptr->getReserved()) {
 	  if (expo->instrument==REF_INSTRUMENT) {
-	    refAccReserve.add(dptr, xc, yc, dofPerPt);
-	    vaccReserve[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	    refAccReserve.add(dptr, xc, yc, wtot, dofPerPt);
+	    vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
 	  } else if (expo->instrument==TAG_INSTRUMENT) {
 	    // do nothing
 	  } else {
-	    accReserve.add(dptr, xc, yc, dofPerPt);
-	    vaccReserve[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	    accReserve.add(dptr, xc, yc, wtot, dofPerPt);
+	    vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
 	  }
 	} else {
 	  // Not a reserved object:
 	  if (expo->instrument==REF_INSTRUMENT) {
-	    refAccFit.add(dptr, xc, yc, dofPerPt);
-	    vaccFit[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	    refAccFit.add(dptr, xc, yc, wtot, dofPerPt);
+	    vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
 	  } else if (expo->instrument==TAG_INSTRUMENT) {
 	    // do nothing
 	  } else {
-	    accFit.add(dptr, xc, yc, dofPerPt);
-	    vaccFit[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	    accFit.add(dptr, xc, yc, wtot, dofPerPt);
+	    vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
 	  }
 	}
       }

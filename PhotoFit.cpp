@@ -293,6 +293,9 @@ main(int argc, char *argv[])
 	findCanonical<Photo>(instr, iInst, exposures, extensions, *pmcInit);
 
       if (canonicalExposure >= 0)
+	cout << "# Selected " << exposures[canonicalExposure]->name
+	     << " as canonical for instrument " << instr.name
+	     << endl;
 	// Make a new map spec for the canonical exposure
 	pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
     } // End instrument loop
@@ -442,7 +445,7 @@ main(int argc, char *argv[])
       freezeMap<Photo>(i.first, matches, extensions, mapCollection);
     } 
 
-    matchCensus<Photo>(matches);
+    matchCensus<Photo>(matches, cout);
 
     ///////////////////////////////////////////////////////////
     // Construct priors

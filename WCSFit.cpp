@@ -558,7 +558,7 @@ main(int argc, char *argv[])
       freezeMap<Astro>(i.first, matches, extensions, mapCollection);
     } 
 
-    matchCensus<Astro>(matches);
+    matchCensus<Astro>(matches, cout);
 
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 

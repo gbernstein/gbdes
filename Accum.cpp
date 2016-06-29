@@ -13,7 +13,11 @@ Accum<S>::Accum(): sumxw(0.), sumyw(0.),
 
 template <class S>
 void 
-Accum<S>::add(const typename S::Detection* d, double xoff, double yoff, double dof) {
+Accum<S>::add(const typename S::Detection* d,
+	      double xoff, double yoff,
+	      double wtot,
+	      double dof) {
+  if (wtot <=0. || dof<=0. ) return;  // Can't do anything with this
   double dx = (d->xw-xoff);
   double dy = (d->yw-yoff);
   sumx += dx;
@@ -26,7 +30,10 @@ Accum<S>::add(const typename S::Detection* d, double xoff, double yoff, double d
   sumyy += dy*dy;
   sumwx += d->wtx;
   sumwy += d->wty;
-  chisq += (dx * dx * d->wtx + dy*dy*d->wty) / dof;
+  double wtFrac = 1. - (d->wtx+d->wty)/(2.*wtot);
+  if (wtFrac > 0.001) {
+    chisq += (dx*dx*d->wtx + dy*dy*d->wty) / wtFrac;
+  }
   sumdof += dof;
   ++n;
 }
@@ -34,15 +41,22 @@ Accum<S>::add(const typename S::Detection* d, double xoff, double yoff, double d
 // Specialization for Photo
 template<>
 void 
-Accum<Photo>::add(const Photo::Detection* d, double xoff, double yoff, double dof) {
+Accum<Photo>::add(const Photo::Detection* d,
+		  double xoff, double yoff,
+		  double wtot,
+		  double dof) {
   // mag comes in as xoff here
+  if (wtot <=0. || dof<=0. ) return;  // Can't do anything with this
   double dm = d->magOut - xoff;
   sum_m += dm;
   sum_mw += dm * d->wt;
   sum_mm += dm * dm;
   sum_mmw += dm * dm *d->wt;
   sumw += d->wt;
-  chisq += dm * dm * d->wt / dof;
+  double wtFrac = 1. - d->wt/wtot;
+  if (wtFrac > 0.001) {
+    chisq += dm * dm * d->wt / wtFrac;
+  }
   sumx += d->args.xExposure;
   sumy += d->args.yExposure;
   sumdof += dof;
@@ -81,7 +95,7 @@ Accum<S>::summary() const {
 	<< " " << setw(6) << rms()*1000.*DEGREE/ARCSEC;
   } else {
     oss << fixed << setprecision(1)
-	<< " " << setw(6) << rms()*1000.*DEGREE;
+	<< " " << setw(6) << rms()*1000.;
   }
   oss << fixed << setprecision(2) 
       << " " << setw(6) << reducedChisq();
