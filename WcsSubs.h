@@ -41,32 +41,6 @@ pickExposuresToInitialize(const vector<Instrument*>& instruments,
 			  const vector<Extension*>& extensions,
 			  astrometry::PixelMapCollection& pmc);
 
-// Statistics-accumulator class. 
-class Accum {
-public:
-  double sumx;
-  double sumy;
-  double sumxx;
-  double sumyy;
-  double sumxxw;
-  double sumyyw;
-  double sumxw;
-  double sumyw;
-  double sumwx;
-  double sumwy;
-  int n;
-  double xpix;
-  double ypix;
-  double xw;
-  double yw;
-  double sumdof;
-  Accum();
-  void add(const astrometry::Detection* d, double xoff=0., double yoff=0., double dof=1.);
-  double rms() const;
-  double reducedChisq() const;
-  string summary() const;
-};
-
 // Read the Fields table from input, copy to output, extract needed info
 void
 readFields(string inputTables,

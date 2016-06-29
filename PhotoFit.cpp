@@ -827,6 +827,12 @@ main(int argc, char *argv[])
 
     // Cleanup:
 
+    // Get rid of matches:
+    for (auto im = matches.begin(); im!=matches.end(); ) {
+      (*im)->clear(true);  // deletes detections
+      // And get rid of match itself.
+      im = matches.erase(im);
+    }
     // Get rid of extensions
     for (int i=0; i<extensions.size(); i++)
       if (extensions[i]) delete extensions[i];

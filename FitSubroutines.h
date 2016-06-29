@@ -25,6 +25,7 @@
 
 #include "Match.h"
 #include "PhotoMatch.h"
+#include "Accum.h"
 
 using namespace std;
 
@@ -407,8 +408,11 @@ clipReserved(typename S::Align& ca,
 template <class S>
 void
 saveResults(const list<typename S::Match*>& matches,
-	    const vector<Instrument*> instruments,
-	    const vector<Exposure*> exposures,
-	    const vector<typename S::Extension*> extensions,
 	    string outCatalog);
 		 
+template<class S>
+void
+reportStatistics(const list<typename S::Match*>& matches,
+		 const vector<Exposure*>& exposures,
+		 const vector<typename S::Extension*>& extensions,
+		 ostream& os);

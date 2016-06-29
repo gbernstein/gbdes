@@ -1462,9 +1462,6 @@ clipReserved(typename S::Align& ca,
 template <class S>
 void
 saveResults(const list<typename S::Match*>& matches,
-	    const vector<Instrument*> instruments,
-	    const vector<Exposure*> exposures,
-	    const vector<typename S::Extension*> extensions,
 	    string outCatalog) {
       // Open the output bintable
   string tablename = S::isAstro? "WCSOut" : "PhotoOut";
@@ -1654,6 +1651,97 @@ saveResults(const list<typename S::Match*>& matches,
   } // end match loop
 }
 
+template<class S>
+void
+reportStatistics(const list<typename S::Match*>& matches,
+		 const vector<Exposure*>& exposures,
+		 const vector<typename S::Extension*>& extensions,
+		 ostream& os) {
+  // Create Accum instances for fitted and reserved Detections on every
+  // exposure, plus total accumulator for all reference
+  // and all non-reference objects.
+  typedef Accum<S> Acc;
+  vector<Acc> vaccFit(exposures.size());
+  vector<Acc> vaccReserve(exposures.size());
+  Acc refAccFit;
+  Acc refAccReserve;
+  Acc accFit;
+  Acc accReserve;
+
+  // Accumulate stats over all detections.
+  for (auto mptr : matches) {
+    // Get mean values and weights for the whole match
+    // (generic call that gets both mag & position)
+    double xc, yc, mmag;
+    double wtot;
+    S::matchMean(*mptr, xc, yc, mmag, wtot);
+    if (!S::isAstro) xc = mmag;  // For Photometry put mean mag into xc
+    
+    // Calculate number of DOF per Detection coordinate after
+    // allowing for fit to centroid:
+    int nFit = mptr->fitSize();
+    double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.;
+
+    for (auto dptr : *mptr) {
+      // Accumulate statistics for meaningful residuals
+      if (dofPerPt >= 0. && !dptr->isClipped) {
+	int exposureNumber = extensions[dptr->catalogNumber]->exposure;
+	Exposure* expo = exposures[exposureNumber];
+	if (mptr->getReserved()) {
+	  if (expo->instrument==REF_INSTRUMENT) {
+	    refAccReserve.add(dptr, xc, yc, dofPerPt);
+	    vaccReserve[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	  } else if (expo->instrument==TAG_INSTRUMENT) {
+	    // do nothing
+	  } else {
+	    accReserve.add(dptr, xc, yc, dofPerPt);
+	    vaccReserve[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	  }
+	} else {
+	  // Not a reserved object:
+	  if (expo->instrument==REF_INSTRUMENT) {
+	    refAccFit.add(dptr, xc, yc, dofPerPt);
+	    vaccFit[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	  } else if (expo->instrument==TAG_INSTRUMENT) {
+	    // do nothing
+	  } else {
+	    accFit.add(dptr, xc, yc, dofPerPt);
+	    vaccFit[exposureNumber].add(dptr, xc, yc, dofPerPt);
+	  }
+	}
+      }
+    } // end Detection loop
+  } // end match loop
+
+    // Print summary statistics for each exposure
+  cout << "#    Exp    N    DOF    dx    +-    dy    +-   RMS chi_red  "
+    "xpix  ypix      xw       yw \n"
+       << "#                     |.....milliarcsec...........|                     |....degrees....|"
+       << endl;
+  for (int iexp=0; iexp<exposures.size(); iexp++) {
+    // ??? Sort here, omit unused exposures ???
+    cout << "Fit     " << setw(3) << iexp
+	 << " " << vaccFit[iexp].summary()
+	 << endl;
+    if (vaccReserve[iexp].n > 0) 
+      cout << "Reserve " << setw(3) << iexp
+	   << " " << vaccReserve[iexp].summary()
+	   << endl;
+  } // exposure summary loop
+    
+    // Output summary data for reference catalog and detections
+  cout << "# " << endl;
+  cout << "#                   N    DOF    dm    +-    RMS chi_red  \n"
+       << "#                             |.....millimag......|         "
+       << endl;
+  cout << "Reference fit     " << refAccFit.summary() << endl;
+  if (refAccReserve.n>0)
+    cout << "Reference reserve " << refAccReserve.summary() << endl;
+
+  cout << "Detection fit     " << accFit.summary() << endl;
+  if (accReserve.n>0)
+    cout << "Detection reserve " << accReserve.summary() << endl;
+}
 
 //////////////////////////////////////////////////////////////////
 // For those routines differing for Astro/Photo, here is where
@@ -1741,10 +1829,12 @@ clipReserved<AP>(AP::Align& ca,  \
 		 bool reportToCerr); \
 template void \
 saveResults<AP>(const list<AP::Match*>& matches, \
-		const vector<Instrument*> instruments, \
-		const vector<Exposure*> exposures, \
-		const vector<AP::Extension*> extensions, \
-		string outCatalog);
+		string outCatalog); \
+template void \
+reportStatistics<AP>(const list<AP::Match*>& matches,  \
+		     const vector<Exposure*>& exposures,  \
+		     const vector<AP::Extension*>& extensions,  \
+		     ostream& os);
 
 INSTANTIATE(Astro)
 INSTANTIATE(Photo)

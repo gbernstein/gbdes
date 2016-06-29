@@ -25,25 +25,3 @@ readPriors(string filename,
 	   const vector<Extension*>& extensions);
 //???	   const vector<long>& detectionsPerExposure);
 
-
-// Class to accumulate residual statistics
-class Accum {
-public:
-  double sum_m;
-  double sum_mw;
-  double sum_mm;
-  double sum_mmw;
-  double sum_w;
-  int n;
-  double sum_x;
-  double sum_y;
-  double chisq;
-  Accum();
-  void add(const Detection* d, double magoff=0., double dof=1.);
-  double rms() const;
-  double reducedChisq() const;
-  string summary() const;
-};
-
-
-#endif
