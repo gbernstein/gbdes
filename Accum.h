@@ -25,7 +25,9 @@ public:
   double sum_mw;
   double sum_mm;
   double sum_mmw;
-  int n;
+  int n; // Number of points with meaningful residuals
+  int ntot; // total number of points
+  int nclipped; // Points that were clipped
   double chisq;
   double sumdof;
   Accum();

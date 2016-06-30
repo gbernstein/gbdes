@@ -9,7 +9,7 @@ Accum<S>::Accum(): sumxw(0.), sumyw(0.),
 		   sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
 		   sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
 		   sum_m(0.), sum_mw(0.), sum_mm(0.), sum_mmw(0.),
-		   chisq(0.), sumdof(0.), n(0) {}
+		   chisq(0.), sumdof(0.), n(0), ntot(0), nclipped(0) {}
 
 template <class S>
 void 
@@ -17,7 +17,12 @@ Accum<S>::add(const typename S::Detection* d,
 	      double xoff, double yoff,
 	      double wtot,
 	      double dof) {
-  if (wtot <=0. || dof<=0. ) return;  // Can't do anything with this
+  ++ntot;
+  if (d->isClipped) {
+    ++nclipped;
+    return;
+  }
+  if (wtot <=0. || dof<=0. ) return;  // Can't do anything more with this
   double dx = (d->xw-xoff);
   double dy = (d->yw-yoff);
   sumx += dx;
@@ -46,7 +51,12 @@ Accum<Photo>::add(const Photo::Detection* d,
 		  double wtot,
 		  double dof) {
   // mag comes in as xoff here
-  if (wtot <=0. || dof<=0. ) return;  // Can't do anything with this
+  ++ntot;
+  if (d->isClipped) {
+    ++nclipped;
+    return;
+  }
+  if (wtot <=0. || dof<=0. ) return;  // Can't do anything more with this
   double dm = d->magOut - xoff;
   sum_m += dm;
   sum_mw += dm * d->wt;
@@ -89,7 +99,11 @@ Accum<S>::summary() const {
   ostringstream oss;
   oss << setw(5) << n 
       << fixed << setprecision(0) << noshowpoint
-      << " " << setw(6) << sumdof;
+      << " " << setw(6) << sumdof
+      << fixed << setprecision(1) 
+      << "  " << setw(5) << (n*100.)/ntot
+      << fixed << setprecision(1) 
+      << "  " << setw(4) << (nclipped*100.)/ntot;
   if (S::isAstro) {
     oss << fixed << setprecision(1)
 	<< " " << setw(6) << rms()*1000.*DEGREE/ARCSEC;
@@ -98,13 +112,13 @@ Accum<S>::summary() const {
 	<< " " << setw(6) << rms()*1000.;
   }
   oss << fixed << setprecision(2) 
-      << " " << setw(6) << reducedChisq();
+      << "  " << setw(6) << reducedChisq();
   return oss.str();
 }
 template <class S>
 string
 Accum<S>::header() {
-  return "  N     DOF    RMS  ChiRed";
+  return "  N     DOF   %use   %clip  RMS   ChiRed";
 }
 // Instantiate both cases
 template

@@ -1692,30 +1692,28 @@ reportStatistics(const list<typename S::Match*>& matches,
 
     for (auto dptr : *mptr) {
       // Accumulate statistics for meaningful residuals
-      if (dofPerPt > 0. && !dptr->isClipped) {
-	int exposureNumber = extensions[dptr->catalogNumber]->exposure;
-	Exposure* expo = exposures[exposureNumber];
-	if (mptr->getReserved()) {
-	  if (expo->instrument==REF_INSTRUMENT) {
-	    refAccReserve.add(dptr, xc, yc, wtot, dofPerPt);
-	    vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
-	  } else if (expo->instrument==TAG_INSTRUMENT) {
-	    // do nothing
-	  } else {
-	    accReserve.add(dptr, xc, yc, wtot, dofPerPt);
-	    vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
-	  }
+      int exposureNumber = extensions[dptr->catalogNumber]->exposure;
+      Exposure* expo = exposures[exposureNumber];
+      if (mptr->getReserved()) {
+	if (expo->instrument==REF_INSTRUMENT) {
+	  refAccReserve.add(dptr, xc, yc, wtot, dofPerPt);
+	  vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
+	} else if (expo->instrument==TAG_INSTRUMENT) {
+	  // do nothing
 	} else {
-	  // Not a reserved object:
-	  if (expo->instrument==REF_INSTRUMENT) {
-	    refAccFit.add(dptr, xc, yc, wtot, dofPerPt);
-	    vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
-	  } else if (expo->instrument==TAG_INSTRUMENT) {
-	    // do nothing
-	  } else {
-	    accFit.add(dptr, xc, yc, wtot, dofPerPt);
-	    vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
-	  }
+	  accReserve.add(dptr, xc, yc, wtot, dofPerPt);
+	  vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
+	}
+      } else {
+	// Not a reserved object:
+	if (expo->instrument==REF_INSTRUMENT) {
+	  refAccFit.add(dptr, xc, yc, wtot, dofPerPt);
+	  vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
+	} else if (expo->instrument==TAG_INSTRUMENT) {
+	  // do nothing
+	} else {
+	  accFit.add(dptr, xc, yc, wtot, dofPerPt);
+	  vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
 	}
       }
     } // end Detection loop

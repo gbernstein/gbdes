@@ -21,8 +21,6 @@
 
 * Get MJD into exposure
 
-* Fix up MagColors and the Apply* codes.
-
 * Color PixelMap
 
 * Fix compound color maps??
@@ -32,6 +30,13 @@
 * print out matrix inversion time
 
 * is minMatch being used consistently for #matches total vs in fitted detections?
+
+* Fix up MagColors and the Apply* codes.
+
+* These things best done at one time:
+  * Revamp photo priors, 
+  * Put Newton iterations into PhotoMatch, or better yet
+  * Make Match and PhotoMatch from the same code, no PhotoMatch in gbtools
 
 -----------DONE ON WCSFIT:
 

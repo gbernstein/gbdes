@@ -503,6 +503,10 @@ CoordAlign::fitOnce(bool reportToCerr) {
     int newtonIter = 0;
     for (int newtonIter = 0; newtonIter < MAX_NEWTON_STEPS; newtonIter++) {
       beta /= alpha;
+      timer.stop();
+      if (reportToCerr) cerr << "..solution time " << timer << endl;
+      timer.reset();
+      timer.start();
       DVector newP = p + beta;
       setParams(newP);
       // Get chisq at the new parameters
