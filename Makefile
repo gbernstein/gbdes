@@ -31,6 +31,10 @@ ABS_INCLUDES = -I $(TMV_DIR)/include -I $(CFITSIO_DIR)/include \
 	-I $(FFTW_DIR)/include -I $(BOOST_DIR)/include -I $(YAML_DIR)/include \
 	-I $(UTILITIES) -I $(IMAGES) -I $(ASTROMETRY) -I $(PHOTOMETRY)
 
+ifdef MKL_DIR
+ABS_INCLUDES += -I $(MKL_DIR)/include
+endif
+
 LIB_DIRS = -L $(CFITSIO_DIR)/lib -L $(TMV_DIR)/lib -L $(FFTW_DIR)/lib \
 	-L $(BOOST_DIR)/lib -L $(YAML_DIR)/lib
 
