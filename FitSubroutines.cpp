@@ -1834,7 +1834,7 @@ freezeMap<AP>(string mapName,  \
 	      const vector<AP::Extension*> extensions,  \
 	      AP::Collection& pmc);  \
 template void  \
-matchCensus<AP>(const list<AP::Match*>& matches);  \
+matchCensus<AP>(const list<AP::Match*>& matches, ostream& os);	\
 template void  \
 clipReserved<AP>(AP::Align& ca,  \
 		 double clipThresh,  \

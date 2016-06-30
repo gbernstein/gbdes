@@ -392,7 +392,7 @@ freezeMap(string mapName,
 // Report number of unclipped matches and their chisq
 template <class S>
 void
-matchCensus(const list<typename S::Match*>& matches);
+matchCensus(const list<typename S::Match*>& matches, ostream& os);
 
 // Map and clip reserved matches
 template <class S>

@@ -96,7 +96,7 @@ UpdateHeaders: UpdateHeaders.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFoF: WCSFoF.o ExtensionAttribute.o $(OBJ)
+WCSFoF: WCSFoF.o ExtensionAttribute.o Match.o Accum.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFit: WCSFit.o Match.o MapFit.o WcsSubs.o Accum.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

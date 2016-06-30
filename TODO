@@ -23,8 +23,6 @@
 
 * Fix up MagColors and the Apply* codes.
 
-* Big problem in YAML that WCS and Map cannot share a name.
-
 * Color PixelMap
 
 * Fix compound color maps??
@@ -53,6 +51,8 @@
 * Put defaults into all PixelMaps
 
 * catch map inversion error in Accum
+
+* Big problem in YAML that WCS and Map cannot share a name.
 
 ---------DONE ON WCS & PHOTOFIT
 
