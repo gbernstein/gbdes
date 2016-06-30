@@ -89,11 +89,11 @@ struct Device: public Bounds<double> {
   string name;
 };
 
-// Instrument is a collection of Devices, with a name
-struct Instrument: public vector<Device> {
-  Instrument(const string& name_=""): name(name_) {}
+// Instr is a collection of Devices, with a name
+struct Instr: public vector<Device> {
+  Instr(const string& name_=""): name(name_) {}
   string name;
-  Instrument(const FTable& ft) {
+  Instr(const FTable& ft) {
     ft.header()->getValue("Name",name);
     for (int i=0; i<ft.nrows(); i++) {
       Device d;
@@ -115,7 +115,7 @@ struct Instrument: public vector<Device> {
   }
 };
 
-struct Exposure {
+struct Expo {
 public:
   string name;
   astrometry::SphericalICRS pointing;
@@ -224,7 +224,7 @@ main(int argc,
       }
     }
     vector<FTable> instrumentTables(instrumentHDUs.size());
-    vector<Instrument*> instruments(instrumentHDUs.size(),0);
+    vector<Instr*> instruments(instrumentHDUs.size(),0);
 
     for (list<int>::const_iterator i=instrumentHDUs.begin();
 	 i != instrumentHDUs.end();
@@ -244,7 +244,7 @@ main(int argc,
 
       // Now save the table and make an Instrument structure
       instrumentTables[instrumentNumber] = ft;
-      instruments[instrumentNumber] = new Instrument(ft);
+      instruments[instrumentNumber] = new Instr(ft);
     }
     // Check that all Instruments were read
     for (int i=0; i<instruments.size(); i++)
@@ -262,9 +262,9 @@ main(int argc,
       quit(e,1);
     }
       
-    vector<Exposure*> exposures;
+    vector<Expo*> exposures;
     for (int i=0; i<exposureTable.nrows(); i++) {
-      Exposure* e = new Exposure;
+      Expo* e = new Expo;
       e->read(exposureTable, i);
       exposures.push_back(e);
     }
@@ -506,7 +506,7 @@ main(int argc,
     for (int i=0; i<instruments.size(); i++) {
       // Instrument tables
       // Update the device bounds in the table first
-      const Instrument& inst = *instruments[i];
+      const Instr& inst = *instruments[i];
       int nDevices = inst.size();
       vector<double> vxmin(nDevices);
       vector<double> vxmax(nDevices);
