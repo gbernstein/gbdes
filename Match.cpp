@@ -436,11 +436,11 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 	}
       if (blank) {
 	string badAtom = pmc.atomHavingParameter(i);
+	// Is it a newly frozen parameter?
+	if (!frozenMaps.count(badAtom) || !frozenMaps[badAtom].count(i))
+	  newlyFrozenMaps.insert(badAtom);
 	// Add to (or make) a list of the frozen parameters in this atom
 	frozenMaps[badAtom].insert(i);
-	// Will print messages for those atoms just frozen on this iteration
-	if (frozenMaps[badAtom].size()==1)
-	  newlyFrozenMaps.insert(badAtom);
 	alpha(i,i) = 1.;
 	beta[i] = 0.;
       } else {
