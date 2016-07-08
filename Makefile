@@ -66,7 +66,7 @@ SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpo
 
 SRC = $(shell ls *.cpp)
 
-OBJ =  TPVMap.o FitSubroutines.o $(SUBOBJ)
+OBJ =  TPVMap.o $(SUBOBJ)
 
 all: depend subs
 
@@ -98,15 +98,15 @@ FitsGlue: FitsGlue.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 WCSFoF: WCSFoF.o ExtensionAttribute.o Match.o Accum.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFit: WCSFit.o Match.o MapFit.o WcsSubs.o Accum.o $(OBJ)
+WCSFit: WCSFit.o Match.o MapFit.o WcsSubs.o Accum.o FitSubroutines.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-PhotoFit: PhotoFit.o ReadPhotoPriors.o PhotoSubs.o Match.o Accum.o $(OBJ)
+PhotoFit: PhotoFit.o ReadPhotoPriors.o PhotoSubs.o Match.o Accum.o FitSubroutines.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 MagColor: MagColor.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-ListClipped: ListClipped.o $(OBJ)
+ListClipped: ListClipped.o Match.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 #
 testYAML:  testYAML.o $(OBJ)

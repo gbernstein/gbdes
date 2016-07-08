@@ -313,14 +313,16 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
       cerr << "Could not read name and/or number of instrument at extension "
 	   << iextn << endl;
     }
+    if (instrumentNumber >= instruments.size()) {
+      int oldsize=instruments.size();
+      instruments.resize(instrumentNumber+1);
+      for ( ; oldsize < instruments.size(); oldsize++)
+	instruments[oldsize] = 0;
+    }
     spaceReplace(instrumentName);
 
     if (regexMatchAny(useInstrumentList, instrumentName))  {
       // This is an instrument we will use.  Save to the output file first.
-      if (instrumentNumber >= instruments.size())
-	instruments.resize(instrumentNumber+1);
-
-      // Copy extension to output file:
       FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
       if (!outputCatalogAlreadyOpen) {
 	outFlags = outFlags + FITS::OverwriteFile;
@@ -509,8 +511,8 @@ readExtensions(img::FTable& extensionTable,
     extensionTable.readCell(iDevice, "Device", i);
     extn->device = iDevice;
     extn->airmass = expo.airmass;
-    extn->magshift = +2.5*log10(expo.exptime);
-      
+    extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
+       
     // Create the starting WCS for the exposure
     string s;
     extensionTable.readCell(s, "WCSIn", i);
@@ -533,7 +535,6 @@ readExtensions(img::FTable& extensionTable,
     // destination projection for startWCS is the Exposure projection,
     // so that any exposure-level magnitude corrections use this coord system
     extn->startWcs->reprojectTo(*expo.projection);
-
 
     // Extract the map specifications for this extension from the input
     // YAML files.
@@ -559,7 +560,6 @@ readExtensions(img::FTable& extensionTable,
       else
 	extn->mapName = extn->wcsName;
 	
-	  
       if (!inputYAML.addMap(extn->mapName,d)) {
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName

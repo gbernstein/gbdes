@@ -226,6 +226,7 @@ main(int argc, char *argv[])
 		      outputCatalogAlreadyOpen);
     
 
+    /**/cerr << "Read instruments" << endl;
     // This vector will hold the color-priority value of each exposure.  -1 means an exposure
     // that does not hold color info.
     vector<int> exposureColorPriorities;
@@ -239,6 +240,8 @@ main(int argc, char *argv[])
 		    skipExposureList,
 		    false, // Do not use reference exposures for photometry
 		    outputCatalogAlreadyOpen);
+
+    /**/cerr << "Read exposures" << endl;
 
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
@@ -257,6 +260,8 @@ main(int argc, char *argv[])
 			    exposureColorPriorities,
 			    colorExtensions,
 			    inputYAML);
+
+    /**/cerr << "Read extensions" << endl;
 
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
