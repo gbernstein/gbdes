@@ -14,7 +14,7 @@
 #include "PixelMapCollection.h"
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
-#include "PhotoInstrument.h"
+#include "Instrument.h"
 #include "TemplateMap.h"
 #include "FitsImage.h"
 
@@ -38,23 +38,20 @@ string usage=
   "          parameter file(s) specified on cmd line";
 
 // Temporary documentation:
-// parameter "renameInstruments" is a string that has format like
-// <instrument name>=<map name>, <instrument name> = <map name>, ...
-// where the Instrument's PhotoMap will be given the map name.  Regex allowed.
+// parameter "useInstrumentList" is a string that has format like
+// <instrument name>,<instrument name>, ...
+// and gives regexes that match all instrument that can be used to
+// construct magnitudes and colors.  Empty list means use anything.
 // Note that this is assuming that regexes do not include = or , characters.
 // Whitespace will be stripped from edges of each name.
 
-// Parameter "magnitudes" is a string with format
-// <band name>@<instrument name>[, <band name>@<instrument name>] ...
-// where <band name> is the name of a magnitude band, and <instrument name> is an
-// instrument assumed to create valid mags for this band.  One band can come from
-// multiple instruments.  Output magnitude catalog will have one column for each distinct band.
-// Regex is ok for instrument specification.
-
-// Parameter "magnitudeFile" gives file name for the output FITS magnitude table.
+// Parameter "bands" is a comma-separated list of band names for which
+// we want to output a mean magnitude.
+// One band can come from multiple instruments.
+// Output magnitude catalog will have one column for each distinct band.
 
 // Parameter "colors" is a string saying what colors will be calculated.  Format is
-// <band name> - <band name> [+ offset] @ <file name> [, <band name> - ....]
+// <band name> - <band name> @ <file name> [, <band name> - ....]
 // Each comma-separated specifier gives the two bands that will be differenced to produce the
 // color that is written into a FITS table with given file name.
 
@@ -62,13 +59,8 @@ string usage=
 // It will be calculated iteratively from the incoming data.  If requisite bands are
 // not present, the mags that have color terms are flagged as invalid.
 
-// Parameter "clipFile" is name of file containing (extension, object) number pairs that will
-// be ignored (clipped) in making colors.
-
-// magKey and magErrKey can be of form COLUMN[#] when COLUMN is an array column (float or double)
-// and # is the element of this array that we want to use.
-
-
+// Parameter "skipFile" is name of file containing (extension, object) number pairs that will
+// be ignored in making colors.
 
 // Collect the regular expressions that will match instruments that are
 // assign to each magnitude band
@@ -76,7 +68,6 @@ struct Band {
   Band(): number(-1), hasData(false) {}
   string name;
   int number;
-  list<string> regexes;
   bool hasData;
 };
 
@@ -87,7 +78,6 @@ public:
   string band2;
   string colorSpec;
   string filename;
-  double offset;
   int bandNumber1;
   int bandNumber2;
   FTable data;
@@ -120,8 +110,8 @@ main(int argc, char *argv[])
   double clipThresh;
   double maxMagError;
   double magSysError;
-  string renameInstruments;
-  string magnitudes;
+  string useInstruments;
+  string bandspec;
   string colors;
   string wcsFiles;
   string photoFiles;
@@ -142,12 +132,12 @@ main(int argc, char *argv[])
 			 "Magnitude clipping threshold (sigma)", 5., 2.);
     parameters.addMember("skipFile",&skipFile, def,
 			 "Optional file containing extension,object pairs to ignore", "");
-    parameters.addMember("magnitudes",&magnitudes, def,
+    parameters.addMember("bands",&bandspec, def,
 			 "bands to output and instruments they come from","");
     parameters.addMember("colors",&colors, def,
 			 "colors to tabulate and files they go into","");
-    parameters.addMember("renameInstruments",&renameInstruments, def,
-			 "list of new names to give to instruments for maps","");
+    parameters.addMember("useInstruments",&useInstruments, def,
+			 "list of instruments to use for mags",".*");
     parameters.addMember("wcsFiles",&wcsFiles, def,
 			 "files holding WCS maps to override starting WCSs","");
     parameters.addMember("photoFiles",&photoFiles, def,
@@ -165,75 +155,56 @@ main(int argc, char *argv[])
     // Parse all the parameters describing maps etc. 
     /////////////////////////////////////////////////////
 
-    // Teach PixelMapCollection about new kinds of PixelMaps it might need to deserialize
-    loadPixelMapParser();
-    // ...and PhotoMaps:
+    // Teach *MapCollection about new kinds of PhotoMaps and PixelMaps
     loadPhotoMapParser();
+    loadPixelMapParser();
 
-    // First is a regex map from instrument names to the names of their PhotoMaps
-    RegexReplacements instrumentTranslator = parseTranslator(renameInstruments,
-							     "renameInstruments");
+    // The list of instruments that we will be using to make magnitudes
+    list<string> useInstrumentList = splitArgument(useInstruments);
 
     // Get the list of files holding astrometric maps and read them.
     list<string> wcsFileList = splitArgument(wcsFiles);
     astrometry::PixelMapCollection astromaps;
-    for (list<string>::const_iterator i = wcsFileList.begin();
-	 i != wcsFileList.end();
-	 ++i) {
-      ifstream ifs(i->c_str());
+    for (auto fname : wcsFileList) {
+      ifstream ifs(fname.c_str());
       if (!ifs)
-	cerr << "WARNING: could not open astrometric map file " << *i << endl;
+	cerr << "WARNING: could not open astrometric map file " << fname << endl;
       if (!astromaps.read(ifs))
-	cerr << "WARNING: could not read astrometric map file " << *i << endl;
+	cerr << "WARNING: could not read astrometric map file " << fname << endl;
     }
 
     // Read the photometric solutions now:
     list<string> photoFileList = splitArgument(photoFiles);
     PhotoMapCollection photomaps;
-    for (list<string>::const_iterator i = photoFileList.begin();
-	 i != photoFileList.end();
-	 ++i) {
-      ifstream ifs(i->c_str());
+    for (auto fname : photoFileList) {
+      ifstream ifs(fname.c_str());
       if (!ifs)
-	cerr << "WARNING: could not open photometric map file " << *i << endl;
+	cerr << "WARNING: could not open photometric map file " << fname << endl;
       if (!photomaps.read(ifs))
-	cerr << "WARNING: could not read photometric map file " << *i << endl;
+	cerr << "WARNING: could not read photometric map file " << fname << endl;
     }
 
     ExtensionObjectSet clipSet(skipFile);
 
-    typedef map<string, Band> BandMap;
-    BandMap bands;
+    map<string, Band> bands;
     {
-      list<string> bandspecs = splitArgument(magnitudes);
-      for (list<string>::iterator i = bandspecs.begin();
-	   i != bandspecs.end();
-	   ++i) {
-	list<string> bandInst = split(*i, '@');
-	if (bandInst.size() != 2) {
-	  cerr << "Bad band/instrument pair: " << *i << endl;
-	  exit(1);
-	}
-	string bandName = bandInst.front();
+      for (auto bandName : splitArgument(bandspec)) {
 	stripWhite(bandName);
-	string instrumentRegex = bandInst.back();
-	stripWhite(instrumentRegex);
-	if (bandName.empty() || instrumentRegex.empty()) {
-	  cerr << "Missing band or instrument: " << *i << endl;
+	if (bandName.empty()) {
+	  cerr << "Missing band in spec <" << bandspec << ">" << endl;
 	  exit(1);
 	}
-	bands[bandName].regexes.push_back(instrumentRegex);
+	// Make a new band
+	bands[bandName];
       }
     }
 
     // Once all the bands have been read, assign them numbers
     {
       int bandCounter = 0;
-      for (BandMap::iterator i = bands.begin();
-	   i != bands.end();
-	   ++i) {
-	Band& b = i->second;
-	b.name = i->first;
+      for (auto& pr : bands) {
+	Band& b = pr.second;
+	b.name = pr.first;
 	b.number = bandCounter++;
       }
     }
@@ -243,14 +214,10 @@ main(int argc, char *argv[])
 
     list<Color> colorList;
     {
-      list<string> colorspecs = splitArgument(colors);
-      for (list<string>::iterator i = colorspecs.begin();
-	   i != colorspecs.end();
-	   ++i) {
-	bool success = true;
+      for (auto colorspec : splitArgument(colors)) {
 	Color c;
-	list<string> colorfile = split(*i, '@');
-	success = (colorfile.size() ==2);
+	list<string> colorfile = split(colorspec, '@');
+	bool success = (colorfile.size() ==2);
 	if (success) {
 	  // 2nd entry is filename
 	  c.filename = colorfile.back();
@@ -259,40 +226,29 @@ main(int argc, char *argv[])
 	  c.colorSpec = colorfile.front();
 	  stripWhite(c.colorSpec);
 
-	  // Get possible offset constant from color description at '+'
-	  list<string> coloroffset = split(colorfile.front(), '+');
-	  success =  (coloroffset.size()>0 && coloroffset.size() <=2);
-	  c.offset = 0.;
-	  if (success && coloroffset.size() == 2) {
-	    // get offset
-	    istringstream iss(coloroffset.back());
-	    success = static_cast<bool>(iss >> c.offset);
-	  }
 	  // split up the color term at -
-	  if (success) {
-	    list<string> twobands = split(coloroffset.front(), '-');
-	    if (twobands.size() == 2) {
-	      c.band1 = twobands.front();
-	      c.band2 = twobands.back();
-	      stripWhite(c.band1);
-	      stripWhite(c.band2);
-	    } else {
-	      success = false;
-	    }
+	  list<string> twobands = split(colorfile.front(), '-');
+	  if (twobands.size() == 2) {
+	    c.band1 = twobands.front();
+	    c.band2 = twobands.back();
+	    stripWhite(c.band1);
+	    stripWhite(c.band2);
+	  } else {
+	    success = false;
 	  }
 	}
 	if (!success) {
-	  cerr << "Error in color specification: " << *i << endl;
+	  cerr << "Error in color specification: " << colorspec << endl;
 	  exit(1);
 	}
 
 	// Check that both mags in the color are known to us:
 	if (!bands.count(c.band1)) {
-	  cerr << "Undefined magnitude <" << c.band1 << " requested for color" << endl;
+	  cerr << "Unknown band <" << c.band1 << "> requested for color" << endl;
 	  exit(1);
 	}
 	if (!bands.count(c.band2)) {
-	  cerr << "Undefined magnitude <" << c.band2 << " requested for color" << endl;
+	  cerr << "Unknown band <" << c.band2 << "> requested for color" << endl;
 	  exit(1);
 	}
 	c.bandNumber1 = bands[c.band1].number;
@@ -313,116 +269,40 @@ main(int argc, char *argv[])
     // All the names will be stripped of leading/trailing white space, and internal
     // white space replaced with single underscore - this keeps PhotoMap parsing functional.
 
-    // First time we write to output file, overwrite the whole file:
-    bool outputIsOpen = false;
-    
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
     vector<int> catalogHDUs;
+    inventoryFitsTables(inputTables, instrumentHDUs, catalogHDUs);
+
+    // Read the fields table & propagate the info,
+    // and discard info as it is not used here.
     {
-      // Find which extensions are instrument tables.  Copy everything except
-      // Exposures, Extensions, and MatchCatalog tables to the output file.
-      FITS::FitsFile ff(inputTables);
-      for (int i=1; i<ff.HDUCount(); i++) {
-	string hduName;
-	{
-	  FITS::Hdu h(inputTables, FITS::HDUAny, i);
-	  hduName = h.getName();
-	}
-	if (stringstuff::nocaseEqual(hduName, "Instrument")) {
-	  instrumentHDUs.push_back(i);
-	  // Write all instrument info to output:
-	  FITS::FitsTable ft(inputTables, FITS::ReadOnly, i);
-	  // Append new table to output:
-	  FITS::FitsTable out(outputTables,
-			      outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
-			      -1);
-	  outputIsOpen = true;
-	  out.setName("Instrument");
-	  Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
-	  FTable ff=ft.extract();
-	  out.adopt(ff);
-	} else if (stringstuff::nocaseEqual(hduName, "MatchCatalog")) {
-	  catalogHDUs.push_back(i);
-	} else if (stringstuff::nocaseEqual(hduName, "Extensions")
-		   || stringstuff::nocaseEqual(hduName, "Exposures") ) {
-	  // Do nothing - we will alter these and write them back later.
-	} else {
-	  // Append any other tables to the output
-	  FITS::FitsTable ft(inputTables, FITS::ReadOnly, i);
-	  FITS::FitsTable out(outputTables, 
-			      outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
-			      -1);
-	  outputIsOpen = true;
-	  out.setName(ft.getName());
-	  FTable ff=ft.extract();
-	  out.adopt(ff);
-	}
+      NameIndex fieldNames;
+      vector<astrometry::SphericalCoords*> fieldProjections;
+      readFields(inputTables, outputTables, fieldNames, fieldProjections);
+      for (auto ptr : fieldProjections) delete ptr;
+    }
+
+    // We've already opened (and overwritten) the output file:
+    bool outputCatalogAlreadyOpen = true;
+    
+    // Read in all the instrument extensions and their device info from input
+    // FITS file, save useful ones and write to output FITS file.
+    vector<Instrument*> instruments =
+      readInstruments(instrumentHDUs, useInstrumentList, inputTables, outputTables,
+		      outputCatalogAlreadyOpen);
+    
+    // Now we're going to get rid of instruments that are not in a desired band.
+    for (auto& iptr : instruments) {
+      if (iptr && bands.count(iptr->band)==0) {
+	delete iptr;
+	iptr = 0;
       }
     }
-    
-    /**/cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
-	     << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
 
-    // Read in all the instrument extensions and their device info.
-    vector<Instrument*> instruments(instrumentHDUs.size(),0);
-    
-    // This array will say what band number any instrument gives data for.  -1 means none of interest
-    vector<int> instrumentBandNumbers(instrumentHDUs.size(), -1);
-
-    for (int i=0; i<instrumentHDUs.size(); i++) {
-      FITS::FitsTable ft(inputTables, FITS::ReadOnly, instrumentHDUs[i]);
-
-      string instrumentName;
-      int instrumentNumber;
-      if (!ft.header()->getValue("Name", instrumentName)
-	  || !ft.header()->getValue("Number", instrumentNumber)) {
-	cerr << "Could not read name and/or number of instrument at extension "
-	     << instrumentHDUs[i] << endl;
-      }
-      spaceReplace(instrumentName);
-      // Is this an instrument we are going to care about?
-      string name = instrumentName;
-      instrumentTranslator(name);  // Apply any name remapping specified.
-      
-      // Now see if this PhotoMap instrument name appears
-      for (BandMap::const_iterator iBand = bands.begin();
-	   iBand != bands.end();
-	   ++iBand) {
-
-	if (regexMatchAny(iBand->second.regexes, name))  {
-	  // This is an instrument we will use. 
-	  // Assign a band number
-	  instrumentBandNumbers[instrumentNumber] = iBand->second.number;
-	  // Get instrument's devices:
-	  FTable ff=ft.extract();
-	  Assert(instrumentNumber < instruments.size());
-	  Instrument* instptr = new Instrument(instrumentName);
-	  instruments[instrumentNumber] = instptr;
-      
-	  vector<string> devnames;
-	  vector<double> vxmin;
-	  vector<double> vxmax;
-	  vector<double> vymin;
-	  vector<double> vymax;
-	  ff.readCells(devnames, "Name");
-	  ff.readCells(vxmin, "XMin");
-	  ff.readCells(vxmax, "XMax");
-	  ff.readCells(vymin, "YMin");
-	  ff.readCells(vymax, "YMax");
-	  for (int j=0; j<devnames.size(); j++) {
-	    spaceReplace(devnames[j]);
-	    instptr->addDevice( devnames[j],
-				Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
-	  }
-	  break;	// Break out of band loop if we find one match.
-	} // Done with section when finding a band
-      } // Done with band loop
-      /**/cerr << "Done with instrument " << instrumentName 
-	       << " band " << instrumentBandNumbers[instrumentNumber] <<  endl;
-    } // Done with instrument loop
-
-    // Read in the table of exposures
+    // Read in the table of exposures.  Will not use FitSubroutines readExposures()
+    // because we need to alter this table to add entries for the mag catalog
+    // and color catalogs.
     vector<Exposure*> exposures;
     int magTableExposureNumber = -1;	// This will be the exposure # of the mag catalog
 
@@ -434,7 +314,9 @@ main(int argc, char *argv[])
       vector<double> dec;
       vector<int> fieldNumber;
       vector<int> instrumentNumber;
+      vector<double> airmass;
       vector<double> exptime;
+      // ??? Add MJD??
 
       ff.readCells(names, "Name");
       /* Here I need to get rid of this column and then re-add it, because the
@@ -449,26 +331,28 @@ main(int argc, char *argv[])
       ff.readCells(dec, "Dec");
       ff.readCells(fieldNumber, "fieldNumber");
       ff.readCells(instrumentNumber, "InstrumentNumber");
+      ff.readCells(airmass, "Airmass");
       ff.readCells(exptime, "Exptime");
 
       for (int i=0; i<names.size(); i++) {
 	// Only create an Exposure if this exposure contains useful mag info.
-	if (instrumentNumber[i]<0 || instrumentBandNumbers[instrumentNumber[i]] < 0) {
+	if (instrumentNumber[i]<0 || !instruments[instrumentNumber[i]] ) {
 	  exposures.push_back(0);
 	} else {
 	  spaceReplace(names[i]);
 	  // The projection we will use for this exposure:
 	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
 										    dec[i]*DEGREE)));
-	  Exposure* expo = new Exposure(names[i],gn);
+	  auto expo = new Exposure(names[i],gn);
 	  expo->field = fieldNumber[i];
 	  expo->instrument = instrumentNumber[i];
+	  expo->airmass = airmass[i];
 	  expo->exptime = exptime[i];
+	  // ??? MJD
 
 	  exposures.push_back(expo);
 	  /**/cerr << "Exposure " << names[i] 
 		   << " using instrument " << expo->instrument 
-		   << " band " << instrumentBandNumbers[expo->instrument]
 		   << endl;
 	}
       }
@@ -486,64 +370,59 @@ main(int argc, char *argv[])
       ff.writeCell(magOutFile, "Name", magTableExposureNumber);
       ff.writeCell(1., "Airmass", magTableExposureNumber);
       ff.writeCell(1., "Exptime", magTableExposureNumber);
+      // ??? MJD
 
       // And now each of the color catalogs, which will be its own exposure
-      for (list<Color>::iterator iColor = colorList.begin();
-	   iColor != colorList.end();
-	   ++iColor) {
-	iColor->exposureNumber = ff.nrows();
-	ff.writeCell(0., "RA", iColor->exposureNumber);
-	ff.writeCell(0., "Dec", iColor->exposureNumber);
-	ff.writeCell(0, "FieldNumber", iColor->exposureNumber);
-	ff.writeCell(TAG_INSTRUMENT, "InstrumentNumber", iColor->exposureNumber);
-	ff.writeCell(iColor->filename, "Name", iColor->exposureNumber);
-	ff.writeCell(1., "Airmass", iColor->exposureNumber);
-	ff.writeCell(1., "Exptime", iColor->exposureNumber);
+      for (auto& c : colorList) {
+	c.exposureNumber = ff.nrows();
+	ff.writeCell(0., "RA", c.exposureNumber);
+	ff.writeCell(0., "Dec", c.exposureNumber);
+	ff.writeCell(0, "FieldNumber", c.exposureNumber);
+	ff.writeCell(TAG_INSTRUMENT, "InstrumentNumber", c.exposureNumber);
+	ff.writeCell(c.filename, "Name", c.exposureNumber);
+	ff.writeCell(1., "Airmass", c.exposureNumber);
+	ff.writeCell(1., "Exptime", c.exposureNumber);
+	// ??? MJD
       }
 
       // Done with exposure table.  Append augmented table to output FITS file
-      FITS::FitsTable out(outputTables, 
-			  outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
+      FITS::FitsTable out(outputTables, FITS::ReadWrite+FITS::Create,
 			  "Exposures");
-      outputIsOpen = true;
       out.copy(ff);
     }
 
 
     // Read info about all Extensions - we will keep the Table around.
-    vector<Extension*> extensions;
     FTable extensionTable;
     {
       FITS::FitsTable ftExtensions(inputTables, FITS::ReadOnly, "Extensions");
       extensionTable = ftExtensions.extract();
     }
+    vector<Photo::Extension*> extensions(extensionTable.nrows(),0);
 
     // This array will give band associated with each extension.  -1 for no desired band.
     vector<int> extensionBandNumbers(extensionTable.nrows(), -1);
 
-
     for (int i=0; i<extensionTable.nrows(); i++) {
-      Extension* extn = new Extension;
       int iExposure;
       extensionTable.readCell(iExposure, "Exposure", i);
+      if (!exposures[iExposure]) continue;  // Not an extension of interest
 
-      if (!exposures[iExposure]) {
-	// This extension is not in an exposure of interest.  Skip it.
-	delete extn;
-	extn = 0;
-	extensions.push_back(extn);
-	continue;
-      }
-      extensions.push_back(extn);
+      auto extn = new Photo::Extension;
+      Exposure& expo = *exposures[iExposure];
+      extensions[i] = extn;
       extn->exposure = iExposure;
       int iDevice;
       extensionTable.readCell(iDevice, "Device", i);
       extn->device = iDevice;
-      extn->magshift = +2.5*log10(exposures[extn->exposure]->exptime);
+      extn->magshift = +2.5*log10(expo.exptime);
 
-      Exposure& expo = *exposures[iExposure];
+      Assert(expo.instrument>0);  // This exposure should have a real instrument
+      Assert(instruments[expo.instrument]);  // that we are using
+      string b = instruments[expo.instrument]->band;
+      Assert(bands.count(b));  // and a band in use too
       // Save away the band number for this extension
-      extensionBandNumbers[i] = instrumentBandNumbers[expo.instrument];
+      extensionBandNumbers[i] = bands[b].number;
       // and get the name its maps should be found under.
       string mapName = expo.name + "/" 
 	+ instruments[expo.instrument]->deviceNames.nameOf(extn->device);
@@ -574,7 +453,7 @@ main(int argc, char *argv[])
       }
       // destination projection is the Exposure projection, whose coords used for any
       // exposure-level magnitude corrections
-      extn->startWcs->reprojectTo(*exposures[extn->exposure]->projection);
+      extn->startWcs->reprojectTo(*expo.projection);
 
       // Get the photometric solution too
       extn->map = photomaps.issueMap(mapName);
@@ -610,10 +489,11 @@ main(int argc, char *argv[])
     list<string> extantCols;
     {
       vector<string> vCols = extensionTable.listColumns();
-      for (int j=0; j<vCols.size(); j++) extantCols.push_back(vCols[j]);
+      for (auto colname : vCols) extantCols.push_back(colname);
     }
 
-    /**
+    /** ?? problem writing these because sometimes they are float, sometimes double???
+	but clearly some other issue with the string-valued ones...
     // Assign null weights, magweights, keys if they exist in the table
     if (regexMatchAny(extantCols, "Weight"))
       extensionTable.writeCell(0., "Weight", magTableExtensionNumber);
@@ -624,44 +504,42 @@ main(int argc, char *argv[])
     if (regexMatchAny(extantCols, "MagErrKey"))
       extensionTable.writeCell(string(""), "MagErrKey", magTableExtensionNumber);
     ***/
-    for (list<Color>::iterator iColor = colorList.begin();
-	 iColor != colorList.end();
-	 ++iColor) {
-      iColor->extensionNumber = extensionTable.nrows();
-      extensionTable.writeCell(iColor->filename, "FILENAME", iColor->extensionNumber);
-      extensionTable.writeCell(iColor->exposureNumber, "EXPOSURE", iColor->extensionNumber);
+    for (auto& c : colorList) {
+      c.extensionNumber = extensionTable.nrows();
+      extensionTable.writeCell(c.filename, "FILENAME", c.extensionNumber);
+      extensionTable.writeCell(c.exposureNumber, "EXPOSURE", c.extensionNumber);
       // Given a nonsense Device number:
-      extensionTable.writeCell(-1, "DEVICE", iColor->extensionNumber);
+      extensionTable.writeCell(-1, "DEVICE", c.extensionNumber);
       // Assuming the table is in the first non-primary extension of the file:
-      extensionTable.writeCell(1, "EXTENSION", iColor->extensionNumber);
-      extensionTable.writeCell(string("_ICRS"), "WCSIN", iColor->extensionNumber);
+      extensionTable.writeCell(1, "EXTENSION", c.extensionNumber);
+      extensionTable.writeCell(string("_ICRS"), "WCSIN", c.extensionNumber);
       // Names of required keys - some are null as there is no relevant file
-      extensionTable.writeCell(string("RA"), "XKEY", iColor->extensionNumber);
-      extensionTable.writeCell(string("Dec"), "YKEY", iColor->extensionNumber);
-      extensionTable.writeCell(string("_ROW"), "IDKEY", iColor->extensionNumber);
-      extensionTable.writeCell(string(""), "ERRKEY", iColor->extensionNumber);
+      extensionTable.writeCell(string("RA"), "XKEY", c.extensionNumber);
+      extensionTable.writeCell(string("Dec"), "YKEY", c.extensionNumber);
+      extensionTable.writeCell(string("_ROW"), "IDKEY", c.extensionNumber);
+      extensionTable.writeCell(string(""), "ERRKEY", c.extensionNumber);
 
       /***
       // Assign null weights, magweights, keys if they exist in the table
       if (regexMatchAny(extantCols, "Weight"))
-	extensionTable.writeCell(0., "Weight", iColor->extensionNumber);
+	extensionTable.writeCell(0., "Weight", c.extensionNumber);
       if (regexMatchAny(extantCols, "MagWeight"))
-	extensionTable.writeCell(0., "MagWeight", iColor->extensionNumber);
+	extensionTable.writeCell(0., "MagWeight", c.extensionNumber);
       if (regexMatchAny(extantCols, "MagKey"))
-	extensionTable.writeCell(string(""), "MagKey", iColor->extensionNumber);
+	extensionTable.writeCell(string(""), "MagKey", c.extensionNumber);
       if (regexMatchAny(extantCols, "MagErrKey"))
-	extensionTable.writeCell(string(""), "MagErrKey", iColor->extensionNumber);
+	extensionTable.writeCell(string(""), "MagErrKey", c.extensionNumber);
       ***/
       if (regexMatchAny(extantCols, "ColorExpression"))
-	extensionTable.writeCell(string("COLOR"), "ColorExpression", iColor->extensionNumber);
+	extensionTable.writeCell(string("COLOR"), "ColorExpression", c.extensionNumber);
     }      
 
     // The extension table is now augmented.  Write it to the output FITS file:
     {
       FitsTable out(outputTables, 
-		    outputIsOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
+		    outputCatalogAlreadyOpen ? FITS::ReadWrite+FITS::Create : FITS::OverwriteFile,
 		    "Extensions");
-      outputIsOpen = true;
+      outputCatalogAlreadyOpen = true;
       out.copy(extensionTable);
     }
 
@@ -679,7 +557,7 @@ main(int argc, char *argv[])
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
       FTable ff = ft.use();
       {
-	// Only do photometric fitting on the stellar objects:
+	// Only stellar affinity has multiband matches:
 	string affinity;
 	if (!ff.getHdrValue("Affinity", affinity)) {
 	  cerr << "Could not find affinity keyword in header of extension " 
@@ -711,8 +589,8 @@ main(int argc, char *argv[])
     for (int iext = 0; iext < extensions.size(); iext++) {
       if (!extensions[iext]) continue; // Skip unused 
       // Relevant structures for this extension
-      Extension& extn = *extensions[iext];
-      Exposure& expo = *exposures[extn.exposure];
+      auto& extn = *extensions[iext];
+      auto& expo = *exposures[extn.exposure];
 
       string filename;
       extensionTable.readCell(filename, "FILENAME", iext);
@@ -822,25 +700,21 @@ main(int argc, char *argv[])
       vector<double> dummy;
       magTable.addColumn(dummy, "RA");
       magTable.addColumn(dummy, "Dec");
-      for (BandMap::const_iterator iBand = bands.begin();
-	   iBand != bands.end();
-	   ++iBand) {
-	magTable.addColumn(dummy, iBand->second.name);
-	magTable.addColumn(dummy, iBand->second.name+"_ERR");
+      for (auto iBand : bands) {
+	magTable.addColumn(dummy, iBand.second.name);
+	magTable.addColumn(dummy, iBand.second.name+"_ERR");
       }
     }
     long magRowCounter = 0;	// Count of objects with assigned magnitudes
 
     // Make a catalog for each color being calculated
-    for (list<Color>::iterator i = colorList.begin();
-	 i != colorList.end();
-	 ++i) {
-      i->data.header()->append("COLOR_ID",i->colorSpec);
+    for (auto c : colorList) {
+      c.data.header()->append("COLOR_ID",c.colorSpec);
       vector<double> dummy;
-      i->data.addColumn(dummy, "RA");
-      i->data.addColumn(dummy, "Dec");
-      i->data.addColumn(dummy, colorColumnName);
-      i->data.addColumn(dummy, colorErrorColumnName);
+      c.data.addColumn(dummy, "RA");
+      c.data.addColumn(dummy, "Dec");
+      c.data.addColumn(dummy, colorColumnName);
+      c.data.addColumn(dummy, colorErrorColumnName);
     }
 
     // Iterate over the match catalogs again, this time calculating mags & colors,
@@ -908,8 +782,7 @@ main(int argc, char *argv[])
 	      if ( magValid[useColor->bandNumber1] && magValid[useColor->bandNumber2]) {
 		// We have the two mags needed for a color:
 		matchColor = 
-		  mags[useColor->bandNumber1] - mags[useColor->bandNumber2]
-		  + useColor->offset;
+		  mags[useColor->bandNumber1] - mags[useColor->bandNumber2];
 	      } else {
 		// Cannot use this object if we do not have requisite mags for color terms
 		hasMagnitudes = false;
@@ -936,21 +809,19 @@ main(int argc, char *argv[])
 	    magTable.writeCell(ra, "RA", magRowCounter);
 	    magTable.writeCell(dec, "Dec", magRowCounter);
 	    // write mags & colors if there are any of use here
-	    for (BandMap::const_iterator i= bands.begin();
-		 i != bands.end();
-		 ++i) {
-	      int index = i->second.number;
+	    for (auto iBand : bands) {
+	      int index = iBand.second.number;
 	      if (magValid[index]) {
 		magTable.writeCell( mags[index],
-				    i->second.name, magRowCounter);
+				    iBand.second.name, magRowCounter);
 		magTable.writeCell( magErrors[index],
-				    i->second.name+"_ERR", magRowCounter);
+				    iBand.second.name+"_ERR", magRowCounter);
 	      } else {
 		// Mags with too-large errors get no-data marker
 		magTable.writeCell( NO_MAG_DATA,
-				    i->second.name, magRowCounter);
+				    iBand.second.name, magRowCounter);
 		magTable.writeCell( NO_MAG_DATA,
-				    i->second.name+"_ERR", magRowCounter);
+				    iBand.second.name+"_ERR", magRowCounter);
 	      }
 	    } // end mag band loop
 
@@ -960,27 +831,23 @@ main(int argc, char *argv[])
 	    objOut.push_back(magRowCounter++);
 	    
 	    //       for each possible color
-	    for (list<Color>::iterator icolor = colorList.begin();
-		 icolor != colorList.end();
-		 ++icolor) {
+	    for (auto& c : colorList) {
 	      // do we have mags needed for this color?
-	      if ( magValid[icolor->bandNumber1] && magValid[icolor->bandNumber2]) {
+	      if ( magValid[c.bandNumber1] && magValid[c.bandNumber2]) {
 		// yes: write to color catalog
-		icolor->data.writeCell(mags[icolor->bandNumber1] - mags[icolor->bandNumber2]
-					+ icolor->offset,
-					colorColumnName, 
-					icolor->rowCount);
-		icolor->data.writeCell(hypot(magErrors[icolor->bandNumber1], 
-					      magErrors[icolor->bandNumber2]),
-					colorErrorColumnName, 
-					icolor->rowCount);
-		icolor->data.writeCell(ra, "RA", icolor->rowCount);
-		icolor->data.writeCell(dec, "Dec", icolor->rowCount);
+		c.data.writeCell(mags[c.bandNumber1] - mags[c.bandNumber2],
+				 colorColumnName, 
+				 c.rowCount);
+		c.data.writeCell(hypot(magErrors[c.bandNumber1], magErrors[c.bandNumber2]),
+				 colorErrorColumnName, 
+				 c.rowCount);
+		c.data.writeCell(ra, "RA", c.rowCount);
+		c.data.writeCell(dec, "Dec", c.rowCount);
 
 		//   add seq entry for color catalog
 		seqOut.push_back(++lastSeq);
-		extnOut.push_back(icolor->extensionNumber);
-		objOut.push_back(icolor->rowCount++);
+		extnOut.push_back(c.extensionNumber);
+		objOut.push_back(c.rowCount++);
 	      } // End processing for a valid color
 	    } // end color loop
 	  } // end hasMagnitudes
@@ -1016,12 +883,10 @@ main(int argc, char *argv[])
     } // End loop over input matched catalogs
 
     // Write each of the color catalogs out to a file
-    for (list<Color>::iterator iColor = colorList.begin();
-	 iColor!=colorList.end();
-	 ++iColor) {
-      /**/cerr << "Ready to write color catalog " << iColor->filename <<endl;
-      FitsTable ft(iColor->filename, FITS::OverwriteFile);
-      ft.copy(iColor->data);
+    for (auto& c : colorList) {
+      /**/cerr << "Ready to write color catalog " << c.filename <<endl;
+      FitsTable ft(c.filename, FITS::OverwriteFile);
+      ft.copy(c.data);
     }
 
     // Cleanup:

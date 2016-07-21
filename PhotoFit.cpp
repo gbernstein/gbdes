@@ -181,7 +181,6 @@ main(int argc, char *argv[])
     list<string> fixMapList = splitArgument(fixMaps);
 
     // The list of instruments that we will be matching together in this run:
-    // have their parameters held fixed.
     list<string> useInstrumentList = splitArgument(useInstruments);
 
     // The list of exposures that are considered valid sources of color information:
@@ -215,9 +214,19 @@ main(int argc, char *argv[])
     /**/cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
 	     << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
 
+    // Read the fields table & propagate the info,
+    // and discard info as it is not used here.
+    {
+      NameIndex fieldNames;
+      vector<astrometry::SphericalCoords*> fieldProjections;
+      readFields(inputTables, outCatalog, fieldNames, fieldProjections);
+      for (auto ptr : fieldProjections) delete ptr;
+    }
+
     // This flag will be set if we have already opened (and overwritten) the
-    // output FITS catalog.
-    bool outputCatalogAlreadyOpen = false;
+    // output FITS catalog, as we have in readFields
+    
+    bool outputCatalogAlreadyOpen = true;
 
     // Read in all the instrument extensions and their device info from input
     // FITS file, save useful ones and write to output FITS file.

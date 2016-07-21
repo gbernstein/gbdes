@@ -41,11 +41,4 @@ pickExposuresToInitialize(const vector<Instrument*>& instruments,
 			  const vector<Extension*>& extensions,
 			  astrometry::PixelMapCollection& pmc);
 
-// Read the Fields table from input, copy to output, extract needed info
-void
-readFields(string inputTables,
-	   string outCatalog,
-	   NameIndex& fieldNames,
-	   vector<astrometry::SphericalCoords*>& fieldProjections);
-
 #endif

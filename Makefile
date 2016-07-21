@@ -102,7 +102,7 @@ WCSFit: WCSFit.o Match.o MapFit.o WcsSubs.o Accum.o FitSubroutines.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 PhotoFit: PhotoFit.o ReadPhotoPriors.o PhotoSubs.o Match.o Accum.o FitSubroutines.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-MagColor: MagColor.o $(OBJ)
+MagColor: MagColor.o Match.o Accum.o FitSubroutines.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DumpLDACHeader: DumpLDACHeader.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@

@@ -291,6 +291,32 @@ inventoryFitsTables(string inputTables,
   }
 }
 
+// Read info from fields table, write to a new output file
+void
+readFields(string inputTables,
+	   string outCatalog,
+	   NameIndex& fieldNames,
+	   vector<astrometry::SphericalCoords*>& fieldProjections) {
+  FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
+  FITS::FitsTable out(outCatalog,
+		      FITS::ReadWrite + FITS::OverwriteFile + FITS::Create,
+		      "Fields");
+  img::FTable ft = in.extract();
+  out.adopt(ft);
+  vector<double> ra;
+  vector<double> dec;
+  vector<string> name;
+  ft.readCells(name, "Name");
+  ft.readCells(ra, "RA");
+  ft.readCells(dec, "Dec");
+  for (int i=0; i<name.size(); i++) {
+    spaceReplace(name[i]);
+    fieldNames.append(name[i]);
+    astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
+    fieldProjections.push_back( new astrometry::Gnomonic(orient));
+  }
+}
+
 // Read in all the instrument extensions and their device info from input
 // FITS file, save useful ones and write to output FITS file.
 // The useInstrumentList entries are regexes, empty means use all.
@@ -321,18 +347,19 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
     }
     spaceReplace(instrumentName);
 
-    if (regexMatchAny(useInstrumentList, instrumentName))  {
-      // This is an instrument we will use.  Save to the output file first.
-      FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
-      if (!outputCatalogAlreadyOpen) {
-	outFlags = outFlags + FITS::OverwriteFile;
-	outputCatalogAlreadyOpen = true;
-      }
-      FITS::FitsTable out(outCatalog, outFlags, -1);
-      out.setName("Instrument");
-      img::FTable ff=ft.extract();
-      out.adopt(ff);
+    // Send every instrument extension to output file
+    FITS::Flags outFlags = FITS::ReadWrite+FITS::Create;
+    if (!outputCatalogAlreadyOpen) {
+      outFlags = outFlags + FITS::OverwriteFile;
+      outputCatalogAlreadyOpen = true;
+    }
+    FITS::FitsTable out(outCatalog, outFlags, -1);
+    out.setName("Instrument");
+    img::FTable ff=ft.extract();
+    out.adopt(ff);
 
+    if (regexMatchAny(useInstrumentList, instrumentName))  {
+      // This is an instrument we will use.  Make an Instrument instance
       Instrument* instptr = new Instrument(instrumentName);
       instruments[instrumentNumber] = instptr;
       string band;

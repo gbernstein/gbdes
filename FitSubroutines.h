@@ -242,6 +242,13 @@ inventoryFitsTables(string inputTables,
 		    vector<int>& instrumentHDUs,
 		    vector<int>& catalogHDUs);
 
+// Read the Fields table from input, copy to output, extract needed info
+void
+readFields(string inputTables,
+	   string outCatalog,
+	   NameIndex& fieldNames,
+	   vector<astrometry::SphericalCoords*>& fieldProjections);
+
 // Read in all the instrument extensions and their device info from input
 // FITS file, save useful ones and write to output FITS file.
 // The useInstrumentList entries are regexes, empty means use all.

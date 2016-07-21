@@ -139,31 +139,6 @@ fitDefaulted(PixelMapCollection& pmc,
 }
 
 
-void
-readFields(string inputTables,
-	   string outCatalog,
-	   NameIndex& fieldNames,
-	   vector<astrometry::SphericalCoords*>& fieldProjections) {
-  FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
-  FITS::FitsTable out(outCatalog,
-		      FITS::ReadWrite + FITS::OverwriteFile + FITS::Create,
-		      "Fields");
-  img::FTable ft = in.extract();
-  out.adopt(ft);
-  vector<double> ra;
-  vector<double> dec;
-  vector<string> name;
-  ft.readCells(name, "Name");
-  ft.readCells(ra, "RA");
-  ft.readCells(dec, "Dec");
-  for (int i=0; i<name.size(); i++) {
-    spaceReplace(name[i]);
-    fieldNames.append(name[i]);
-    Orientation orient(SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
-    fieldProjections.push_back( new Gnomonic(orient));
-  }
-}
-
 // Define and issue WCS for each extension in use, and set projection to
 // field coordinates.
 void setupWCS(const vector<SphericalCoords*>& fieldProjections,
