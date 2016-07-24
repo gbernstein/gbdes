@@ -497,12 +497,78 @@ CoordAlign::fitOnce(bool reportToCerr) {
 
     // Set alpha for in-place Cholesky
     alpha.divideUsing(tmv::CH);   // Use Cholesky decomposition for fastest inversion
-    alpha.divideInPlace();  // In-place avoids doubling memory needs
+    //**?? alpha.divideInPlace();  // In-place avoids doubling memory needs
 
     const int MAX_NEWTON_STEPS = 8;
     int newtonIter = 0;
     for (int newtonIter = 0; newtonIter < MAX_NEWTON_STEPS; newtonIter++) {
-      beta /= alpha;
+      try {
+	beta /= alpha;
+      } catch (tmv::Error& e) {
+	//** Debug probably non-pos-def matrix here.
+	set<int> degen;
+	cerr << "Caught exception" << endl;
+	auto U = alpha.svd().getU();
+	auto S = alpha.svd().getS();
+	auto Vt = alpha.svd().getVt();
+	cerr << "...done SVD, dimen U " << U.nrows() 
+	     << " x " << U.ncols() 
+	     << " V " << Vt.nrows() << " x " << Vt.ncols()
+	     << " S " << S.size() << endl;
+	int imax = 0; // index of largest, smallest SV
+	double smax=0.;
+	int imin = 0;
+	double smin=1e6;
+	for (int i=0; i<U.ncols(); i++) {
+	  double s = S(i);
+	  double pm = 0.;
+	  for (int j=0; j<S.size(); j++)
+	    pm += U(j,i) * Vt(i,j);
+	  cerr << i << " SV: " << s 
+	       << " sgn " << pm 
+	       << endl;
+	  if (pm<0) s*=-1;
+	  if (s>smax) {
+	    smax = s;
+	    imax = i;
+	  }
+	  if (s<smin) {
+	    smin = s;
+	    imin = i;
+	  }
+	  if (abs(s)<0.01) degen.insert(s);
+	}
+	cerr << "Largest SV: " << smax << endl;
+	cerr << "Smallest SV: " << smin << endl;
+	degen.insert(imin);
+	// Find biggest contributors to smallest/degenerate SVs
+	const int ntop=20;
+	for (int isv : degen) {
+	  vector<int> top(ntop,0);
+	  for (int i=0; i<Vt.nrows(); i++) {
+	    for (int j=0; j<ntop; j++) {
+	      if (pow(Vt(isv,i),2.) >= pow(Vt(isv,top[j]),2.)) {
+		// Push smaller entries to right
+		for (int k=ntop-1; k>j; k--)
+		  top[k] = top[k-1];
+		top[j] = i;
+		break;
+	      }
+	    }
+	  }
+	  for (int j : top) {
+	    string badAtom = pmc.atomHavingParameter(j);
+	    int startIndex, nParams;
+	    pmc.parameterIndicesOf(badAtom, startIndex, nParams);
+	    cerr << "Coefficient " << U(j, isv) << " " << Vt(isv,j)
+		 << " at parameter " << j 
+		 << " Map " << badAtom 
+		 << " " << j - startIndex << " of " << nParams
+		 << endl;
+	  }
+	}
+	exit(1);
+      }
       timer.stop();
       if (reportToCerr) cerr << "..solution time " << timer << endl;
       timer.reset();
