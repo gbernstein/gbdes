@@ -279,7 +279,7 @@ main(int argc, char *argv[])
     /**/cerr << "Done setting reference wcsNames" << endl;
     
     /////////////////////////////////////////////////////
-    //  Create and initialize all magnitude maps
+    //  Create and initialize all maps
     /////////////////////////////////////////////////////
 
     // Now build a preliminary set of pixel maps from the configured YAML files

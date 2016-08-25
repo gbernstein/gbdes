@@ -120,7 +120,7 @@ fitDefaulted(PixelMapCollection& pmc,
   CoordAlign ca(pmcFit, matches);
   ca.setRelTolerance(0.01);  // weaker tolerance for fit convergence
   ca.fitOnce(false);
-  
+
   // Copy defaulted parameters back into the parent pmc.
   for (auto mapname : defaultedAtoms) {
     auto pm = pmcFit.cloneMap(mapname);

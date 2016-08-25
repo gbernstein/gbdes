@@ -495,6 +495,27 @@ CoordAlign::fitOnce(bool reportToCerr) {
     timer.reset();
     timer.start();
 
+    // Precondition alpha if wanted
+    bool precondition = true;
+    int N = alpha.ncols();
+    tmv::DiagMatrix<double> ss(N, 1.);
+    if (precondition) {
+      for (int i=0; i<N; i++) {
+	if (alpha(i,i)<0.) {
+	  cerr << "Negative alpha diagonal " << alpha(i,i)
+	       << " at " << i << endl;
+	  exit(1);
+	} 
+	if (alpha(i,i) > 0.)
+	  ss(i) = 1./sqrt(alpha(i,i));
+	// SymMatrix in use so only need to do a row
+	for (int j=0; j<N; j++) {
+	  alpha(j,i) *= ss(i);
+	}
+	// And hit the diagonal again
+	alpha(i,i)*=ss(i);
+      }
+    }
     // Set alpha for in-place Cholesky
     alpha.divideUsing(tmv::CH);   // Use Cholesky decomposition for fastest inversion
     //**?? alpha.divideInPlace();  // In-place avoids doubling memory needs
@@ -503,18 +524,29 @@ CoordAlign::fitOnce(bool reportToCerr) {
     int newtonIter = 0;
     for (int newtonIter = 0; newtonIter < MAX_NEWTON_STEPS; newtonIter++) {
       try {
+	if (precondition) {
+	  beta *= ss;
+	}
+
 	beta /= alpha;
+
+	if (precondition) {
+	  beta *= ss;
+	}
+	
+	/** if (reportToCerr) {
+	  cerr << "Cholesky succeeded" << endl;
+	  throw tmv::Error("dummy");
+	} /**/
       } catch (tmv::Error& e) {
 	//** Debug probably non-pos-def matrix here.
+	int N = alpha.ncols();
 	set<int> degen;
 	cerr << "Caught exception" << endl;
-	auto U = alpha.svd().getU();
-	auto S = alpha.svd().getS();
-	auto Vt = alpha.svd().getVt();
-	cerr << "...done SVD, dimen U " << U.nrows() 
-	     << " x " << U.ncols() 
-	     << " V " << Vt.nrows() << " x " << Vt.ncols()
-	     << " S " << S.size() << endl;
+	DMatrix U(N,N);
+	DMatrix Vt(N,N);
+	tmv::DiagMatrix<double> S(N);
+	SV_Decompose(alpha, U, S, Vt);
 	int imax = 0; // index of largest, smallest SV
 	double smax=0.;
 	int imin = 0;
@@ -522,8 +554,9 @@ CoordAlign::fitOnce(bool reportToCerr) {
 	for (int i=0; i<U.ncols(); i++) {
 	  double s = S(i);
 	  double pm = 0.;
-	  for (int j=0; j<S.size(); j++)
+	  for (int j=0; j<S.size(); j++) {
 	    pm += U(j,i) * Vt(i,j);
+	  }
 	  cerr << i << " SV: " << s 
 	       << " sgn " << pm 
 	       << endl;
@@ -581,7 +614,8 @@ CoordAlign::fitOnce(bool reportToCerr) {
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
       timer.stop();
-      if (reportToCerr) {
+      //**if (reportToCerr) {
+      if (true) {
 	cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
 	     << " / " << dof 
 	     << " in time " << timer << " sec"
