@@ -227,14 +227,16 @@ astrometry::readTPV(const img::Header& h, string name) {
     // Obtained a valid x polynomial.
     if (p2.nCoeffs() > 1) {
       // Also have valid y polynomial.  Make the map:
-      pv = new PolyMap(p1, p2, polyName,POLYSTEP);
+      pv = new PolyMap(p1, p2, polyName,
+		       Bounds<double>(-1.,1.,-1.,1.), POLYSTEP);
     } else {
       // Did not find PV2's.  Install default:
       Poly2d p2Identity(1);
       DVector coeffs = p2Identity.getC();
       coeffs[p2Identity.vectorIndex(0,1)] = 1.;
       p2Identity.setC(coeffs);
-      pv = new PolyMap(p1, p2Identity,polyName,POLYSTEP);
+      pv = new PolyMap(p1, p2Identity,polyName,
+		       Bounds<double>(-1.,1.,-1.,1.), POLYSTEP);
     }
   } else {
     // Did not obtain any PV1's.  If there are PV2's, install
@@ -244,7 +246,8 @@ astrometry::readTPV(const img::Header& h, string name) {
       DVector coeffs = p1Identity.getC();
       coeffs[p1Identity.vectorIndex(1,0)] = 1.;
       p1Identity.setC(coeffs);
-      pv = new PolyMap(p1Identity, p2, polyName, POLYSTEP);
+      pv = new PolyMap(p1Identity, p2, polyName,
+		       Bounds<double>(-1.,1.,-1.,1.), POLYSTEP);
     }
   }
   list<PixelMap*> pmlist;
@@ -285,6 +288,10 @@ astrometry::writeTPV(const Wcs& w) {
       if (!pv)
 	throw AstrometryError("writeTPV(): Second component of input Wcs <" + w.getName()
 			      + "> is not PolyMap");
+      Bounds<double> domain = pv->getDomain();
+      if (pv->getDomain() != Bounds<double>(-1.,1.,-1.,1.))
+	FormatAndThrow<AstrometryError>() << "WriteTPV has PolyMap with non-default domain "
+					  << pv->getDomain();
     }
   }
 
@@ -396,8 +403,8 @@ astrometry::fitTPV(Bounds<double> b,
 
   PolyMap* pv=0;
   for (polyOrder=startOrder; polyOrder<=maxOrder; polyOrder++) {
-    // Make polynomial map
-    PolyMap poly(polyOrder, polyName, tolerance);
+    // Make polynomial map with no rescaling of arguments
+    PolyMap poly(polyOrder, polyName, Bounds<double>(-1.,1.,-1.,1.), tolerance);
 
     // Fit map to test points
     int nP = poly.nParams();
