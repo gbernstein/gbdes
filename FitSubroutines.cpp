@@ -1019,7 +1019,7 @@ Astro::getOutputA(const Astro::Detection& d,
   yp = d.ypix;
   xw = d.xw;
   yw = d.yw;
-  sigma = 0.5*d.sigma;
+  sigma = d.sigma;
   
   // Calculate residuals if we have a centroid for the match:
   if (mx!=0. || my!=0.) {

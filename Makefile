@@ -142,6 +142,8 @@ testFT8: testFT8.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 testImage: testImage.o $(OBJ) 
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+testmaps: testmaps.o $(OBJ) 
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ###############################################################
 ## Standard stuff:
 ###############################################################
