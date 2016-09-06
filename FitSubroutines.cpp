@@ -420,7 +420,9 @@ readExposures(const vector<Instrument*>& instruments,
   vector<int> instrumentNumber;
   vector<double> airmass;
   vector<double> exptime;
-  // ??? Add MJD??
+  vector<double> mjd;
+  vector<string> epoch;
+
   ff.readCells(names, "Name");
   ff.readCells(ra, "RA");
   ff.readCells(dec, "Dec");
@@ -428,7 +430,18 @@ readExposures(const vector<Instrument*>& instruments,
   ff.readCells(instrumentNumber, "InstrumentNumber");
   ff.readCells(airmass, "Airmass");
   ff.readCells(exptime, "Exptime");
-
+  try {
+    ff.readCells(mjd, "MJD");
+  } catch (img::FTableError& e) {
+    // May not always have this column
+    mjd.clear();
+  }
+  try {
+    ff.readCells(epoch, "Epoch");
+  } catch (img::FTableError& e) {
+    // May not always have this column
+    epoch.clear();
+  }
   // Initialize our output arrays to not-in-use values
   vector<Exposure*> exposures(names.size(), 0);
   exposureColorPriorities = vector<int>(names.size(), -1);
@@ -467,8 +480,11 @@ readExposures(const vector<Instrument*>& instruments,
       expo->instrument = instrumentNumber[i];
       expo->airmass = airmass[i];
       expo->exptime = exptime[i];
-      // ??? MJD
       exposures[i] = expo;
+      if (!mjd.empty())
+	expo->mjd = mjd[i];
+      if (!epoch.empty())
+	expo->epoch = epoch[i];
     }
   } // End exposure loop
   return exposures;
@@ -578,6 +594,9 @@ readExtensions(img::FTable& extensionTable,
       d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extn->device);
       d["EXPOSURE"] = expo.name;
       d["BAND"] = instruments[expo.instrument]->band;
+      // Add Epoch to the dictionary if it is not empty
+      if (!expo.epoch.empty())
+	d["EPOCH"] = expo.epoch;
       // This will be the name of the extension's final WCS and photometry map:
       extn->wcsName = d["EXPOSURE"] + "/" + d["DEVICE"];
       // And this is the name of the PixelMap underlying the WCS, or

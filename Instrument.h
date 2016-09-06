@@ -46,7 +46,7 @@ public:
 class Exposure {
 public:
   Exposure(const string& name_, const astrometry::SphericalCoords& coords): 
-    name(name_), projection(coords.duplicate()) {}
+    name(name_), projection(coords.duplicate()), mjd(0.), exptime(1.), airmass(1.) {}
   ~Exposure() {delete projection;}
   string name;   // The exposure map will have this name too.
   astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for exposure
@@ -55,6 +55,7 @@ public:
   double airmass;
   double exptime;
   double mjd;  
+  string epoch;
   // No copying:
   Exposure(const Exposure& rhs) =delete;
   void operator=(const Exposure& rhs) =delete;
