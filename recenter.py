@@ -100,11 +100,10 @@ if __name__=='__main__':
         print "            RA/Dec values updated."
         sys.exit(1)
     filename = sys.argv[1]
-    ##fits = pf.open(filename, 'update')
-    fits = pf.open(filename)
+    fits = pf.open(filename, 'update')
     code = fixRADec(fits)
-    if code==0:
-        code = fieldCoords(fits)
+    ##if code==0:
+    ##    code = fieldCoords(fits)
     fits.close()
     sys.exit(code)
 

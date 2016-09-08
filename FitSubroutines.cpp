@@ -803,6 +803,9 @@ createMapCollection(const vector<Instrument*>& instruments,
       d["DEVICE"] = instruments[expo.instrument]->deviceNames.nameOf(extnptr->device);
       d["EXPOSURE"] = expo.name;
       d["BAND"] = instruments[expo.instrument]->band;
+      // Add Epoch to the dictionary if it is not empty
+      if (!expo.epoch.empty())
+	d["EPOCH"] = expo.epoch;
       }
       if (!inputYAML.addMap(extnptr->mapName,d)) {
 	cerr << "Input YAML files do not have complete information for map "
