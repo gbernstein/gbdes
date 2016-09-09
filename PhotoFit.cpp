@@ -87,6 +87,7 @@ main(int argc, char *argv[])
   string priorFiles;
   string useInstruments;
   string skipExposures;
+  bool skipCanonicalCheck;
 
   string outCatalog;
   string outPhotFile;
@@ -148,6 +149,8 @@ main(int argc, char *argv[])
 			 "list of YAML files specifying maps","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
+    parameters.addMember("skipCanonicalCheck",&skipCanonicalCheck, def,
+			 "no automatic assignment of canonical exposures",false);
     parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "photo.fits");
@@ -295,32 +298,35 @@ main(int argc, char *argv[])
     // so, choose one, and replace its exposure map with Identity.
     /////////////////////////////////////////////////////
 
-    // Here's where we'll collect the map definitions that override the
-    // inputs in order to eliminate degeneracies.
-    PhotoMapCollection pmcAltered;  
+    if (!skipCanonicalCheck) {
+      // Here's where we'll collect the map definitions that override the
+      // inputs in order to eliminate degeneracies.
+      PhotoMapCollection pmcAltered;  
 
-    for (int iInst=0; iInst < instruments.size(); iInst++) {
-      if (!instruments[iInst]) continue;  // Not using instrument
-      auto& instr = *instruments[iInst];
+      for (int iInst=0; iInst < instruments.size(); iInst++) {
+	if (!instruments[iInst]) continue;  // Not using instrument
+	auto& instr = *instruments[iInst];
 
-      int canonicalExposure =
-	findCanonical<Photo>(instr, iInst, exposures, extensions, *pmcInit);
+	int canonicalExposure =
+	  findCanonical<Photo>(instr, iInst, exposures, extensions, *pmcInit);
 
-      if (canonicalExposure >= 0)
-	cout << "# Selected " << exposures[canonicalExposure]->name
-	     << " as canonical for instrument " << instr.name
-	     << endl;
-	// Make a new map spec for the canonical exposure
-	pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
-    } // End instrument loop
+	if (canonicalExposure >= 0) {
+	  cout << "# Selected " << exposures[canonicalExposure]->name
+	       << " as canonical for instrument " << instr.name
+	       << endl;
+	  // Make a new map spec for the canonical exposure
+	  pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
+	}
+      } // End instrument loop
 
-    // Add the altered maps specs to the input YAML specifications
-    {
-      ostringstream oss;
-      pmcAltered.write(oss);
-      istringstream iss(oss.str());
-      inputYAML.addInput(iss, "", true); // Prepend these specs to others
-    }
+      // Add the altered maps specs to the input YAML specifications
+      {
+	ostringstream oss;
+	pmcAltered.write(oss);
+	istringstream iss(oss.str());
+	inputYAML.addInput(iss, "", true); // Prepend these specs to others
+      }
+    } // End of check for canonical exposures
     
     // Do not need the preliminary PMC any more.
     delete pmcInit;

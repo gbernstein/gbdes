@@ -54,14 +54,18 @@ string usage=
 // where any given mapName should have its parameters fixed at initial values during
 // the fitting.  Regexes allowed (no commas!).
 
-// parameter canonicalExposures is a string with
-// <exposureID>, ....
-// which are are exposures that will be given an identity exposure map in order to break
+// canonicalExposures
+// are exposures that will be given an identity exposure map in order to break
 // the usual degeneracy between exposure and instrument maps.  There must be
 // 0 or 1 of these specified for any instrument that has Instrument Map with free parameters
 // but no exposures in which the either the instrument map or exposure map is fixed.
 // Default is to find an exposure that has data in all devices and use it.
 // Will have an error if there is more than one constraint on any Instrument.
+
+// set parameter skipCanonicalCheck=true to have the program skip this step,
+// since the automated routine is not going to get this right when there are
+// instruments that share instrument map components in such a way that there is no
+// degeneracy for some instruments.
 
 // Note that pixel maps for devices within instrument will get names <instrument>/<device>.
 // And Wcs's for individual exposures' extension will get names <exposure>/<device>.
@@ -87,6 +91,7 @@ main(int argc, char *argv[])
   string fixMaps;
   string useInstruments;
   string skipExposures;
+  bool skipCanonicalCheck;
 
   string outCatalog;
   string outWcs;
@@ -136,6 +141,8 @@ main(int argc, char *argv[])
 			 "list of YAML files specifying maps","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
+    parameters.addMember("skipCanonicalCheck",&skipCanonicalCheck, def,
+			 "no automatic assignment of canonical exposures",false);
 
     parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
@@ -205,13 +212,16 @@ main(int argc, char *argv[])
     // All the names will be stripped of leading/trailing white space, and internal
     // white space replaced with single underscore - this keeps PixelMap parsing functional.
 
+    /**/cerr << "Reading fields" << endl;
+
     // All we care about fields are names and orientations:
     NameIndex fieldNames;
     vector<SphericalCoords*> fieldProjections;
     // Read the Fields table from input, copy to a new output FITS file, extract needed info
     readFields(inputTables, outCatalog, fieldNames, fieldProjections);
 
-    /**/cerr << "Done readFields" << endl;
+
+    /**/cerr << "Reading instruments" << endl;
 
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
@@ -229,7 +239,8 @@ main(int argc, char *argv[])
       readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
 		      outputCatalogAlreadyOpen);
 
-    /**/cerr << "Done readInstruments" << endl;
+
+    /**/cerr << "Reading exposures" << endl;
 
     // This vector will hold the color-priority value of each exposure.  -1 means an exposure
     // that does not hold color info.
@@ -245,8 +256,9 @@ main(int argc, char *argv[])
 		    true, // Use reference exposures for astrometry
 		    outputCatalogAlreadyOpen);
 
-    /**/cerr << "Done readExposures" << endl;
 		    
+    /**/cerr << "Reading extensions" << endl;
+
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
     {
@@ -264,8 +276,9 @@ main(int argc, char *argv[])
 			    colorExtensions,
 			    inputYAML);
 
-    /**/cerr << "Done readExtensions" << endl;
 		    
+    /**/cerr << "Setting reference wcsNames" << endl;
+
     // A special loop here to set the wcsname of reference extensions to the
     // name of their field.
     for (auto extnptr : extensions) {
@@ -276,11 +289,12 @@ main(int argc, char *argv[])
       extnptr->wcsName = fieldNames.nameOf(ifield); // ??? mapName instead???
     }
 
-    /**/cerr << "Done setting reference wcsNames" << endl;
     
     /////////////////////////////////////////////////////
     //  Create and initialize all maps
     /////////////////////////////////////////////////////
+
+    /**/cerr << "Building initial PixelMapCollection" << endl;
 
     // Now build a preliminary set of pixel maps from the configured YAML files
     PixelMapCollection* pmcInit = new PixelMapCollection;
@@ -293,7 +307,6 @@ main(int argc, char *argv[])
       }
     }
 
-    /**/cerr << "Successfully built initial PixelMapCollection" << endl;
     
     // Check every map name against the list of those to fix.
     // Includes all devices of any instruments on the fixMapList.
@@ -304,6 +317,7 @@ main(int argc, char *argv[])
     /////////////////////////////////////////////////////
     // First sanity check: Check for maps that are defaulted but fixed
     /////////////////////////////////////////////////////
+    /**/cerr << "Checking for fixed+default" << endl;
     {
       bool done = false;
       for (auto iName : pmcInit->allMapNames()) {
@@ -317,12 +331,14 @@ main(int argc, char *argv[])
       if (done) exit(1);
     }
     
-    /**/cerr << "Done fixed+default check" << endl;
 
     /////////////////////////////////////////////////////
     // Second sanity check: in each field that has *any* free maps,
     // do we have at least one map that is *fixed*?
     /////////////////////////////////////////////////////
+
+    /**/cerr << "Checking for field degeneracy" << endl;
+
     {
       vector<bool> fieldHasFree(fieldNames.size(), false);
       vector<bool> fieldHasFixed(fieldNames.size(), false);
@@ -347,45 +363,48 @@ main(int argc, char *argv[])
       if (done) exit(1);
     }
     
-    /**/cerr << "Done field degeneracy check" << endl;
-
     /////////////////////////////////////////////////////
     // Now for each instrument, determine if we need a canonical
     // exposure to break an exposure/instrument degeneracy.  If
     // so, choose one, and replace its exposure map with Identity.
     /////////////////////////////////////////////////////
 
-    // Here's where we'll collect the map definitions that override the
-    // inputs in order to eliminate degeneracies.
-    PixelMapCollection pmcAltered;  
+    if (!skipCanonicalCheck) {
+      /**/cerr << "Checking for canonical exposures" << endl;
+      // Here's where we'll collect the map definitions that override the
+      // inputs in order to eliminate degeneracies.
+      PixelMapCollection pmcAltered;  
 
-    for (int iInst=0; iInst < instruments.size(); iInst++) {
-      if (!instruments[iInst]) continue;  // Not using instrument
-      auto& instr = *instruments[iInst];
+      for (int iInst=0; iInst < instruments.size(); iInst++) {
+	if (!instruments[iInst]) continue;  // Not using instrument
+	auto& instr = *instruments[iInst];
 
-      int canonicalExposure =
-	findCanonical<Astro>(instr, iInst, exposures, extensions, *pmcInit);
+	int canonicalExposure =
+	  findCanonical<Astro>(instr, iInst, exposures, extensions, *pmcInit);
 
-      if (canonicalExposure >= 0) {
-	cout << "# Selected " << exposures[canonicalExposure]->name
-	     << " as canonical for instrument " << instr.name
-	     << endl;
-	// Make a new map spec for the canonical exposure
-	pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
+	if (canonicalExposure >= 0) {
+	  cout << "# Selected " << exposures[canonicalExposure]->name
+	       << " as canonical for instrument " << instr.name
+	       << endl;
+	  // Make a new map spec for the canonical exposure
+	  pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
+	}
+      } // End instrument loop
+
+      // Re-read all of the maps, assigning WCS to each extension this time
+      // and placing into the final PixelMapCollection.
+
+      // Add the altered maps specs to the input YAML specifications
+      {
+	ostringstream oss;
+	pmcAltered.write(oss);
+	istringstream iss(oss.str());
+	inputYAML.addInput(iss, "", true); // Prepend these specs to others
       }
-    } // End instrument loop
+    } // End of check for canonical exposures
 
-    // Re-read all of the maps, assigning WCS to each extension this time
-    // and placing into the final PixelMapCollection.
+    /**/cerr << "Making final mapCollection" << endl;
 
-    // Add the altered maps specs to the input YAML specifications
-    {
-      ostringstream oss;
-      pmcAltered.write(oss);
-      istringstream iss(oss.str());
-      inputYAML.addInput(iss, "", true); // Prepend these specs to others
-    }
-    
     // Do not need the preliminary PMC any more.
     delete pmcInit;
     pmcInit = 0;
@@ -400,12 +419,10 @@ main(int argc, char *argv[])
 			       inputYAML,
 			       mapCollection);
 
-    /**/cerr << "Done making final mapCollection!" << endl;
 
     // Add WCS for every extension, and reproject into field coordinates
+    /**/cerr << "Defining all WCS's" << endl;
     setupWCS(fieldProjections, instruments, exposures, extensions, mapCollection);
-
-    /**/cerr << "Done defining all WCS's" << endl;
 
     /////////////////////////////////////////////////////
     //  Initialize map components that were created with default
@@ -416,6 +433,8 @@ main(int argc, char *argv[])
     // Will do this first by finding any device maps that are defaulted,
     // and choosing an exposure with which to initialize them.
     // The chosen exposure should have non-defaulted exposure solution.
+
+    /**/cerr << "Initializing defaulted maps" << endl;
 
     list<int> exposuresToInitialize =
       pickExposuresToInitialize(instruments,
@@ -485,6 +504,8 @@ main(int argc, char *argv[])
     // Figure out which extensions' maps require a color entry to function
     whoNeedsColor<Astro>(extensions);
     
+    /**/cerr << "Reprojecting startWcs" << endl;
+    
     // Before reading objects, we want to set all starting WCS's to go into
     // field coordinates.
     for (auto extnptr : extensions) {
@@ -494,8 +515,6 @@ main(int argc, char *argv[])
       extnptr->startWcs->reprojectTo(*fieldProjections[ifield]);
     }
 
-    /**/cerr << "Done reprojecting startWcs" << endl;
-    
     // Start by reading all matched catalogs, creating Detection and Match arrays, and 
     // telling each Extension which objects it should retrieve from its catalog
 
@@ -515,15 +534,17 @@ main(int argc, char *argv[])
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
+    /**/cerr << "Reading catalogs." << endl;
     readObjects<Astro>(extensionTable, exposures, extensions, pixSysError, referenceSysError);
 
-    /**/cerr << "Done reading catalogs." << endl;
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the PhotoArguments for Detections they match
+    /**/cerr << "Reading colors" << endl;
     //** ???    readColors<Astro>(extensionTable, colorExtensions);
 
-    /**/cerr << "Done reading colors" << endl;
+
+    /**/cerr << "Purging defective detections and matches" << endl;
 
     // Get rid of Detections with errors too high
     purgeNoisyDetections<Astro>(maxPixError, matches, exposures, extensions);
@@ -534,8 +555,6 @@ main(int argc, char *argv[])
     // Get rid of Matches with color out of range (note that default color is 0).
     purgeBadColor<Astro>(minColor, maxColor, matches); // ??? Nop right now
     
-    /**/cerr << "Done purging defective detections and matches" << endl;
-
     // Reserve desired fraction of matches
     if (reserveFraction>0.) 
       reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);

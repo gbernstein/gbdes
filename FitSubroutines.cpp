@@ -552,6 +552,7 @@ readExtensions(img::FTable& extensionTable,
 
     int iDevice;
     extensionTable.readCell(iDevice, "Device", i);
+    /**/if (i%1000==0) cerr << "...Extn " << i << " " << expo.name << " " << iDevice << endl;
     extn->device = iDevice;
     extn->airmass = expo.airmass;
     extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
