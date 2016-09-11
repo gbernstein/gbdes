@@ -1,3 +1,5 @@
+* Have PhotoFit do the degeneracy checking instead of canonical exposures.
+
 * Hex values read for Expressions.
 
 * New nightwise priors using time structure functions
@@ -18,8 +20,6 @@
 * Reduce chunk size in WCSFit
 
 * Allow individual systematic errors per instrument or exposure?
-
-* Get MJD into exposure
 
 * Color PixelMap
 
@@ -105,4 +105,7 @@
 * nan in photo chisq values, rms wrong too?
 
 * Check arithmetic on Accum reduced chisq
+
+* Get MJD into exposure
+
 

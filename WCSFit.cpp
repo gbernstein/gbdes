@@ -16,6 +16,7 @@
 
 #include "FitSubroutines.h"
 #include "WcsSubs.h"
+#include "MapDegeneracies.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -54,18 +55,13 @@ string usage=
 // where any given mapName should have its parameters fixed at initial values during
 // the fitting.  Regexes allowed (no commas!).
 
-// canonicalExposures
+// canonicalExposures ???
 // are exposures that will be given an identity exposure map in order to break
 // the usual degeneracy between exposure and instrument maps.  There must be
 // 0 or 1 of these specified for any instrument that has Instrument Map with free parameters
 // but no exposures in which the either the instrument map or exposure map is fixed.
 // Default is to find an exposure that has data in all devices and use it.
 // Will have an error if there is more than one constraint on any Instrument.
-
-// set parameter skipCanonicalCheck=true to have the program skip this step,
-// since the automated routine is not going to get this right when there are
-// instruments that share instrument map components in such a way that there is no
-// degeneracy for some instruments.
 
 // Note that pixel maps for devices within instrument will get names <instrument>/<device>.
 // And Wcs's for individual exposures' extension will get names <exposure>/<device>.
@@ -91,7 +87,6 @@ main(int argc, char *argv[])
   string fixMaps;
   string useInstruments;
   string skipExposures;
-  bool skipCanonicalCheck;
 
   string outCatalog;
   string outWcs;
@@ -141,8 +136,6 @@ main(int argc, char *argv[])
 			 "list of YAML files specifying maps","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
-    parameters.addMember("skipCanonicalCheck",&skipCanonicalCheck, def,
-			 "no automatic assignment of canonical exposures",false);
 
     parameters.addMemberNoValue("COLORS");
     parameters.addMember("colorExposures",&colorExposures, def,
@@ -364,44 +357,43 @@ main(int argc, char *argv[])
     }
     
     /////////////////////////////////////////////////////
-    // Now for each instrument, determine if we need a canonical
-    // exposure to break an exposure/instrument degeneracy.  If
-    // so, choose one, and replace its exposure map with Identity.
+    // Next degeneracy: if linear/poly maps are compounded there
+    // must be data for which one of them is fixed.  See if it
+    // is needed to set some exposure maps to Identity to break
+    // such degeneracies.
     /////////////////////////////////////////////////////
 
-    if (!skipCanonicalCheck) {
-      /**/cerr << "Checking for canonical exposures" << endl;
-      // Here's where we'll collect the map definitions that override the
-      // inputs in order to eliminate degeneracies.
-      PixelMapCollection pmcAltered;  
+    /**/cerr << "Checking for polynomial degeneracies" << endl;
+    set<string> degenerateTypes={"Poly","Linear","Constant"};
+    {
+      MapDegeneracies<Astro> degen(extensions,
+				   *pmcInit,
+				   degenerateTypes,
+				   false);  // Any non-fixed maps are examined
+      // All exposure maps are candidates for setting to Identity
+      // (the code will ignore those which already are Identity)
+      set<string> exposureMapNames;
+      for (auto expoPtr : exposures) {
+	if (expoPtr && !expoPtr->name.empty())
+	  exposureMapNames.insert(expoPtr->name);
+      }
 
-      for (int iInst=0; iInst < instruments.size(); iInst++) {
-	if (!instruments[iInst]) continue;  // Not using instrument
-	auto& instr = *instruments[iInst];
-
-	int canonicalExposure =
-	  findCanonical<Astro>(instr, iInst, exposures, extensions, *pmcInit);
-
-	if (canonicalExposure >= 0) {
-	  cout << "# Selected " << exposures[canonicalExposure]->name
-	       << " as canonical for instrument " << instr.name
-	       << endl;
-	  // Make a new map spec for the canonical exposure
-	  pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
-	}
-      } // End instrument loop
-
-      // Re-read all of the maps, assigning WCS to each extension this time
-      // and placing into the final PixelMapCollection.
-
-      // Add the altered maps specs to the input YAML specifications
-      {
+      auto replaceThese = degen.replaceWithIdentity(exposureMapNames);
+      
+      // Supersede their maps if there are any
+      if (!replaceThese.empty()) {
+	PixelMapCollection pmcAltered;
+	for (auto mapname : replaceThese) {
+	  cerr << "..Setting map <" << mapname << "> to Identity" << endl;
+	  pmcAltered.learnMap(IdentityMap(mapname));
+	}	  
+	// Add the altered maps specs to the input YAML specifications
 	ostringstream oss;
 	pmcAltered.write(oss);
 	istringstream iss(oss.str());
 	inputYAML.addInput(iss, "", true); // Prepend these specs to others
       }
-    } // End of check for canonical exposures
+    } // End of poly-degeneracy check/correction
 
     /**/cerr << "Making final mapCollection" << endl;
 
@@ -430,44 +422,50 @@ main(int argc, char *argv[])
     //  starting WCS.  
     /////////////////////////////////////////////////////
 
-    // Will do this first by finding any device maps that are defaulted,
-    // and choosing an exposure with which to initialize them.
-    // The chosen exposure should have non-defaulted exposure solution.
-
     /**/cerr << "Initializing defaulted maps" << endl;
 
-    list<int> exposuresToInitialize =
-      pickExposuresToInitialize(instruments,
-				exposures,
-				extensions,
-				mapCollection);
+    // This routine figures out an order in which defaulted maps can
+    // be initialized without degeneracies
+    list<set<int>> initializeOrder;
+    set<int> initializedExtensions;
+    {
+      MapDegeneracies<Astro> degen(extensions,
+				   mapCollection,
+				   degenerateTypes,
+				   true);  // Only defaulted maps are used
+      // Get the recommended initialization order:
+      initializeOrder = degen.initializationOrder();
+    }
     
-    // Initialize defaulted maps, one exposure at a time, starting
-    // with the ones that solve for devices, then all the others.
-    // The defaulted status
-    // in the mapCollection should be getting updated as we go.
-    for (int i=0; i<exposures.size(); i++)
-      if (exposures[i])
-	exposuresToInitialize.push_back(i);
-
-    for (auto iExpo : exposuresToInitialize) {
-      //   Find all defaulted extensions using this exposure
+    for (auto extnSet : initializeOrder) {
+      // Fit set of extensions to initialize defaulted map(s)
       set<Extension*> defaultedExtensions;
-      for (auto extnptr : extensions) {
-	if (!extnptr) continue; // Not in use
-	if (extnptr->exposure != iExpo)
-	  continue;
-	if (mapCollection.getDefaulted(extnptr->mapName))
-	  defaultedExtensions.insert(extnptr);
+      for (auto iextn : extnSet) {
+	defaultedExtensions.insert(extensions[iextn]);
+	initializedExtensions.insert(iextn);
       }
-      if (!defaultedExtensions.empty()) {
-	fitDefaulted(mapCollection,
-		     defaultedExtensions,
-		     instruments,
-		     exposures);
-      }
+      fitDefaulted(mapCollection,
+		   defaultedExtensions,
+		   instruments,
+		   exposures);
     }
 
+    // Try to fit on every extension not already initialized just to
+    // make sure that we didn't miss any non-Poly map elements.
+    // The fitDefaulted routine will just return if there are no
+    // defaulted parameters for the extension.
+    for (int iextn=0; iextn<extensions.size(); iextn++) {
+      // Skip extensions that don't exist or are already initialized
+      if (!extensions[iextn] || initializedExtensions.count(iextn))
+	continue;
+      set<Extension*> defaultedExtensions = {extensions[iextn]};
+      fitDefaulted(mapCollection,
+		   defaultedExtensions,
+		   instruments,
+		   exposures);
+      initializedExtensions.insert(iextn);
+    }
+      
     // As a check, there should be no more defaulted maps
     bool defaultProblem=false;
     for (auto iName : mapCollection.allMapNames()) {

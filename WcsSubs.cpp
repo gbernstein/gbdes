@@ -38,6 +38,10 @@ fitDefaulted(PixelMapCollection& pmc,
     else
       fixAtoms.insert(mapname);
   }
+  // We are done if nothing is defaults
+  if (defaultedAtoms.empty())
+    return;
+  
   // If the exposure has any defaulted maps, initialize them
   /**/if (true) {
     cerr << "Initializing maps " ;
