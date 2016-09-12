@@ -526,14 +526,8 @@ readExtensions(img::FTable& extensionTable,
 	       vector<typename S::ColorExtension*>& colorExtensions,
 	       astrometry::YAMLCollector& inputYAML) {
       
-  /**/
-  Stopwatch tWCS;
-  Stopwatch tAdd;
-  Stopwatch tTot;
-
   vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
-  /**/ tTot.start(); 
   int processed=0;
   for (int i=0; i<extensionTable.nrows(); i++) {
     int iExposure;
@@ -561,19 +555,15 @@ readExtensions(img::FTable& extensionTable,
 
     int iDevice;
     extensionTable.readCell(iDevice, "Device", i);
-    /**/if (processed%1000==0) {
-      cerr << "...Extn " << i << " " << expo.name << " " << iDevice << endl;
-      tTot.stop();
-      cerr << "Total: " << tTot << " WCS " << tWCS << " tAdd " << tAdd << endl;
-      tTot.reset(); tWCS.reset(); tAdd.reset(); 
-      tTot.start();
+    if (processed%1000==0) {
+      cerr << "...Extn " << i << "/" << extensions.size() 
+	   << " " << expo.name << endl;
     }
     extn->device = iDevice;
     extn->airmass = expo.airmass;
     extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
        
     // Create the starting WCS for the exposure
-    /**/tWCS.start();
     string s;
     extensionTable.readCell(s, "WCSIn", i);
     if (stringstuff::nocaseEqual(s, "_ICRS")) {
@@ -592,7 +582,6 @@ readExtensions(img::FTable& extensionTable,
       extn->startWcs = pmcTemp.cloneWcs(wcsName);
     }
 
-    /**/tWCS.stop();
     // destination projection for startWCS is the Exposure projection,
     // so that any exposure-level magnitude corrections use this coord system
     extn->startWcs->reprojectTo(*expo.projection);
@@ -624,14 +613,12 @@ readExtensions(img::FTable& extensionTable,
       else
 	extn->mapName = extn->wcsName;
 	
-      /**/tAdd.start();
       if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
 	     << endl;
 	exit(1);
       }
-      /**/tAdd.stop();
     }
     extensions[i] = extn;
   }  // End extension loop

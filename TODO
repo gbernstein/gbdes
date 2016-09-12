@@ -1,3 +1,5 @@
+* Read data (and reject short-count exposures) before degeneracy checks
+
 * Have PhotoFit do the degeneracy checking instead of canonical exposures.
 
 * Hex values read for Expressions.
