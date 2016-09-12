@@ -14,6 +14,7 @@
 #include "Match.h"
 #include "PhotoMatch.h"
 #include "Random.h"
+#include "Stopwatch.h"
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -525,8 +526,15 @@ readExtensions(img::FTable& extensionTable,
 	       vector<typename S::ColorExtension*>& colorExtensions,
 	       astrometry::YAMLCollector& inputYAML) {
       
+  /**/
+  Stopwatch tWCS;
+  Stopwatch tAdd;
+  Stopwatch tTot;
+
   vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
+  /**/ tTot.start(); 
+  int processed=0;
   for (int i=0; i<extensionTable.nrows(); i++) {
     int iExposure;
     extensionTable.readCell(iExposure, "Exposure", i);
@@ -546,18 +554,26 @@ readExtensions(img::FTable& extensionTable,
 	
     if (!exposures[iExposure]) continue;
     
+    ++processed;
     typename S::Extension* extn = new typename S::Extension;
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];
 
     int iDevice;
     extensionTable.readCell(iDevice, "Device", i);
-    /**/if (i%1000==0) cerr << "...Extn " << i << " " << expo.name << " " << iDevice << endl;
+    /**/if (processed%1000==0) {
+      cerr << "...Extn " << i << " " << expo.name << " " << iDevice << endl;
+      tTot.stop();
+      cerr << "Total: " << tTot << " WCS " << tWCS << " tAdd " << tAdd << endl;
+      tTot.reset(); tWCS.reset(); tAdd.reset(); 
+      tTot.start();
+    }
     extn->device = iDevice;
     extn->airmass = expo.airmass;
     extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
        
     // Create the starting WCS for the exposure
+    /**/tWCS.start();
     string s;
     extensionTable.readCell(s, "WCSIn", i);
     if (stringstuff::nocaseEqual(s, "_ICRS")) {
@@ -576,6 +592,7 @@ readExtensions(img::FTable& extensionTable,
       extn->startWcs = pmcTemp.cloneWcs(wcsName);
     }
 
+    /**/tWCS.stop();
     // destination projection for startWCS is the Exposure projection,
     // so that any exposure-level magnitude corrections use this coord system
     extn->startWcs->reprojectTo(*expo.projection);
@@ -607,12 +624,14 @@ readExtensions(img::FTable& extensionTable,
       else
 	extn->mapName = extn->wcsName;
 	
-      if (!inputYAML.addMap(extn->mapName,d)) {
+      /**/tAdd.start();
+      if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
 	     << endl;
 	exit(1);
       }
+      /**/tAdd.stop();
     }
     extensions[i] = extn;
   }  // End extension loop

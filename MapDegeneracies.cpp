@@ -87,6 +87,7 @@ MapDegeneracies<S>::replaceWithIdentity(const set<string>& candidates) {
 	  maxName = mapname;
 	}
       }
+      //**/cerr << "--maxFix " << maxFix << "--maxName " << maxName << endl;
       // If there is no way to un-degenerate any other maps by fixing one,
       // we are screwed (??? unless we want to start looking for pairs to
       // fix simultaneously, by finding all exposures with all but one map
@@ -120,6 +121,8 @@ MapDegeneracies<S>::initializationOrder() {
   list<set<int>> out;
   while (!maps.empty()) {
     auto goodextns = findNondegenerate();
+    //**/cerr << ".." << maps.size() << " maps, " << goodextns.size() << " clean extns"
+	     << endl;
     if (goodextns.empty()) {
       // We have maps with no clear degeneracy breaking path.
       cerr << "ERROR: no path to initialize these maps without degeneracies:" << endl;
@@ -128,51 +131,43 @@ MapDegeneracies<S>::initializationOrder() {
       exit(1);
     }
 
-    // The map that is in each nondegen extension is no longer degenerate.
-    // Pick one extension to initialize next - the one whose map appears
-    // in the most other extensions.  And we might as well initialize
-    // every map that used in only one extension.
-    int maxuses = 0;  // Highest number of other extns using a candidate's map
-    int maxExtn = 0;  // The extn with highest other uses
-    int maxExpo = 0;  // The exposure it comes from
-    string maxMap;    // The map it uses
-    set<int> othersUsingMap; // Other extns to initialize together (same exposure)
+    // Do everything that can be done - for a given choose all relevant exposures in
+    // a given exposure.  Exposure with the most data to contribute now?
+    map<string,map<int,set<int>>> mapCounts;
+    // First index in map name, 2nd is which exposure it's from, the set is
+    // the relevant exposures.
 
     for (auto iextn : goodextns) {
       string itsMap = *extns[iextn].begin();
-      if (maps[itsMap].size()==1) {
+      int mapUses = maps[itsMap].size();
+      if (mapUses==1) {
 	// This extn's map is not used anywhere else.  Go ahead and add to init list
 	// and erase the map
 	set<int> tmp = {iextn};
 	out.push_back(tmp);
 	eraseMap(itsMap);
-      } else if (maps[itsMap].size() > maxuses) {
-	// New candidate for next initialization.
-	maxExtn = iextn;
-	maxExpo = extensions[iextn]->exposure;
-	maxMap = itsMap;
+	//**/cerr << "..singleton " << itsMap << endl;
+      } else {
+	int mapExpo = extensions[iextn]->exposure;
+	mapCounts[itsMap][mapExpo].insert(iextn);
       }
     }
-
-    if (maxuses > 0) {
-      // Collect all other non-degen extns using the same map.
-      // If they're from same exposure, initialize all at once.
-      // If not, print a warning of over-constraint
-      set<int> tmp;
-      for (auto iextn : goodextns) {
-	string itsMap = *extns[iextn].begin();
-	if (itsMap==maxMap) {
-	  if (extensions[iextn]->exposure == maxExpo)
-	    tmp.insert(iextn);
-	  else
-	    cerr << "WARNING: Map " << maxMap
-		 << " may be overconstrained in extensions " << maxExtn
-		 << " and " << iextn
-		 << endl;
+    for (auto& m : mapCounts) {
+      // For each unique mapname, initialize using exposure with the most
+      // available extensions
+      int maxCount = 0;
+      int maxExpo = 0;
+      for (auto& m2 : m.second) {
+	if (m2.second.size()>maxCount) {
+	  maxCount = m2.second.size();
+	  maxExpo = m2.first;
 	}
       }
-      out.push_back(tmp);
-      eraseMap(maxMap);
+      /**cerr << "...Do map " << m.first 
+	       << " from exposure " << maxExpo
+	       << " with " << maxCount << " exposures" << endl; /**/
+      out.push_back(m.second[maxExpo]);
+      eraseMap(m.first);
     }
   }
   return out;
