@@ -122,7 +122,7 @@ MapDegeneracies<S>::initializationOrder() {
   while (!maps.empty()) {
     auto goodextns = findNondegenerate();
     //**/cerr << ".." << maps.size() << " maps, " << goodextns.size() << " clean extns"
-	     << endl;
+    //     << endl;
     if (goodextns.empty()) {
       // We have maps with no clear degeneracy breaking path.
       cerr << "ERROR: no path to initialize these maps without degeneracies:" << endl;
