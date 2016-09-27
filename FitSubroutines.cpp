@@ -14,6 +14,7 @@
 #include "Match.h"
 #include "PhotoMatch.h"
 #include "Random.h"
+#include "Stopwatch.h"
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -527,6 +528,7 @@ readExtensions(img::FTable& extensionTable,
       
   vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
+  int processed=0;
   for (int i=0; i<extensionTable.nrows(); i++) {
     int iExposure;
     extensionTable.readCell(iExposure, "Exposure", i);
@@ -546,13 +548,17 @@ readExtensions(img::FTable& extensionTable,
 	
     if (!exposures[iExposure]) continue;
     
+    ++processed;
     typename S::Extension* extn = new typename S::Extension;
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];
 
     int iDevice;
     extensionTable.readCell(iDevice, "Device", i);
-    /**/if (i%1000==0) cerr << "...Extn " << i << " " << expo.name << " " << iDevice << endl;
+    if (processed%1000==0) {
+      cerr << "...Extn " << i << "/" << extensions.size() 
+	   << " " << expo.name << endl;
+    }
     extn->device = iDevice;
     extn->airmass = expo.airmass;
     extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
@@ -607,7 +613,7 @@ readExtensions(img::FTable& extensionTable,
       else
 	extn->mapName = extn->wcsName;
 	
-      if (!inputYAML.addMap(extn->mapName,d)) {
+      if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
 	     << endl;

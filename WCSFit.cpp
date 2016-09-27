@@ -122,7 +122,7 @@ main(int argc, char *argv[])
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
     parameters.addMember("clipEntireMatch",&clipEntireMatch, def,
-			 "Discard entire object if one outlier", false);
+			 "Discard entire object if one outlier on later passes", false);
     parameters.addMember("skipFile",&skipFile, def,
 			 "optional file holding extension/object of detections to ignore","");
     parameters.addMemberNoValue("FITTING");
@@ -635,7 +635,8 @@ main(int argc, char *argv[])
 	}
       }
       oldthresh = thresh;
-      nclip = ca.sigmaClip(thresh, false, clipEntireMatch || !coarsePasses);
+      // Clip entire matches on final passes if clipEntireMatch=true
+      nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses);
       if (nclip==0 && coarsePasses) {
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
@@ -664,7 +665,8 @@ main(int argc, char *argv[])
     if (reserveFraction > 0.) {
       /**/cerr << "** Clipping reserved matches: " << endl;
       clipReserved<Astro>(ca, clipThresh, minimumImprovement,
-			  clipEntireMatch, true);  //turn on cerr logging
+			  false, true);  //turn on cerr logging
+      //**clipEntireMatch, true);  //turn on cerr logging
     }
 
     //////////////////////////////////////
