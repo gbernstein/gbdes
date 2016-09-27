@@ -541,7 +541,7 @@ if __name__=='__main__':
             eHeader = None
             for iextn in range(1,len(fits)):
                 tmphead = getHeader(fits, iextn, fitsname)
-                if tmphead['EXTNAME'] == 'LDAC_IMHEAD':
+                if 'EXTNAME' in tmphead and tmphead['EXTNAME'] == 'LDAC_IMHEAD':
                     # For LDAC header extension, we just read header and move on
                     # eHeader = gmbpy.utilities.readLDACHeader(fitsname, iextn)
                     eHeader = gmbpy.utilities.headerFromString(fits[iextn].data[0][0])
