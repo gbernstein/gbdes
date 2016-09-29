@@ -529,6 +529,9 @@ readExtensions(img::FTable& extensionTable,
   vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
   int processed=0;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,100)
+#endif
   for (int i=0; i<extensionTable.nrows(); i++) {
     int iExposure;
     extensionTable.readCell(iExposure, "Exposure", i);
@@ -1104,7 +1107,7 @@ void readObjects(const img::FTable& extensionTable,
   // Should be safe to multithread this loop as different threads write
   // only to distinct parts of memory.  Protect the FITS table read though.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic,CATALOG_THREADS)
+#pragma omp parallel for schedule(dynamic,60) num_threads(CATALOG_THREADS)
 #endif
   for (int iext = 0; iext < extensions.size(); iext++) {
     if (!extensions[iext]) continue; // Skip unused 
