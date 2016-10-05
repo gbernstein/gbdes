@@ -17,6 +17,8 @@
 
 #include "FitSubroutines.h"
 #include "PhotoSubs.h"
+#include "MapDegeneracies.h"
+
 
 using namespace std;
 using namespace stringstuff;
@@ -87,7 +89,6 @@ main(int argc, char *argv[])
   string priorFiles;
   string useInstruments;
   string skipExposures;
-  bool skipCanonicalCheck;
 
   string outCatalog;
   string outPhotFile;
@@ -149,8 +150,6 @@ main(int argc, char *argv[])
 			 "list of YAML files specifying maps","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
-    parameters.addMember("skipCanonicalCheck",&skipCanonicalCheck, def,
-			 "no automatic assignment of canonical exposures",false);
     parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "photo.fits");
@@ -233,16 +232,17 @@ main(int argc, char *argv[])
 
     // Read in all the instrument extensions and their device info from input
     // FITS file, save useful ones and write to output FITS file.
+    /**/cerr << "Reading instruments" << endl;
     vector<Instrument*> instruments =
       readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
 		      outputCatalogAlreadyOpen);
     
 
-    /**/cerr << "Read instruments" << endl;
     // This vector will hold the color-priority value of each exposure.  -1 means an exposure
     // that does not hold color info.
     vector<int> exposureColorPriorities;
     // Read in the table of exposures
+    /**/cerr << "Reading exposures" << endl;
     vector<Exposure*> exposures =
       readExposures(instruments,
 		    exposureColorPriorities,
@@ -253,9 +253,9 @@ main(int argc, char *argv[])
 		    false, // Do not use reference exposures for photometry
 		    outputCatalogAlreadyOpen);
 
-    /**/cerr << "Read exposures" << endl;
 
     // Read info about all Extensions - we will keep the Table around.
+    /**/cerr << "Reading extensions" << endl;
     FTable extensionTable;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
@@ -273,12 +273,12 @@ main(int argc, char *argv[])
 			    colorExtensions,
 			    inputYAML);
 
-    /**/cerr << "Read extensions" << endl;
 
     /////////////////////////////////////////////////////
     //  Create and initialize all magnitude maps
     /////////////////////////////////////////////////////
 
+    /**/cerr << "Building initial PhotoMapCollection" << endl;
     // Now build a preliminary set of photo maps from the configured YAML files
     PhotoMapCollection* pmcInit = new PhotoMapCollection;
     pmcInit->learnMap(IdentityMap(), false, false);
@@ -290,43 +290,46 @@ main(int argc, char *argv[])
       }
     }
 
-    /**/cerr << "Successfully built initial PixelMapCollection" << endl;
     
     /////////////////////////////////////////////////////
-    // Now for each instrument, determine if we need a canonical
-    // exposure to break an exposure/instrument degeneracy.  If
-    // so, choose one, and replace its exposure map with Identity.
+    // Check for degeneracies between compounded linear/poly/constant
+    // maps. See if it is needed and sufficient to set some exposure
+    // maps to Identity to break such degeneracies.
     /////////////////////////////////////////////////////
 
-    if (!skipCanonicalCheck) {
-      // Here's where we'll collect the map definitions that override the
-      // inputs in order to eliminate degeneracies.
-      PhotoMapCollection pmcAltered;  
+    /**/cerr << "Checking for polynomial degeneracies" << endl;
+    set<string> degenerateTypes={"Poly","Linear","Constant"};
+    {
+      MapDegeneracies<Photo> degen(extensions,
+				   *pmcInit,
+				   degenerateTypes,
+				   false);  // Any non-fixed maps are examined
+      // All exposure maps are candidates for setting to Identity
+      // (the code will ignore those which already are Identity)
+      set<string> exposureMapNames;
+      for (auto expoPtr : exposures) {
+	if (expoPtr && !expoPtr->name.empty())
+	  exposureMapNames.insert(expoPtr->name);
+      }
 
-      for (int iInst=0; iInst < instruments.size(); iInst++) {
-	if (!instruments[iInst]) continue;  // Not using instrument
-	auto& instr = *instruments[iInst];
-
-	int canonicalExposure =
-	  findCanonical<Photo>(instr, iInst, exposures, extensions, *pmcInit);
-
-	if (canonicalExposure >= 0) {
-	  cout << "# Selected " << exposures[canonicalExposure]->name
-	       << " as canonical for instrument " << instr.name
-	       << endl;
-	  // Make a new map spec for the canonical exposure
-	  pmcAltered.learnMap(IdentityMap(exposures[canonicalExposure]->name));
-	}
-      } // End instrument loop
-
-      // Add the altered maps specs to the input YAML specifications
-      {
+      auto replaceThese = degen.replaceWithIdentity(exposureMapNames);
+      
+      // Supersede their maps if there are any
+      if (!replaceThese.empty()) {
+	PhotoMapCollection pmcAltered;
+	for (auto mapname : replaceThese) {
+	  cerr << "..Setting map <" << mapname << "> to Identity" << endl;
+	  pmcAltered.learnMap(IdentityMap(mapname));
+	}	  
+	// Add the altered maps specs to the input YAML specifications
 	ostringstream oss;
 	pmcAltered.write(oss);
 	istringstream iss(oss.str());
 	inputYAML.addInput(iss, "", true); // Prepend these specs to others
       }
-    } // End of check for canonical exposures
+    } // End of poly-degeneracy check/correction
+
+    /**/cerr << "Making final mapCollection" << endl;
     
     // Do not need the preliminary PMC any more.
     delete pmcInit;
@@ -342,7 +345,7 @@ main(int argc, char *argv[])
 			       inputYAML,
 			       mapCollection);
 
-    /**/cerr << "Done making final mapCollection!" << endl;
+    /**/cerr << "Defining all maps" << endl;
 
     // Now construct a SubMap for every extension
     for (auto extnptr : extensions) {

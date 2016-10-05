@@ -1,7 +1,5 @@
 * Read data (and reject short-count exposures) before degeneracy checks
 
-* Have PhotoFit do the degeneracy checking instead of canonical exposures.
-
 * Hex values read for Expressions.
 
 * New nightwise priors using time structure functions
@@ -41,6 +39,12 @@
   * Make Match and PhotoMatch from the same code, no PhotoMatch in gbtools
 
 * Set exposure field centers to mean position of N4 and S4 centers.
+
+* Investigate color term degeneracy breaking
+
+* Aperture corrections included in models - put into dictionary? Just into prior?
+
+* DrawPhoto update.
 
 -----------DONE ON WCSFIT:
 
@@ -110,4 +114,5 @@
 
 * Get MJD into exposure
 
+* Have PhotoFit do the degeneracy checking instead of canonical exposures.
 
