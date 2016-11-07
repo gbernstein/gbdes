@@ -47,6 +47,7 @@ naper = None
 apcorrs = []  # For other apertures
 autocorrs = [] # For MAG_AUTO
 psfcorrs = [] # For MAG_PSF
+fluxrads = [] # Record FLUX_RADIUS values
 
 # These header keywords are not to be propagated from the LDAC_HEADER
 skipLDAC = {'SIMPLE','BITPIX','NAXIS','NAXIS1','NAXIS2','EXTEND'}
@@ -114,6 +115,8 @@ for i in range(2,len(fitsin),2):
     autocorrs.append(tab['MAG_AUTO'] - refmag)
     if 'MAG_PSF' in tab.dtype.names:
         psfcorrs.append(tab['MAG_PSF'] - refmag)
+    if 'FLUX_RADIUS' in tab.dtype.names:
+        fluxrads.append(tab['FLUX_RADIUS'])
 
     if len(apcorr) >= args.min_stars:
         # Record median aperture corrections for this CCD
@@ -123,7 +126,10 @@ for i in range(2,len(fitsin),2):
         hdr['APCORAUT'] = np.median(autocorrs[-1])
         if len(psfcorrs)>0:
             hdr['APCORPSF'] = np.median(psfcorrs[-1])
-
+        # And median FLUX_RADIUS:
+        if len(fluxrads) > 0:
+            hdr['FLUXRAD'] = np.median(fluxrads[-1])
+            
     hdrs.append(hdr)
     tabs.append(tab)
 
@@ -134,7 +140,8 @@ for i in range(naper):
     phdr['APCORAUT'] = np.median(np.concatenate(autocorrs))
     if len(psfcorrs)>0:
         phdr['APCORPSF'] = np.median(np.concatenate(psfcorrs))
-
+    if len(fluxrads)>0:
+        phdr['FLUXRAD'] = np.median(np.concatenate(fluxrads))
 # Make an output FITS and save
 out = fitsio.FITS(args.outcat, 'rw', clobber=True)
 for d,h in zip(tabs,hdrs):
