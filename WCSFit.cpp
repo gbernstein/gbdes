@@ -623,9 +623,11 @@ main(int argc, char *argv[])
 	if (coarsePasses) {
 	  coarsePasses = false;
 	  ca.setRelTolerance(chisqTolerance);
-	  /**/cerr << "--Starting strict tolerance passes, clipping full matches" << endl;
+	  /**/cerr << "--Starting strict tolerance passes";
+	  /**/if (clipEntireMatch) cerr << "; clipping full matches";
+	  /**/cerr << endl;
 	  oldthresh = thresh;
-	  nclip = ca.sigmaClip(thresh, false, true);
+	  nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses);
 	  /**/cerr << "Clipped " << nclip
 		   << " matches " << endl;
 	  continue;
@@ -641,7 +643,9 @@ main(int argc, char *argv[])
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
 	ca.setRelTolerance(chisqTolerance);
-	/**/cerr << "No clipping--Starting strict tolerance passes, clipping full matches" << endl;
+	/**/cerr << "--Starting strict tolerance passes";
+	/**/if (clipEntireMatch) cerr << "; clipping full matches";
+	/**/cerr << endl;
 	continue;
       }
       /**/cerr << "Clipped " << nclip
