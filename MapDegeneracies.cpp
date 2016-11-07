@@ -10,6 +10,9 @@ MapDegeneracies<S>::MapDegeneracies(const vector<typename S::Extension*>& extens
 
   // Get all map names meeting criteria
   for (auto mapname : mapCollection.allMapNames()) {
+    // Skip fixed maps
+    if (mapCollection.getFixed(mapname))
+	continue; 
     // Skip non-defaulted if we only want defaulted maps:
     if (defaulted && !mapCollection.getDefaulted(mapname))
       continue;
