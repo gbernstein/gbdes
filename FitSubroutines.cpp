@@ -970,7 +970,7 @@ Astro::fillDetection(Astro::Detection* d,
   sigma = std::sqrt(sysErrorSq + sigma*sigma);
   d->sigma = sigma;
 
-  startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);
+  startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);  // no color in startWCS
   Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
   // no clips on tags
   double wt = isTag ? 0. : pow(sigma,-2.);
@@ -1058,7 +1058,7 @@ Astro::getOutputA(const Astro::Detection& d,
     double xcpix=xp, ycpix=yp;
     Assert (d.map);
     try {
-      d.map->toPix(mx, my, xcpix, ycpix);
+      d.map->toPix(mx, my, d.color, xcpix, ycpix);
     } catch (astrometry::AstrometryError& e) {
       cerr << "WARNING: toPix failure in map " << d.map->getName()
 	   << " at world coordinates (" << mx << "," << my << ")"

@@ -17,6 +17,7 @@ using std::list;
 #include "PixelMap.h"
 #include "PixelMapCollection.h"
 #include "AlphaUpdater.h"
+#include "NoData.h"
 
 namespace astrometry {
 
@@ -28,7 +29,7 @@ namespace astrometry {
     long objectNumber;
     double xpix;
     double ypix;
-    // ***??? add later:  double color; - also initialize to NODATA
+    double color;
     double sigma;	// Uncertainty, in pixel units
     double xw;
     double yw;
@@ -41,7 +42,7 @@ namespace astrometry {
     bool isClipped;
     const Match* itsMatch;
     const SubMap* map;
-    Detection(): itsMatch(0), map(0), isClipped(false) {}
+  Detection(): itsMatch(0), map(0), isClipped(false), color(astrometry::NODATA) {}
   };
   
   class Match {

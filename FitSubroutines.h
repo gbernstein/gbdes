@@ -36,7 +36,7 @@ const int NO_INSTRUMENT=-3;
 const string stellarAffinity="STELLAR";
 
 const double NO_MAG_DATA = -100.;	// Value entered when there is no valid mag or color
-const double NODATA = photometry::PhotoArguments::NODATA;  // Signal for unknown color
+const double NODATA = astrometry::NODATA;  // Signal for unknown color
 
 const string colorColumnName = "COLOR";
 const string colorErrorColumnName = "COLOR_ERR";
@@ -67,11 +67,10 @@ struct Astro {
 			    double sysErrorSq,
 			    bool isTag);
   static void setColor(Detection* d, double color) {
-    //** ?? Not implemented yet: d->color = color;
+    d->color = color;
   }
   static double getColor(const Detection* d) {
-    //** ?? Not implemented yet: return d->color;
-    return 0.;
+    return d->color;
   }
   static void matchMean(const Match& m,
 			double& mx, double& my, double& mmag,

@@ -537,10 +537,9 @@ main(int argc, char *argv[])
 
 
     // Now loop again over all catalogs being used to supply colors,
-    // and insert colors into all the PhotoArguments for Detections they match
+    // and insert colors into all the Detections they match
     /**/cerr << "Reading colors" << endl;
-    //** ???    readColors<Astro>(extensionTable, colorExtensions);
-
+    readColors<Astro>(extensionTable, colorExtensions);
 
     /**/cerr << "Purging defective detections and matches" << endl;
 
@@ -551,7 +550,7 @@ main(int argc, char *argv[])
     purgeSparseMatches<Astro>(minMatches, matches);
 
     // Get rid of Matches with color out of range (note that default color is 0).
-    purgeBadColor<Astro>(minColor, maxColor, matches); // ??? Nop right now
+    purgeBadColor<Astro>(minColor, maxColor, matches);
     
     // Reserve desired fraction of matches
     if (reserveFraction>0.) 

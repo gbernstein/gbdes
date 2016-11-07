@@ -90,7 +90,7 @@ fitDefaulted(PixelMapCollection& pmc,
       double xpix = b.getXMin() + (vx[i]+0.5)*xstep;
       double ypix = b.getXMin() + (vy[i]+0.5)*ystep;
       double xw, yw;
-      extnptr->startWcs->toWorld(xpix, ypix, xw, yw);
+      extnptr->startWcs->toWorld(xpix, ypix, xw, yw); // startWCS has no color!
       Detection* dfit = new Detection;
       Detection* dref = new Detection;
       dfit->xpix = xpix;
@@ -99,8 +99,14 @@ fitDefaulted(PixelMapCollection& pmc,
       dref->ypix = yw;
       dref->xw = xw;
       dref->yw = yw;
+      // Note colors are defaulted to NoData in Detection.  Set colors
+      // to zero here and defaulted maps will be appropriate to
+      // zero-color objects.  Hopefully zero is not far from the reference
+      // color of any color terms??
+      dref->color = 0.;
+      dfit->color = 0.;
       
-      map->toWorld(xpix,ypix,xw,yw);
+      map->toWorld(xpix,ypix,dfit->color,xw,yw);
       dfit->xw = xw;
       dfit->yw = yw;
 
@@ -112,8 +118,6 @@ fitDefaulted(PixelMapCollection& pmc,
       dref->map = identityMap;
       dfit->map = map;
       
-      // ??? dfit->color = 0.;
-      // ??? dref->color = 0.; ??Problem if reference color is not zero?
       matches.push_back(new Match(dfit));
       matches.back()->add(dref);
     }
