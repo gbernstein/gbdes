@@ -586,6 +586,11 @@ main(int argc, char *argv[])
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
+    // Should be safe to multithread this loop as different threads write
+    // only to distinct parts of memory.  Protect the FITS table read though.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,60) num_threads(CATALOG_THREADS)
+#endif
     for (int iext = 0; iext < extensions.size(); iext++) {
       if (!extensions[iext]) continue; // Skip unused 
       // Relevant structures for this extension
@@ -594,10 +599,11 @@ main(int argc, char *argv[])
 
       string filename;
       extensionTable.readCell(filename, "FILENAME", iext);
-      /**/if (iext%10==0) cerr << "# Reading object catalog " << iext
+      /**/if (iext%50==0) cerr << "# Reading object catalog " << iext
 			       << "/" << extensions.size()
 			       << " from " << filename 
-			       << endl;
+			       << " seeking " << desiredObjects[iext].size()
+			       << " objects" << endl;
       int hduNumber;
       extensionTable.readCell(hduNumber, "EXTENSION", iext);
       string xKey;
@@ -640,8 +646,14 @@ main(int argc, char *argv[])
       neededColumns.push_back(magKey);
       neededColumns.push_back(magErrKey);
 
-      FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
-      FTable ff = ft.extract(0, -1, neededColumns);
+      img::FTable ff;
+#ifdef _OPENMP
+#pragma omp critical(fitsio)
+#endif
+      {
+	FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
+	ff = ft.extract(0, -1, neededColumns);
+      }
       vector<long> id;
       if (useRows) {
 	id.resize(ff.nrows());
