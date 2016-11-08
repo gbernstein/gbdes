@@ -316,7 +316,9 @@ main(int argc, char *argv[])
       vector<int> instrumentNumber;
       vector<double> airmass;
       vector<double> exptime;
-      // ??? Add MJD??
+      // May have MJD and Epoch columns too
+      vector<double> mjd;
+      vector<string> epoch;
 
       ff.readCells(names, "Name");
       /* Here I need to get rid of this column and then re-add it, because the
@@ -334,6 +336,20 @@ main(int argc, char *argv[])
       ff.readCells(airmass, "Airmass");
       ff.readCells(exptime, "Exptime");
 
+      bool haveEpoch = true;
+      try {
+	ff.readCells(epoch, "Epoch");
+      } catch (img::FTableNonExistentColumn& m) {
+	haveEpoch = false;
+      }
+
+      bool haveMJD = true;
+      try {
+	ff.readCells(mjd, "MJD");
+      } catch (img::FTableNonExistentColumn& m) {
+	haveMJD = false;
+      }
+
       for (int i=0; i<names.size(); i++) {
 	// Only create an Exposure if this exposure contains useful mag info.
 	if (instrumentNumber[i]<0 || !instruments[instrumentNumber[i]] ) {
@@ -348,7 +364,8 @@ main(int argc, char *argv[])
 	  expo->instrument = instrumentNumber[i];
 	  expo->airmass = airmass[i];
 	  expo->exptime = exptime[i];
-	  // ??? MJD
+	  if (haveMJD) expo->mjd = mjd[i];
+	  if (haveEpoch) expo->epoch = epoch[i];
 
 	  exposures.push_back(expo);
 	  /**/cerr << "Exposure " << names[i] 
@@ -370,7 +387,8 @@ main(int argc, char *argv[])
       ff.writeCell(magOutFile, "Name", magTableExposureNumber);
       ff.writeCell(1., "Airmass", magTableExposureNumber);
       ff.writeCell(1., "Exptime", magTableExposureNumber);
-      // ??? MJD
+      if (haveMJD) ff.writeCell(0., "MJD", magTableExposureNumber);
+      if (haveEpoch) ff.writeCell(string(), "Epoch", magTableExposureNumber);
 
       // And now each of the color catalogs, which will be its own exposure
       for (auto& c : colorList) {
@@ -382,7 +400,8 @@ main(int argc, char *argv[])
 	ff.writeCell(c.filename, "Name", c.exposureNumber);
 	ff.writeCell(1., "Airmass", c.exposureNumber);
 	ff.writeCell(1., "Exptime", c.exposureNumber);
-	// ??? MJD
+	if (haveMJD) ff.writeCell(0., "MJD", c.exposureNumber);
+	if (haveEpoch) ff.writeCell(string(), "Epoch", c.exposureNumber);
       }
 
       // Done with exposure table.  Append augmented table to output FITS file
@@ -417,7 +436,7 @@ main(int argc, char *argv[])
       extn->device = iDevice;
       extn->magshift = +2.5*log10(expo.exptime);
 
-      Assert(expo.instrument>0);  // This exposure should have a real instrument
+      Assert(expo.instrument>=0);  // This exposure should have a real instrument
       Assert(instruments[expo.instrument]);  // that we are using
       string b = instruments[expo.instrument]->band;
       Assert(bands.count(b));  // and a band in use too
@@ -456,7 +475,15 @@ main(int argc, char *argv[])
       extn->startWcs->reprojectTo(*expo.projection);
 
       // Get the photometric solution too
-      extn->map = photomaps.issueMap(mapName);
+      try {
+	extn->map = photomaps.issueMap(mapName);
+      } catch (photometry::PhotometryError& m) {
+	// No map for available for this exposure, ignore its data henceforth
+	cerr << "WARNING: no photometry map available for " << mapName << endl;
+	delete extn;
+	extensions[i] = 0;
+	continue;
+      }
       if (extn->map->needsColor() && !useColor) {
 	// At least one photomap needs color.  Make sure we have a color!
 	if (colorList.empty()) {

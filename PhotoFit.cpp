@@ -28,7 +28,7 @@ using img::FTable;
 
 string usage=
   "PhotoFit: Refine photometric solutions for a matched set of catalogs.\n"
-  "usage: WCSFit <match file> [parameter file] [parameter file...]\n"
+  "usage: PhotoFit <match file> [parameter file] [parameter file...]\n"
   "   [-parameter[=]value...]\n"
   "      <match file>:  FITS file with binary tables produced by WCSFoF\n"
   "      Program parameters specified as command-line options or read from\n"
@@ -441,8 +441,8 @@ main(int argc, char *argv[])
     // Get rid of Matches with too few detections
     purgeSparseMatches<Photo>(minMatches, matches);
 
-    // Get rid of Matches with color out of range (note that default color is 0).
-    purgeBadColor<Photo>(minColor, maxColor, matches); // ??? Nop right now
+    // Get rid of Matches with color out of range (NODATA are kept)
+    purgeBadColor<Photo>(minColor, maxColor, matches); 
     
     /**/cerr << "Done purging defective detections and matches" << endl;
 
