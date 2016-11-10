@@ -529,6 +529,7 @@ readExtensions(img::FTable& extensionTable,
   vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
   int processed=0;
+
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic,100)
 #endif
@@ -972,6 +973,7 @@ Astro::fillDetection(Astro::Detection* d,
 
   startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);  // no color in startWCS
   Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
+
   // no clips on tags
   double wt = isTag ? 0. : pow(sigma,-2.);
   d->clipsqx = wt / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
@@ -1058,7 +1060,7 @@ Astro::getOutputA(const Astro::Detection& d,
     double xcpix=xp, ycpix=yp;
     Assert (d.map);
     try {
-      d.map->toPix(mx, my, d.color, xcpix, ycpix);
+      d.map->toPix(mx, my, xcpix, ycpix, d.color);
     } catch (astrometry::AstrometryError& e) {
       cerr << "WARNING: toPix failure in map " << d.map->getName()
 	   << " at world coordinates (" << mx << "," << my << ")"
@@ -1111,6 +1113,7 @@ void readObjects(const img::FTable& extensionTable,
 #endif
   for (int iext = 0; iext < extensions.size(); iext++) {
     if (!extensions[iext]) continue; // Skip unused 
+
     // Relevant structures for this extension
     typename S::Extension& extn = *extensions[iext];
     Exposure& expo = *exposures[extn.exposure];

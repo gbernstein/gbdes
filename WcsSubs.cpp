@@ -106,7 +106,7 @@ fitDefaulted(PixelMapCollection& pmc,
       dref->color = 0.;
       dfit->color = 0.;
       
-      map->toWorld(xpix,ypix,dfit->color,xw,yw);
+      map->toWorld(xpix,ypix,xw,yw,dfit->color);
       dfit->xw = xw;
       dfit->yw = yw;
 

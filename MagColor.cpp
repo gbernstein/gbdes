@@ -906,7 +906,6 @@ main(int argc, char *argv[])
 
 	// See if this detection has a mag we're interested in - if so,
 	// add its data for that band.
-	// was kept as interesting:
 	int iBand = extensionBandNumbers[extnIn[j]];
 	if (iBand>=0 &&
 	    pointMaps[extnIn[j]].count(objIn[j]) >0 ) {

@@ -117,8 +117,9 @@ Match::centroid(double& x, double& y,
 void
 Match::remap() {
   for (auto i : elist) 
-    i->map->toWorld(i->xpix, i->ypix, i->color,
-		    i->xw, i->yw);
+    i->map->toWorld(i->xpix, i->ypix,
+		    i->xw, i->yw,
+		    i->color);
 }
 
 ///////////////////////////////////////////////////////////
@@ -153,11 +154,14 @@ Match::accumulateChisq(double& chisq,
     double xw, yw;
     if (npi>0) {
       dxyi[ipt] = new DMatrix(2,npi);
-      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix, (*i)->color,
-			    xw, yw,
-			    *dxyi[ipt]);
+      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
+			       xw, yw,
+			       *dxyi[ipt],
+			       (*i)->color);
     } else {
-      (*i)->map->toWorld((*i)->xpix, (*i)->ypix, (*i)->color, xw, yw);
+      (*i)->map->toWorld((*i)->xpix, (*i)->ypix, 
+			 xw, yw,
+			 (*i)->color);
     }
     (*i)->xw = xw;
     (*i)->yw = yw;
@@ -331,6 +335,18 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
       + (yi-ymean)*(yi-ymean)*wyi;
     maxDeviateSq = MAX(cc , maxDeviateSq);
     chi += cc;
+    /**/ if (cc > 1e7) { cerr << "chisq " << cc 
+			    << " c " << i->color
+			    << " sig " << 1./sqrt(i->wtx)*3600.
+			    << " " << 1./sqrt(i->wty)*3600.
+			    << " mean " << xmean << " " << ymean
+			    << " dxy " << (xi-xmean)*3600 << " " << (yi-ymean)*3600. << endl;
+      double xw,yw;
+      i->map->toWorld(i->xpix,i->ypix,xw,yw,i->color);
+      cerr << "In " << i->xpix << " " << i->ypix << " out " << xw << " " << yw << endl;
+      i->map->toWorld(i->xpix,i->ypix,xw,yw,0.61);
+      cerr << "nocolor " << i->xpix << " " << i->ypix << " out " << xw << " " << yw << endl;
+    }
   }
   dof += 2*(nFit-1);
   return chi;
@@ -569,7 +585,7 @@ CoordAlign::fitOnce(bool reportToCerr) {
 	    smin = s;
 	    imin = i;
 	  }
-	  if (abs(s)<0.01) degen.insert(s);
+	  if (abs(s)<1e-6) degen.insert(i);
 	}
 	cerr << "Largest SV: " << smax << endl;
 	cerr << "Smallest SV: " << smin << endl;
@@ -577,6 +593,7 @@ CoordAlign::fitOnce(bool reportToCerr) {
 	// Find biggest contributors to smallest/degenerate SVs
 	const int ntop=20;
 	for (int isv : degen) {
+	  cerr << "--->SV " << isv << " SV " << S(isv) << endl;
 	  vector<int> top(ntop,0);
 	  for (int i=0; i<Vt.nrows(); i++) {
 	    for (int j=0; j<ntop; j++) {
