@@ -130,7 +130,7 @@ main(int argc, char *argv[])
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
     parameters.addMember("clipEntireMatch",&clipEntireMatch, def,
-			 "Discard entire object if one outlier", false);
+			 "Discard entire object if one outlier on later passes", false);
     parameters.addMember("priorClipThresh",&priorClipThresh, def | low,
 			 "Clipping threshold (sigma)", 5., 2.);
     parameters.addMember("clipEntirePrior",&clipEntirePrior, def,
@@ -561,7 +561,9 @@ main(int argc, char *argv[])
 	    cout << "Clipped " << nclip << " prior reference points" << endl;
 	  } while (nclip > 0);
 	  ca.setRelTolerance(chisqTolerance);
-	  cout << "--Starting strict tolerance passes, clipping full matches" << endl;
+	  /**/cerr << "--Starting strict tolerance passes";
+	  /**/if (clipEntireMatch) cerr << "; clipping full matches";
+	  /**/cerr << endl;
 	  oldthresh = thresh;
 	  nclip = ca.sigmaClip(thresh, false, true);
 	  cout << "Clipped " << nclip
@@ -573,12 +575,14 @@ main(int argc, char *argv[])
 	}
       }
       oldthresh = thresh;
-      nclip = ca.sigmaClip(thresh, false, clipEntireMatch || !coarsePasses);
+      nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses);
       if (nclip==0 && coarsePasses) {
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
 	ca.setRelTolerance(chisqTolerance);
-	cout << "No clipping--Starting strict tolerance passes, clipping full matches" << endl;
+	/**/cerr << "--Starting strict tolerance passes";
+	/**/if (clipEntireMatch) cerr << "; clipping full matches";
+	/**/cerr << endl;
 	continue;
       }
       cout << "Clipped " << nclip
@@ -603,8 +607,9 @@ main(int argc, char *argv[])
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
       cout << "** Clipping reserved matches: " << endl;
+      //turn on cerr logging, no entire-match clipping
       clipReserved<Photo>(ca, clipThresh, minimumImprovement,
-			  clipEntireMatch, true);  //turn on cerr logging
+			  false, true);  
     }
 
     //////////////////////////////////////
