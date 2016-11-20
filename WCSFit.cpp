@@ -82,6 +82,7 @@ main(int argc, char *argv[])
   int minFitExposures;
   bool clipEntireMatch;
   double chisqTolerance;
+  bool divideInPlace;
 
   string inputMaps;
   string fixMaps;
@@ -125,6 +126,8 @@ main(int argc, char *argv[])
 			 "Discard entire object if one outlier on later passes", false);
     parameters.addMember("skipFile",&skipFile, def,
 			 "optional file holding extension/object of detections to ignore","");
+    parameters.addMember("divideInPlace",&divideInPlace, def,
+			 "use in-place Cholesky to save memory but lose debug of degeneracies",false);
     parameters.addMemberNoValue("FITTING");
     parameters.addMember("reserveFraction",&reserveFraction, def | low,
 			 "Fraction of matches reserved from re-fit", 0., 0.);
@@ -606,7 +609,7 @@ main(int argc, char *argv[])
       }
 
       // Do the fit here!!
-      double chisq = ca.fitOnce();
+      double chisq = ca.fitOnce(true,divideInPlace);  // save space if selected
       // Note that fitOnce() remaps *all* the matches, including reserved ones.
       double max;
       int dof;

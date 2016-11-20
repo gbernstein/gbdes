@@ -127,7 +127,9 @@ namespace astrometry {
 				      relativeTolerance(0.001)  {}
 
     void remap();	// Re-map all Detections using current params
-    double fitOnce(bool reportToCerr=true);	// Returns chisq of previous fit, updates params.
+    // Fitting routine: returns chisq of previous fit, updates params.
+    double fitOnce(bool reportToCerr=true,
+		   bool inPlace=false);	  // Set inPlace to save space, but can't debug singularities
     // Conduct one round of sigma-clipping.  If doReserved=true, 
     // then only clip reserved Matches.  If =false, then
     // only clip non-reserved Matches.

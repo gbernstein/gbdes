@@ -370,7 +370,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   AlphaUpdater updater(alpha, pmc.nFreeMaps(), NumberOfLocks);
 
 #ifdef _OPENMP
-  const int chunk=2000;
+  const int chunk=100;
   vector<Match*> vi(mlist.size());
 
 #pragma omp parallel reduction(+:newChisq) 
@@ -490,7 +490,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
 }
 
 double
-CoordAlign::fitOnce(bool reportToCerr) {
+CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
   DVector p = getParams();
   // First will try doing Newton iterations, keeping a fixed Hessian.
   // If it increases chisq or takes too long to converge, we will 
@@ -534,7 +534,8 @@ CoordAlign::fitOnce(bool reportToCerr) {
     }
     // Set alpha for in-place Cholesky
     alpha.divideUsing(tmv::CH);   // Use Cholesky decomposition for fastest inversion
-    //**?? alpha.divideInPlace();  // In-place avoids doubling memory needs
+    if (inPlace)
+      alpha.divideInPlace();  // In-place avoids doubling memory needs
 
     const int MAX_NEWTON_STEPS = 8;
     int newtonIter = 0;
@@ -550,15 +551,15 @@ CoordAlign::fitOnce(bool reportToCerr) {
 	  beta *= ss;
 	}
 	
-	/** if (reportToCerr) {
-	  cerr << "Cholesky succeeded" << endl;
-	  throw tmv::Error("dummy");
-	} /**/
       } catch (tmv::Error& e) {
 	//** Debug probably non-pos-def matrix here.
 	int N = alpha.ncols();
 	set<int> degen;
 	cerr << "Caught exception" << endl;
+	if (inPlace) {
+	  cerr << "Cannot describe degeneracies while dividing in place" << endl;
+	  exit(1);
+	}
 	DMatrix U(N,N);
 	DMatrix Vt(N,N);
 	tmv::DiagMatrix<double> S(N);
