@@ -17,9 +17,8 @@ The CAL_PATH environment variable can be used to give a list of paths to search
 for these template files.
 '''
 
-# ??? Need to check WCS functionality
 # ??? How does invert tolerance work, which dimension??
-# ??? Sign convention on the rotation angles
+# ?? Could speed up interpolation of tables if desired as they're equal-spaced.
 
 import numpy as np
 import astropy.coordinates as co
@@ -48,15 +47,15 @@ class PixelMap(object):
         is1d = xy_.ndim==1
         xy_ = np.atleast_2d(xy_)
         npts = xy_.shape[0]
-        dx = (self(xy_+np.array([step,0.]),c) - self(xy_-np.array([step,0.])),c) / (2*step)
-        dy = (self(xy_+np.array([0.,step]),c) - self(xy_-np.array([0.,step])),c) / (2*step)
+        dx = (self(xy_+np.array([step,0.]),c) - self(xy_-np.array([step,0.]),c)) / (2*step)
+        dy = (self(xy_+np.array([0.,step]),c) - self(xy_-np.array([0.,step]),c)) / (2*step)
         out = np.zeros((npts,2,2),dtype=float)
         out[:,:,0] = dx
         out[:,:,1] = dy
         if is1d:
             return np.squeeze(out)
         return out
-    def invert(self, xyw, xyp, c=None, tol=0.0001):
+    def inverse(self, xyw, xyp, c=None, tol=0.0001):
         '''
         Fill the array xyp with the solutions to PixelMap(xyp)=xyw.  The input values
         of xyp are the initial guess.  Tolerance can be altered from default, which
@@ -66,18 +65,18 @@ class PixelMap(object):
         class resid(object):
             ''' Callable giving deviation of output from target
             '''
-            def __init__(self,map,target,c=None):
+            def __init__(self,pmap,target,c=None):
                 self.target = target
-                self.map = map
+                self.pmap = pmap
                 self.c = c
                 return
             def __call__(self,xyp):
-                return self.map(xyp,self.c) - self.target
+                return self.pmap(xyp,self.c) - self.target
         xyw2d = np.atleast_2d(xyw)
         xyp2d = np.atleast_2d(xyp)  # Note it's a view so results are in-place
         npts = xyw2d.shape[0]
         if xyp2d.shape[0] != npts:
-            raise Exception('Mismatch of xyw, xyp point counts in PixelMap.invert')
+            raise Exception('Mismatch of xyw, xyp point counts in PixelMap.inverse')
 
         for i in range(npts):
             result = root(resid(self.__call__,xyw2d[i],c), xyp2d[i], tol=tol).x
@@ -314,19 +313,19 @@ class ColorTerm(PixelMap):
     @staticmethod
     def type():
         return 'Color'
-    def __init__(self, name, map=None, **kwargs):
+    def __init__(self, name, pmap=None, **kwargs):
         '''Need to provide the modified atomic PixelMap as map argument.
         '''
         super(ColorTerm,self).__init__(name)
-        if map is None:
+        if pmap is None:
             raise Exception('No modified map specified for ColorTerm')
-        self.map = map
+        self.pmap = pmap
         self.reference = float(kwargs['Reference'])
     def __call__(self, xy, c=None):
         if c is None:
             raise Exception('ColorTerm requires non-null c argument')
         xy_ = np.array(xy)
-        xyw = self.map(xy_,c)
+        xyw = self.pmap(xy_,c)
         return xy_ + (c-self.reference) * (xyw-xy_)
 
 class Composite(PixelMap):
@@ -358,9 +357,9 @@ class WCS(PixelMap):
     SkyCoord arrays given numpy array.
     Scale factor is multiplied into world coordinates to turn them into degrees.
     '''
-    def __init__(self, name, map, projection, scale=1.):
+    def __init__(self, name, pmap, projection, scale=1.):
         super(WCS,self).__init__(name)
-        self.map = map
+        self.pmap = pmap
         self.projection = projection
         self.scale = scale
         self.dest = None
@@ -371,7 +370,7 @@ class WCS(PixelMap):
     def toSky(self, xy, c=None):
         ''' Return sky coordinates corresponding to array
         '''
-        return self.projection.toSky(self.map(xy,c) * self.scale)
+        return self.projection.toSky(self.pmap(xy,c) * self.scale)
     def toPix(self, coords, c=None, guess=np.array([0.,0.])):
         ''' Return pixel coordinates corresponding to input SkyCoords.
         guess is a starting guess for solver, which can be either a single
@@ -379,12 +378,13 @@ class WCS(PixelMap):
         '''
         xyw = self.projection.toXY(coords) / self.scale
         xyp = np.zeros_like(xyw) + guess  # Broadcasts to same dimensions as input
-        return map.inverse(xyw, xyp, c)  # ??? tolerance???
+        self.pmap.inverse(xyw, xyp, c)  # ??? tolerance???
+        return xyp
     def __call__(self,xy,c=None):
         '''Map the input coordinates to the coordinates either in the original
         projection, or in the reprojected system if one has been given.
         '''
-        xyw = self.map(xy,c)
+        xyw = self.pmap(xy,c)
         if self.dest is not None:
             # Execute reprojection
             coords = self.projection.toSky(xyw*self.scale)
@@ -438,18 +438,18 @@ class PixelMapCollection(object):
         specs = self.root[name]  # The dict with specifications of this map
         if specs['Type']==ColorTerm.type():
             # Special procedure for color terms since we'll parse its captive
-            map = ColorTerm(name, map=self.parseAtom('captive',**specs['Function']),
+            pmap = ColorTerm(name, pmap=self.parseAtom('captive',**specs['Function']),
                                 **specs)
         elif specs['Type']==Composite.type():
             # Another special procedure for compound maps, read all its members
             elements = [self.getMap(el) for el in specs['Elements']]
-            map = Composite(name, elements)
+            pmap = Composite(name, elements)
         else:
             # Map is atomic
-            map = self.parseAtom(name, **specs)
+            pmap = self.parseAtom(name, **specs)
         # Add new map to those already realized
-        self.realizedMap[name] = map
-        return map            
+        self.realizedMap[name] = pmap
+        return pmap            
 
     def getWCS(self,name):
         ''' Return realization of WCS with the given name
@@ -461,7 +461,7 @@ class PixelMapCollection(object):
 
         specs = self.wcs[name]  # The dict with specifications of this map
         # First get the PixelMap that it modifies
-        map = self.getMap(specs['MapName'])
+        pmap = self.getMap(specs['MapName'])
         # Scale to turn world coords into degrees.  Note that C++ uses radians
         # for celestial coordinates and here we are in degrees by default, so
         # adjust the scale for this
@@ -473,14 +473,14 @@ class PixelMapCollection(object):
         elif pspecs['Type']==Gnomonic.type():
             ra = float(pspecs['Orientation']['RA'])
             dec = float(pspecs['Orientation']['Dec'])
-            pa = float(pspecs['Orientation']['PA']) # ??? Need to check sign ???
+            pa = float(pspecs['Orientation']['PA'])
             projection = Gnomonic(ra,dec,rotation=pa)
         else:
             raise Exception('Do not know how to parse projection of type ',pspecs['Type'])
         # Make the WCS 
-        w = WCS(name, map=map, projection=projection, scale=scale)
+        w = WCS(name, pmap=pmap, projection=projection, scale=scale)
         # Cache it
-        realizedWCS[name] = w
+        self.realizedWCS[name] = w
         return w
     
 ########################################################
@@ -491,13 +491,16 @@ class ICRS(object):
     ''' Class giving the (trivial) projection from ICRS to ICRS coordinates, i.e.
     "pixel" coordinates are just the ICRS RA and Dec in degrees.
     '''
+    @staticmethod
+    def type():
+        return 'ICRS'
     def __init__(self):
         return
     def toSky(self,xy):
         return co.SkyCoord(xy[:,0], xy[:,1], unit='deg')
     def toXY(self,coords):
         if coords.isscalar:
-            return np.array(coords.ra.degree, coords.dec.degree)
+            return np.array([coords.ra.degree, coords.dec.degree])
         else:
             return np.vstack(coords.ra.degree, coords.dec.degree).T
     
@@ -507,33 +510,38 @@ class Gnomonic(object):
     All xy units are assumed to be in degrees as are the ra, dec, and PA of
     the projection pole.
     '''
+    @staticmethod
+    def type():
+        return 'Gnomonic'
     def __init__(self, ra, dec, rotation=0.):
         '''
         Create a Gnomonic transformation by specifying the position of the
         pole (in ICRS degrees) and rotation angle of the axes relative
         to ICRS north.
         '''
-        pole = co.SkyCoords(ra, dec, unit='deg',frame='ICRS')
+        pole = co.SkyCoord(ra, dec, unit='deg',frame='icrs')
         self.frame = pole.skyoffset_frame(rotation=co.Angle(rotation,unit='deg'))
         return
     def toSky(self,xy):
         '''
         Convert xy coordinates in the gnomonic project (in degrees) into SkyCoords.
         '''
-        # First deproject the radius
-        xy2d = np.atleast_2d(xy)
-        rin = np.hypot(xy2d[:,0], xy2d[:,1])*np.pi/180.
-        rfactor = np.where(rin>0.00001, np.arctan(rin)/rin, 1.)[:,np.newaxis]
-        return co.SkyCoords(xy2d*rfactor[:,np.newaxis],unit='deg', frame=self.frame)
+        # Get the y and z components of unit-sphere coords, x on pole axis
+        yz = np.atleast_2d(xy) * np.pi / 180.
+        yz /= np.sqrt( 1 + np.sum(yz*yz,axis=1))[:,np.newaxis]
+        dec = np.arcsin(yz[:,1])
+        ra = np.arcsin(yz[:,0] / np.cos(dec))
+        return co.SkyCoord(ra, dec,unit='rad', frame=self.frame)
     def toXY(self, coords):
         '''
         Convert SkyCoord array into xy values in the gnomonic projection, in degrees
         '''
         s = coords.transform_to(self.frame)
-        xy = np.vstack(s.lon.radian, s.lat.radian).T
-        rin = np.hypot(xy[:,0],xy[:,1])
-        rfactor = np.where(rin>0.00001, np.tan(rin) / rin, 1.) * 180. / np.pi
-        out = xy * rfactor[:,np.newaxis]
+        # Get 3 components on unit sphere
+        x = np.cos(s.lat.radian)*np.cos(s.lon.radian)
+        y = np.cos(s.lat.radian)*np.sin(s.lon.radian)
+        z = np.sin(s.lat.radian)
+        out = np.vstack((y/x, z/x)).T * 180. / np.pi
         if coords.isscalar:
             return np.squeeze(out)
         else:

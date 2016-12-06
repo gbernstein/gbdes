@@ -14,7 +14,7 @@
 using namespace std;
 using namespace astrometry;
 
-string usage="ApplyWCS: use WCS systems specified by FITS keywords to map from one\n"
+string usage="ApplyWCS: use WCS systems specified by YAML file or FITS keywords to map from one\n"
              "   pixel system to another, or from pixel system to/from world coords\n"
              "usage: ApplyWCS <WCS in> <WCS out> \n"
 	     "      <WCS in, out>:  each is either:\n"
@@ -24,7 +24,8 @@ string usage="ApplyWCS: use WCS systems specified by FITS keywords to map from o
              "                 that will be pole of a projection to/from (xi,eta) in degrees\n"
              "             (d) either \"icrs\" or \"ecliptic\" to use true sky coords in degrees\n"
              "             (e) a dash - to get input/output in the native projection of the Wcs.\n"
-             "     stdin: each line is <xin> <yin> which are either input pixel or input WCS coords\n"
+             "     stdin: each line is <xin> <yin> [color] which are either input pixel \n"
+             "            or input WCS coords.  Optional color defaults to zero.\n"
              "     stdout: each line is <xout> <yout> for either output pixel system or WCS";
 
 int
@@ -46,6 +47,10 @@ main(int argc, char *argv[])
     vector<SphericalCoords*> projection(2, (SphericalCoords*) 0);
     vector<bool> useNative(2,false);
 
+    // Save pmc to avoid reading it twice if it's repeated
+    PixelMapCollection* pmc = 0;
+    string pmcFile = "";
+    
     for (int i=0; i<2; i++) {
       // Choose input (i=0) / output (i=1) system:
       if (iarg >= argc) {
@@ -88,19 +93,23 @@ main(int argc, char *argv[])
 	  exit(1);
 	}
 	string filename = wcsfile.substr(at);
-	ifstream ifs(filename.c_str());
-	if (!ifs) {
-	  cerr << "Could not open serialized WCS file " << filename << endl;
-	  exit(1);
+	if (pmc==0 || filename!=pmcFile)  {
+	  if (pmc) delete pmc;
+	  ifstream ifs(filename.c_str());
+	  if (!ifs) {
+	    cerr << "Could not open serialized WCS file " << filename << endl;
+	    exit(1);
+	  }
+	  pmc = new PixelMapCollection;
+	  if (!pmc->read(ifs)) {
+	    cerr << "File <" << filename << "> is not serialized WCS file" << endl;
+	    exit(1);
+	  }
+	  pmcFile = filename;
 	}
-	PixelMapCollection pmc;
-	if (!pmc.read(ifs)) {
-	  cerr << "File <" << filename << "> is not serialized WCS file" << endl;
-	  exit(1);
-	}
-	wcs[i] = pmc.cloneWcs(wcsname);
+	wcs[i] = pmc->cloneWcs(wcsname);
       } else {
-      // Get WCS as TPV in FITS-header-style file
+	// Get WCS as TPV in FITS-header-style file
 	ifstream mapfs(wcsfile.c_str());
 	if (!mapfs) {
 	  cerr << "Could not open TPV spec file " << wcsfile << endl;
@@ -116,6 +125,8 @@ main(int argc, char *argv[])
       }
     }
 
+    if (pmc) delete pmc;
+
     if ( useNative[0] && !wcs[1] || useNative[1] && !wcs[0]) {
       cerr << "If you ask for native projection with \"-\" argument, other arg must be a WCS" << endl;
       exit(1);
@@ -130,6 +141,7 @@ main(int argc, char *argv[])
     while (stringstuff::getlineNoComment(cin, buffer)) {
       double xin;
       double yin;
+      double color;
       double xout = 0.;
       double yout = 0.;
       istringstream iss(buffer);
@@ -138,23 +150,25 @@ main(int argc, char *argv[])
 	     << endl;
 	exit(1);
       }
+      if (!(iss >> color))
+	color = 0.;
       // Input coordinates to world system:
       SphericalICRS icrs;
       if (wcs[0]) {
 	if (useNative[1]) {
 	  // Just map input to native system of the input Wcs
-	  wcs[0]->getMap()->toWorld(xin, yin, xout, yout);
+	  wcs[0]->getMap()->toWorld(xin, yin, xout, yout, color);
 	  cout << xout << " " << yout << endl;
 	  continue;
 	} else {
-	  icrs.convertFrom(wcs[0]->toSky(xin, yin));
+	  icrs.convertFrom(wcs[0]->toSky(xin, yin, color));
 	}
       } else if (projection[0]) {
 	projection[0]->setLonLat(xin*DEGREE, yin*DEGREE);
 	icrs.convertFrom(*projection[0]);
       } else if (useNative[0]) {
 	// go straight to output system's pixels
-	wcs[1]->getMap()->toPix(xin, yin, xout, yout);
+	wcs[1]->getMap()->toPix(xin, yin, xout, yout, color);
 	cout << xout << " " << yout << endl;
 	continue;
       } else {
@@ -164,7 +178,7 @@ main(int argc, char *argv[])
 
       // Now convert to output
       if (wcs[1]) {
-	wcs[1]->fromSky(icrs, xout, yout);
+	wcs[1]->fromSky(icrs, xout, yout, color);
       } else if (projection[1]) {
 	projection[1]->convertFrom(icrs);
 	projection[1]->getLonLat(xout, yout);
