@@ -64,7 +64,7 @@ skipHead = {'FGROUPNO','ASTINST','FLXSCALE','MAGZEROP',
             'PHOTIRMS','PHOTRRMS','PHOTINST','PHOTLINK'}
     
 mjd = None  # MJD of this exposure
-def mjdOfEpoch(mjd):
+def mjdOfEpoch(epoch):
     # Return mjd of date specified by 8-character epoch
     return Time(epoch[:4]+'-'+epoch[4:6]+'-'+epoch[6:8], 
                 format='fits',scale='utc').mjd
@@ -81,34 +81,35 @@ class EpochFinder(object):
     cooldowns=['20121226','20151126']
     nogood = '00000000'
     def __init__(self):
-        self.sfMjds = np.array([mjdOfEpoch(e) for e in self.sfEpochs])
-        self.eventMjds = np.array([mjdOfEpoch(e) for e in self.warmups + self.cooldowns].sort())
-
+        # Place the epochs at ~midday Chile time of their stated date.
+        self.sfMjds = np.array([mjdOfEpoch(e) for e in self.sfEpochs]) + 0.7
+        self.eventMjds = np.array([mjdOfEpoch(e) for e in self.warmups + self.cooldowns]) + 0.7
+        self.eventMjds.sort() 
         return
     def __call__(self, mjd):
         if mjd is None:
-            return nogood
+            return self.nogood
         # which events are before, after our mjd?
         before = mjd >= self.eventMjds
         # Mark which star flat MJDs are in same interval between events
         if not np.any(before):
             # Our mjd is before any events
-            same = sfMjds < eventMjds[0]
+            same = self.sfMjds < self.eventMjds[0]
         elif np.all(before):
             # Our mjd is after all events
-            same = sfMjds >= eventMjds[-1]
+            same = self.sfMjds >= self.eventMjds[-1]
         else:
             # Our mjd is between two events, get index of preceding one
             precede = np.where(before)[0][-1]
-            same = np.logical_and(sfMjds>=eventMjds[precede],
-                                  sfMjds < eventMjds[precede+1])
+            same = np.logical_and(self.sfMjds>=self.eventMjds[precede],
+                                  self.sfMjds <self.eventMjds[precede+1])
         
         if not same.any():
             # No star flats in the same event interval.
-            return nogood
+            return self.nogood
         sameIndices = np.where(same)[0]
-        closest = np.argmin(np.abs(sfMjds[same]-mjd))
-        return sfEpochs[sameIndices[closest]]
+        closest = np.argmin(np.abs(self.sfMjds[same]-mjd))
+        return self.sfEpochs[sameIndices[closest]]
 
 ef = EpochFinder()
 
@@ -144,7 +145,7 @@ for i in range(2,len(fitsin),2):
 
     # Get MJD if we have it
     if 'MJD-OBS' in hdr.keys():
-        if mjd is not None:
+        if mjd is None:
             mjd = float(hdr['MJD-OBS'])
         elif mjd != float(hdr['MJD-OBS']):
             print 'WARNING: disagreeing MJDs: ',mjd,hdr['MJD-OBS']
@@ -225,7 +226,7 @@ epoch =  ef(mjd)
 phdr['CALEPOCH'] =epoch    
 
 # Dump some basic information
-print "{:6d} {:12.6f} {:5.1f} {:s} {:s} {:1s} {:+6.4f} {:6.4f} {:5.3f} {:5.3f}".format(hdr['EXPNUM'],hdr['MJD-OBS'],hdr['EXPTIME'],hdr['TELDEC'],hdr['HA'],hdr['BAND'].strip(),phdr['APCOR09'],phdr['AP09_RMS'],phdr['FLUXRAD']*2*0.264,phdr['FRAD_RMS']*2.*0.264), 
+print "{:6d} {:12.6f} {:5.1f} {:s} {:s} {:1s} {:+6.4f} {:6.4f} {:5.3f} {:5.3f}".format(hdr['EXPNUM'],hdr['MJD-OBS'],hdr['EXPTIME'],hdr['TELDEC'],hdr['HA'],hdr['BAND'].strip(),phdr['APCOR09'],phdr['AP09_RMS'],phdr['FLUXRAD']*2*0.264,phdr['FRAD_RMS']*2.*0.264), epoch
 
 # Make an output FITS and save
 out = fitsio.FITS(args.outcat, 'rw', clobber=True)
