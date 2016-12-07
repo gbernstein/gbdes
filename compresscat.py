@@ -6,6 +6,7 @@ Process multi-extension SExtractor catalog to accomplish the following:
 * Filter catalog down to clean stars with magnitude errors below selected threshold
 * Calculate median aperture corrections for stars in each chip and entire exposure,
   and put these into extension and primary headers, respectively.
+* Choose a star flat calibration epoch to apply to this exposure (CALEPOCH) based on its MJD.
 """
 
 import sys
@@ -16,6 +17,7 @@ import re
 import argparse
 import numpy as np
 from gmbpy import clippedMean
+from astropy.time import Time
 
 parser = argparse.ArgumentParser(description='Compress and process SExtractor catalogs for high-quality stars')
 parser.add_argument("incat", help='Filename of input catalog', type=str)
@@ -61,6 +63,55 @@ skipLDAC = {'SIMPLE','BITPIX','NAXIS','NAXIS1','NAXIS2','EXTEND','CONTINUE'}
 skipHead = {'FGROUPNO','ASTINST','FLXSCALE','MAGZEROP',
             'PHOTIRMS','PHOTRRMS','PHOTINST','PHOTLINK'}
     
+mjd = None  # MJD of this exposure
+def mjdOfEpoch(mjd):
+    # Return mjd of date specified by 8-character epoch
+    return Time(epoch[:4]+'-'+epoch[4:6]+'-'+epoch[6:8], 
+                format='fits',scale='utc').mjd
+class EpochFinder(object):
+    '''Function class which returns the star flat epoch nearest to specifed input MJD
+    that does not have an intervening camera event.  Returns '00000000' if no star flats
+    occur in the same interval between events.
+    '''
+    # Epochs of star flats and of camera "events" when calibration changes.
+    sfEpochs = ['20121223','20130221','20130829','20131115','20140118','20140807','20141105',
+                '20150204','20150926', '20160209', '20160223','20160816','20161117']
+    warmups = ['20121230','20130512','20130722','20131015','20140512','20141201','20150625',
+                '20150725','20150809','20150825','20160219','20161013']
+    cooldowns=['20121226','20151126']
+    nogood = '00000000'
+    def __init__(self):
+        self.sfMjds = np.array([mjdOfEpoch(e) for e in self.sfEpochs])
+        self.eventMjds = np.array([mjdOfEpoch(e) for e in self.warmups + self.cooldowns].sort())
+
+        return
+    def __call__(self, mjd):
+        if mjd is None:
+            return nogood
+        # which events are before, after our mjd?
+        before = mjd >= self.eventMjds
+        # Mark which star flat MJDs are in same interval between events
+        if not np.any(before):
+            # Our mjd is before any events
+            same = sfMjds < eventMjds[0]
+        elif np.all(before):
+            # Our mjd is after all events
+            same = sfMjds >= eventMjds[-1]
+        else:
+            # Our mjd is between two events, get index of preceding one
+            precede = np.where(before)[0][-1]
+            same = np.logical_and(sfMjds>=eventMjds[precede],
+                                  sfMjds < eventMjds[precede+1])
+        
+        if not same.any():
+            # No star flats in the same event interval.
+            return nogood
+        sameIndices = np.where(same)[0]
+        closest = np.argmin(np.abs(sfMjds[same]-mjd))
+        return sfEpochs[sameIndices[closest]]
+
+ef = EpochFinder()
+
 # Open the file with new header info
 if args.head:
     heads = open(args.head)
@@ -90,6 +141,13 @@ for i in range(2,len(fitsin),2):
                 # Do not include empty or unwanted keywords
                 continue
             hdr.add_record(line.strip())
+
+    # Get MJD if we have it
+    if 'MJD-OBS' in hdr.keys():
+        if mjd is not None:
+            mjd = float(hdr['MJD-OBS'])
+        elif mjd != float(hdr['MJD-OBS']):
+            print 'WARNING: disagreeing MJDs: ',mjd,hdr['MJD-OBS']
 
     # Isolate the stars we want to hold onto
     use = np.logical_and(np.abs(data['SPREAD_MODEL'])<=0.003,
@@ -161,9 +219,13 @@ if len(ccd_ap09) > 20:
     phdr['AP09_RMS'] = np.sqrt(var)
 else:
     phdr['AP09_RMS'] = 0.
-    
+
+# Save calibration epoch
+epoch =  ef(mjd)
+phdr['CALEPOCH'] =epoch    
+
 # Dump some basic information
-print "{:6d} {:12.6f} {:5.1f} {:s} {:s} {:1s} {:+6.4f} {:6.4f} {:5.3f} {:5.3f}".format(hdr['EXPNUM'],hdr['MJD-OBS'],hdr['EXPTIME'],hdr['TELDEC'],hdr['HA'],hdr['BAND'].strip(),phdr['APCOR09'],phdr['AP09_RMS'],phdr['FLUXRAD']*2*0.264,phdr['FRAD_RMS']*2.*0.264)
+print "{:6d} {:12.6f} {:5.1f} {:s} {:s} {:1s} {:+6.4f} {:6.4f} {:5.3f} {:5.3f}".format(hdr['EXPNUM'],hdr['MJD-OBS'],hdr['EXPTIME'],hdr['TELDEC'],hdr['HA'],hdr['BAND'].strip(),phdr['APCOR09'],phdr['AP09_RMS'],phdr['FLUXRAD']*2*0.264,phdr['FRAD_RMS']*2.*0.264), 
 
 # Make an output FITS and save
 out = fitsio.FITS(args.outcat, 'rw', clobber=True)
