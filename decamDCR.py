@@ -7,6 +7,11 @@ angle into columns of the EXPOSURE table in the FOF file.
 import numpy as np
 import yaml
 from gmbpy import dmsToDegrees
+import sys
+import astropy.io.fits as pf
+import argparse
+
+
 
 def parallactic(dec, ha, lat=-30.1716):
     '''Function will calculate airmass and
@@ -40,19 +45,29 @@ latitude = -30.1716  # Observatory latitude, degrees
 referenceColor = 0.61  # zeropoint for color terms
 
 if __name__=='__main__':
-    fits = sys.argv(1) # ?? use argparse
-    dcrfile = sys.argv(2)
+    parser = argparse.ArgumentParser(description=\
+     'Create DCR pixelmaps for exposures in FOF file and update airmass entries')
+    parser.add_argument("fof", help='Filename of FOF file to update', type=str)
+    parser.add_argument("dcr", help='Filename of output YAML DCR specs', type=str)
+    parser.add_argument('--no_update',help='Do not update FOF file airmasses',
+                        action='store_true')
+
+    args = parser.parse_args()
+    fits = args.fof
+    dcrFile = args.dcr
 
     pixmaps = {}
     
-#    ff = pf.open(fits,'update')
-    ff = pf.open(fits)
+    if args.no_update:
+        ff = pf.open(fits)
+    else:
+        ff = pf.open(fits,'update')
 
     # Get bands of all instruments, assign band to exposures
     bands = {}
     for hdu in ff[1:]:
         if hdu.header['EXTNAME']=='Instrument':
-            bands[hdu.header['NUMBER'])] = hdu.header['BAND']
+            bands[hdu.header['NUMBER']] = hdu.header['BAND']
 
     exposures = ff['exposures'].data
     extns = ff['extensions'].data
@@ -67,10 +82,10 @@ if __name__=='__main__':
         # Find all extensions with this exposure
         used = extns['exposure']==i
         # Get HA from them, do they agree?
-        ha = np.unique(extensions['HA'][used])
+        ha = np.unique(extns['HA'][used])
         if len(ha) > 1:
             print "Disagreeing HA's for exposure",name,ha
-        ha = dmsToDegree(ha) * 15.
+        ha = dmsToDegrees(ha[0]) * 15.
         # get declination, derive parallactic angle
         dec = exposures['dec'][i]
         airmass, p = parallactic(dec, ha, lat = latitude)
@@ -79,24 +94,24 @@ if __name__=='__main__':
         # Write DCR to pixmaps
         b = bands[iinst]
         if b in dcrConstant.keys():
-            # not a band that needs DCR
-            pixmaps[name+'/dcr'] = {'Type':'Identity'}
-        else:
             # Convert DCR amplitude from mas to degrees
             ampl = dcrConstant[b] / (3600.*1000.)
             dcry = ampl * np.cos(p)*np.sqrt(airmass*airmass-1)
             dcrx = ampl * np.sin(p)*np.sqrt(airmass*airmass-1)
-            print name,dcrx,dcry
             # Specify the distortion
             pixmap = {'Type':'Color',
                       'Reference':referenceColor,
                       'Function':{'Type':'Constant',
-                                  'Parameters':[dcrx,dcry]}}
+                                  'Parameters':[float(dcrx),float(dcry)]}}
             pixmaps[name+'/dcr'] = pixmap
+        else:
+            # not a band that needs DCR
+            pixmaps[name+'/dcr'] = {'Type':'Identity'}
 
     # write yaml
-    fout = open(yamlFile,'w')
+    fout = open(dcrFile,'w')
     yaml.dump(pixmaps,fout)
     fout.close()
     ff.close()
-    
+    sys.exit(0)
+
