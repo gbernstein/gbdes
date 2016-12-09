@@ -317,9 +317,18 @@ astrometry::fitTPV(Bounds<double> b,
 		   const Wcs& wcsIn,
 		   const SphericalCoords& tpvPole,
 		   string name,
-		   double tolerance) {
-  const int startOrder=3;
-  const int maxOrder=5;
+		   double color,
+		   double tolerance,
+		   double order) {
+  int startOrder=3;
+  int maxOrder=5;
+  if (order >0) {
+    if (order>maxOrder)
+      FormatAndThrow<AstrometryError>() <<
+	"fitTPV does not like order above " << maxOrder;
+    startOrder = order;
+    maxOrder = order;
+  }
 
   const string linearName = name + linearSuffix;
   const string polyName = name + polySuffix;
@@ -343,12 +352,12 @@ astrometry::fitTPV(Bounds<double> b,
   // Map chip center and deviates in x and y to coords in the desired gnomonic projection:
   double xp = center.x;
   double yp = center.y;
-  tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
+  tpvCoords.convertFrom(wcsIn.toSky(xp, yp,color));
   double x0, y0;
   tpvCoords.getLonLat(x0,y0);
   x0 /= DEGREE;  y0 /= DEGREE;
   xp = center.x + wcsIn.getPixelStep();
-  tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
+  tpvCoords.convertFrom(wcsIn.toSky(xp, yp,color));
   double dx, dy;
   tpvCoords.getLonLat(dx,dy);
   v[1] = (dx/DEGREE - x0)/wcsIn.getPixelStep();
@@ -356,7 +365,7 @@ astrometry::fitTPV(Bounds<double> b,
 
   xp = center.x;
   yp = center.y + wcsIn.getPixelStep();
-  tpvCoords.convertFrom(wcsIn.toSky(xp, yp));
+  tpvCoords.convertFrom(wcsIn.toSky(xp, yp,color));
   tpvCoords.getLonLat(dx,dy);
   v[2] = (dx/DEGREE - x0)/wcsIn.getPixelStep();
   v[5] = (dy/DEGREE - y0)/wcsIn.getPixelStep();
@@ -385,7 +394,7 @@ astrometry::fitTPV(Bounds<double> b,
       double xpix = b.getXMin() + ix*xstep;
       double ypix = b.getYMin() + iy*ystep;
       double xw, yw;
-      tpvCoords.convertFrom(wcsIn.toSky(xpix, ypix));
+      tpvCoords.convertFrom(wcsIn.toSky(xpix, ypix, color));
       tpvCoords.getLonLat(xw, yw);
       xw /= DEGREE;
       yw /= DEGREE;
