@@ -188,7 +188,7 @@ main(int argc, char *argv[])
 	  double yp = (iy-1)*decimate + 1.;
 	  for (int ix = drawBounds.getXMin(); ix<=drawBounds.getXMax(); ix++) {
 	    double xp = (ix-1)*decimate + 1.;
-	    tpv->toWorld(xp,yp,xw,yw,color);
+	    tpv->getMap()->toWorld(xp,yp,xw,yw,color);
 	    xtpv(ix,iy) = xw;
 	    ytpv(ix,iy) = yw;
 	  }
