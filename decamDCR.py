@@ -66,7 +66,7 @@ if __name__=='__main__':
     # Get bands of all instruments, assign band to exposures
     bands = {}
     for hdu in ff[1:]:
-        if hdu.header['EXTNAME']=='Instrument':
+        if hdu.header['EXTNAME'].lower()=='Instrument'.lower():
             bands[hdu.header['NUMBER']] = hdu.header['BAND']
 
     exposures = ff['exposures'].data
