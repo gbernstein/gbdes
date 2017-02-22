@@ -1392,8 +1392,8 @@ void
 reserveMatches(list<typename S::Match*>& matches,
 	       double reserveFraction,
 	       int randomNumberSeed) {
-  ran::UniformDeviate u;
-  if (randomNumberSeed >0) u.Seed(randomNumberSeed);
+  ran::UniformDeviate<double> u;
+  if (randomNumberSeed >0) u.seed(randomNumberSeed);
 
   for (auto mptr : matches)
     mptr->setReserved( u < reserveFraction );

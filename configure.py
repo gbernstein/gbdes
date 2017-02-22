@@ -586,8 +586,15 @@ if __name__=='__main__':
                     dec = attributes['DEC'](**attargs)
                     # ??? Check for RA already in degrees?
                     if ra!=None and dec!=None:
-                        expoAttr['coords'] = cc.SkyCoord(ra=ra,dec=dec,unit=(u.hourangle,u.degree),
-                                                       frame='icrs')
+                        try:
+                            # If ra is valid floating point, assume it's degrees
+                            float(ra)
+                            expoAttr['coords'] = cc.SkyCoord(ra=ra,dec=dec,unit=(u.degree,u.degree),
+                                                             frame='icrs')
+                        except ValueError:
+                            # Otherwise it must be HH:MM:SS.sss style in hours
+                            expoAttr['coords'] = cc.SkyCoord(ra=ra,dec=dec,unit=(u.hourangle,u.degree),
+                                                             frame='icrs')
                     else:
                         expoAttr['coords'] = None
                     expoAttr['airmass'] = attributes['AIRMASS'](**attargs)

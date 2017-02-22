@@ -606,12 +606,16 @@ main(int argc,
 	 << " points." << endl;
 
     // Clean up
+    cerr << "Cleaning fields: " << endl;
     for (int i=0; i<fields.size(); i++)
       delete fields[i];
+    cerr << "Cleaning instruments: " << endl;
     for (int i=0; i<instruments.size(); i++)
       delete instruments[i];
+    cerr << "Cleaning exposures: " << endl;
     for (int i=0; i<exposures.size(); i++)
       delete exposures[i];
+    cerr << "Done!: " << endl;
 
   } catch (std::runtime_error &m) {
     quit(m,1);
