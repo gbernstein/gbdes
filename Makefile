@@ -88,6 +88,8 @@ ApplyPhoto: ApplyPhoto.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 ApplyWCS: ApplyWCS.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+tpv2pixmap: tpv2pixmap.o $(OBJ)
+	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 DrawAstro: DrawAstro.o DECamInfo.o FitSubroutines.o Match.o Accum.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 TabulatePixmap: TabulatePixmap.o DECamInfo.o $(OBJ)

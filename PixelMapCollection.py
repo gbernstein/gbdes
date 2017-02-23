@@ -27,6 +27,13 @@ import yaml
 from scipy.optimize import root
 import os
 
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+    print "Using C!!"
+except ImportError:
+    from yaml import Loader, Dumper
+
+print "test"
 
 class PixelMap(object):
     ''' Base class for transformations from one 2d system ("pixel") to another ("world").
@@ -205,18 +212,17 @@ class Template(PixelMap):
     def type():
         return 'Template'
 
-    # A class variable contains the templates read from the last reference file.
-    libraryFile = None
-    library = {}
+    # A class variable contains all the templates read so far, since they
+    # are very slow to get from YAML.
+    libraries = {}
     
     def __init__(self,name, **kwargs):
         super(Template,self).__init__(name)
         if kwargs['HasSplit']:
             raise Exception('Template pixel map not coded for split templates')
         fname = kwargs['Filename']
-        if self.libraryFile is None or self.libraryFile!=fname:
+        if fname not in self.libraries:
             # Read in a new library file
-            self.libraryFile = fname
             path = None
             if os.path.isabs(fname) or 'CAL_PATH' not in os.environ:
                 # Just attempt read from an absolute path or if there's no path
@@ -229,13 +235,13 @@ class Template(PixelMap):
                         break
             if path is None:
                 raise Exception('Can not find template library file ' + fname)
-            self.library = yaml.load(open(path))
+            self.libraries[fname] = yaml.load(open(path),Loader=Loader)
 
         # Now find the desired template
-        if kwargs['LowTable'] not in self.library:
+        if kwargs['LowTable'] not in self.libraries[fname]:
             raise Exception('Did not find map ' + kwargs['LowTable'] + ' in file ' + fname)
         self.scale = float(kwargs['Parameter'])
-        tab = self.library[kwargs['LowTable']]
+        tab = self.libraries[fname][kwargs['LowTable']]
         
         self.axis = tab['Axis']  # 'X', 'Y', 'R"
         if self.axis=='R':
@@ -400,7 +406,7 @@ class PixelMapCollection(object):
     def __init__(self, filename):
         '''Create PixelMapCollection from the named YAML file
         '''
-        self.root = yaml.load(open(filename))
+        self.root = yaml.load(open(filename),Loader=Loader)
         # Extract the WCS specifications into their own dict
         if 'WCS' in self.root:
             self.wcs = self.root.pop('WCS')
