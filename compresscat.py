@@ -7,6 +7,8 @@ Process multi-extension SExtractor catalog to accomplish the following:
 * Calculate median aperture corrections for stars in each chip and entire exposure,
   and put these into extension and primary headers, respectively.
 * Choose a star flat calibration epoch to apply to this exposure (CALEPOCH) based on its MJD.
+* Create a header keyword MJD-MDPT if not present giving time at center of
+  exposure, if one was not present.
 """
 
 import sys
@@ -33,6 +35,8 @@ parser.add_argument('--min_stars',help='Minimum number of stars to get aperture 
                     default=20,type=int)
 parser.add_argument('--reference_aperture',help='Which MAG_APER element is baseline',
                     default=7,type=int)
+parser.add_argument('--add_mjdmid', help='Add MJD-MDPT to primary header', default=True, type=bool)
+parser.add_argument('--shutter_transit_time', help='Seconds it takes for shutter to open', default=1.06, type=float)
 
 args = parser.parse_args()
 
@@ -63,7 +67,9 @@ skipLDAC = {'SIMPLE','BITPIX','NAXIS','NAXIS1','NAXIS2','EXTEND','CONTINUE'}
 skipHead = {'FGROUPNO','ASTINST','FLXSCALE','MAGZEROP',
             'PHOTIRMS','PHOTRRMS','PHOTINST','PHOTLINK'}
     
-mjd = None  # MJD of this exposure
+mjd = None  # MJD at start of this exposure
+exptime = None  # exposure time
+
 def mjdOfEpoch(epoch):
     # Return mjd of date specified by 8-character epoch
     return Time(epoch[:4]+'-'+epoch[4:6]+'-'+epoch[6:8], 
@@ -150,6 +156,13 @@ for i in range(2,len(fitsin),2):
         elif mjd != float(hdr['MJD-OBS']):
             print 'WARNING: disagreeing MJDs: ',mjd,hdr['MJD-OBS']
 
+    # and exposure time
+    if 'EXPTIME' in hdr.keys():
+        if exptime is None:
+            exptime = float(hdr['EXPTIME'])
+        elif exptime != float(hdr['EXPTIME']):
+            print 'WARNING: disagreeing EXPTIMEs: ',exptime,hdr['EXPTIME']
+
     # Isolate the stars we want to hold onto
     use = np.logical_and(np.abs(data['SPREAD_MODEL'])<=0.003,
                          data['MAGERR_AUTO'] <= args.max_err)
@@ -224,6 +237,13 @@ else:
 # Save calibration epoch
 epoch =  ef(mjd)
 phdr['CALEPOCH'] =epoch    
+# Save the MJD at the temporal center of the exposure
+if args.add_mjdmid:
+ if exptime is None:
+     print 'ERROR: add_mjdmid set but EXPTIME not found'
+     sys.exit(1)
+ else:
+    phdr['MJD-MDPT'] = mjd + 0.5*(args.shutter_transit_time + exptime)/(24.*3600.)
 
 # Dump some basic information
 print "{:6d} {:12.6f} {:5.1f} {:s} {:s} {:1s} {:+6.4f} {:6.4f} {:5.3f} {:5.3f}".format(hdr['EXPNUM'],hdr['MJD-OBS'],hdr['EXPTIME'],hdr['TELDEC'],hdr['HA'],hdr['BAND'].strip(),phdr['APCOR09'],phdr['AP09_RMS'],phdr['FLUXRAD']*2*0.264,phdr['FRAD_RMS']*2.*0.264), epoch
