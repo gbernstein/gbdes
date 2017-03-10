@@ -93,9 +93,11 @@ readPriors(string filename,
     double zeropoint=0.;
     double airmassCoeff=0.;
     double colorCoeff=0.;
+    double apcorrCoeff=0.;
     bool zpIsFree = false;
     bool airmassIsFree = false;
     bool colorIsFree = false;
+    bool apcorrIsFree = false;
 
     // Keep track of exposures already included in this prior.
     set<int> includedExposures;
@@ -120,6 +122,9 @@ readPriors(string filename,
 	  formatError(filename, buffer);
       } else if (nocaseEqual(keyword, "color")) {
 	if (!valueAndFree(iss, colorCoeff, colorIsFree))
+	  formatError(filename, buffer);
+      } else if (nocaseEqual(keyword, "apcorr")) {
+	if (!valueAndFree(iss, apcorrCoeff, apcorrIsFree))
 	  formatError(filename, buffer);
       } else {
 	// The keyword should be the name of an exposure.
@@ -208,6 +213,7 @@ readPriors(string filename,
 		     << endl;
 		exit(1);
 	      }
+	      point.apcorr = extn.apcorr;
 
 	      // Map the coordinates to get [xy]Exposure
 	      Assert(extn.startWcs);
@@ -249,8 +255,8 @@ readPriors(string filename,
     } // Done reading this prior.
     out.push_back(new PhotoPrior(refs,
 				 sigma, name,
-				 zeropoint, airmassCoeff, colorCoeff,
-				 zpIsFree, airmassIsFree, colorIsFree));
+				 zeropoint, airmassCoeff, colorCoeff, apcorrCoeff,
+				 zpIsFree, airmassIsFree, colorIsFree, apcorrIsFree));
   } // No more input from the file.
 
   return out;

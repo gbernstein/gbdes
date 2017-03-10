@@ -422,6 +422,7 @@ readExposures(const vector<Instrument*>& instruments,
   vector<double> airmass;
   vector<double> exptime;
   vector<double> mjd;
+  vector<double> apcorr;
   vector<string> epoch;
 
   ff.readCells(names, "Name");
@@ -442,6 +443,12 @@ readExposures(const vector<Instrument*>& instruments,
   } catch (img::FTableError& e) {
     // May not always have this column
     epoch.clear();
+  }
+  try {
+    ff.readCells(apcorr, "apcorr");
+  } catch (img::FTableError& e) {
+    // May not always have this column
+    apcorr.clear();
   }
   // Initialize our output arrays to not-in-use values
   vector<Exposure*> exposures(names.size(), 0);
@@ -486,6 +493,8 @@ readExposures(const vector<Instrument*>& instruments,
 	expo->mjd = mjd[i];
       if (!epoch.empty())
 	expo->epoch = epoch[i];
+      if (!apcorr.empty())
+	expo->apcorr = apcorr[i];
     }
   } // End exposure loop
   return exposures;
@@ -565,6 +574,7 @@ readExtensions(img::FTable& extensionTable,
     }
     extn->device = iDevice;
     extn->airmass = expo.airmass;
+    extn->apcorr = expo.apcorr;
     extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
        
     // Create the starting WCS for the exposure

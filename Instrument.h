@@ -46,7 +46,8 @@ public:
 class Exposure {
 public:
   Exposure(const string& name_, const astrometry::SphericalCoords& coords): 
-    name(name_), projection(coords.duplicate()), mjd(0.), exptime(1.), airmass(1.) {}
+  name(name_), projection(coords.duplicate()), mjd(0.), exptime(1.), airmass(1.),
+  apcorr(0.) {}
   ~Exposure() {delete projection;}
   string name;   // The exposure map will have this name too.
   astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for exposure
@@ -54,7 +55,8 @@ public:
   int  instrument;
   double airmass;
   double exptime;
-  double mjd;  
+  double mjd;
+  double apcorr;
   string epoch;
   // No copying:
   Exposure(const Exposure& rhs) =delete;
@@ -70,7 +72,8 @@ public:
   ExtensionBase(): map(0), wcs(0), startWcs(0), needsColor(false) {}
   int exposure;
   int device;
-  double airmass;
+  double airmass;      // airmass and apcorr used for nightly priors
+  double apcorr;
   double magshift;	// Additive adjustment to all incoming mags (exposure time)
 
   string wcsName;      // Name of final WCS (and map into field coordinates)

@@ -98,7 +98,8 @@ specialInstruments={'REFERENCE':-1,'TAG':-2}
 # being written to the output table, or belong to Exposure rather than Extension
 # and hence should not be written to Extension table.
 specialAttributes =('FILENAME','EXTENSION','EXPOSURE','INSTRUMENT','FIELD',\
-                    'DEVICE','RA','DEC','AIRMASS','EXPTIME','MJD','WCSIN','BAND','EPOCH')
+                    'DEVICE','RA','DEC','AIRMASS','EXPTIME','MJD','WCSIN','BAND',\
+                    'EPOCH','APCORR')
 
 headerIndicator = "<"
 # Character at start of a attribute value that indicates lookup in header                    
@@ -224,7 +225,8 @@ def buildInstrumentTable(inst):
 
 class Exposure:
     def __init__(self, name, coords, field, instrument, exptime=None, \
-                 airmass=None, mjd=None, epoch=None, index=-1, **kwargs):
+                 airmass=None, mjd=None, epoch=None, \
+                 apcorr=None, index=-1, **kwargs):
         # Note that the constructor may contain arguments not used.
         self.name = name
         self.coords = coords
@@ -245,6 +247,10 @@ class Exposure:
             self.epoch = ""
         else:
             self.epoch = epoch
+        if apcorr is None:
+            self.apcorr = 0.
+        else:
+            self.apcorr = apcorr
         self.instrument = instrument
         self.index = index
         return
@@ -263,6 +269,7 @@ def buildExposureTable(exposures, fields, instruments):
     mjd = []
     exptime = []
     epoch = []
+    apcorr = []
     index = 0
     for k,e in exposures.items():
         name.append(e.name)
@@ -280,6 +287,7 @@ def buildExposureTable(exposures, fields, instruments):
         mjd.append(e.mjd)
         exptime.append(e.exptime)
         epoch.append(e.epoch)
+        apcorr.append(e.apcorr)
     hdu = pf.BinTableHDU.from_columns(\
         pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
                      pf.Column(name='RA',format=py_to_fits(ra),array=ra),
@@ -291,6 +299,7 @@ def buildExposureTable(exposures, fields, instruments):
                      pf.Column(name="AIRMASS",format=py_to_fits(airmass),array=airmass),
                      pf.Column(name="EXPTIME",format=py_to_fits(exptime),array=exptime),
                      pf.Column(name="EPOCH",format=py_to_fits(epoch),array=epoch) ]),
+                     pf.Column(name="APCORR",format=py_to_fits(apcorr),array=apcorr) ]),
                      name = 'Exposures')
     # hdu.header['EXTNAME'] = 'Exposures'
     return hdu
@@ -603,6 +612,7 @@ if __name__=='__main__':
                     expoAttr['field'] = attributes['FIELD'](**attargs)
                     expoAttr['mjd'] = attributes['MJD'](**attargs)
                     expoAttr['epoch'] = attributes['EPOCH'](**attargs)
+                    expoAttr['apcorr'] = attributes['APCORR'](**attargs)
 
                     # Apply variable substitution to the exposure attributes
                     variableSubstitution(expoAttr)
@@ -618,6 +628,7 @@ if __name__=='__main__':
                            (expoAttr['exptime']!=None and \
                             abs(expoAttr['exptime']/e.exptime-1.)>0.0002) or \
                            (expoAttr['mjd']!=None and abs(expoAttr['mjd'] - e.mjd)>0.0002) or \
+                           (expoAttr['apcorr']!=None and abs(expoAttr['apcorr'] - e.apcorr)>0.0002) or \
                            (expoAttr['coords']!=None
                             and getDegree(expoAttr['coords'].separation(e.coords)) > 1.):
                             print "ERROR: info mismatch at exposure",expo, "file",fitsname, \
