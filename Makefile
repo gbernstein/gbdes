@@ -72,7 +72,8 @@ all: depend subs
 
 bfcorrect: bfcorrect.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-Photo2DESDM: Photo2DESDM.o DECamInfo.o $(OBJ)
+Photo2DESDM: Photo2DESDM.o ReadPhotoPriors.o PhotoSubs.o Match.o Accum.o FitSubroutines.o MapDegeneracies.o $(OBJ)
+Photo2DESDM: Photo2DESDM.o DECamInfo.o FitSubroutines.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 CorrectFlat: CorrectFlat.o DECamInfo.o $(OBJ)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
