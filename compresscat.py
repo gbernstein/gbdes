@@ -123,19 +123,29 @@ ef = EpochFinder()
 if args.head:
     heads = open(args.head)
     
-for i in range(2,len(fitsin),2):
+# Is this an LDAC-format file, or are headers already in the data?
+h1 = fitsin[1].read_header()
+isLDAC = 'EXTNAME' in h1 and h1['EXTNAME']=='LDAC_HEADER'
+
+if isLDAC:
+    hduStep = 2
+else:
+    hduStep = 1
+    
+for i in range(hduStep,len(fitsin),hduStep):
     # Extract desirable stars from each catalog extension into new table
     hdr = fitsin[i].read_header()
     data = fitsin[i].read()
 
-    # Bring LDAC headers into real headers
-    ascii = fitsin[i-1][0][0][0]
-    for line in ascii:
-        kw = line[:8].strip()
-        if len(kw)==0 or kw in skipLDAC:
-            # Do not include empty or unwanted keywords
-            continue
-        hdr.add_record(line)
+    if isLDAC:
+        # Bring LDAC headers into real headers
+        ascii = fitsin[i-1][0][0][0]
+        for line in ascii:
+            kw = line[:8].strip()
+            if len(kw)==0 or kw in skipLDAC:
+                # Do not include empty or unwanted keywords
+                continue
+            hdr.add_record(line)
     
     if args.head:
         # Read .head files and insert into headers
@@ -164,8 +174,9 @@ for i in range(2,len(fitsin),2):
             print 'WARNING: disagreeing EXPTIMEs: ',exptime,hdr['EXPTIME']
 
     # Isolate the stars we want to hold onto
-    use = np.logical_and(np.abs(data['SPREAD_MODEL'])<=0.003,
-                         data['MAGERR_AUTO'] <= args.max_err)
+    use = data['MAGERR_AUTO'] <= args.max_err
+    if 'SPREAD_MODEL' in data:
+        use = np.logical_and(use, np.abs(data['SPREAD_MODEL'])<=0.003)
     use = np.logical_and(use, np.logical_not(data['FLAGS'] & args.flags_mask))
     use = np.logical_and(use, np.logical_not(data['IMAFLAGS_ISO'] & args.imaflags_mask))
 

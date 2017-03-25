@@ -298,7 +298,7 @@ def buildExposureTable(exposures, fields, instruments):
                      pf.Column(name="MJD",format=py_to_fits(mjd),array=mjd),
                      pf.Column(name="AIRMASS",format=py_to_fits(airmass),array=airmass),
                      pf.Column(name="EXPTIME",format=py_to_fits(exptime),array=exptime),
-                     pf.Column(name="EPOCH",format=py_to_fits(epoch),array=epoch) ]),
+                     pf.Column(name="EPOCH",format=py_to_fits(epoch),array=epoch),
                      pf.Column(name="APCORR",format=py_to_fits(apcorr),array=apcorr) ]),
                      name = 'Exposures')
     # hdu.header['EXTNAME'] = 'Exposures'
@@ -612,7 +612,11 @@ if __name__=='__main__':
                     expoAttr['field'] = attributes['FIELD'](**attargs)
                     expoAttr['mjd'] = attributes['MJD'](**attargs)
                     expoAttr['epoch'] = attributes['EPOCH'](**attargs)
-                    expoAttr['apcorr'] = attributes['APCORR'](**attargs)
+                    ## For the APCORR, give priority to the primary header because we prefer
+                    ## the median value of all CCDs to any individual one:
+                    expoAttr['apcorr'] = attributes['APCORR'](name=expo,
+                                                              primaryHeader=eHeader,
+                                                              extnHeader=pHeader)
 
                     # Apply variable substitution to the exposure attributes
                     variableSubstitution(expoAttr)
@@ -628,7 +632,6 @@ if __name__=='__main__':
                            (expoAttr['exptime']!=None and \
                             abs(expoAttr['exptime']/e.exptime-1.)>0.0002) or \
                            (expoAttr['mjd']!=None and abs(expoAttr['mjd'] - e.mjd)>0.0002) or \
-                           (expoAttr['apcorr']!=None and abs(expoAttr['apcorr'] - e.apcorr)>0.0002) or \
                            (expoAttr['coords']!=None
                             and getDegree(expoAttr['coords'].separation(e.coords)) > 1.):
                             print "ERROR: info mismatch at exposure",expo, "file",fitsname, \
