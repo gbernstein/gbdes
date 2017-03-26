@@ -1,172 +1,207 @@
-# First are site-dependent items - expect these to be defined in environment!
-#CXX = g++-4 -fopenmp
-#TMV_DIR
-#CFITSIO_DIR
-#FFTW_DIR
-#BOOST_DIR
-# GBTOOLS_DIR (defaults to ../gbtools if not in environment)
+# These site-dependent items should be defined in environment:
 
-# GBTOOLS_DIR = ../gbtools
+# CXX = g++-6 -fopenmp
+# CXXFLAGS
 
-export CXX
-export TMV_DIR
-export CFITSIO_DIR
-export BOOST_DIR
-export FFTW_DIR
-export YAML_DIR
+# TMV_DIR
+# CFITSIO_DIR
+# FFTW_DIR -or- EIGEN_DIR (former takes precedence)
+# YAML_DIR
+# GBUTILS_DIR
+# GBFITS_DIR
+# ASTROMETRY_DIR
+# PHOTOMETRY_DIR
 
-# OPTFLAGS will be exported for subdir makes
-OPTFLAGS = -O3 -DASSERT
-export OPTFLAGS
+# MKL_DIR (optional, used with Eigen)
 
+INCLUDES := 
 
-# Paths to the parts of the GBTOOLS we will use here
-UTILITIES := $(GBTOOLS_DIR)/utilities
-IMAGES := $(GBTOOLS_DIR)/images
-ASTROMETRY := $(GBTOOLS_DIR)/astrometry
-PHOTOMETRY := $(GBTOOLS_DIR)/photometry
+LIBS := -lm
 
-# ABS_INCLUDES are absolute paths 
-ABS_INCLUDES = -I $(TMV_DIR)/include -I $(CFITSIO_DIR)/include \
-	-I $(FFTW_DIR)/include -I $(BOOST_DIR)/include -I $(YAML_DIR)/include \
-	-I $(UTILITIES) -I $(IMAGES) -I $(ASTROMETRY) -I $(PHOTOMETRY)
+EXTDIRS := 
 
-ifdef MKL_DIR
-ABS_INCLUDES += -I $(MKL_DIR)/include
+# Collect the includes and libraries we need
+ifdef FFTW_DIR
+INCLUDES += -I $(FFTW_DIR)/include
+LIBS += -L $(FFTW_DIR)/lib -lfftw3
+else
+$(error Require FFTW_DIR in environment)
 endif
 
-LIB_DIRS = -L $(CFITSIO_DIR)/lib -L $(TMV_DIR)/lib -L $(FFTW_DIR)/lib \
-	-L $(BOOST_DIR)/lib -L $(YAML_DIR)/lib
+ifdef YAML_DIR
+INCLUDES += -I $(YAML_DIR)/include
+LIBS += -L $(YAML_DIR)/lib -lyaml-cpp
+else
+$(error Require YAML_DIR in environment)
+endif
 
-TMV_LINK := $(shell cat $(TMV_DIR)/share/tmv/tmv-link)
+ifdef CFITSIO_DIR
+INCLUDES += -I $(CFITSIO_DIR)/include
+LIBS += -L $(CFITSIO_DIR)/lib -lcfitsio
+else
+$(error Require CFITSIO_DIR in environment)
+endif
 
-##### Below here should be site-independent
-SUBDIRS = $(GBTOOLS_DIR)
+ifdef GBUTIL_DIR
+INCLUDES += -I $(GBUTIL_DIR)
+EXTDIRS += $(GBUTIL_DIR)
+else
+$(error Require GBUTIL_DIR in environment)
+endif
+
+ifdef GBFITS_DIR
+INCLUDES += -I $(GBFITS_DIR)
+EXTDIRS += $(GBFITS_DIR)
+else
+$(error Require GBFITS_DIR in environment)
+endif
+
+ifdef ASTROMETRY_DIR
+INCLUDES += -I $(ASTROMETRY_DIR)/include
+EXTDIRS += $(ASTROMETRY_DIR)
+ASTROMETRY_OBJ := $(ASTROMETRY_DIR)/obj
+else
+$(error Require ASTROMETRY_DIR in environment)
+endif
+
+ifdef PHOTOMETRY_DIR
+INCLUDES += -I $(PHOTOMETRY_DIR)/include
+EXTDIRS += $(PHOTOMETRY_DIR)
+PHOTOMETRY_OBJ := $(PHOTOMETRY_DIR)/obj
+else
+$(error Require PHOTOMETRY_DIR in environment)
+endif
+
+ifdef TMV_DIR
+INCLUDES += -I $(TMV_DIR)/include -D USE_TMV
+LIBS += $(shell cat $(TMV_DIR)/share/tmv/tmv-link) -ltmv_symband 
+endif
+
+ifdef EIGEN_DIR
+INCLUDES += -I $(EIGEN_DIR) -D USE_EIGEN
+endif
+
+# Check that either TMV or EIGEN are available (ok to have both)
+$(if $(or $(TMV_DIR),$(EIGEN_DIR)), , $(error Need either TMV_DIR or EIGEN_DIR))
+
+ifdef MKL_DIR
+INCLUDES += -I $(MKL_DIR)/include -D USE_MKL
+endif
+
+# Object files found in external packages:
+EXTOBJS =$(GBUTIL_DIR)/BinomFact.o $(GBUTIL_DIR)/StringStuff.o $(GBUTIL_DIR)/Interpolant.o \
+	$(GBUTIL_DIR)/fft.o $(GBUTIL_DIR)/Table.o $(GBUTIL_DIR)/Pset.o \
+	$(GBUTIL_DIR)/Poly2d.o $(GBUTIL_DIR)/Expressions.o $(GBUTIL_DIR)/Shear.o \
+	$(GBFITS_DIR)/FITS.o $(GBFITS_DIR)/Header.o $(GBFITS_DIR)/Hdu.o \
+	$(GBFITS_DIR)/FitsTable.o $(GBFITS_DIR)/FTable.o $(GBFITS_DIR)/FTableExpression.o \
+	$(GBFITS_DIR)/Image.o $(GBFITS_DIR)/FitsImage.o $(GBFITS_DIR)/HeaderFromStream.o \
+	$(ASTROMETRY_OBJ)/PixelMap.o $(ASTROMETRY_OBJ)/Astrometry.o \
+	$(ASTROMETRY_OBJ)/PolyMap.o $(ASTROMETRY_OBJ)/SubMap.o \
+	$(ASTROMETRY_OBJ)/Wcs.o $(ASTROMETRY_OBJ)/PixelMapCollection.o \
+	$(ASTROMETRY_OBJ)/TemplateMap.o $(ASTROMETRY_OBJ)/PiecewiseMap.o \
+	$(ASTROMETRY_OBJ)/YAMLCollector.o \
+	$(PHOTOMETRY_OBJ)/PhotoMap.o $(PHOTOMETRY_OBJ)/PhotoMapCollection.o \
+	$(PHOTOMETRY_OBJ)/SubMap.o $(PHOTOMETRY_OBJ)/PhotoTemplate.o \
+	$(PHOTOMETRY_OBJ)/PhotoPiecewise.o
+
+##### 
+BINDIR = bin
+OBJDIR = obj
+SRCDIR = src
+SUBDIR = src/subs
+INCLUDEDIR = include
+TESTDIR = tests
+TESTBINDIR = testbin
 
 # INCLUDES can be relative paths, and will not be exported to subdirectory makes.
-INCLUDES = 
+INCLUDES += -I $(INCLUDEDIR)
 
-CXXFLAGS = $(OPTFLAGS) $(ABS_INCLUDES) $(INCLUDES)
-LIBS = -lm $(LIB_DIRS) -lyaml-cpp -lboost_regex -lfftw3 -lcfitsio -ltmv_symband $(TMV_LINK)
+# Executable C++ programs
+EXECS :=  $(wildcard $(SRCDIR)/*.cpp)
+TARGETS := $(EXECS:$(SRCDIR)/%.cpp=$(BINDIR)/%)
+OBJS := $(EXECS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
 
-SUBOBJ =$(UTILITIES)/BinomFact.o $(UTILITIES)/StringStuff.o $(UTILITIES)/Interpolant.o \
-	$(UTILITIES)/fft.o $(UTILITIES)/Table.o $(UTILITIES)/Pset.o $(UTILITIES)/Poly2d.o \
-	$(UTILITIES)/Expressions.o $(UTILITIES)/Lookup1d.o \
-	$(IMAGES)/FITS.o $(IMAGES)/Header.o $(IMAGES)/Hdu.o $(IMAGES)/FitsTable.o \
-	$(IMAGES)/FTable.o $(IMAGES)/FTableExpression.o \
-	$(IMAGES)/Image.o $(IMAGES)/FitsImage.o \
-	$(IMAGES)/HeaderFromStream.o \
-	$(ASTROMETRY)/PixelMap.o $(ASTROMETRY)/Astrometry.o $(ASTROMETRY)/PolyMap.o \
-	$(ASTROMETRY)/SubMap.o $(ASTROMETRY)/Wcs.o $(ASTROMETRY)/PixelMapCollection.o \
-	$(ASTROMETRY)/TemplateMap.o $(ASTROMETRY)/PiecewiseMap.o \
-	$(ASTROMETRY)/AlphaUpdater.o $(ASTROMETRY)/YAMLCollector.o \
-	$(PHOTOMETRY)/PhotoMap.o $(PHOTOMETRY)/PhotoMapCollection.o $(PHOTOMETRY)/SubMap.o \
-	$(PHOTOMETRY)/PhotoMatch.o $(PHOTOMETRY)/PhotoPrior.o $(PHOTOMETRY)/PhotoTemplate.o \
-	$(PHOTOMETRY)/PhotoPiecewise.o
+# Python executables
+PYEXECS :=  $(wildcard $(SRCDIR)/*.py)
+PYTARGETS :=  $(PYEXECS:$(SRCDIR)/%.py=$(BINDIR)/%.py)
+# C++ subroutines
+SUBS :=  $(wildcard $(SUBDIR)/*.cpp)
+SUBOBJS := $(SUBS:$(SUBDIR)/%.cpp=$(OBJDIR)/%.o)
 
-SRC = $(shell ls *.cpp)
+CP = /bin/cp -p
+RM = /bin/rm -f
 
-OBJ =  TPVMap.o $(SUBOBJ)
+#######################
+# Rules - ?? dependencies on INCLUDES ??
+#######################
 
-all: depend subs
+all: local-depend cpp python
 
-bfcorrect: bfcorrect.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-Photo2DESDM: Photo2DESDM.o ReadPhotoPriors.o PhotoSubs.o Match.o Accum.o FitSubroutines.o MapDegeneracies.o $(OBJ)
-Photo2DESDM: Photo2DESDM.o DECamInfo.o FitSubroutines.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-CorrectFlat: CorrectFlat.o DECamInfo.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-DrawFlat: DrawFlat.o DECamInfo.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-DrawFlat2: DrawFlat2.o DECamInfo.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-DrawPhoto: DrawPhoto.o DECamInfo.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-DrawRegnault: DrawRegnault.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-ApplyPhoto: ApplyPhoto.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-ApplyWCS: ApplyWCS.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-tpv2pixmap: tpv2pixmap.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-DrawAstro: DrawAstro.o DECamInfo.o FitSubroutines.o Match.o Accum.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-TabulatePixmap: TabulatePixmap.o DECamInfo.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-UnFlattenCatalog: UnFlattenCatalog.o DECamInfo.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-UpdateHeaders: UpdateHeaders.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-FitsGlue: FitsGlue.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFoF: WCSFoF.o ExtensionAttribute.o Match.o Accum.o FitSubroutines.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-WCSFit: WCSFit.o Match.o MapFit.o WcsSubs.o Accum.o FitSubroutines.o MapDegeneracies.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-PhotoFit: PhotoFit.o ReadPhotoPriors.o PhotoSubs.o Match.o Accum.o FitSubroutines.o MapDegeneracies.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-MagColor: MagColor.o Match.o Accum.o FitSubroutines.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-DumpLDACHeader: DumpLDACHeader.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-ListClipped: ListClipped.o Match.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-#
-testYAML:  testYAML.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-AndresYAML1:  AndresYAML1.o $(OBJ)
+cpp: exts $(TARGETS)
+
+python: $(PYTARGETS)
+	python ./setup.py install
+
+# Compilation
+$(OBJS):  $(OBJDIR)/%.o : $(SRCDIR)/%.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+$(SUBOBJS): $(OBJDIR)/%.o : $(SUBDIR)/%.cpp 
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+# Linking
+$(TARGETS): $(BINDIR)/% : $(OBJDIR)/%.o $(SUBOBJS) $(EXTOBJS)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
 
-testDecam: testDecam.o DECamInfo.o $(OBJ)
+# Python executables - copy into bin directory
+$(PYTARGETS): $(BINDIR)/% : $(SRCDIR)/%
+	$(CP) $^ $@
+
+# External objects - call external makefiles.  ?? Conditional??
+# Semicolon prevents calling default rule for .o/.cpp
+$(EXTOBJS): exts ;
+
+######### Test programs
+
+TESTSRC := $(wildcard $(TESTDIR)/*.cpp)
+TESTINCLUDE := -I $(TESTDIR)
+TESTOBJS := $(TESTSRC:$(TESTDIR)/%.cpp=$(OBJDIR)/%.o)
+TESTTARGETS := $(TESTSRC:$(TESTDIR)/%.cpp=$(TESTBINDIR)/%)
+TESTSPY := $(wildcard $(TESTDIR)/*.py)
+
+tests: $(TESTTARGETS)
+
+$(TESTOBJS):  $(OBJDIR)/%.o : $(TESTDIR)/%.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(TESTINCLUDE) -c $^ -o $@
+
+$(TESTTARGETS): $(TESTBINDIR)/% : $(OBJDIR)/%.o $(SUBOBJS) $(EXTOBJS)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testSerialize: testSerialize.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testTemplateMap: testTemplateMap.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testPrep: testPrep.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-test: test.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT: testFT.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT2: testFT2.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT3: testFT3.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT4: testFT4.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT5: testFT5.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT6: testFT6.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT7: testFT7.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testFT8: testFT8.o $(OBJ)
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testImage: testImage.o $(OBJ) 
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
-testmaps: testmaps.o $(OBJ) 
-	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+
 ###############################################################
 ## Standard stuff:
 ###############################################################
 
+exts:
+	for dir in $(EXTDIRS); do (cd $$dir && $(MAKE)); done
 
-subs:
-	for dir in $(SUBDIRS); do (cd $$dir && $(MAKE)); done
+depend: local-depend
+	for dir in $(EXTDIRS); do (cd $$dir && $(MAKE) depend); done
 
-depend:
-	for dir in $(SUBDIRS); do (cd $$dir && $(MAKE) depend); done
-	$(CXX) $(CXXFLAGS) -MM $(SRC) > .$@
+local-depend:
+	$(RM) .depend
+	for src in $(SUBS:%.cpp=%) $(EXECS:%.cpp=%); \
+	   do $(CXX) $(CXXFLAGS) $(INCLUDES) -MM $$src.cpp -MT obj/$$src.o >> .depend; \
+        done
 
-clean:
-	for dir in $(SUBDIRS); do (cd $$dir && $(MAKE) clean); done
-	rm -f *.o *~ *.dvi *.aux core .depend
+clean: local-clean
+	for dir in $(EXTDIRS); do (cd $$dir && $(MAKE) clean); done
+
+local-clean:
+	rm -f $(OBJDIR)/*.o $(BINDIR)/* $(TESTBINDIR)/* *~ *.dvi *.aux core .depend
 
 ifeq (.depend, $(wildcard .depend))
 include .depend
 endif
 
 .PHONY: all install dist depend clean 
+

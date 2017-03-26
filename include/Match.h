@@ -58,7 +58,7 @@ namespace astrometry {
     void remove(Detection* e);
     // Remove a Detection from the match given an iterator to it,
     // optionally deleting the Detection:
-    list<Detection*>::iterator erase(iterator i,
+    list<Detection*>::iterator erase(list<Detection*>::iterator i,
 				     bool deleteDetection=false);
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
@@ -85,7 +85,7 @@ namespace astrometry {
     // reuseAlpha=true will skip the incrementing of alpha.
     int accumulateChisq(double& chisq,
 			DVector& beta,
-			AlphaUpdater& updater,
+			SymmetricUpdater& updater,
 			bool reuseAlpha=false);
    
     // sigmaClip returns true if clipped, 
@@ -141,7 +141,7 @@ namespace astrometry {
     // This is the calculation of normal equation components used in fitting.
     // reuseAlpha=true will leave alpha unchanged, way faster.
     void operator()(const DVector& params, double& chisq,
-		    DVector& beta, tmv::SymMatrix<double>& alpha,
+		    DVector& beta, DMatrix& alpha,
 		    bool reuseAlpha=false);
     void setRelTolerance(double tol) {relativeTolerance=tol;}
     // Return count of useful (un-clipped) Matches & Detections.

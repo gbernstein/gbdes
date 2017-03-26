@@ -11,6 +11,11 @@ using std::set;
 #include <algorithm>
 #include "Stopwatch.h"
 
+// Need Eigenvalue routines
+#ifdef USE_EIGEN
+#include "Eigen/Eigenvalues"
+#endif
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -47,8 +52,8 @@ Match::remove(Detection* e) {
   if ( isFit(e) ) nFit--;
 }
 
-Match::iterator 
-Match::erase(iterator i,
+list<Detection*>::iterator
+Match::erase(list<Detection*>::iterator i,
 	     bool deleteDetection) {
   if (isFit(*i)) nFit--;
   if (deleteDetection) delete *i;
@@ -247,7 +252,7 @@ Match::accumulateChisq(double& chisq,
     */
 
     // Do updates parameter block by parameter block
-    for (auto& m1 = mapsTouched.begin();
+    for (auto m1 = mapsTouched.begin();
 	 m1!=mapsTouched.end();
 	 ++m1) {
       int map1 = m1->first;
@@ -536,7 +541,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     bool choleskyFails = false;
 #ifdef USE_TMV
     // Make a symmetric view into alpha for Cholesky:
-    auto symAlpha = tmv::SymMatrixViewOf(*alpha,tmv::Lower);
+    auto symAlpha = tmv::SymMatrixViewOf(alpha,tmv::Lower);
     symAlpha.divideUsing(tmv::CH);
     if (inPlace) symAlpha.divideInPlace();
     try {
