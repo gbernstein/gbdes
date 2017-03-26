@@ -109,6 +109,7 @@ namespace photometry {
     double magOut;	// Mag after mapping.
     PhotoArguments args;
     double airmass;
+    double apcorr;
     const SubMap* map;	// Photometric map applying to this reference point
     bool isClipped;
   };
@@ -124,9 +125,11 @@ namespace photometry {
 	       double zeropoint = 0.,
 	       double airmassCoefficient = 0.,
 	       double colorCoefficient = 0.,
+	       double apcorrCoefficient = 0.,
 	       bool freeZeropoint = false,
 	       bool freeAirmass = false,
-	       bool freeColor = false);
+	       bool freeColor = false,
+	       bool freeApcorr = false);
     int nParams() const {return nFree;}
     DVector getParams() const;
     void setParams(const DVector& p);
@@ -138,9 +141,11 @@ namespace photometry {
     double getZeropoint() const {return m;}
     double getAirmass() const {return a;}
     double getColor() const {return b;}
+    double getApcorr() const {return c;}
     bool zeropointIsFree() const {return mIsFree;}
     bool airmassIsFree() const {return aIsFree;}
     bool colorIsFree() const {return bIsFree;}
+    bool apcorrIsFree() const {return cIsFree;}
 
     // Locations of parameters in global vector
     int startIndex() const {return globalStartIndex;}
@@ -175,9 +180,11 @@ namespace photometry {
     bool mIsFree;
     bool aIsFree;
     bool bIsFree;
+    bool cIsFree;
     double m;	// Mag zeropoint
     double a;	// X-1 airmass coefficient
     double b;	// color coefficient
+    double c;	// aperture correction coefficient
 
     int nFit;	// Number of reference points being fit
     void countFit();	// Update the above number

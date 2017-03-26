@@ -12,24 +12,29 @@ PhotoPrior::PhotoPrior(list<PhotoPriorReferencePoint> points_,
 		       double zeropoint,
 		       double airmassCoefficient,
 		       double colorCoefficient,
+		       double apcorrCoefficient,
 		       bool freeZeropoint,
 		       bool freeAirmass,
-		       bool freeColor): sigma(sigma_),
-					points(points_),
-					name(name_),
-					nFree(0),
-					globalStartIndex(-1),
-					globalMapNumber(-1),
-					m(zeropoint),
-					a(airmassCoefficient),
-					b(colorCoefficient),
-					mIsFree(freeZeropoint),
-					aIsFree(freeAirmass),
-					bIsFree(freeColor)
+		       bool freeColor,
+		       bool freeApcorr): sigma(sigma_),
+					 points(points_),
+					 name(name_),
+					 nFree(0),
+					 globalStartIndex(-1),
+					 globalMapNumber(-1),
+					 m(zeropoint),
+					 a(airmassCoefficient),
+					 b(colorCoefficient),
+					 c(apcorrCoefficient),
+					 mIsFree(freeZeropoint),
+					 aIsFree(freeAirmass),
+					 bIsFree(freeColor),
+					 cIsFree(freeApcorr)
 {
   if (mIsFree) nFree++;
   if (aIsFree) nFree++;
   if (bIsFree) nFree++;
+  if (cIsFree) nFree++;
   countFit();
 }
 
@@ -41,6 +46,7 @@ PhotoPrior::getParams() const {
   if (mIsFree) p[index++] = m;
   if (aIsFree) p[index++] = a;
   if (bIsFree) p[index++] = b;
+  if (cIsFree) p[index++] = c;
   return p;
 }
 
@@ -52,6 +58,7 @@ PhotoPrior::setParams(const DVector& p) {
   if (mIsFree) m = p[index++];
   if (aIsFree) a = p[index++];
   if (bIsFree) b = p[index++];
+  if (cIsFree) c = p[index++];
 }
 
 void
@@ -74,7 +81,10 @@ PhotoPrior::chisq(int& dof) const {
        i != points.end();
        ++i) {
     if (i->isClipped) continue;
-    double dm = i->magOut - m - a*(i->airmass-1.) - b*i->args.color;
+    double dm = i->magOut - m
+      - a*(i->airmass-1.)
+      - b*i->args.color
+      - c*i->apcorr;
     chi += dm * dm;
   }
   dof += nFit - nFree;
@@ -110,7 +120,10 @@ PhotoPrior::accumulateChisq(double& chisq,
     } else {
       i->magOut = i->map->forward(i->magIn, i->args);
     }
-    double dm = i->magOut - m - a*(i->airmass-1.) - b*i->args.color;
+    double dm = i->magOut - m
+      - a*(i->airmass-1.)
+      - b*i->args.color
+      - c*i->apcorr;
 
     // Here are the derivs with respect to the prior's parameters:
     DVector derivs2(nParams());
@@ -118,6 +131,7 @@ PhotoPrior::accumulateChisq(double& chisq,
     if (mIsFree) derivs2[index++] = -1.;
     if (aIsFree) derivs2[index++] = -(i->airmass-1.);
     if (bIsFree) derivs2[index++] = -i->args.color;
+    if (cIsFree) derivs2[index++] = -i->apcorr;
       
     chisq += dm * dm * wt;
 
@@ -186,7 +200,10 @@ PhotoPrior::sigmaClip(double sigThresh) {
        i!=points.end(); 
        ++i) {
     if (i->isClipped) continue;
-    double dm = i->magOut - m - a*(i->airmass-1.) - b*i->args.color;
+    double dm = i->magOut - m
+      - a*(i->airmass-1.)
+      - b*i->args.color
+      - c*i->apcorr;
     if (abs(dm) > maxDev) {
       worst = i;
       maxDev = abs(dm);
@@ -224,8 +241,8 @@ PhotoPrior::clipAll() {
 void
 PhotoPrior::reportHeader(ostream& os) {
   os <<  
-    "Name        chisq  / dof  sigma   zpt    airmass  color   \n"
-    "* Exposure   Device   Residual  magIn  airmass  color   \n"
+    "Name        chisq  / dof  sigma   zpt    airmass  color  apcorr \n"
+    "* Exposure   Device   Residual  magIn  airmass  color  apcorr  \n"
     "----------------------------------------------------------"
      << endl;
 }
@@ -252,12 +269,15 @@ PhotoPrior::report(ostream& os) const {
      << " " << (airmassIsFree() ? " " : "*" )
      << " " << setprecision(3) << setw(6) << getColor()
      << " " << (colorIsFree() ? " " : "*" )
+     << " " << setprecision(3) << setw(6) << getApcorr()
+     << " " << (apcorrIsFree() ? " " : "*" )
      << endl;
 
   for (list<PhotoPriorReferencePoint>::const_iterator i = points.begin();
        i != points.end();
        ++i) {
-    double resid = i->magOut - (m + a*(i->airmass-1.) + b*i->args.color);
+    double resid = i->magOut -
+      (m + a*(i->airmass-1.) + b*i->args.color + c*i->apcorr);
     os << (i->isClipped ? "- " : "+ ")
        << setw(12) << left << i->exposureName
        << " " << setw(8) << i->deviceName
@@ -265,6 +285,7 @@ PhotoPrior::report(ostream& os) const {
        << " " << noshowpos << setprecision(3) << setw(7) << i->magIn
        << " " << setprecision(3) << setw(5) << i->airmass
        << " " << showpos << setprecision(3) << setw(6) << i->args.color
+       << " " << showpos << setprecision(3) << setw(6) << i->apcorr
        << endl;
   }
 }
