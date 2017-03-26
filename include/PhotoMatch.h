@@ -10,11 +10,10 @@
 using std::list;
 #include <string>
 #include "Std.h"
-#include "UseTMV.h"
-#include "TMV_SymBand.h"
+#include "LinearAlgebra.h"
 #include "Bounds.h"
 #include "PhotoMapCollection.h"
-#include "AlphaUpdater.h"
+#include "SymmetricUpdater.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -39,7 +38,7 @@ namespace photometry {
     bool isClipped;
     const Match* itsMatch;
     const SubMap* map;
-    Detection(): itsMatch(0), map(0), isClipped(false) {}
+    Detection(): itsMatch(nullptr), map(nullptr), isClipped(false) {}
   };
   
   class Match {
@@ -102,7 +101,7 @@ namespace photometry {
   // This class is for the reference points
   class PhotoPriorReferencePoint {
   public:
-    PhotoPriorReferencePoint(): airmass(1.), map(0), isClipped(false) {}
+    PhotoPriorReferencePoint(): airmass(1.), map(nullptr), isClipped(false) {}
     string exposureName;
     string deviceName;
     double magIn;  // Magnitude assigned to 1 count per second.
@@ -155,9 +154,8 @@ namespace photometry {
     void remap();
     // Recalculate the fittable points and increment chisq and fitting vector/matrix
     int accumulateChisq(double& chisq,
-			 DVector& beta,
-			//**tmv::SymMatrix<double>& alpha);
-			astrometry::AlphaUpdater& updater);
+			DVector& beta,
+			SymmetricUpdater& updater);
     // sigmaClip returns true if clipped one, and only will clip worst one - no recalculation
     bool sigmaClip(double sigThresh);
     // Mark all of this prior as clipped (will no longer be fit)

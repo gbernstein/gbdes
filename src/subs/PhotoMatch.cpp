@@ -10,7 +10,6 @@ using std::set;
 #include "AstronomicalConstants.h"
 #include <algorithm>
 #include "Stopwatch.h"
-#include "AlphaUpdater.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -46,7 +45,7 @@ Match::add(Detection *e) {
 void
 Match::remove(Detection* e) {
   elist.remove(e);  
-  e->itsMatch = 0;
+  e->itsMatch = nullptr;
   if ( isFit(e) ) nFit--;
 }
 
@@ -60,35 +59,29 @@ Match::erase(list<Detection*>::iterator i,
 
 void
 Match::clear(bool deleteDetections) {
-  for (list<Detection*>::iterator i=elist.begin();
-       i!=elist.end();
-       ++i) {
+  for (auto i : elist) {
     if (deleteDetections)
-      delete *i;
+      delete i;
     else
-      (*i)->itsMatch = 0;
+      i->itsMatch = nullptr;
   }
   elist.clear();
   nFit = 0;
 }
 
 void
-Match::clipAll() {
-  for (list<Detection*>::iterator i=elist.begin();
-       i!=elist.end();
-       ++i) 
-    (*i)->isClipped = true;
-  nFit = 0;
-}
-
-// Update and return count of fittable objects:
-void
 Match::countFit() {
   nFit = 0;
-  for (list<Detection*>::iterator i=elist.begin();
-       i!=elist.end();
-       ++i)
-    if (isFit(*i)) nFit++;
+  for (auto i : elist)
+    if (isFit(i)) nFit++;
+}
+
+void
+Match::clipAll() {
+  for (auto i : elist)
+    if (i)
+      i->isClipped = true;
+  nFit = 0;
 }
 
 void
@@ -105,12 +98,10 @@ Match::getMean(double& m, double& wt) const {
   }
   double sum_mw=0.;
   double sum_w =0.;
-  for (list<Detection*>::const_iterator i=elist.begin();
-       i!=elist.end();
-       ++i) {
-    if ((*i)->isClipped) continue;
-    double m = (*i)->magOut;
-    double w = (*i)->wt;
+  for (auto i : elist) {
+    if (i->isClipped) continue;
+    double m = i->magOut;
+    double w = i->wt;
     sum_mw += m*w;
     sum_w += w;
   }
@@ -118,18 +109,15 @@ Match::getMean(double& m, double& wt) const {
   wt = sum_w;
 }
 
+void
+Match::remap() {
+  for (auto i : elist) {
+    i->magOut = i->map->forward(i->magIn, i->args);
+}
 
 ///////////////////////////////////////////////////////////
 // Coordinate-matching routines
 ///////////////////////////////////////////////////////////
-
-void
-Match::remap() {
-  for (list<Detection*>::iterator i=elist.begin(); 
-       i!=elist.end(); 
-       ++i) 
-    (*i)->magOut = (*i)->map->forward((*i)->magIn, (*i)->args);
-}
 
 // A structure that describes a range of parameters
 struct iRange {
@@ -141,7 +129,8 @@ struct iRange {
 int
 Match::accumulateChisq(double& chisq,
 		       DVector& beta,
-		       astrometry::AlphaUpdater& updater) {
+		       SymmetricUpdater& updater,
+		       bool reuseAlpha) {
   double mean;
   double wt;
   int nP = beta.size();
@@ -152,9 +141,7 @@ Match::accumulateChisq(double& chisq,
   // Update mapping and save derivatives for each detection:
   vector<DVector*> di(elist.size());
   int ipt=0;
-  for (list<Detection*>::iterator i=elist.begin(); 
-       i!=elist.end(); 
-       ++i, ipt++) {
+  for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
     int npi = (*i)->map->nParams();
     if (npi>0) {
@@ -171,9 +158,7 @@ Match::accumulateChisq(double& chisq,
 
   map<int, iRange> mapsTouched;
   ipt = 0;
-  for (list<Detection*>::iterator i=elist.begin(); 
-       i!=elist.end(); 
-       ++i, ipt++) {
+  for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
     double wti=(*i)->wt;
     double mi=(*i)->magOut;

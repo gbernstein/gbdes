@@ -43,7 +43,7 @@ Match::add(Detection *e) {
 void
 Match::remove(Detection* e) {
   elist.remove(e);  
-  e->itsMatch = 0;
+  e->itsMatch = nullptr;
   if ( isFit(e) ) nFit--;
 }
 
@@ -62,7 +62,7 @@ Match::clear(bool deleteDetections) {
     if (deleteDetections)
       delete i;
     else
-      i->itsMatch = 0;
+      i->itsMatch = nullptr;
   }
   elist.clear();
   nFit = 0;
@@ -136,7 +136,7 @@ struct iRange {
 int
 Match::accumulateChisq(double& chisq,
 		       DVector& beta,
-		       AlphaUpdater& updater,
+		       SymmetricUpdater& updater,
 		       bool reuseAlpha) {
   double xmean, ymean;
   double xW, yW;
@@ -193,10 +193,15 @@ Match::accumulateChisq(double& chisq,
       int mapNumber = (*i)->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
+#ifdef USE_TMV
       tmv::ConstVectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
       tmv::ConstVectorView<double> dy=dxyi[ipt]->row(1,istart,istart+np);
-      beta.subVector(ip, ip+np) -= wxi*(xi-xmean)*dx;
-      beta.subVector(ip, ip+np) -= wyi*(yi-ymean)*dy;
+#elif defined USE_EIGEN
+      DVector dx=dxyi[ipt]->block(0,istart,1,np).transpose();
+      DVector dy=dxyi[ipt]->block(1,istart,1,np).transpose();
+#endif
+      beta.subVector(ip, ip+np) -= (wxi*(xi-xmean))*dx;
+      beta.subVector(ip, ip+np) -= (wyi*(yi-ymean))*dy;
 
       // Derivatives of the mean position:
       dxmean.subVector(ip, ip+np) += wxi*dx;
@@ -204,12 +209,9 @@ Match::accumulateChisq(double& chisq,
 
       if (!reuseAlpha) {
 	// Increment the alpha matrix
-	//**      alpha.subSymMatrix(ip, ip+np) += wxi*(dx ^ dx));
-	//**      alpha.subSymMatrix(ip, ip+np) += wxi*(dy ^ dy));
-	updater.rankOneUpdate(mapNumber, ip, dx, 
-			      mapNumber, ip, dx, wxi);
-	updater.rankOneUpdate(mapNumber, ip, dy, 
-			      mapNumber, ip, dy, wyi);
+	// First the blocks astride the diagonal:
+	updater.rankOneUpdate(mapNumber, ip, dx, wxi);
+	updater.rankOneUpdate(mapNumber, ip, dy, wyi);
 
 	int istart2 = istart+np;
 	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
@@ -217,11 +219,14 @@ Match::accumulateChisq(double& chisq,
 	  int np2=(*i)->map->nSubParams(iMap2);
 	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
 	  if (np2==0) continue;
+#ifdef USE_TMV
 	  tmv::ConstVectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
 	  tmv::ConstVectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
-	  // Note that subMatrix here will not cross diagonal:
-	  //**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wxi*(dx ^ dx2);
-	  //**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wyi*(dy ^ dy2);
+#elif defined USE_EIGEN
+	  DVector dx2=dxyi[ipt]->block(0,istart2,1,np2).transpose();
+	  DVector dy2=dxyi[ipt]->block(1,istart2,1,np2).transpose();
+#endif
+	  // Now update below diagonal
 	  updater.rankOneUpdate(mapNumber2, ip2, dx2, 
 				mapNumber,  ip,  dx, wxi);
 	  updater.rankOneUpdate(mapNumber2, ip2, dy2, 
@@ -231,7 +236,7 @@ Match::accumulateChisq(double& chisq,
       }
       istart+=np;
     } // outer parameter segment loop
-    if (dxyi[ipt]) {delete dxyi[ipt]; dxyi[ipt]=0;}
+    if (dxyi[ipt]) {delete dxyi[ipt]; dxyi[ipt]=nullptr;}
   } // object loop
 
   if (!reuseAlpha) {
@@ -242,28 +247,34 @@ Match::accumulateChisq(double& chisq,
     */
 
     // Do updates parameter block by parameter block
-    for (map<int,iRange>::iterator m1=mapsTouched.begin();
-	 m1 != mapsTouched.end();
+    for (auto& m1 = mapsTouched.begin();
+	 m1!=mapsTouched.end();
 	 ++m1) {
       int map1 = m1->first;
       int i1 = m1->second.startIndex;
       int n1 = m1->second.nParams;
       if (n1<=0) continue;
-      for (map<int, iRange>::iterator m2=m1;
-	   m2 != mapsTouched.end();
-	   ++m2) {
+      DVector dx1 = dxmean.subVector(i1, i1+n1);
+      DVector dy1 = dymean.subVector(i1, i1+n1);
+      updater.rankOneUpdate(map1, i1, dx1, -1./xW);
+      updater.rankOneUpdate(map1, i1, dy1, -1./yW);
+
+      // For cross terms, put the weight into dx1,dy1:
+      dx1 *= -1./xW;
+      dy1 *= -1./yW;
+      auto m2 = m1;
+      ++m2;
+      for ( ; m2 != mapsTouched.end(); ++m2) {
 	int map2 = m2->first;
 	int i2 = m2->second.startIndex;
 	int n2 = m2->second.nParams;
 	if (n2<=0) continue;
-	tmv::VectorView<double> dx1 = dxmean.subVector(i1, i1+n1);
-	tmv::VectorView<double> dx2 = dxmean.subVector(i2, i2+n2);
-	tmv::VectorView<double> dy1 = dymean.subVector(i1, i1+n1);
-	tmv::VectorView<double> dy2 = dymean.subVector(i2, i2+n2);
+	DVector dx2 = dxmean.subVector(i2, i2+n2);
+	DVector dy2 = dymean.subVector(i2, i2+n2);
 	updater.rankOneUpdate(map2, i2, dx2,
-			      map1, i1, dx1, -1./xW);
+			      map1, i1, dx1);
 	updater.rankOneUpdate(map2, i2, dy2,
-			      map1, i1, dy1, -1./yW);
+			      map1, i1, dy1);
       }
     }
   } // Finished putting terms from mean into alpha
@@ -335,18 +346,6 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
       + (yi-ymean)*(yi-ymean)*wyi;
     maxDeviateSq = MAX(cc , maxDeviateSq);
     chi += cc;
-    /**/ if (cc > 1e7) { cerr << "chisq " << cc 
-			    << " c " << i->color
-			    << " sig " << 1./sqrt(i->wtx)*3600.
-			    << " " << 1./sqrt(i->wty)*3600.
-			    << " mean " << xmean << " " << ymean
-			    << " dxy " << (xi-xmean)*3600 << " " << (yi-ymean)*3600. << endl;
-      double xw,yw;
-      i->map->toWorld(i->xpix,i->ypix,xw,yw,i->color);
-      cerr << "In " << i->xpix << " " << i->ypix << " out " << xw << " " << yw << endl;
-      i->map->toWorld(i->xpix,i->ypix,xw,yw,0.61);
-      cerr << "nocolor " << i->xpix << " " << i->ypix << " out " << xw << " " << yw << endl;
-    }
   }
   dof += 2*(nFit-1);
   return chi;
@@ -354,12 +353,12 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
 
 void
 CoordAlign::operator()(const DVector& p, double& chisq,
-		       DVector& beta, tmv::SymMatrix<double>& alpha,
+		       DVector& beta, DMatrix& alpha,
 		       bool reuseAlpha) {
   int nP = pmc.nParams();
   Assert(p.size()==nP);
   Assert(beta.size()==nP);
-  Assert(alpha.nrows()==nP);
+  Assert(alpha.rows()==nP);
   setParams(p);
   double newChisq=0.;
   beta.setZero();
@@ -367,7 +366,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   int matchCtr=0;
 
   const int NumberOfLocks = 2000;
-  AlphaUpdater updater(alpha, pmc.nFreeMaps(), NumberOfLocks);
+  SymmetricUpdater updater(alpha, pmc.nFreeMaps(), NumberOfLocks);
 
 #ifdef _OPENMP
   const int chunk=100;
@@ -443,10 +442,11 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   if (!reuseAlpha) {
     // Code to spot unconstrained parameters:
     set<string> newlyFrozenMaps;
-    for (int i = 0; i<alpha.nrows(); i++) {
+    for (int i = 0; i<alpha.rows(); i++) {
       bool blank = true;
-      for (int j=0; j<alpha.ncols(); j++)
-	if (alpha(i,j)!=0.) {
+      for (int j=0; j<alpha.cols(); j++) 
+	if ( (i>=j && alpha(i,j)!=0.) || (i<j && alpha(j,i)!=0.)) {
+	  // Note that we are checking in lower triangle only
 	  blank = false;
 	  break;
 	}
@@ -501,7 +501,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     double oldChisq = 0.;
     int nP = pmc.nParams();
     DVector beta(nP, 0.);
-    tmv::SymMatrix<double> alpha(nP, 0.);
+    DMatrix alpha(nP, nP, 0.);
 
     Stopwatch timer;
     timer.start();
@@ -513,8 +513,8 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 
     // Precondition alpha if wanted
     bool precondition = true;
-    int N = alpha.ncols();
-    tmv::DiagMatrix<double> ss(N, 1.);
+    int N = alpha.cols();
+    DVector ss(N, 1.);  // Values to scale parameters by
     if (precondition) {
       for (int i=0; i<N; i++) {
 	if (alpha(i,i)<0.) {
@@ -523,82 +523,94 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	  exit(1);
 	} 
 	if (alpha(i,i) > 0.)
-	  ss(i) = 1./sqrt(alpha(i,i));
-	// SymMatrix in use so only need to do a row
-	for (int j=0; j<N; j++) {
+	  ss[i] = 1./sqrt(alpha(i,i));
+	// Scale row / col of lower triangle, hitting diagonal twice
+	for (int j=0; j<=i; j++) 
 	  alpha(j,i) *= ss(i);
-	}
-	// And hit the diagonal again
-	alpha(i,i)*=ss(i);
+	for (int j=i; j<N; j++) 
+	  alpha(i,j) *= ss(i);
       }
     }
-    // Set alpha for in-place Cholesky
-    alpha.divideUsing(tmv::CH);   // Use Cholesky decomposition for fastest inversion
+
+    // Do the Cholesky decomposition, set flag if it fails
+    bool choleskyFails = false;
+#ifdef USE_TMV
+    // Make a symmetric view into alpha for Cholesky:
+    auto symAlpha = tmv::SymMatrixViewOf(*alpha,tmv::Lower);
+    symAlpha.divideUsing(tmv::CH);
+    if (inPlace) symAlpha.divideInPlace();
+    try {
+      symAlpha.setDiv();
+    } catch (tmv::Error& m) {
+      choleskyFails=true;
+    }
+#elif defined USE_EIGEN
     if (inPlace)
-      alpha.divideInPlace();  // In-place avoids doubling memory needs
+      throw AstrometryError("Do not currently support in-place Cholesky for Eigen");
+    // The difficulty is that the type of an in-place LLT is different from
+    // the type for a "normal" LLT.  I can't figure out how to allow both
+    // possibilities without making two branches of the whole iteration code.
+    auto llt = alpha.llt();
+    if (llt.info()==Eigen::NumericalIssue)
+      choleskyFails = true;
+#endif
+    
+    // If the Cholesky decomposition failed for non-pos-def matrix, then
+    // as a diagnostic we will do an SVD and report the nature of degeneracies.
+    // Then exit with an error.
+    // And since alpha is symmetric, we will use eigenvector routines to do the
+    // SVD, which is what we want anyway to find the non-pos-def values
 
-    const int MAX_NEWTON_STEPS = 8;
-    int newtonIter = 0;
-    for (int newtonIter = 0; newtonIter < MAX_NEWTON_STEPS; newtonIter++) {
-      try {
-	if (precondition) {
-	  beta *= ss;
+    if (choleskyFails) {
+      cerr << "Caught exception" << endl;
+      if (inPlace) {
+	cerr << "Cannot describe degeneracies while dividing in place" << endl;
+	exit(1);
+      }
+      int N = alpha.cols();
+      set<int> degen;
+      DMatrix U(N,N);
+      DVector S(N);
+#ifdef USE_TMV
+      tmv::Eigen(symAlpha, U, S);
+#elif defined USE_EIGEN
+      {
+	Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(alpha);
+	U = eig.eigenvectors();
+	S = eig.eigenvalues();
+      }
+#endif
+      // Both packages promise to return eigenvalues in increasing
+      // order, but let's not depend on that.  Report largest/smallest
+      // abs values of eval's, and print them all
+      int imax = S.size()-1; // index of largest, smallest eval
+      double smax=abs(S[imax]);
+      int imin = 0;
+      double smin=abs(S[imin]);
+      for (int i=0; i<U.cols(); i++) {
+	cerr << i << " Eval: " << S[i] << endl;
+	double s= abs(S[i]);
+	if (s>smax) {
+	  smax = s;
+	  imax = i;
 	}
-
-	beta /= alpha;
-
-	if (precondition) {
-	  beta *= ss;
+	if (s<smin) {
+	  smin = s;
+	  imin = i;
 	}
-	
-      } catch (tmv::Error& e) {
-	//** Debug probably non-pos-def matrix here.
-	int N = alpha.ncols();
-	set<int> degen;
-	cerr << "Caught exception" << endl;
-	if (inPlace) {
-	  cerr << "Cannot describe degeneracies while dividing in place" << endl;
-	  exit(1);
-	}
-	DMatrix U(N,N);
-	DMatrix Vt(N,N);
-	tmv::DiagMatrix<double> S(N);
-	SV_Decompose(alpha, U, S, Vt);
-	int imax = 0; // index of largest, smallest SV
-	double smax=0.;
-	int imin = 0;
-	double smin=1e6;
-	for (int i=0; i<U.ncols(); i++) {
-	  double s = S(i);
-	  double pm = 0.;
-	  for (int j=0; j<S.size(); j++) {
-	    pm += U(j,i) * Vt(i,j);
-	  }
-	  cerr << i << " SV: " << s 
-	       << " sgn " << pm 
-	       << endl;
-	  if (pm<0) s*=-1;
-	  if (s>smax) {
-	    smax = s;
-	    imax = i;
-	  }
-	  if (s<smin) {
-	    smin = s;
-	    imin = i;
-	  }
-	  if (abs(s)<1e-6) degen.insert(i);
-	}
-	cerr << "Largest SV: " << smax << endl;
-	cerr << "Smallest SV: " << smin << endl;
-	degen.insert(imin);
-	// Find biggest contributors to smallest/degenerate SVs
-	const int ntop=20;
-	for (int isv : degen) {
-	  cerr << "--->SV " << isv << " SV " << S(isv) << endl;
+	if (S[i]<1e-6) degen.insert(i);
+      }
+      cerr << "Largest abs(eval): " << smax << endl;
+      cerr << "Smallest abs(eval): " << smin << endl;
+      degen.insert(imin);
+      // Find biggest contributors to non-positive (or marginal) eigenvectors
+      const int ntop=20;
+      for (int isv : degen) {
+	  cerr << "--->Eigenvector " << isv << " eigenvalue " << S(isv) << endl;
 	  vector<int> top(ntop,0);
-	  for (int i=0; i<Vt.nrows(); i++) {
+	  for (int i=0; i<U.rows(); i++) {
 	    for (int j=0; j<ntop; j++) {
-	      if (pow(Vt(isv,i),2.) >= pow(Vt(isv,top[j]),2.)) {
+	      if (pow(U(i,isv),2.) >= pow(U(top[j],isv),2.)) {
 		// Push smaller entries to right
 		for (int k=ntop-1; k>j; k--)
 		  top[k] = top[k-1];
@@ -611,7 +623,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	    string badAtom = pmc.atomHavingParameter(j);
 	    int startIndex, nParams;
 	    pmc.parameterIndicesOf(badAtom, startIndex, nParams);
-	    cerr << "Coefficient " << U(j, isv) << " " << Vt(isv,j)
+	    cerr << "Coefficient " << U(j, isv) 
 		 << " at parameter " << j 
 		 << " Map " << badAtom 
 		 << " " << j - startIndex << " of " << nParams
@@ -619,7 +631,25 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	  }
 	}
 	exit(1);
+    }
+
+    // Now attempt Newton iterations to solution, with fixed alpha
+    const int MAX_NEWTON_STEPS = 8;
+    int newtonIter = 0;
+    for (int newtonIter = 0; newtonIter < MAX_NEWTON_STEPS; newtonIter++) {
+      if (precondition) {
+	beta = ElemProd(beta,ss);
       }
+
+#ifdef USE_TMV
+      beta /= symAlpha; 
+#elif defined USE_EIGEN
+      beta = llt.solve(beta);
+#endif
+      if (precondition) {
+	beta = ElemProd(beta,ss);
+      }
+	
       timer.stop();
       if (reportToCerr) cerr << "..solution time " << timer << endl;
       timer.reset();
@@ -747,5 +777,3 @@ CoordAlign::count(long int& mcount, long int& dcount,
     }
   }
 }
-
-
