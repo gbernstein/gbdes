@@ -39,8 +39,8 @@ namespace decam {
     void toPix(double xField, double yField, double& xPix, double& yPix) const;
     void toField(double xPix, double yPix, double& xField, double& yField) const;
   private:
-    DECamMap(const DECamMap& rhs);	// hide
-    void operator=(const DECamMap& rhs); // hide
+    DECamMap(const DECamMap& rhs) = delete;
+    void operator=(const DECamMap& rhs) = delete;
     const string prefix;
     astrometry::PixelMapCollection pmc;
     double centerX;

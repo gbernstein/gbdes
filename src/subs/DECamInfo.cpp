@@ -155,7 +155,7 @@ decam::getDeviceNorms(string filename, map<string,Device>& devices) {
   }
 }
 
-DECamMap::DECamMap(): prefix("i/"), pixmap(0) {
+DECamMap::DECamMap(): prefix("i/"), pixmap(nullptr) {
   istringstream iss(referenceMap);
   pmc.read(iss);
 

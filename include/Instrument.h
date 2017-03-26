@@ -69,7 +69,7 @@ public:
 template <class T1, class T2>
 class ExtensionBase {
 public:
-  ExtensionBase(): map(0), wcs(0), startWcs(0), needsColor(false) {}
+  ExtensionBase(): map(nullptr), wcs(nullptr), startWcs(nullptr), needsColor(false) {}
   int exposure;
   int device;
   double airmass;      // airmass and apcorr used for nightly priors
