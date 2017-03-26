@@ -299,7 +299,7 @@ def buildExposureTable(exposures, fields, instruments):
                      pf.Column(name="AIRMASS",format=py_to_fits(airmass),array=airmass),
                      pf.Column(name="EXPTIME",format=py_to_fits(exptime),array=exptime),
                      pf.Column(name="EPOCH",format=py_to_fits(epoch),array=epoch),
-                     pf.Column(name="APCORR",format=py_to_fits(apcorr),array=apcorr) ]),
+                     pf.Column(name="APCORR",format=py_to_fits(apcorr),array=apcorr)] ),
                      name = 'Exposures')
     # hdu.header['EXTNAME'] = 'Exposures'
     return hdu
@@ -632,6 +632,10 @@ if __name__=='__main__':
                            (expoAttr['exptime']!=None and \
                             abs(expoAttr['exptime']/e.exptime-1.)>0.0002) or \
                            (expoAttr['mjd']!=None and abs(expoAttr['mjd'] - e.mjd)>0.0002) or \
+<<<<<<< HEAD
+=======
+                           (expoAttr['apcorr']!=None and abs(expoAttr['apcorr'] - e.apcorr)>0.02) or \
+>>>>>>> 2c70e3737904183fca3466f79d16352ad6aa58d4
                            (expoAttr['coords']!=None
                             and getDegree(expoAttr['coords'].separation(e.coords)) > 1.):
                             print "ERROR: info mismatch at exposure",expo, "file",fitsname, \
