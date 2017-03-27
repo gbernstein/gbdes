@@ -512,8 +512,10 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     Stopwatch timer;
     timer.start();
     (*this)(p, oldChisq, beta, alpha);
-    /**/cerr << "Beta:\n" << beta << endl;
-    /**/cerr << "Alpha:\n" << alpha << endl;
+    if (reportToCerr) {
+      /**/cerr << "Beta:\n" << beta << endl;
+      /**/cerr << "Alpha:\n" << alpha << endl;
+    }
     timer.stop();
     if (reportToCerr) cerr << "..fitOnce alpha time " << timer << endl;
     timer.reset();
@@ -665,6 +667,8 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	beta = ElemProd(beta,ss);
       }
 	
+      /**/if (reportToCerr) cerr << "Shift:\n" << beta << endl;
+      
       timer.stop();
       if (reportToCerr) cerr << "..solution time " << timer << endl;
       timer.reset();
