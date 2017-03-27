@@ -1,3 +1,5 @@
+* Allow individual systematic errors per instrument or exposure?
+
 * Read data (and reject short-count exposures) before degeneracy checks
 
 * Hex values read for Expressions.
@@ -16,8 +18,6 @@
 
 * Reduce chunk size in WCSFit
 
-* Allow individual systematic errors per instrument or exposure?
-
 * Allow compound color maps??
 
 * Check for underfit exposure after sigma clipping
@@ -32,8 +32,6 @@
   * Make Match and PhotoMatch from the same code, no PhotoMatch in gbtools
 
 * Investigate color term degeneracy breaking
-
-* Aperture corrections included in models - put into dictionary? Just into prior?
 
 * DrawPhoto update.
 
@@ -114,4 +112,6 @@
 * Able to turn off the clip-entire-match step at the end?
 
 * print out matrix inversion time
+
+* Aperture corrections included in models - put into dictionary? Just into prior?
 

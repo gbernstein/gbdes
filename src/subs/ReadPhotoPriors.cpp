@@ -22,7 +22,6 @@
 #include <sstream>
 
 #include "Std.h"
-#include "Astrometry.h"
 #include "StringStuff.h"
 #include "PixelMapCollection.h"
 #include "PhotoMatch.h"
@@ -159,7 +158,7 @@ readPriors(string filename,
 	vector<int> matchingDevices;
 	vector<double> matchingXPix;
 	vector<double> matchingYPix;
-	for (vector<int>::iterator i = matchingExposures.begin();
+	for (auto i = matchingExposures.begin();
 	     i != matchingExposures.end(); ) {
 	  int iExpo = *i;
 	  Assert(exposures[iExpo]);
