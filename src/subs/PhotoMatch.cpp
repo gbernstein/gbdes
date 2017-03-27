@@ -502,9 +502,9 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	  ss[i] = 1./sqrt(alpha(i,i));
 	// Scale row / col of lower triangle, hitting diagonal twice
 	for (int j=0; j<=i; j++) 
-	  alpha(j,i) *= ss(i);
-	for (int j=i; j<N; j++) 
 	  alpha(i,j) *= ss(i);
+	for (int j=i; j<N; j++) 
+	  alpha(j,i) *= ss(i);
       }
     }
 
@@ -580,13 +580,18 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
       cerr << "Smallest abs(eval): " << smin << endl;
       degen.insert(imin);
       // Find biggest contributors to non-positive (or marginal) eigenvectors
-      const int ntop=20;
+      const int ntop=MIN(N,20);
       for (int isv : degen) {
 	  cerr << "--->Eigenvector " << isv << " eigenvalue " << S(isv) << endl;
-	  vector<int> top(ntop,0);
+	  // Find smallest abs coefficient
+	  int imin = 0;
+	  for (int i=0; i<U.rows(); i++)
+	    if (abs(U(i,isv)) < abs(U(imin,isv)))
+	      imin = i;
+	  vector<int> top(ntop,imin);
 	  for (int i=0; i<U.rows(); i++) {
 	    for (int j=0; j<ntop; j++) {
-	      if (pow(U(i,isv),2.) >= pow(U(top[j],isv),2.)) {
+	      if (abs(U(i,isv)) >= abs(U(top[j],isv))) {
 		// Push smaller entries to right
 		for (int k=ntop-1; k>j; k--)
 		  top[k] = top[k-1];
