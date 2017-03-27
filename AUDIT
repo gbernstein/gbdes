@@ -1,9 +1,6 @@
 
-FitSubroutines.h
 PhotoSubs.h
 ReadLdacHeader.h
-TPVMap.h
-WcsSubs.h
 
 AndresYAML1.cpp
 ApplyPhoto.cpp
@@ -26,10 +23,6 @@ UnFlattenCatalog.cpp
 UpdateHeaders.cpp
 WCSFit.cpp
 WCSFoF.cpp
-WcsSubs.cpp
 tpv2pixmap.cpp
 
-FitSubroutines.cpp
-MapFit.cpp
 PhotoSubs.cpp
-TPVMap.cpp

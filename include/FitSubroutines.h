@@ -36,7 +36,6 @@ const int NO_INSTRUMENT=-3;
 const string stellarAffinity="STELLAR";
 
 const double NO_MAG_DATA = -100.;	// Value entered when there is no valid mag or color
-const double NODATA = astrometry::NODATA;  // Signal for unknown color
 
 const string colorColumnName = "COLOR";
 const string colorErrorColumnName = "COLOR_ERR";
@@ -278,6 +277,9 @@ readExposures(const vector<Instrument*>& instruments,
 // Read extensions from the table.
 // colorExtensions will get filled with ColorExtension objects for color data
 // inputYAML is set to produce YAML for all extensions being fit.
+// Systematic error for Detections in this Extension will be assigned from
+// the column in the extensionTable named sysErrorColumn, if it is non-Null,
+// otherwise taken from the value of sysError or referenceSysError as appropriate
 template <class S>
 vector<typename S::Extension*>
 readExtensions(img::FTable& extensionTable,
@@ -285,7 +287,10 @@ readExtensions(img::FTable& extensionTable,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
-	       astrometry::YAMLCollector& inputYAML);
+	       astrometry::YAMLCollector& inputYAML,
+	       const string sysErrorColumn="",
+	       double sysError=0.,
+	       double referenceSysError=0.);
 
 // fix all maps in a photo/pixelMapCollection whose names match
 // any regex in the fixMapList.  Also any instrument whose name
@@ -304,6 +309,9 @@ findCanonical(Instrument& instr,
 	      vector<typename S::Extension*>& extensions,
 	      typename S::Collection& pmc);
 
+// Add every extension's map to the YAMLCollector and then emit the
+// YAML and read into the MapCollection.
+// The names of all maps are already in the extension list.
 template <class S>
 void
 createMapCollection(const vector<Instrument*>& instruments,
@@ -336,9 +344,7 @@ readMatches(img::FTable& table,
 template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
-		 vector<typename S::Extension*>& extensions,
-		 double sysError,
-		 double referenceSysError=0.);
+		 vector<typename S::Extension*>& extensions);
 
 // Read color information from files marked as holding such, insert into
 // relevant Matches.

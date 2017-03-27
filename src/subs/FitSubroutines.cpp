@@ -103,13 +103,11 @@ RegexReplacements
 parseTranslator(string specString, string errorDescription) {
   list<string> ls = split(specString, DefaultListSeperator);
   RegexReplacements translator;
-  for (list<string>::const_iterator i = ls.begin();
-       i != ls.end();
-       ++i) {
-    if (i->empty()) continue;
-    list<string> ls2 = split(*i, '=');
+  for (auto& i: ls) {
+    if (i.empty()) continue;
+    list<string> ls2 = split(i, '=');
     if (ls2.size() != 2) {
-      cerr << errorDescription << " has bad translation spec: " << *i << endl;
+      cerr << errorDescription << " has bad translation spec: " << i << endl;
       exit(1);
     }
     string regex = ls2.front();
@@ -533,7 +531,10 @@ readExtensions(img::FTable& extensionTable,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
-	       astrometry::YAMLCollector& inputYAML) {
+	       astrometry::YAMLCollector& inputYAML,
+	       const string sysErrorColumn,
+	       double sysError,
+	       double referenceSysError) {
       
   vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
@@ -566,6 +567,8 @@ readExtensions(img::FTable& extensionTable,
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];
 
+    bool isReference = (expo.instrument == REF_INSTRUMENT);
+
     int iDevice;
     extensionTable.readCell(iDevice, "Device", i);
     if (processed%1000==0) {
@@ -576,7 +579,16 @@ readExtensions(img::FTable& extensionTable,
     extn->airmass = expo.airmass;
     extn->apcorr = expo.apcorr;
     extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
-       
+
+    // Get systematic error values
+    if (!sysErrorColumn.empty()) {
+      extensionTable.readCell(extn->sysError, sysErrorColumn, i);
+    } else if (isReference) {
+      extn->sysError = referenceSysError;
+    } else {
+      extn->sysError = sysError;
+    }
+      
     // Create the starting WCS for the exposure
     string s;
     extensionTable.readCell(s, "WCSIn", i);
@@ -982,7 +994,7 @@ Astro::fillDetection(Astro::Detection* d,
   d->sigma = sigma;
 
   startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);  // no color in startWCS
-  Matrix22 dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
+  auto dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
 
   // no clips on tags
   double wt = isTag ? 0. : pow(sigma,-2.);
@@ -1112,9 +1124,7 @@ Photo::getOutputP(const Photo::Detection& d,
 template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
-		 vector<typename S::Extension*>& extensions,
-		 double sysError,
-		 double referenceSysError) {
+		 vector<typename S::Extension*>& extensions) {
 
   // Should be safe to multithread this loop as different threads write
   // only to distinct parts of memory.  Protect the FITS table read though.
@@ -1163,7 +1173,7 @@ void readObjects(const img::FTable& extensionTable,
     bool isReference = (expo.instrument == REF_INSTRUMENT);
     bool isTag = (expo.instrument == TAG_INSTRUMENT);
 
-    double sysErrorSq = pow(isReference ? referenceSysError : sysError, 2.);
+    double sysErrorSq = pow(extn.sysError, 2.);
     
     astrometry::Wcs* startWcs = extn.startWcs;
 
@@ -1386,7 +1396,7 @@ purgeBadColor(double minColor, double maxColor,
       // See if color is in range, using color from first Detection (they should
       // all have the same color).
       double color = S::getColor(*(*im)->begin());
-      if (color != NODATA && (color < minColor || color > maxColor)) {
+      if (color != astrometry::NODATA && (color < minColor || color > maxColor)) {
 	// Remove entire match if it's too small, and kill its Detections too
 	(*im)->clear(true);
 	im = matches.erase(im);
@@ -1840,7 +1850,10 @@ readExtensions<AP> (img::FTable& extensionTable, \
 		    const vector<Exposure*>& exposures,		   \
 		    const vector<int>& exposureColorPriorities,	     \
 		    vector<AP::ColorExtension*>& colorExtensions,    \
-		    astrometry::YAMLCollector& inputYAML); \
+		    astrometry::YAMLCollector& inputYAML,	     \
+		    const string sysErrorColumn,                     \
+		    double sysError,                                 \
+		    double referenceSysError);			     \
 template int \
 findCanonical<AP>(Instrument& instr,	\
 		  int iInst,			\
@@ -1869,9 +1882,7 @@ readMatches<AP>(img::FTable& table, \
 template void \
 readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<Exposure*>& exposures, \
-		vector<AP::Extension*>& extensions, \
-		double sysError, \
-		double referenceSysError); \
+		vector<AP::Extension*>& extensions);\
 template void \
 readColors<AP>(img::FTable extensionTable, \
 	       vector<AP::ColorExtension*> colorExtensions);  \

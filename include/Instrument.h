@@ -69,12 +69,14 @@ public:
 template <class T1, class T2>
 class ExtensionBase {
 public:
-  ExtensionBase(): map(nullptr), wcs(nullptr), startWcs(nullptr), needsColor(false) {}
+ ExtensionBase(): map(nullptr), wcs(nullptr), startWcs(nullptr), needsColor(false),
+    sysError(0.) {}
   int exposure;
   int device;
   double airmass;      // airmass and apcorr used for nightly priors
   double apcorr;
   double magshift;	// Additive adjustment to all incoming mags (exposure time)
+  double sysError;	// Systematic error to add to mags or (pixel) positions
 
   string wcsName;      // Name of final WCS (and map into field coordinates)
   string mapName;      // Name of photometry map or astrometric map into exposure coords

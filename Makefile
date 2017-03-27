@@ -92,6 +92,7 @@ endif
 EXTOBJS =$(GBUTIL_DIR)/BinomFact.o $(GBUTIL_DIR)/StringStuff.o $(GBUTIL_DIR)/Interpolant.o \
 	$(GBUTIL_DIR)/fft.o $(GBUTIL_DIR)/Table.o $(GBUTIL_DIR)/Pset.o \
 	$(GBUTIL_DIR)/Poly2d.o $(GBUTIL_DIR)/Expressions.o $(GBUTIL_DIR)/Shear.o \
+	$(GBUTIL_DIR)/Lookup1d.o \
 	$(GBFITS_DIR)/FITS.o $(GBFITS_DIR)/Header.o $(GBFITS_DIR)/Hdu.o \
 	$(GBFITS_DIR)/FitsTable.o $(GBFITS_DIR)/FTable.o $(GBFITS_DIR)/FTableExpression.o \
 	$(GBFITS_DIR)/Image.o $(GBFITS_DIR)/FitsImage.o $(GBFITS_DIR)/HeaderFromStream.o \

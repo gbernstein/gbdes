@@ -1,5 +1,5 @@
 #include "TPVMap.h"
-#include "TMV_Sym.h"
+#include "LinearAlgebra.h"
 #include "PixelMapCollection.h"
 
 using namespace img;
@@ -18,7 +18,6 @@ ReadCD(const Header* h,
   double cd11, cd12, cd21, cd22;
   string ctype1,ctype2;
 
-  DVector plin2((size_t) 6, 0.);
   if (!h->getValue("CTYPE1", ctype1))
     throw AstrometryError("ReadCD could not find CTYPE1");
   if (!h->getValue("CTYPE2", ctype2))
@@ -151,8 +150,11 @@ ReadPV(const Header* h, int ipv) {
   if (!foundLinear) cm(1,0) = 1.;
 
   // Transpose for PV2:
+#ifdef USE_TMV
   if (ipv==2) cm.transposeSelf();
-
+#elif defined USE_EIGEN
+  if (ipv==2) cm.transposeInPlace();
+#endif  
   // Then make a Poly2d from it
   return Poly2d(cm);
 }
@@ -166,18 +168,22 @@ WritePV(const PolyMap& pm,
   if (ipv==1) {
     prefix="PV1_";
     DMatrix cm = pm.getXPoly().getM();
-    coeffs.resize(cm.nrows(), cm.ncols());
+    coeffs.resize(cm.rows(), cm.cols());
     coeffs = cm;
   } else if (ipv==2) {
     prefix="PV2_";
     DMatrix cm = pm.getYPoly().getM();
-    coeffs.resize(cm.nrows(), cm.ncols());
+    coeffs.resize(cm.rows(), cm.cols());
     coeffs = cm;
+#ifdef USE_TMV
     coeffs.transposeSelf();
+#elif defined USE_EIGEN
+    coeffs.transposeInPlace();
+#endif    
   } else {
     throw AstrometryError("TPVMap::WritePV needs ipv=1 or 2");
   }
-  int order = coeffs.nrows()-1;
+  int order = coeffs.rows()-1;
   int i=0;
   int j=0;
   int pvnumber=0;
@@ -218,7 +224,7 @@ astrometry::readTPV(const img::Header& h, string name) {
   LinearMap lm = ReadCD(&h, orientIn, name+linearSuffix);
 
   Gnomonic tp(orientIn.getPole(), orientIn);
-  PixelMap* pv=0;
+  PixelMap* pv=nullptr;
   string polyName = name + polySuffix;
 
   Poly2d p1 = ReadPV(&h, 1);
@@ -256,7 +262,7 @@ astrometry::readTPV(const img::Header& h, string name) {
   // Create a SubMap that owns a duplicate of these one or two maps (no sharing):
   SubMap sm(pmlist, name, false);
   // Delete the polymap if we made it:
-  if (pv) delete pv;
+  delete pv;
   // Return the Wcs, which again makes its own copy of the maps (no sharing):
   return new Wcs(&sm, tp, name, DEGREE, false);
 }
@@ -264,8 +270,8 @@ astrometry::readTPV(const img::Header& h, string name) {
 Header
 astrometry::writeTPV(const Wcs& w) {
   Header h;
-  const LinearMap* lm=0;
-  const PolyMap* pv=0;
+  const LinearMap* lm=nullptr;
+  const PolyMap* pv=nullptr;
   const PixelMap* pm = w.getMap();
   if ( dynamic_cast<const LinearMap*> (pm)) {
     // The PixelMap is purely linear:
@@ -418,7 +424,7 @@ astrometry::fitTPV(Bounds<double> b,
     // Fit map to test points
     int nP = poly.nParams();
     DVector beta(nP, 0.);
-    tmv::SymMatrix<double> alpha(nP, 0.);
+    DMatrix alpha(nP, nP, 0.);
     DMatrix derivs(2,nP);
     Assert(vxp.size()==vyp.size());
     Assert(vxp.size()==vxw.size());
@@ -430,9 +436,18 @@ astrometry::fitTPV(Bounds<double> b,
 	beta[j] += vxw[i]*derivs(0,j) + vyw[i]*derivs(1,j);
 	for (int k=0; k<=j; k++) 
 	  alpha(j,k)+=derivs(0,j)*derivs(0,k) + derivs(1,j)*derivs(1,k);
+	// Note lower triangle of alpha being filled.
       }
     }
-    beta /= alpha;
+#ifdef USE_TMV
+    {
+      auto s = tmv::SymMatrixViewOf(alpha, tmv::Lower);
+      s.divideUsing(tmv::CH);
+      beta /= alpha;
+    }
+#elif defined USE_EIGEN
+    alpha.llt().solveInPlace(beta);
+#endif
     poly.setParams(beta);
     if (pv) delete pv;
     pv = new PolyMap(poly);

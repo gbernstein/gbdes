@@ -9,7 +9,7 @@ class MapMarq {
 public:
   MapMarq(const list<Detection*>& dets_, PixelMap* pm_): dets(dets_), pm(pm_), sigma(1.) {}
   void operator()(const DVector& a, double& chisq, 
-		  DVector& beta, tmv::SymMatrix<double>& alpha);
+		  DVector& beta, DMatrix& alpha);
   void setSigma(double s) {sigma = s;}
 private:
   const list<Detection*>& dets;
@@ -33,21 +33,19 @@ void
 MapMarq::operator()(const DVector& a, 
 		    double& chisq, 
 		    DVector& beta, 
-		    tmv::SymMatrix<double>& alpha) {
+		    DMatrix& alpha) {
   chisq = 0;
   beta.setZero();
   alpha.setZero();
   int np = a.size();
   Assert(pm->nParams()==np);
   Assert(beta.size()==np);
-  Assert(alpha.nrows()==np);
+  Assert(alpha.rows()==np);
+  Assert(alpha.cols()==np);
   DMatrix derivs(2,np);
   pm->setParams(a);
 
-  for (list<Detection*>::const_iterator i = dets.begin();
-       i != dets.end();
-       ++i) {
-    const Detection* d = *i;
+  for (auto d : dets) {
     if (d->isClipped) continue;
     double xmod, ymod;
     pm->toWorldDerivs(d->xpix, d->ypix, xmod, ymod, derivs);
@@ -57,6 +55,7 @@ MapMarq::operator()(const DVector& a,
     chisq += xmod*xmod + ymod*ymod;
     for (int i=0; i<np; i++) {
       beta[i] += xmod*derivs(0,i) + ymod*derivs(1,i);
+      // Fill lower triangle of alpha:
       for (int j=0; j<=i; j++) 
 	alpha(i,j)+=derivs(0,i)*derivs(0,j) + derivs(1,i)*derivs(1,j);
     }

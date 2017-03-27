@@ -75,6 +75,7 @@ main(int argc, char *argv[])
 
   double clipThresh;
   double maxPixError;
+  string sysErrorColumn;
   double pixSysError;
   double referenceSysError;
 
@@ -107,10 +108,12 @@ main(int argc, char *argv[])
     parameters.addMemberNoValue("INPUTS");
     parameters.addMember("maxPixError",&maxPixError, def | lowopen,
 			 "Cut objects with pixel posn uncertainty above this", 0.1, 0.);
+    parameters.addMember("sysErrorColumn",&sysErrorColumn, def,
+			 "Extension table column holding systematic error, if any", "");
     parameters.addMember("pixSysError",&pixSysError, def | low,
-			 "Additional systematic error for detections (pixels)", 0.01, 0.);
+			 "Fixed systematic error for detections (pixels)", 0.01, 0.);
     parameters.addMember("referenceSysError",&referenceSysError, def | low,
-			 "Reference object additional error (arcsec)", 0.003, 0.);
+			 "Fixed systematic error for reference objects (arcsec)", 0.003, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
     parameters.addMember("minFitExposures",&minFitExposures, def | low,
@@ -270,7 +273,10 @@ main(int argc, char *argv[])
 			    exposures,
 			    exposureColorPriorities,
 			    colorExtensions,
-			    inputYAML);
+			    inputYAML,
+			    sysErrorColumn,
+			    pixSysError,
+			    referenceSysError);
 
 		    
     /**/cerr << "Setting reference wcsNames" << endl;
@@ -536,8 +542,7 @@ main(int argc, char *argv[])
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
     /**/cerr << "Reading catalogs." << endl;
-    readObjects<Astro>(extensionTable, exposures, extensions, pixSysError, referenceSysError);
-
+    readObjects<Astro>(extensionTable, exposures, extensions);
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the Detections they match
