@@ -294,7 +294,7 @@ Match::sigmaClip(double sigThresh,
   double xmean, ymean;
   if (nFit<=1) return false;
   double maxSq=0.;
-  Detection* worst=0;
+  Detection* worst=nullptr;
   centroid(xmean,ymean);
   for (auto i : elist) {
     if (!isFit(i)) continue;
@@ -422,13 +422,13 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   // Each thread accumulates its own beta
     DVector newBeta(beta.size(), 0.);
 #pragma omp for schedule(dynamic,chunk) 
-  for (int j=0; j<vi.size(); j++) {
-    Match* m = vi[j];
-    if ( m->getReserved() ) continue;	//skip reserved objects
-    m->accumulateChisq(newChisq, newBeta, updater, reuseAlpha);
-  }
+    for (int i=0; i<vi.size(); i++) {
+      auto m = vi[i];
+      if ( m->getReserved() ) continue;	//skip reserved objects
+      m->accumulateChisq(newChisq, newBeta, updater, reuseAlpha);
+    }
 #pragma omp critical(beta)
-  beta += newBeta;
+    beta += newBeta;
   }
 #else
   // Without OPENMP, just loop through all matches:
@@ -761,6 +761,7 @@ CoordAlign::count(long int& mcount, long int& dcount,
     dcount+=i->fitSize();
   }
 }
+
 void
 CoordAlign::count(long int& mcount, long int& dcount,
                   bool doReserved, int minMatches, long catalog) const {
@@ -773,7 +774,7 @@ CoordAlign::count(long int& mcount, long int& dcount,
     int ddcount=0;
     for(auto d : *i) {
       if(!(d->isClipped) && d->catalogNumber==catalog)
-            ddcount++;
+	ddcount++;
     }
 
     if(ddcount>0) {

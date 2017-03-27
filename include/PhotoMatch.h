@@ -21,6 +21,7 @@ using std::list;
 
 namespace photometry {
 
+  using linalg::SymmetricUpdater;
   class Match;  // Forward declaration
 
   class Detection {
@@ -78,7 +79,8 @@ namespace photometry {
     // Returned integer is the DOF count
     int accumulateChisq(double& chisq,
 			DVector& beta,
-			astrometry::AlphaUpdater& updater);
+			SymmetricUpdater& updater,
+			bool reuseAlpha=false);
     // sigmaClip returns true if clipped, and deletes the clipped guy
     // if 2nd arg is true.
     bool sigmaClip(double sigThresh,
@@ -155,7 +157,8 @@ namespace photometry {
     // Recalculate the fittable points and increment chisq and fitting vector/matrix
     int accumulateChisq(double& chisq,
 			DVector& beta,
-			SymmetricUpdater& updater);
+			SymmetricUpdater& updater,
+			bool reuseAlpha=false);
     // sigmaClip returns true if clipped one, and only will clip worst one - no recalculation
     bool sigmaClip(double sigThresh);
     // Mark all of this prior as clipped (will no longer be fit)
@@ -224,11 +227,14 @@ namespace photometry {
     int nParams() const {return pmc.nParams() + nPriorParams;}
 
     void remap();	// Re-map all Detections and Priors using current params
-    double fitOnce(bool reportToCerr=true);	// Returns chisq of previous fit, updates params.
+    // Returns chisq of previous fit, updates params.
+    double fitOnce(bool reportToCerr=true,
+		   bool inPlace=false);	 // Set inPlace to save space, less debug
     double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
     // This is the () operator that is called by Marquardt to try a fit with new params
     void operator()(const DVector& params, double& chisq,
-		    DVector& beta, tmv::SymMatrix<double>& alpha);
+		    DVector& beta, DMatrix& alpha,
+		    bool reuseAlpha=false);
 
     void setRelTolerance(double tol) {relativeTolerance=tol;}
     // Return count of useful (un-clipped) Matches & Detections.

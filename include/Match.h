@@ -19,6 +19,7 @@ using std::list;
 
 namespace astrometry {
 
+  using linalg::SymmetricUpdater;
   class Match;  // Forward declaration
 
   class Detection {

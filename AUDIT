@@ -3,8 +3,6 @@ Accum.h
 ExtensionAttribute.h
 FitSubroutines.h
 MapDegeneracies.h
-Match.h
-PhotoMatch.h
 PhotoSubs.h
 ReadLdacHeader.h
 TPVMap.h
@@ -40,8 +38,6 @@ ExtensionAttribute.cpp
 FitSubroutines.cpp
 MapDegeneracies.cpp
 MapFit.cpp
-Match.cpp
-PhotoMatch.cpp
 PhotoPrior.cpp
 PhotoSubs.cpp
 ReadPhotoPriors.cpp

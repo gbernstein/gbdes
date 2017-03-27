@@ -111,7 +111,7 @@ Match::getMean(double& m, double& wt) const {
 
 void
 Match::remap() {
-  for (auto i : elist) {
+  for (auto i : elist) 
     i->magOut = i->map->forward(i->magIn, i->args);
 }
 
@@ -174,63 +174,70 @@ Match::accumulateChisq(double& chisq,
       int mapNumber = (*i)->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
-      tmv::ConstVectorView<double> dm=di[ipt]->subVector(istart,istart+np);
-      beta.subVector(ip, ip+np) -= wti*(mi-mean)*dm;
+      DVector dm=di[ipt]->subVector(istart,istart+np);
+      beta.subVector(ip, ip+np) -= (wti*(mi-mean))*dm;
 
       // Derivatives of the mean position:
       dmean.subVector(ip, ip+np) += wti*dm;
 
-      // The alpha matrix: a little messy because of symmetry
-      //**      alpha.subSymMatrix(ip, ip+np) += wti*(dm ^ dm));
-      updater.rankOneUpdate(mapNumber, ip, dm, 
-			    mapNumber, ip, dm, wti);
+      if (!reuseAlpha) {
+	// Increment the alpha matrix
+	// First the blocks astride the diagonal:
+	updater.rankOneUpdate(mapNumber, ip, dm, wti);
 
-      int istart2 = istart+np;
-      for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
-	int ip2=(*i)->map->startIndex(iMap2);
-	int np2=(*i)->map->nSubParams(iMap2);
-	int mapNumber2 = (*i)->map->mapNumber(iMap2);
-	if (np2==0) continue;
-	tmv::ConstVectorView<double> dm2=di[ipt]->subVector(istart2,istart2+np2);
-	// Note that subMatrix here will not cross diagonal:
-	//**	  alpha.subMatrix(ip, ip+np, ip2, ip2+np2) += wti*(dm ^ dm2);
-	updater.rankOneUpdate(mapNumber2, ip2, dm2, 
-			      mapNumber,  ip,  dm, wti);
-	istart2+=np2;
+	// Put the wti factor into dm:
+	dm *= wti;
+	int istart2 = istart+np;
+	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
+	  int ip2=(*i)->map->startIndex(iMap2);
+	  int np2=(*i)->map->nSubParams(iMap2);
+	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
+	  if (np2==0) continue;
+	  DVector dm2=di[ipt]->subVector(istart2,istart2+np2);
+	  // Update below the diagonal:
+	  updater.rankOneUpdate(mapNumber2, ip2, dm2, 
+				mapNumber,  ip,  dm);
+	  istart2+=np2;
+	}
+	istart+=np;
       }
-      istart+=np;
     } // outer parameter segment loop
-    if (di[ipt]) {delete di[ipt]; di[ipt]=0;}
+    if (di[ipt]) {delete di[ipt]; di[ipt]=nullptr;}
   } // object loop
 
 
-  // Subtract effects of derivatives on mean
-  /*  We want to do this, but without touching the entire alpha matrix every time:
-  alpha -=  (dmean ^ dmean)/wt;
-  */
+  if (!reuseAlpha) {
+    // Subtract effects of derivatives on mean
+    /*  We want to do this, but without touching the entire alpha matrix every time:
+	alpha -=  (dmean ^ dmean)/wt;
+    */
 
-  // Do updates parameter block by parameter block
-  for (map<int,iRange>::iterator m1=mapsTouched.begin();
-       m1 != mapsTouched.end();
-       ++m1) {
-    int map1 = m1->first;
-    int i1 = m1->second.startIndex;
-    int n1 = m1->second.nParams;
-    if (n1<=0) continue;
-    for (map<int, iRange>::iterator m2=m1;
-	 m2 != mapsTouched.end();
-	 ++m2) {
-      int map2 = m2->first;
-      int i2 = m2->second.startIndex;
-      int n2 = m2->second.nParams;
-      if (n2<=0) continue;
-      const tmv::ConstVectorView<double> dm1 = dmean.subVector(i1, i1+n1);
-      const tmv::ConstVectorView<double> dm2 = dmean.subVector(i2, i2+n2);
-      updater.rankOneUpdate(map2, i2, dm2,
-			    map1, i1, dm1, -1./wt);
+    // Do updates parameter block by parameter block
+    for (auto m1=mapsTouched.begin();
+	 m1 != mapsTouched.end();
+	 ++m1) {
+      int map1 = m1->first;
+      int i1 = m1->second.startIndex;
+      int n1 = m1->second.nParams;
+      if (n1<=0) continue;
+      DVector dm1 = dmean.subVector(i1, i1+n1);
+      // Update astride diagona;:
+      updater.rankOneUpdate(map1, i1, dm1, -1./wt);
+      // Put the weight factor into dm1:
+      dm1 *= -1./wt;
+      auto m2 = m1;
+      ++m2;
+      for (; m2 != mapsTouched.end(); ++m2) {
+	int map2 = m2->first;
+	int i2 = m2->second.startIndex;
+	int n2 = m2->second.nParams;
+	if (n2<=0) continue;
+	DVector dm2 = dmean.subVector(i2, i2+n2);
+	updater.rankOneUpdate(map2, i2, dm2,
+			      map1, i1, dm1);
+      }
     }
   }
-
   return nFit-1;
 }
 
@@ -241,13 +248,12 @@ Match::sigmaClip(double sigThresh,
   double mean;
   if (nFit<=1) return false;
   double maxSq=0.;
-  list<Detection*>::iterator worst=elist.end();
+  Detection* worst=nullptr;
   getMean(mean);
-  for (list<Detection*>::iterator i=elist.begin(); 
-       i!=elist.end(); ++i) {
-    if (!isFit(*i)) continue;
-    double mi = (*i)->magOut;
-    double clipsq = (*i)->clipsq;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    double mi = i->magOut;
+    double clipsq = i->clipsq;
     double devSq = (mi-mean)*(mi-mean)*clipsq;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
@@ -256,20 +262,20 @@ Match::sigmaClip(double sigThresh,
     }
   }
 
-  if (worst != elist.end()) {
+  if (worst) {
 #ifdef DEBUG
-    cerr << "clipped " << (*worst)->catalogNumber
-	 << " / " << (*worst)->objectNumber 
-	 << " at " << (*worst)->magOut
-	 << " resid " << setw(6) << ((*worst)->magOut-mean)
-	 << " sigma " << 1./sqrt((*worst)->clipsqx)
+    cerr << "clipped " << worst->catalogNumber
+	 << " / " << worst->objectNumber 
+	 << " at " << worst->magOut
+	 << " resid " << setw(6) << (worst->magOut-mean)
+	 << " sigma " << 1./sqrt(worst->clipsqx)
 	 << endl;
 #endif
       if (deleteDetection) {
-	delete *worst;
-	elist.erase(worst);
+	elist.remove(worst);
+	delete worst;
       }	else {
-	(*worst)->isClipped = true;
+	worst->isClipped = true;
       }
       nFit--;
       return true;
@@ -285,12 +291,10 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
   double chi=0.;
   if (nFit<=1) return chi;
   getMean(mean);
-  for (list<Detection*>::const_iterator i=elist.begin(); 
-       i!=elist.end(); 
-       ++i) {
-    if (!isFit(*i)) continue;
-    double mi = (*i)->magOut;
-    double wti = (*i)->wt;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    double mi = i->magOut;
+    double wti = i->wt;
     double cc = (mi-mean)*(mi-mean)*wti;
     maxDeviateSq = MAX(cc , maxDeviateSq);
     chi += cc;
@@ -301,20 +305,21 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
 
 void
 PhotoAlign::operator()(const DVector& p, double& chisq,
-		       DVector& beta, tmv::SymMatrix<double>& alpha) {
+		       DVector& beta, DMatrix& alpha,
+		       bool reuseAlpha) {
   countPriorParams();
   int nP = nParams();
   Assert(p.size()==nP);
   Assert(beta.size()==nP);
-  Assert(alpha.nrows()==nP);
+  Assert(alpha.rows()==nP);
   setParams(p);
   double newChisq=0.;
   beta.setZero();
-  alpha.setZero();
+  if (!reuseAlpha) alpha.setZero();
   int matchCtr=0;
 
   const int NumberOfLocks = 2000;
-  astrometry::AlphaUpdater updater(alpha, maxMapNumber, NumberOfLocks);
+  SymmetricUpdater updater(alpha, maxMapNumber, NumberOfLocks);
 
 #ifdef _OPENMP
   const int chunk=200;
@@ -332,10 +337,8 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
       int iChunk=0;
       int iRound=0;
       int j=0;  
-      for (list<Match*>::const_iterator i=mlist.begin();
-	   i != mlist.end();
-	   ++i) {
-	vi[j] = *i;
+      for (auto i : mlist) {
+	vi[j] = i;
 	j++;
 	if (j%chunk==0 && iRound < nRounds) {
 	  iThread++;
@@ -351,70 +354,56 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
   // Each thread accumulates its own beta
     DVector newBeta(beta.size(), 0.);
 #pragma omp for schedule(dynamic,chunk) 
-  for (int j=0; j<vi.size(); j++) {
-    Match* m = vi[j];
-
-    //**    if (j%chunk==0) {
-    if (false) {
-#pragma omp critical (output)
-      cerr << "# Thread " << omp_get_thread_num()
-	   << "# accumulating chisq at match # " << j 
-	   << endl;
+    for (int i=0; i<vi.size(); i++) {
+      auto m = vi[i];
+      if ( m->getReserved() ) continue;	//skip reserved objects
+      m->accumulateChisq(newChisq, newBeta, updater, reuseAlpha);
     }
-    if ( m->getReserved() ) continue;	//skip reserved objects
-    //**    m->accumulateChisq(newChisq, newBeta, alpha);
-    m->accumulateChisq(newChisq, newBeta, updater);
-  }
 #pragma omp critical(beta)
-  beta += newBeta;
+    beta += newBeta;
   }
 #else
-  // This is the match loop for single threading:
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
+  // Without OPENMP, just loop through all matches:
+  for (auto i : mlist) {
     Match* m = *i;
     if (matchCtr%10000==0) cerr << "# accumulating chisq at match # " 
 				<< matchCtr  //**<< " newChisq " << newChisq
 				<< endl;
     matchCtr++;
     if ( m->getReserved() ) continue;	//skip reserved objects
-    m->accumulateChisq(newChisq, beta, updater);
+    m->accumulateChisq(newChisq, beta, updater, reuseAlpha);
   }
 #endif
   chisq = newChisq;
 
-  // Now need to accumulate the contributions from the priors.  A single thread will do.
-  for (list<PhotoPrior*>::iterator i = priors.begin();
-       i != priors.end();
-       ++i) 
-    (*i)->accumulateChisq(chisq, beta, updater);
+  // Now need to accumulate the contributions from the priors.
+  // A single thread will do.
+  for (auto i : priors)
+    i->accumulateChisq(chisq, beta, updater, reuseAlpha);
 
-  {
-    //For fully unconstrained parameters, put unity on diagonal to avoid singular matrix:
+  if (!reuseAlpha) {
     // Code to spot unconstrained parameters:
     set<string> newlyFrozenMaps;
-    for (int i = 0; i<alpha.nrows(); i++) {
+    for (int i = 0; i<alpha.rows(); i++) {
       bool blank = true;
-      for (int j=0; j<alpha.ncols(); j++)
-	if (alpha(i,j)!=0.) {
+      for (int j=0; j<alpha.cols(); j++) 
+	if ( (i>=j && alpha(i,j)!=0.) || (i<j && alpha(j,i)!=0.)) {
+	  // Note that we are checking in lower triangle only
 	  blank = false;
 	  break;
 	}
       if (blank) {
 	string badAtom="";
-	bool badIsMap;
+	bool badIsMap; // Is the bad parameter in a map or in a prior?
 	if (i < pmc.nParams()) {
 	  badAtom = pmc.atomHavingParameter(i);
 	  badIsMap = true;
 	} else {
 	  // Look among the priors for this parameter
-	  for (list<PhotoPrior*>::const_iterator iprior = priors.begin();
-	       iprior != priors.end();
-	       ++iprior) {
-	    if ( i >= (*iprior)->startIndex() &&
-		 i < (*iprior)->startIndex() + (*iprior)->nParams()) {
-	      badAtom = (*iprior)->getName();
+	  for (auto iprior : priors) {
+	    if ( i >= iprior->startIndex() &&
+		 i < iprior->startIndex() + iprior->nParams()) {
+	      badAtom = iprior->getName();
 	      badIsMap = false;
 	      break;
 	    }
@@ -477,8 +466,209 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
 }
 
 double
-PhotoAlign::fitOnce(bool reportToCerr) {
+PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
   DVector p = getParams();
+  // First will try doing Newton iterations, keeping a fixed Hessian.
+  // If it increases chisq or takes too long to converge, we will 
+  // go into the Marquardt solver.
+
+  {
+    // Get chisq, beta, alpha at starting parameters
+    double oldChisq = 0.;
+    int nP = pmc.nParams();
+    DVector beta(nP, 0.);
+    DMatrix alpha(nP, nP, 0.);
+
+    Stopwatch timer;
+    timer.start();
+    (*this)(p, oldChisq, beta, alpha);
+    timer.stop();
+    if (reportToCerr) cerr << "..fitOnce alpha time " << timer << endl;
+    timer.reset();
+    timer.start();
+
+    // Precondition alpha if wanted
+    bool precondition = true;
+    int N = alpha.cols();
+    DVector ss(N, 1.);  // Values to scale parameters by
+    if (precondition) {
+      for (int i=0; i<N; i++) {
+	if (alpha(i,i)<0.) {
+	  cerr << "Negative alpha diagonal " << alpha(i,i)
+	       << " at " << i << endl;
+	  exit(1);
+	} 
+	if (alpha(i,i) > 0.)
+	  ss[i] = 1./sqrt(alpha(i,i));
+	// Scale row / col of lower triangle, hitting diagonal twice
+	for (int j=0; j<=i; j++) 
+	  alpha(j,i) *= ss(i);
+	for (int j=i; j<N; j++) 
+	  alpha(i,j) *= ss(i);
+      }
+    }
+
+    // Do the Cholesky decomposition, set flag if it fails
+    bool choleskyFails = false;
+#ifdef USE_TMV
+    // Make a symmetric view into alpha for Cholesky:
+    auto symAlpha = tmv::SymMatrixViewOf(alpha,tmv::Lower);
+    symAlpha.divideUsing(tmv::CH);
+    if (inPlace) symAlpha.divideInPlace();
+    try {
+      symAlpha.setDiv();
+    } catch (tmv::Error& m) {
+      choleskyFails=true;
+    }
+#elif defined USE_EIGEN
+    if (inPlace)
+      throw PhotometryError("Do not currently support in-place Cholesky for Eigen");
+    // The difficulty is that the type of an in-place LLT is different from
+    // the type for a "normal" LLT.  I can't figure out how to allow both
+    // possibilities without making two branches of the whole iteration code.
+    auto llt = alpha.llt();
+    if (llt.info()==Eigen::NumericalIssue)
+      choleskyFails = true;
+#endif
+    
+    // If the Cholesky decomposition failed for non-pos-def matrix, then
+    // as a diagnostic we will do an SVD and report the nature of degeneracies.
+    // Then exit with an error.
+    // And since alpha is symmetric, we will use eigenvector routines to do the
+    // SVD, which is what we want anyway to find the non-pos-def values
+
+    if (choleskyFails) {
+      cerr << "Caught exception" << endl;
+      if (inPlace) {
+	cerr << "Cannot describe degeneracies while dividing in place" << endl;
+	exit(1);
+      }
+      int N = alpha.cols();
+      set<int> degen;
+      DMatrix U(N,N);
+      DVector S(N);
+#ifdef USE_TMV
+      tmv::Eigen(symAlpha, U, S);
+#elif defined USE_EIGEN
+      {
+	Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(alpha);
+	U = eig.eigenvectors();
+	S = eig.eigenvalues();
+      }
+#endif
+      // Both packages promise to return eigenvalues in increasing
+      // order, but let's not depend on that.  Report largest/smallest
+      // abs values of eval's, and print them all
+      int imax = S.size()-1; // index of largest, smallest eval
+      double smax=abs(S[imax]);
+      int imin = 0;
+      double smin=abs(S[imin]);
+      for (int i=0; i<U.cols(); i++) {
+	cerr << i << " Eval: " << S[i] << endl;
+	double s= abs(S[i]);
+	if (s>smax) {
+	  smax = s;
+	  imax = i;
+	}
+	if (s<smin) {
+	  smin = s;
+	  imin = i;
+	}
+	if (S[i]<1e-6) degen.insert(i);
+      }
+      cerr << "Largest abs(eval): " << smax << endl;
+      cerr << "Smallest abs(eval): " << smin << endl;
+      degen.insert(imin);
+      // Find biggest contributors to non-positive (or marginal) eigenvectors
+      const int ntop=20;
+      for (int isv : degen) {
+	  cerr << "--->Eigenvector " << isv << " eigenvalue " << S(isv) << endl;
+	  vector<int> top(ntop,0);
+	  for (int i=0; i<U.rows(); i++) {
+	    for (int j=0; j<ntop; j++) {
+	      if (pow(U(i,isv),2.) >= pow(U(top[j],isv),2.)) {
+		// Push smaller entries to right
+		for (int k=ntop-1; k>j; k--)
+		  top[k] = top[k-1];
+		top[j] = i;
+		break;
+	      }
+	    }
+	  }
+	  for (int j : top) {
+	    if (j < pmc.nParams()) {
+	      string badAtom = pmc.atomHavingParameter(j);
+	      int startIndex, nParams;
+	      pmc.parameterIndicesOf(badAtom, startIndex, nParams);
+	      cerr << "Coefficient " << U(j, isv) 
+		   << " at parameter " << j 
+		   << " Map " << badAtom 
+		   << " " << j - startIndex << " of " << nParams
+		   << endl;
+	    } else {
+	      cerr << "Coefficient " << U(j, isv) 
+		   << " at parameter " << j 
+		   << " in priors"
+		   << endl;
+	  }
+	}
+	exit(1);
+      }
+    }
+
+    // Now attempt Newton iterations to solution, with fixed alpha
+    const int MAX_NEWTON_STEPS = 8;
+    int newtonIter = 0;
+    for (int newtonIter = 0; newtonIter < MAX_NEWTON_STEPS; newtonIter++) {
+      if (precondition) {
+	beta = ElemProd(beta,ss);
+      }
+
+#ifdef USE_TMV
+      beta /= symAlpha; 
+#elif defined USE_EIGEN
+      beta = llt.solve(beta);
+#endif
+      if (precondition) {
+	beta = ElemProd(beta,ss);
+      }
+	
+      timer.stop();
+      if (reportToCerr) cerr << "..solution time " << timer << endl;
+      timer.reset();
+      timer.start();
+      DVector newP = p + beta;
+      setParams(newP);
+      // Get chisq at the new parameters
+      remap();
+      int dof;
+      double maxDev;
+      double newChisq = chisqDOF(dof, maxDev);
+      timer.stop();
+      //**if (reportToCerr) {
+      if (true) {
+	cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
+	     << " / " << dof 
+	     << " in time " << timer << " sec"
+	     << endl;
+      }
+      timer.reset();
+      timer.start();
+
+      // Give up on Newton if chisq went up non-trivially
+      if (newChisq > oldChisq * 1.0001) break;
+      else if ((oldChisq - newChisq) < oldChisq * relativeTolerance) {
+	// Newton has converged, so we're done.
+	return newChisq;
+      }
+      // Want another Newton iteration, but keep alpha as before
+      p = newP;
+      (*this)(p, oldChisq, beta, alpha, true);
+    }
+    // If we reach this place, Newton is going backwards or nowhere, slowly.
+    // So just give it up.
+  }
+  
   Marquardt<PhotoAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
   marq.setSaveMemory();
@@ -490,15 +680,11 @@ PhotoAlign::fitOnce(bool reportToCerr) {
 
 void
 PhotoAlign::remap() {
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i)
-    (*i)->remap();
+  for (auto i : mlist)
+    i->remap();
 
-  for (list<PhotoPrior*>::iterator i = priors.begin();
-       i != priors.end();
-       ++i) 
-    (*i)->remap();
+  for (auto i : priors) 
+    i->remap();
 }
 
 int
@@ -509,15 +695,13 @@ PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   Stopwatch timer;
   timer.start();
 
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
+  for (auto i : mlist) {
     // Skip this one if it's reserved and doReserved=false,
     // or vice-versa
-    if (doReserved ^ (*i)->getReserved()) continue;
-    if ( (*i)->sigmaClip(sigThresh)) {
+    if (doReserved ^ i->getReserved()) continue;
+    if ( i->sigmaClip(sigThresh)) {
       nclip++;
-      if (clipEntireMatch) (*i)->clipAll();
+      if (clipEntireMatch) i->clipAll();
     }
   }
   timer.stop();
@@ -528,13 +712,11 @@ PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
 int
 PhotoAlign::sigmaClipPrior(double sigThresh, bool clipEntirePrior) {
   int nClip = 0;
-  for (list<PhotoPrior*>::iterator i = priors.begin();
-       i != priors.end();
-       ++i) 
-    if ((*i)->sigmaClip(sigThresh)) {
+  for (auto i : priors) 
+    if (i->sigmaClip(sigThresh)) {
       // Clipped something.
       nClip++;
-      if (clipEntirePrior) (*i)->clipAll();
+      if (clipEntirePrior) i->clipAll();
     }
   return nClip;
 }
@@ -546,23 +728,18 @@ PhotoAlign::chisqDOF(int& dof, double& maxDeviate,
   maxDeviate=0.;
   double chisq=0.;
   // ??? parallelize this loop!
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
+  for (auto i : mlist) {
     // Skip this one if it's reserved and doReserved=false,
     // or vice-versa
-    if (doReserved ^ (*i)->getReserved()) continue;
-    chisq += (*i)->chisq(dof, maxDeviate);
+    if (doReserved ^ i->getReserved()) continue;
+    chisq += i->chisq(dof, maxDeviate);
   }
   maxDeviate = sqrt(maxDeviate);
   if (!doReserved) {
     // If doing the fitted objects, include prior and adjust DOF for fit
     dof -= pmc.nParams();
-    for (list<PhotoPrior*>::const_iterator i = priors.begin();
-	 i != priors.end();
-	 ++i) {
-      chisq += (*i)->chisq(dof);
-    }
+    for (auto i : priors) 
+      chisq += i->chisq(dof);
   }
   return chisq;
 }
@@ -572,30 +749,27 @@ PhotoAlign::count(long int& mcount, long int& dcount,
 		  bool doReserved, int minMatches) const {
   mcount = 0;
   dcount = 0;
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
-    if (((*i)->getReserved() ^ doReserved) 
-	|| (*i)->fitSize() < minMatches) continue;
+  for (auto i : mlist) {
+    if ((i->getReserved() ^ doReserved) 
+	|| i->fitSize() < minMatches) continue;
     mcount++;
-    dcount+=(*i)->fitSize();
+    dcount+=i->fitSize();
   }
 }
+ 
 void
 PhotoAlign::count(long int& mcount, long int& dcount,
                   bool doReserved, int minMatches, long catalog) const {
   mcount = 0;
   dcount = 0;
-  for (list<Match*>::const_iterator i=mlist.begin();
-       i != mlist.end();
-       ++i) {
-    if (((*i)->getReserved() ^ doReserved)
-        || (*i)->fitSize() < minMatches) continue;
+  for (auto i : mlist) {
+    if ((i->getReserved() ^ doReserved)
+        || i->fitSize() < minMatches) continue;
 
     int ddcount=0;
-    for(list<Detection*>::iterator d=(*i)->begin(); d != (*i)->end(); ++d) {
-      if(!((*d)->isClipped) && (*d)->catalogNumber==catalog)
-            ddcount++;
+    for(auto d : *i) {
+      if(!(d->isClipped) && d->catalogNumber==catalog)
+	ddcount++;
     }
 
     if(ddcount>0) {
@@ -611,13 +785,11 @@ PhotoAlign::countPriorParams() {
   // Degenerate priors will be skipped.
   int startIndex = pmc.nParams();
   int mapNumber = pmc.nFreeMaps();
-  for (list<PhotoPrior*>::const_iterator i = priors.begin();
-       i != priors.end();
-       ++i) {
-    if ((*i)->isDegenerate()) continue;
-    (*i)->globalStartIndex = startIndex;
-    startIndex += (*i)->nParams();
-    (*i)->globalMapNumber = mapNumber++;
+  for (auto i : priors) {
+    if (i->isDegenerate()) continue;
+    i->globalStartIndex = startIndex;
+    startIndex += i->nParams();
+    i->globalMapNumber = mapNumber++;
   }
   nPriorParams = startIndex - pmc.nParams();
   maxMapNumber = mapNumber;
@@ -627,12 +799,10 @@ void
 PhotoAlign::setParams(const DVector& p) {
   pmc.setParams(p.subVector(0,pmc.nParams()));
   int startIndex = pmc.nParams();
-  for (list<PhotoPrior*>::iterator i = priors.begin();
-       i != priors.end();
-       ++i) {
-    if ((*i)->isDegenerate()) continue;
-    (*i)->setParams(p.subVector(startIndex, startIndex+(*i)->nParams()));
-    startIndex += (*i)->nParams();
+  for (auto i : priors) {
+    if (i->isDegenerate()) continue;
+    i->setParams(p.subVector(startIndex, startIndex + i->nParams()));
+    startIndex += i->nParams();
   }
 }
 
@@ -641,12 +811,10 @@ PhotoAlign::getParams() const {
   DVector p(nParams(), -888.);
   p.subVector(0,pmc.nParams()) = pmc.getParams();
   int startIndex = pmc.nParams();
-  for (list<PhotoPrior*>::const_iterator i = priors.begin();
-       i != priors.end();
-       ++i) {
-    if ((*i)->isDegenerate()) continue;
-    p.subVector(startIndex, startIndex+(*i)->nParams()) = (*i)->getParams();
-    startIndex += (*i)->nParams();
+  for (auto i : priors) {
+    if (i->isDegenerate()) continue;
+    p.subVector(startIndex, startIndex + i->nParams()) = i->getParams();
+    startIndex += i->nParams();
   }
   return p;
 }
