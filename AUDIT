@@ -38,7 +38,6 @@ ExtensionAttribute.cpp
 FitSubroutines.cpp
 MapDegeneracies.cpp
 MapFit.cpp
-PhotoPrior.cpp
 PhotoSubs.cpp
 ReadPhotoPriors.cpp
 TPVMap.cpp
