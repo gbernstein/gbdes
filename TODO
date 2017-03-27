@@ -1,3 +1,5 @@
+* Occasional segfault in ReadExtensions, something to do with multithreading??
+
 * Allow individual systematic errors per instrument or exposure?
 
 * Read data (and reject short-count exposures) before degeneracy checks

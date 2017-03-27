@@ -512,10 +512,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     Stopwatch timer;
     timer.start();
     (*this)(p, oldChisq, beta, alpha);
-    if (reportToCerr) {
-      /**/cerr << "Beta:\n" << beta << endl;
-      /**/cerr << "Alpha:\n" << alpha << endl;
-    }
     timer.stop();
     if (reportToCerr) cerr << "..fitOnce alpha time " << timer << endl;
     timer.reset();
@@ -581,7 +577,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       set<int> degen;
       DMatrix U(N,N);
       DVector S(N);
-      /**/cerr << "Alpha:\n" << alpha << endl;
+
 #ifdef USE_TMV
       tmv::Eigen(symAlpha, U, S);
 #elif defined USE_EIGEN
@@ -659,7 +655,8 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       }
 
 #ifdef USE_TMV
-      beta /= symAlpha; 
+      beta /= symAlpha;
+	
 #elif defined USE_EIGEN
       beta = llt.solve(beta);
 #endif
@@ -667,8 +664,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	beta = ElemProd(beta,ss);
       }
 	
-      /**/if (reportToCerr) cerr << "Shift:\n" << beta << endl;
-      
       timer.stop();
       if (reportToCerr) cerr << "..solution time " << timer << endl;
       timer.reset();
