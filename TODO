@@ -1,6 +1,6 @@
 * Occasional segfault in ReadExtensions, something to do with multithreading??
 
-* Allow individual systematic errors per instrument or exposure?
+* Use individual systematic errors per extension in MagColor
 
 * Read data (and reject short-count exposures) before degeneracy checks
 
@@ -114,4 +114,7 @@
 
 * Aperture corrections included in models - put into dictionary? Just into prior?
 
-* Put Newton iterations into PhotoMatch, DONE
+* Put Newton iterations into PhotoMatch
+
+* Allow individual systematic errors per instrument or exposure
+

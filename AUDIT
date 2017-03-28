@@ -6,15 +6,9 @@ DrawAstro.cpp
 DrawFlat.cpp
 DrawFlat2.cpp
 DrawPhoto.cpp
-DrawRegnault.cpp
 DumpLDACHeader.cpp
 FitTPV.cpp
-FitsGlue.cpp
-ListClipped.cpp
-MagColor.cpp
 Photo2DESDM.cpp
 TabulatePixmap.cpp
 UnFlattenCatalog.cpp
-UpdateHeaders.cpp
-WCSFoF.cpp
 tpv2pixmap.cpp

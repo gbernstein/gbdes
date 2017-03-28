@@ -25,6 +25,7 @@ using namespace stringstuff;
 using namespace photometry;
 using img::FTable;
 using FITS::FitsTable;
+using photometry::DVector;
 
 string usage=
   "MagColor: Merge magnitudes for matched detections to create new\n"
@@ -100,7 +101,7 @@ public:
 // Routine to return clipped mean & uncertainty in mag for single band, with sigma clipping at threshold.
 // Also accumulate weighted sums of ra, dec for un-clipped points.
 void clipMeanAndError(vector<MagPoint>& vmp, double color,
-		      double threshold, double magSysError,
+		      double threshold, double sysError,
 		      double& mag, double& magErr,
 		      double& sumwRA, double& sumwDec, double& sumw);
 
@@ -109,7 +110,7 @@ main(int argc, char *argv[])
 {
   double clipThresh;
   double maxMagError;
-  double magSysError;
+  double sysError;
   string useInstruments;
   string bandspec;
   string colors;
@@ -126,7 +127,7 @@ main(int argc, char *argv[])
 
     parameters.addMember("maxMagError",&maxMagError, def | lowopen,
 			 "Only output mags with errors below this level", 0.05, 0.);
-    parameters.addMember("magSysError",&magSysError, def | lowopen,
+    parameters.addMember("sysError",&sysError, def | lowopen,
 			 "Systematic added in quadrature to mag error", 0.001, 0.);
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Magnitude clipping threshold (sigma)", 5., 2.);
@@ -259,7 +260,7 @@ main(int argc, char *argv[])
     } 
 
     // Pointer to the Color that will be used in photometric mappings.
-    const Color* useColor = 0;
+    const Color* useColor = nullptr;
 
     /////////////////////////////////////////////////////
     //  Read in properties of all Instruments, Devices, Exposures
@@ -296,7 +297,7 @@ main(int argc, char *argv[])
     for (auto& iptr : instruments) {
       if (iptr && bands.count(iptr->band)==0) {
 	delete iptr;
-	iptr = 0;
+	iptr = nullptr;
       }
     }
 
@@ -353,7 +354,7 @@ main(int argc, char *argv[])
       for (int i=0; i<names.size(); i++) {
 	// Only create an Exposure if this exposure contains useful mag info.
 	if (instrumentNumber[i]<0 || !instruments[instrumentNumber[i]] ) {
-	  exposures.push_back(0);
+	  exposures.push_back(nullptr);
 	} else {
 	  spaceReplace(names[i]);
 	  // The projection we will use for this exposure:
@@ -417,7 +418,7 @@ main(int argc, char *argv[])
       FITS::FitsTable ftExtensions(inputTables, FITS::ReadOnly, "Extensions");
       extensionTable = ftExtensions.extract();
     }
-    vector<Photo::Extension*> extensions(extensionTable.nrows(),0);
+    vector<Photo::Extension*> extensions(extensionTable.nrows(),nullptr);
 
     // This array will give band associated with each extension.  -1 for no desired band.
     vector<int> extensionBandNumbers(extensionTable.nrows(), -1);
@@ -481,7 +482,7 @@ main(int argc, char *argv[])
 	// No map for available for this exposure, ignore its data henceforth
 	cerr << "WARNING: no photometry map available for " << mapName << endl;
 	delete extn;
-	extensions[i] = 0;
+	extensions[i] = nullptr;
 	continue;
       }
       if (extn->map->needsColor() && !useColor) {
@@ -833,7 +834,7 @@ main(int argc, char *argv[])
 	    sumwRA = sumwDec = sumw = 0.;  // clear these accumulators
 	    // Calculate mean and error on mag in each band, and accumulate RA/Dec
 	    for (int i=0; i<mags.size(); i++) {
-	      clipMeanAndError(bandPoints[i], matchColor, clipThresh, magSysError,
+	      clipMeanAndError(bandPoints[i], matchColor, clipThresh, sysError,
 			       mags[i], magErrors[i],
 			       sumwRA, sumwDec, sumw);
 	      magValid[i] = magErrors[i]>0. && magErrors[i] <= maxMagError;
@@ -930,14 +931,11 @@ main(int argc, char *argv[])
     // Cleanup:
 
     // Get rid of extensions
-    for (int i=0; i<extensions.size(); i++)
-      if (extensions[i]) delete extensions[i];
+    for (auto i : extensions) delete i;
     // Get rid of exposures
-    for (int i=0; i<exposures.size(); i++)
-      if (exposures[i]) delete exposures[i];
+    for (auto i : exposures) delete i;
     // Get rid of instruments
-    for (int i=0; i<instruments.size(); i++)
-      if (instruments[i]) delete instruments[i];
+    for (auto i : instruments) delete i;
 
   } catch (std::runtime_error& m) {
     quit(m,1);
@@ -946,7 +944,7 @@ main(int argc, char *argv[])
 
 void 
 clipMeanAndError(vector<MagPoint>& vmp, double color,
-		 double threshold, double magSysError,
+		 double threshold, double sysError,
 		 double& mag, double& magErr,
 		 double& sumwRA, double& sumwDec, double& sumwradec) {
 
@@ -958,7 +956,7 @@ clipMeanAndError(vector<MagPoint>& vmp, double color,
     mp.args.color = color;
     x[i] = mp.photomap->forward(mp.magIn, mp.args);
     double e = mp.magErr * abs(mp.photomap->derivative(mp.magIn, mp.args));
-    w[i] = 1./(e*e + magSysError*magSysError);
+    w[i] = 1./(e*e + sysError*sysError);
   }
 
   bool anyclip = true;
