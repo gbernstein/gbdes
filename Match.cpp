@@ -506,8 +506,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     Stopwatch timer;
     timer.start();
     (*this)(p, oldChisq, beta, alpha);
-    /**/cerr << "Beta\n" << beta << endl;
-    /**/cerr << "Alpha\n" << alpha << endl;
     timer.stop();
     if (reportToCerr) cerr << "..fitOnce alpha time " << timer << endl;
     timer.reset();
