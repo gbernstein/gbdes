@@ -1,16 +1,39 @@
+# Stuff I've stashed away:
+OLD
+# The pdfs for the paper:
+doc/WCSFit.pdf
+doc/WCSFoF.pdf
+
+# Program for temporary tests
+test.cpp
+test.o
+test
+
+# executables
+bin/*
+testbin/*
+
+# Standard stuff:
+build
 *.o
-DumpLDACHeader
-FitsGlue
-junk.*
-WCSFoF
-WCSFit
 .depend
-MakeColors
-ListClipped
-PhotoFit
-DrawPhoto
-DrawRegnault
-ApplyWCS
-ApplyPhoto
-UnFlattenCatalog
+*.log
+*.aux
+*.dvi
+.sconf_temp
+.sconsign.dblite
+config.log
+*.so
+*.os
+*.pyc
+*.rel
+.obj
+gs_scons.*
+.*.swp
 .DS_Store
+gs.error
+*junk*
+debug.out
+tmp*
+*~
+*.synctex.gz

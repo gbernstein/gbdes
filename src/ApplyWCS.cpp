@@ -1,4 +1,3 @@
-// 	$Id: ApplyWCS.cpp,v 1.3 2012/01/27 01:38:17 garyb Exp $	
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -18,7 +17,7 @@ string usage="ApplyWCS: use WCS systems specified by YAML file or FITS keywords 
              "   pixel system to another, or from pixel system to/from world coords\n"
              "usage: ApplyWCS <WCS in> <WCS out> \n"
 	     "      <WCS in, out>:  each is either:\n"
-             "             (a) name of file holding FITS-style WCS spec,\n"
+             "             (a) name of ASCII file holding FITS-style WCS spec,\n"
              "             (b) <wcsname>@<filename>, reads WCS with given name serialized in the file\n"
              "             (c) the word \"gnomonic\" followed by RA and Dec (in hours, degrees)\n"
              "                 that will be pole of a projection to/from (xi,eta) in degrees\n"

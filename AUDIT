@@ -1,14 +1,6 @@
-AndresYAML1.cpp
-ApplyPhoto.cpp
-ApplyWCS.cpp
-CorrectFlat.cpp
-DrawAstro.cpp
-DrawFlat.cpp
-DrawFlat2.cpp
-DrawPhoto.cpp
-DumpLDACHeader.cpp
-FitTPV.cpp
-Photo2DESDM.cpp
-TabulatePixmap.cpp
-UnFlattenCatalog.cpp
-tpv2pixmap.cpp
+test.cpp		testFT5.cpp		testSerialize.cpp
+testDecam.cpp		testFT6.cpp		testTemplateMap.cpp
+testFT.cpp		testFT7.cpp		testYAML.cpp
+testFT2.cpp		testFT8.cpp		testmaps.cpp
+testFT3.cpp		testPMWrite.cpp
+testFT4.cpp		testPrep.cpp

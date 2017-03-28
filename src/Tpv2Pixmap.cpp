@@ -1,4 +1,3 @@
-// 	$Id: ApplyWCS.cpp,v 1.3 2012/01/27 01:38:17 garyb Exp $	
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -14,8 +13,8 @@
 using namespace std;
 using namespace astrometry;
 
-string usage="tpv2pixmap: convert ASCII FITS header TPV WCS to YAML serialized PixelMapCollection\n"
-  "usage: tpv2pixmap <TPV in> <YAML out> <WCS name>\n"
+string usage="Tpv2Pixmap: convert ASCII FITS header TPV WCS to YAML serialized PixelMapCollection\n"
+  "usage: Tpv2Pixmap <TPV in> <YAML out> <WCS name>\n"
   "   TPV in:   file holding ASCII FITS-header TPV WCS\n"
   "   YAML out: file to hold serialized PixelMapCollection\n"
   "   WCS name: name of the WCS in the output file.";

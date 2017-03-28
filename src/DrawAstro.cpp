@@ -24,7 +24,15 @@ string usage =
   "      <YAML file>:  file containing serialized WCS/Pixel maps\n"
   "      <instrument name>: base name of maps to tabulate, find all devices for it.\n"
   "      Program parameters specified as command-line options or read from\n"
-  "          parameter file(s) specified on cmd line";
+  "          parameter file(s) specified on cmd line"
+  "Outputs: 3 FITS files will be created, each having one extension per device for the\n"
+  "   instrument.  <outputBase>.[xy].fits will hold xy pixel locations (or differentials wrt TPV)\n"
+  "   while <outputBase>.a.fits holds relative pixel areas.\n"
+  "   If makeTPV=true, another file <outputBase>.tpv will hold ASCII version of all TPV's, which\n"
+  "   will also be placed into each image's header.";
+
+// ??? When decimate != 1, the TPV headers will not describe the images they're attached to.
+// Could change the CRPIX and CD values to adjust this for proper displaying.
 
 int
 main(int argc, char *argv[])
@@ -112,8 +120,6 @@ main(int argc, char *argv[])
     for (auto mapName : mapNames) {
       deviceNames.insert(split(mapName,'/').back());
     }
-
-    // Open output FITS files ??
 
     for (auto device : deviceNames) {
       // Loop through devices

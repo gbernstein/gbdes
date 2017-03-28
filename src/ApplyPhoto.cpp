@@ -16,17 +16,17 @@ string usage="ApplyPhoto: transform magnitudes using solutions from PhotoFit\n"
   "usage: ApplyPhoto <PhotoIn> [WCSin RA Dec]\n"
   "      <PhotoIn> is photometric solution to use, in form of\n"
   "               <mapname>@<photo file>, <photo file> holds serialized PhotoFit solution\n"
-  "      [WCSin RA Dec] These three arguments are needed only if the photometric map needs to\n"
-  "                is dependent upon the position of object in the exposure FOV.  In this case,\n"
-  "      WCSin is astrometric solution to use, in form of either\n"
-  "             name of file holding FITS-style WCS spec, or\n"
-  "             <wcsname>@<filename>, reads WCS with given name serialized in the file\n"
-  "      RA, Dec give the axis about which field coords were calculated\n"
+  "      [WCSin RA Dec] These three arguments are needed only if the photometric map is\n"
+  "         dependent upon the position of object in the exposure FOV.  In this case:\n"
+  "      <WCSin> is astrometric solution to use, in form of either\n"
+  "              name of file holding FITS-style WCS spec, or\n"
+  "              <wcsname>@<filename>, reads WCS with given name serialized in the file\n"
+  "      <RA, Dec> give the axis about which field coords were calculated\n"
   "             for this exposure by PhotoFit\n"
-  "     stdin: each line is <mag In> <xpix> <ypix> [color], which are \n"
-  "            input magnitude, x and y pixel coordinates, and optionally a color\n"
-  "            to use in the transformation.  Otherwise color is set to 0.\n"
-  "     stdout: each line is <mag out>";
+  "      stdin: each line is <mag In> <xpix> <ypix> [color], which are \n"
+  "             input magnitude, x and y pixel coordinates, and optionally a color\n"
+  "             to use in the transformation.  Otherwise color is set to 0.\n"
+  "      stdout: each line is <mag out>";
 
 int
 main(int argc, char *argv[])
@@ -67,7 +67,7 @@ main(int argc, char *argv[])
     }
 
     // Get the WCS
-    astrometry::Wcs* wcs = 0;
+    astrometry::Wcs* wcs = nullptr;
 
     if (argc > 2) {
       string wcsfile = argv[2];

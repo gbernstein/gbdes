@@ -1,4 +1,4 @@
-// Make a FITS image of a DECam photometric solution, with flat normalization factors taken out.
+// Make a FITS image of a DECam photometric solution
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -21,22 +21,18 @@ using photometry::PhotoMapCollection;
 using photometry::PhotoMap;
 
 string usage = 
-  "DrawPhoto: map a photometric solution onto the sky plane, with possible correction for\n"
-  "     the normalizations of the underlying dome flats.\n"
-  "usage: DrawPhoto <out pix scale> <photo file> <solution name> <output FITS> "
-  " [norm file] [fill value]\n"
+  "DrawPhoto: make a FITS image a photometric solution, mapping all CCDs into sky plane.\n"
+  "usage: DrawPhoto <out pix scale> <photo file> <solution name> <output FITS> [fill value]\n"
   "     <out pix scale> is number of DECam pixels (0.264\"/pix) per output pixel\n"
   "     <photo file> is file holding the serialized solution from PhotoFit\n"
   "     <solution name> is the prefix of the name of the photometric solution to use from the file\n"
   "     <output FITS> is name of output FITS file portraying array on sky.\n"
-  "     [norm file] is optional file containing dome flat norm factors to adjust for.\n"
-  "           This file should have <device name> <norm factor> pair on each line.\n"
   "     [fill value] is placed in pixels not falling on the array.  (default=-1)";
 
 int
 main(int argc, char *argv[])
 {
-  if (argc<5 || argc>7) {
+  if (argc<5 || argc>6) {
     cerr << usage << endl;
     exit(1);
   }
@@ -45,8 +41,7 @@ main(int argc, char *argv[])
   string photoPrefix = argv[3];
   photoPrefix += "/";
   string outFits = argv[4];
-  string normFile = argc>5 ? argv[5] : "";
-  const float noData = argc>6 ? atof(argv[6]) : -1.;
+  const float noData = argc>5 ? atof(argv[5]) : -1.;
   
   loadPhotoMapParser();
 
@@ -58,9 +53,6 @@ main(int argc, char *argv[])
 
   // Read in the device information
   map<string,Device> devices = decamInfo();
-  // And norms if wanted
-  if (!normFile.empty())
-    getDeviceNorms(normFile, devices);
 
   DECamMap wcs;
 
@@ -79,9 +71,6 @@ main(int argc, char *argv[])
   Image<> starflat(bImage, noData);
   Image<> colorterm(bImage, noData);
 
-  double sum = 0.;
-  long n = 0;
-
   PhotoMapCollection photomaps;
   {
     string filename = photoFile;
@@ -89,27 +78,24 @@ main(int argc, char *argv[])
     photomaps.read(ifs);
   }
 
-  for (map<string,Device>::iterator i = devices.begin();
-       i != devices.end();
-       ++i) {
+  for (auto& i : devices) {
     // Convert device boundaries into pixel range
-    Bounds<double> b = i->second.b;
+    Bounds<double> b = i.second.b;
     Bounds<int> bpix( static_cast<int> (floor(b.getXMin()/pixelScale)),
 		      static_cast<int> (ceil(b.getXMax()/pixelScale)),
 		      static_cast<int> (floor(b.getYMin()/pixelScale)),
 		      static_cast<int> (ceil(b.getYMax()/pixelScale)) );
 
     // Get Wcs and photometric solution
-    wcs.setDevice(i->first);
+    wcs.setDevice(i.first);
     photometry::SubMap* devPhoto = 0;
     try {
-      devPhoto = photomaps.issueMap(photoPrefix + i->first);
+      devPhoto = photomaps.issueMap(photoPrefix + i.first);
     } catch (photometry::PhotometryError& pm) {
       // Might not have data for some extensions.  Just skip them.
       devPhoto = 0;
     }
     if (devPhoto) {
-      double normMag = -2.5*log10(i->second.norm);
       // Loop over pixels
       for (int iy = bpix.getYMin(); iy <= bpix.getYMax(); iy++)
 	for (int ix = bpix.getXMin(); ix <= bpix.getXMax(); ix++) {
@@ -124,15 +110,10 @@ main(int argc, char *argv[])
 	  double photo = devPhoto->forward(0., args);
 	  args.color = 1;
 	  colorterm(ix,iy) = devPhoto->forward(0.,args) - photo;
-	  // Apply normalization correction
-	  starflat(ix, iy) = -(photo + normMag);
-	  sum += starflat(ix,iy);
-	  n++;
+	  starflat(ix, iy) = -photo;
 	}
     }
   } // end Device loop.
-  // Set mean of good pixels to zero:
-  starflat -= sum/n;
   starflat.shift(1,1);
   FitsImage<>::writeToFITS(outFits, starflat, 0);
   colorterm.shift(1,1);
