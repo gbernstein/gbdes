@@ -449,7 +449,7 @@ readExposures(const vector<Instrument*>& instruments,
     apcorr.clear();
   }
   // Initialize our output arrays to not-in-use values
-  vector<Exposure*> exposures(names.size(), 0);
+  vector<Exposure*> exposures(names.size(), nullptr);
   exposureColorPriorities = vector<int>(names.size(), -1);
   for (int i=0; i<names.size(); i++) {
     spaceReplace(names[i]);
@@ -915,7 +915,7 @@ readMatches(img::FTable& table,
 
       if (nValid >= minMatches) {
 	// Make a match from the valid entries, and note need to get data for the detections and color
-	typename S::Match* m=0;
+	typename S::Match* m=nullptr;
 	for (int j=0; j<matchExtns.size(); j++) {
 	  if (matchExtns[j]<0) continue;  // Skip detections starved of their color
 	  auto d = new typename S::Detection;

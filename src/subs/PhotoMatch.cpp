@@ -475,7 +475,7 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
   {
     // Get chisq, beta, alpha at starting parameters
     double oldChisq = 0.;
-    int nP = pmc.nParams();
+    int nP = p.size();
     DVector beta(nP, 0.);
     DMatrix alpha(nP, nP, 0.);
 
