@@ -1,3 +1,5 @@
+Programs in tests/ that need to be examined for whether useful:
+
 test.cpp		testFT5.cpp		testSerialize.cpp
 testDecam.cpp		testFT6.cpp		testTemplateMap.cpp
 testFT.cpp		testFT7.cpp		testYAML.cpp

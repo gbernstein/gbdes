@@ -1,8 +1,14 @@
+* Fix allfit.py script
+
+* Go through test programs (AUDIT file)
+
 * Occasional segfault in ReadExtensions, something to do with multithreading??
 
 * Use individual systematic errors per extension in MagColor
 
 * Read data (and reject short-count exposures) before degeneracy checks
+
+* Why is final mapCollection slow?
 
 * Hex values read for Expressions.
 
@@ -10,13 +16,9 @@
 * Atmospheric parameters for nightly priors?
 
 * Update documentation: PixelMap.tex and the fitting classes.
-* Document PhotoFit, MakeColors and all their parameters.
-
-* Write YAML to TPV fitter program.
+* Document PhotoFit, MagColor and all their parameters.
 
 * Roll back alpha while clipping instead of recalculating full matrix again
-
-* Write local-transformation code.
 
 * Reduce chunk size in WCSFit
 
@@ -24,97 +26,7 @@
 
 * is minMatch being used consistently for #matches total vs in fitted detections?
 
-* Fix up Apply* codes.
-
-* These things best done at one time:
-  * Revamp photo priors, 
-  * Make Match and PhotoMatch from the same code, no PhotoMatch in gbtools
+* Make Match and PhotoMatch from the same code, no PhotoMatch in gbtools
 
 * Investigate color term degeneracy breaking
-
-* DrawPhoto update.
-
------------DONE ON WCSFIT:
-
-* Fix PhotoFit etc so that they use the  native projection center of WCS to define
-  exposure coordinates.  Or find a way to make this instrument coordinates instead
-  of exposure coords.  (done earlier)
-
-* Speed up fitting by trying successive Newton steps (with fixed quadratic) instead
-  of Marquardt (on newton branch - done earlier than yaml stuff)
-
-* Get rid of USE_YAML from astrometry
-
-* Astrometric PieceMap cleanup to match photometric
-
-* Write fitDefaulted function
-
-* Put defaults into all PixelMaps
-
-* catch map inversion error in Accum
-
-* Big problem in YAML that WCS and Map cannot share a name.
-
-* Set exposure field centers to mean position of N4 and S4 centers.
-
-* Color PixelMap
-
----------DONE ON WCS & PHOTOFIT
-
-* PMC recognizes things with 0 parameters as fixed
-
-* Put dependsOn into PMC
-
-* WCSFit able to fix parameters of any component map, not just instrument or device
-
-* Put copyParams into PMC
-
-* Get BAND for each exposure or instrument or whatever
-
-* update treatment of "fixed" in PhotoMap plus other utility routines.
-
-* No reference exposures in PhotoFit! One can add them as their own catalogs
-  and give identity or simple color PhotoMap.
-
-* Get rid of canonicalExposure argument, can be done in input YAML instead.
-
-* Eliminate extensions with too few matched detections ??
-
-* Let Identity have different names;
-
-* Check propagation of Fixed, DependsOn for Color maps.
-
-* Allow named Identity in PhotoMap.
-
-* WCSFit to only selected instruments
-
-* Fix bug in *Fit where device map is Identity (and hence has this name).
-
-* Freeze unconstrained parameters in astrometric solutions
-
-* Have a CAL_PATH environment variable for tree rings & other files
-
-* Sort fit output by exposure name & show names in table
-
-* Subroutinize various things in WCSFit to clean up main() code.
-
-* Make freezing of parameters sticky and more economical.
-
-* nan in photo chisq values, rms wrong too?
-
-* Check arithmetic on Accum reduced chisq
-
-* Get MJD into exposure
-
-* Have PhotoFit do the degeneracy checking instead of canonical exposures.
-
-* Able to turn off the clip-entire-match step at the end?
-
-* print out matrix inversion time
-
-* Aperture corrections included in models - put into dictionary? Just into prior?
-
-* Put Newton iterations into PhotoMatch
-
-* Allow individual systematic errors per instrument or exposure
 

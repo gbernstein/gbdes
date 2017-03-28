@@ -141,7 +141,8 @@ all: local-depend cpp python
 cpp: exts $(TARGETS)
 
 python: $(PYTARGETS)
-	python ./setup.py install
+
+# No setup.py to do here ... python ./setup.py install
 
 # Compilation
 $(OBJS):  $(OBJDIR)/%.o : $(SRCDIR)/%.cpp

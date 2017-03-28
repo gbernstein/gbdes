@@ -103,7 +103,7 @@ namespace fof {
     Cell(vector<double>& _lower, vector<double> _upper, Catalog<P,DIM>* _own):
       lower(_lower), upper(_upper), 
       owner(_own),
-      parent(0), left(0), right(0),
+      parent(nullptr), left(nullptr), right(nullptr),
       splitIndex(0) {}
     // Destructor kills children so we just destroy root Cell:
     ~Cell() {

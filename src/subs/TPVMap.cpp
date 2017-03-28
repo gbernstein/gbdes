@@ -416,7 +416,7 @@ astrometry::fitTPV(Bounds<double> b,
   int polyOrder = 3;
   double rms=0.;
 
-  PolyMap* pv=0;
+  PolyMap* pv=nullptr;
   for (polyOrder=startOrder; polyOrder<=maxOrder; polyOrder++) {
     // Make polynomial map with no rescaling of arguments
     PolyMap poly(polyOrder, polyName, Bounds<double>(-1.,1.,-1.,1.), tolerance);
