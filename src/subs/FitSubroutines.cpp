@@ -536,8 +536,8 @@ readExtensions(img::FTable& extensionTable,
 	       double sysError,
 	       double referenceSysError) {
       
-  vector<typename S::Extension*> extensions(extensionTable.nrows(), 0);
-  colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), 0);
+  vector<typename S::Extension*> extensions(extensionTable.nrows(), nullptr);
+  colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), nullptr);
   int processed=0;
 
 #ifdef _OPENMP
@@ -562,7 +562,7 @@ readExtensions(img::FTable& extensionTable,
 	
     if (!exposures[iExposure]) continue;
     
-    ++processed;
+    ++processed; // ??? Shouldn't do this in parallel!
     typename S::Extension* extn = new typename S::Extension;
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];

@@ -16,7 +16,6 @@
 #include "Instrument.h"
 
 #include "FitSubroutines.h"
-#include "PhotoSubs.h"
 #include "MapDegeneracies.h"
 
 
@@ -24,6 +23,9 @@ using namespace std;
 using namespace stringstuff;
 using namespace photometry;
 using img::FTable;
+
+typedef Photo::ColorExtension ColorExtension;
+typedef Photo::Extension Extension;
 
 
 string usage=
@@ -75,7 +77,8 @@ main(int argc, char *argv[])
 
   double clipThresh;
   double maxMagError;
-  double magSysError;
+  string sysErrorColumn;
+  double sysError;
 
   int minMatches;
   int minFitExposures;
@@ -109,7 +112,9 @@ main(int argc, char *argv[])
     parameters.addMemberNoValue("INPUTS");
     parameters.addMember("maxMagError",&maxMagError, def | lowopen,
 			 "cut objects with magnitude uncertainty above this", 0.05, 0.);
-    parameters.addMember("magSysError",&magSysError, def | low,
+    parameters.addMember("sysErrorColumn",&sysErrorColumn, def,
+			 "Extension table column holding systematic error, if any", "");
+    parameters.addMember("sysError",&sysError, def | low,
 			 "additional systematic error for all detected mags", 0.002, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "minimum number of detections for usable match", 2, 2);
@@ -271,7 +276,9 @@ main(int argc, char *argv[])
 			    exposures,
 			    exposureColorPriorities,
 			    colorExtensions,
-			    inputYAML);
+			    inputYAML,
+			    sysErrorColumn,
+			    sysError);
 
 
     /////////////////////////////////////////////////////
@@ -417,7 +424,7 @@ main(int argc, char *argv[])
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
-    readObjects<Photo>(extensionTable, exposures, extensions, magSysError);
+    readObjects<Photo>(extensionTable, exposures, extensions);
     
     /**/cerr << "Done reading catalogs for magnitudes." << endl;
 

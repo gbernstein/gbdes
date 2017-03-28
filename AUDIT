@@ -1,7 +1,3 @@
-
-PhotoSubs.h
-ReadLdacHeader.h
-
 AndresYAML1.cpp
 ApplyPhoto.cpp
 ApplyWCS.cpp
@@ -17,12 +13,8 @@ FitsGlue.cpp
 ListClipped.cpp
 MagColor.cpp
 Photo2DESDM.cpp
-PhotoFit.cpp
 TabulatePixmap.cpp
 UnFlattenCatalog.cpp
 UpdateHeaders.cpp
-WCSFit.cpp
 WCSFoF.cpp
 tpv2pixmap.cpp
-
-PhotoSubs.cpp

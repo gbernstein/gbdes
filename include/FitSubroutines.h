@@ -428,3 +428,11 @@ reportStatistics(const list<typename S::Match*>& matches,
 		 const vector<Exposure*>& exposures,
 		 const vector<typename S::Extension*>& extensions,
 		 ostream& os);
+
+// Function to produce a list of PhotoPriors from an input file
+// (for PhotoFit only - has its own source file)
+list<photometry::PhotoPrior*>
+readPriors(string filename, 
+	   const vector<Instrument*>& instruments, 
+	   const vector<Exposure*>& exposures, 
+	   const vector<Photo::Extension*>& extensions);
