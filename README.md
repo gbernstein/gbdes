@@ -42,6 +42,30 @@ Once these are all set you should be able to just run `make cpp` to build the C+
 When the codes are built, the executables of the C++, as well as copies of Python executables, are in the `bin/` directory.  Put this in your path or move them where you please - there is no `make install` yet.
 The `LD_LIBRARY_PATH` environment variable will need to be set to reach your FFTW, yaml-cpp, TMV, Eigen, and MKL libraries.
 
+A typical workflow for deriving photometric and astrometric homogenization models for a load of exposures would use these programs:
+1. Create object catalogs from your exposures with your favorite software and store them into FITS files with one binary table extension for the objects in each detector.  These codes will also look for critical information in the headers of these catalogs, such as a starting WCS (e.g. from _SCAMP_) good enough to permit matching.  Catalogs of reference objects (e.g. Gaia positions) can be included.
+2. For DECam images, I run the `compresscat.py` script to filter the catalogs down to the useful stellar objects, get rid of the "LDAC" formatting output by _SExtractor,_ and to install in the headers various useful quantities like aperture corrections and the MJD at the midpoint of the exposure.
+3. `configure.py` collects all the meta-data from the catalogs and creates a `.config` file holding FITS binary tables describing all of the exposures, instruments, fields, etc. in the data.
+4. `WCSFoF` reads the `.config` file then uses a friends-of-friends matching algorithm to link together all detections of common objects found in distinct exposures.  This information is combined with the `.config` input into an `.fof` file of FITS tables.
+5. For DECam data I run `decamDCR.py` on the `.fof` file to calculate airmasses and parallactic angles for each exposure, and to calculate and save the expected differential chromatic refraction (DCR) needed when doing precision astrometry later.
+6. I also run `recenter.py` which recalculates the optic-axis RA and Dec for each exposure and saves this into the `.fof` file.
+7. `PhotoFit` does the big job of optimizing the parameters of a photometric model to maximize agreement between magnitudes measured in different exposures of the same source.  There are many configuration inputs.  The main output is a `.photo` file specifying the resultant model.
+8. `MagColor` can be run once there are `.photo` models for multiple filters. It calculates mean magnitudes and colors for all of the objects by combining the data from all exposures.  This step can be iterated with `PhotoFit` to allow chromatic photometric models.
+9. `WCSFit` does the next big job of optimizing the parameters of an astrometric model to maximize agreement among the exposures and any reference catalogs.  Again, very complicated configuration, and the output is an `.astro` file.  
+
+The `allfit.py` script is meant to orchestrate this process but is not yet generally useful.
+
+Once the models have been derived, we can use them in various ways:
+* `ApplyPhoto` and `ApplyWCS` take as input an ASCII list of object pixel positions / magnitudes and will output calibrated mags / positions according to the derived `.photo` and `.astro` models, respectively.
+* `Photo2DESDM` turns a `.photo` model into a full-resolution image in a format to be used as a flat-field correction ("star flat") by DES Data Managment.
+* `DrawAstro` likewise produced pixelized versions of the astrometric solutions.  It can also produce FITS-format WCS headers of the TPV type that approximate the solutions.
+* `DrawPhoto` will make an image of what the photometric solution looks like when all the DECam detectors are combined.
+
+Other programs here of some utility for DECam processing:
+* `DECamMosaic` will paste together individual-CCD images from DECam into a lower-resolution sky-coordinate FITS image for the full focal plane.
+* `ListClipped` can be used to save a list of detections discarded as outliers by `PhotoFit` or `WCSFit`, which can then be used as given to other fitting steps as objects to be ignored.
+* `Tpv2Pixmap` converts ASCII versions of the FITS TPV WCS solutions into the more general YAML format used by the `.astro` files.
+* `UpdateHeaders` is something I use to add/replace header values in DECam images with new values before processing them.
 
 ## Notes
 * The `tests` programs are not functional yet, don't try to build them.
