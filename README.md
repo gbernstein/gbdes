@@ -4,6 +4,8 @@ Gary's DECam instrumental signature fitting and processing programs
 ## Description
 This repo contains code for deriving photometric and astrometric calibration solutions for complex multi-detector astronomical imagers.  The methods and uses of these codes are quite complex and currently poorly documented.  It's coming along.  My apologies in advance for the unprofessional nature of this repository!
 
+The astrometric and photometric solutions derived and used by this code are stored in YAML format. Python code that can read the astrometric solution files and execute the transformations they specify is available in the [pixmappy repo](https://github.com/gbernstein/pixmappy).
+
 The `src/subs` directory contains C++ code for shared classes and functions.  The `src` contains C++ code for executable programs and Python code meant to be called at the command line.  Right now there are no importable Python modules.  
 
 ## Prerequisites
