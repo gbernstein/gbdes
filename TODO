@@ -1,3 +1,5 @@
+* Change priors to YAML format
+
 * Fix configure.py to use exposure-level APCORR more gracefully, maybe make more
   general the option to prefer exposure-level keywords.
   
