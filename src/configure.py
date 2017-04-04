@@ -92,7 +92,9 @@ def getHeader(fits, iextn, filename):
 # These instrument names have special meaning.  "Observations" with these instruments
 # do not require a device name.
 # They have special indices: **** Keep in sync with FitSubroutines.h values! ****
-specialInstruments={'REFERENCE':-1,'TAG':-2}
+specialInstruments={'REFERENCE':-1,'TAG':-2,   # backwards-compatible names
+                    '_REFERENCE':-1,'_TAG':-2, # stick with leading _ for special values
+                    }
 
 # These are the extension attributes that are processed in some special way before
 # being written to the output table, or belong to Exposure rather than Extension
