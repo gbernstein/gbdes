@@ -443,7 +443,7 @@ astrometry::fitTPV(Bounds<double> b,
     {
       auto s = tmv::SymMatrixViewOf(alpha, tmv::Lower);
       s.divideUsing(tmv::CH);
-      beta /= alpha;
+      beta /= s;
     }
 #elif defined USE_EIGEN
     alpha.llt().solveInPlace(beta);

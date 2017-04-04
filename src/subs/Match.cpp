@@ -377,8 +377,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   const int chunk=100;
   vector<Match*> vi(mlist.size());
 
-  //** ???#pragma omp parallel reduction(+:newChisq) 
-#pragma omp parallel reduction(+:newChisq) num_threads(1)
+#pragma omp parallel reduction(+:newChisq) 
   {
 #pragma omp single
     {

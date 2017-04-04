@@ -9,6 +9,11 @@
 #include "FitsImage.h"
 #include "FitSubroutines.h"
 #include "TPVMap.h"
+#include "DECamInfo.h"  // For obtaining CCDNUM
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace img;
 using namespace astrometry;
@@ -24,10 +29,10 @@ string usage =
   "      <YAML file>:  file containing serialized WCS/Pixel maps\n"
   "      <instrument name>: base name of maps to tabulate, find all devices for it.\n"
   "      Program parameters specified as command-line options or read from\n"
-  "          parameter file(s) specified on cmd line"
+  "          parameter file(s) specified on cmd line\n"
   "Outputs: 3 FITS files will be created, each having one extension per device for the\n"
-  "   instrument.  <outputBase>.[xy].fits will hold xy pixel locations (or differentials wrt TPV)\n"
-  "   while <outputBase>.a.fits holds relative pixel areas.\n"
+  "   instrument.  <outputBase>.[xy].fits will hold xy pixel locations (or differentials\n"
+  "   wrt TPV) while <outputBase>.a.fits holds relative pixel areas.\n"
   "   If makeTPV=true, another file <outputBase>.tpv will hold ASCII version of all TPV's, which\n"
   "   will also be placed into each image's header.";
 
@@ -45,6 +50,7 @@ main(int argc, char *argv[])
   double color;
   int    decimate;
   double nominalPixel;
+  double roundto;
   
   Pset parameters;
   {
@@ -66,6 +72,8 @@ main(int argc, char *argv[])
 			 "Color assumed for source", 0.61);
     parameters.addMember("nominalPixel",&nominalPixel, def + lowopen,
 			 "Reference pixel size (arcsec)", 0.264,0.);
+    parameters.addMember("roundto",&roundto, def + low,
+			 "Round values to this fraction of pixel (0=>exact)", 1e-4,0.);
   }
 
   try {
@@ -84,7 +92,7 @@ main(int argc, char *argv[])
     string tpvFile = outputBase + ".tpv";
 
     // tolerance on SCAMP-format fit to real solution:
-    const double SCAMPTolerance=0.0001 / 3600.;
+    const double SCAMPTolerance=0.5 / 3600.;
 
     // Create empty images in primary extensions of output files
     {
@@ -121,6 +129,8 @@ main(int argc, char *argv[])
       deviceNames.insert(split(mapName,'/').back());
     }
 
+    auto decammap = decam::decamInfo();
+    
     for (auto device : deviceNames) {
       // Loop through devices
       cerr << "Working on " << device << endl;
@@ -133,8 +143,18 @@ main(int argc, char *argv[])
       Image<double> yout(drawBounds);
       xout.header()->replace("DETPOS",device);
       yout.header()->replace("DETPOS",device);
-      double xw, yw;
+      // Get the CCDNUM if the DETPOS matches a DECam detector
+      auto diter = decammap.find(device);
+      if (diter != decammap.end()) {
+	xout.header()->replace("CCDNUM",diter->second.ccdnum);
+	yout.header()->replace("CCDNUM",diter->second.ccdnum);
+      }
+      
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
       for (int iy = drawBounds.getYMin(); iy<=drawBounds.getYMax(); iy++) {
+	double xw, yw;
 	double yp = (iy-1)*decimate + 1.;
 	for (int ix = drawBounds.getXMin(); ix<=drawBounds.getXMax(); ix++) {
 	  double xp = (ix-1)*decimate + 1.;
@@ -150,15 +170,22 @@ main(int argc, char *argv[])
       
       Image<> area(drawBounds,1.);
       area.header()->replace("DETPOS",device);
+      if (diter != decammap.end()) {
+	area.header()->replace("CCDNUM",diter->second.ccdnum);
+      }
       // Conversion from differentials to area relative to reference pixel
       double rescale = pow( 2 * decimate * nominalPixel / 3600., -2.);
-      // Store image area rounded to accuracy 1 part in 10^5
-      double round = 1e5;
+      // Store image area rounded,
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
       for (int iy = mid.getYMin(); iy<=mid.getYMax(); iy++)
 	for (int ix = mid.getXMin(); ix<=mid.getXMax(); ix++) {
 	  double a = (xout(ix+1,iy)-xout(ix-1,iy))*(yout(ix,iy+1)-yout(ix,iy-1)) -
 	    (xout(ix,iy+1)-xout(ix,iy-1))*(yout(ix+1,iy)-yout(ix-1,iy));
-	  area(ix,iy) = floor(a*rescale*round + 0.5) / round;
+	  if (roundto>0)
+	    a = floor(a*rescale/roundto + 0.5) * roundto;
+	  area(ix,iy) = a;
 	}
       
       if (makeTPV) {
@@ -175,6 +202,8 @@ main(int argc, char *argv[])
 			  "NoName", color, SCAMPTolerance, tpvOrder);
 	auto hdr = writeTPV(*tpv);
 	hdr.replace("DETPOS",device);
+	if (diter != decammap.end())
+	  hdr.replace("CCDNUM",diter->second.ccdnum);
 
 	// Write TPV header to text file
 	*ofs << hdr;
@@ -189,8 +218,11 @@ main(int argc, char *argv[])
 	Image<double> ytpv(drawBounds);
 	xout.header()->replace("DETPOS",device);
 	yout.header()->replace("DETPOS",device);
-	double xw, yw;
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
 	for (int iy = drawBounds.getYMin(); iy<=drawBounds.getYMax(); iy++) {
+	  double xw, yw;
 	  double yp = (iy-1)*decimate + 1.;
 	  for (int ix = drawBounds.getXMin(); ix<=drawBounds.getXMax(); ix++) {
 	    double xp = (ix-1)*decimate + 1.;
@@ -201,11 +233,11 @@ main(int argc, char *argv[])
 	}
 	xout -= xtpv;
 	yout -= ytpv;
+
 	   
-	// Convert back to pixel displacement, round to 0.0001 pixel, save as floats
+	// Convert back to pixel displacement, round, save as floats
 	Image<> dx(drawBounds,0.);
 	Image<> dy(drawBounds,0.);
-	double roundp = 1e4;
 
 	for (int iy = mid.getYMin(); iy<=mid.getYMax(); iy++)
 	  for (int ix = mid.getXMin(); ix<=mid.getXMax(); ix++) {
@@ -215,9 +247,13 @@ main(int argc, char *argv[])
 	    double dydy = (ytpv(ix,iy+1)-ytpv(ix,iy-1)) / (2.*decimate);
 	    double det = dxdx*dydy - dxdy*dydx;
 	    double d = (xout(ix,iy) * dydy - yout(ix,iy)*dxdy) / det;
-	    dx(ix,iy) = floor(d*roundp+0.5) / roundp;
+	    if (roundto>0)
+	      d = floor(d/roundto+0.5) * roundto;
+	    dx(ix,iy) = d;
 	    d = (-xout(ix,iy) * dydx + yout(ix,iy)*dxdx) / det;
-	    dy(ix,iy) = floor(d*roundp+0.5) / roundp;
+	    if (roundto>0)
+	      d = floor(d/roundto+0.5) * roundto;
+	    dy(ix,iy) = d;
 	  }
       
 	dx.header()->copyFrom(hdr);
@@ -245,52 +281,3 @@ main(int argc, char *argv[])
     quit(m,1);
   }
 }
-      
-  /**
-
-
-    // Make target images
-    int nx = (xEnd-xStart)/xyStep;
-    int ny = (yEnd-yStart)/xyStep;
-    Bounds<int> bFITS(1,nx,1,ny);
-    Image<double> xw(bFITS,0.);
-    Image<double> yw(bFITS,0.);
-    Image<> pixArea(bFITS,0.);
-    Image<> shear1(bFITS,0.);
-    Image<> shear2(bFITS,0.);
-    Image<> rotation(bFITS,0.);
-
-    // Start filling, converting to degrees / arcsec as needed
-    double tx,ty;
-    Matrix22 dwdp;
-    for (int iy=1; iy<=ny; iy++) {
-      double yp = yStart + (iy-1)*xyStep;
-      for (int ix=1; ix<=nx; ix++) {
-	double xp = xStart + (ix-1)*xyStep;
-	pm->toWorld(xp,yp,tx,ty,color);
-	dwdp = pm->dWorlddPix(xp,yp,color);
-	xw(ix,iy) = tx;
-	yw(ix,iy) = ty;
-	double det = dwdp(0,0)*dwdp(1,1)-dwdp(1,0)*dwdp(0,1);
-	if (det<0.) {
-	  // Flip parity to get shear/rotation right
-	  dwdp(0,0) *= -1.;
-	  dwdp(0,1) *= -1.;
-	}
-	pixArea(ix,iy) = det * (3600.*3600.); // Give in arcsec^2
-	shear1(ix,iy) = (dwdp(0,0)-dwdp(1,1)) / sqrt(det);
-	shear2(ix,iy) = (dwdp(1,0)+dwdp(0,1)) / sqrt(det);
-	rotation(ix,iy) = (dwdp(1,0)-dwdp(0,1)) / sqrt(det);
-      }
-    }
-
-    // Write to output
-    FitsImage<double>::writeToFITS(fitsName, xw, "X");
-    FitsImage<double>::writeToFITS(fitsName, yw, "Y");
-    FitsImage<>::writeToFITS(fitsName, pixArea, "AREA");
-    FitsImage<>::writeToFITS(fitsName, shear1, "SHEAR1");
-    FitsImage<>::writeToFITS(fitsName, shear2, "SHEAR2");
-    FitsImage<>::writeToFITS(fitsName, rotation, "ROTATION");
-
-}
-  ***/
