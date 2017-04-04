@@ -44,7 +44,8 @@ Once these are all set you should be able to just run `make cpp` to build the C+
 When the codes are built, the executables of the C++, as well as copies of Python executables, are in the `bin/` directory.  Put this in your path or move them where you please - there is no `make install` yet.
 The `LD_LIBRARY_PATH` environment variable will need to be set to reach your FFTW, yaml-cpp, TMV, Eigen, and MKL libraries.
 
-A typical workflow for deriving photometric and astrometric homogenization models for a load of exposures would use these programs:
+See the [Starflat cookbook](https://github.com/gbernstein/gbdes/wiki/Starflat-cookbook) in the wiki for details about using the code to derive astrometric and photometric solutions.  In brief, a
+typical workflow for deriving photometric and astrometric homogenization models for a load of exposures would use these programs:
 1. Create object catalogs from your exposures with your favorite software and store them into FITS files with one binary table extension for the objects in each detector.  These codes will also look for critical information in the headers of these catalogs, such as a starting WCS (e.g. from _SCAMP_) good enough to permit matching.  Catalogs of reference objects (e.g. Gaia positions) can be included.
 2. For DECam images, I run the `compresscat.py` script to filter the catalogs down to the useful stellar objects, get rid of the "LDAC" formatting output by _SExtractor,_ and to install in the headers various useful quantities like aperture corrections and the MJD at the midpoint of the exposure.
 3. `configure.py` collects all the meta-data from the catalogs and creates a `.config` file holding FITS binary tables describing all of the exposures, instruments, fields, etc. in the data.
