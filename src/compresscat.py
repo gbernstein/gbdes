@@ -125,7 +125,8 @@ if args.head:
     
 # Is this an LDAC-format file, or are headers already in the data?
 h1 = fitsin[1].read_header()
-isLDAC = 'EXTNAME' in h1 and h1['EXTNAME']=='LDAC_HEADER'
+isLDAC = 'EXTNAME' in h1 and \
+         (h1['EXTNAME']=='LDAC_HEADER' or h1['EXTNAME']=='LDAC_IMHEAD')
 
 if isLDAC:
     hduStep = 2
