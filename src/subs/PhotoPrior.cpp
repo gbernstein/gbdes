@@ -234,7 +234,7 @@ PhotoPrior::report(ostream& os) const {
   stringstuff::StreamSaver ss(os);
 
   double chi = 0.;
-  int dof;
+  int dof=0;
 
   if (isDegenerate()) {
     dof = nFit - nFree;
