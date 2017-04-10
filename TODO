@@ -3,8 +3,6 @@
 * Fix configure.py to use exposure-level APCORR more gracefully, maybe make more
   general the option to prefer exposure-level keywords.
   
-* Fix allfit.py script
-
 * Go through test programs (AUDIT file)
 
 * Occasional segfault in ReadExtensions, something to do with multithreading??
@@ -34,4 +32,9 @@
 * Make Match and PhotoMatch from the same code, no PhotoMatch in gbtools
 
 * Investigate color term degeneracy breaking
+
+-------------DONE
+* Fix allfit.py script
+* openmp for Photo2DESDM
+* option for DrawAstro to not draw, just make TPVs
 

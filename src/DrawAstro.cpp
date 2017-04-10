@@ -46,6 +46,7 @@ main(int argc, char *argv[])
   string instrumentName;
   string outputBase;
   bool   makeTPV;
+  bool   makeFITS;
   int    tpvOrder;
   double color;
   int    decimate;
@@ -64,6 +65,8 @@ main(int argc, char *argv[])
 			 "base of filenames for output FITS files","astrom");
     parameters.addMember("makeTPV",&makeTPV, def,
 			 "Set to fit TPV file and return pixel displacements relative to it",false);
+    parameters.addMember("makeFITS",&makeFITS, def,
+			 "Draw the FITS images?",true);
     parameters.addMember("decimate",&decimate, def+low,
 			 "Decimation factor for output images",1,1);
     parameters.addMember("tpvOrder",&tpvOrder, def+low+up,
@@ -95,7 +98,7 @@ main(int argc, char *argv[])
     const double SCAMPTolerance=0.5 / 3600.;
 
     // Create empty images in primary extensions of output files
-    {
+    if (makeFITS) {
       FitsImage<> fx(xFITS,FITS::OverwriteFile + FITS::Create, 0);
       FitsImage<> fy(yFITS,FITS::OverwriteFile + FITS::Create, 0);
       FitsImage<> fa(aFITS,FITS::OverwriteFile + FITS::Create, 0);
@@ -134,6 +137,8 @@ main(int argc, char *argv[])
     for (auto device : deviceNames) {
       // Loop through devices
       cerr << "Working on " << device << endl;
+      // Get the CCDNUM if the DETPOS matches a DECam detector
+      auto diter = decammap.find(device);
       // Acquire the desired map
       auto pm = pmc.cloneMap(instrumentName + "/" + device);
       
@@ -141,52 +146,53 @@ main(int argc, char *argv[])
 
       Image<double> xout(drawBounds);
       Image<double> yout(drawBounds);
-      xout.header()->replace("DETPOS",device);
-      yout.header()->replace("DETPOS",device);
-      // Get the CCDNUM if the DETPOS matches a DECam detector
-      auto diter = decammap.find(device);
-      if (diter != decammap.end()) {
-	xout.header()->replace("CCDNUM",diter->second.ccdnum);
-	yout.header()->replace("CCDNUM",diter->second.ccdnum);
-      }
-      
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-      for (int iy = drawBounds.getYMin(); iy<=drawBounds.getYMax(); iy++) {
-	double xw, yw;
-	double yp = (iy-1)*decimate + 1.;
-	for (int ix = drawBounds.getXMin(); ix<=drawBounds.getXMax(); ix++) {
-	  double xp = (ix-1)*decimate + 1.;
-	  pm->toWorld(xp,yp,xw,yw,color);
-	  xout(ix,iy) = xw;
-	  yout(ix,iy) = yw;
-	}
-      }
-      // Calculate pixel area map - edges will default to unity.
-      int nx = drawBounds.getXMax();
-      int ny = drawBounds.getYMax();
-      Bounds<int> mid(2,nx-1,2,ny-1);
-      
       Image<> area(drawBounds,1.);
-      area.header()->replace("DETPOS",device);
-      if (diter != decammap.end()) {
-	area.header()->replace("CCDNUM",diter->second.ccdnum);
-      }
-      // Conversion from differentials to area relative to reference pixel
-      double rescale = pow( 2 * decimate * nominalPixel / 3600., -2.);
-      // Store image area rounded,
+
+      Bounds<int> mid(2,drawBounds.getXMax()-1,
+		      2,drawBounds.getYMax()-1);
+
+      if (makeFITS) {
+	xout.header()->replace("DETPOS",device);
+	yout.header()->replace("DETPOS",device);
+	if (diter != decammap.end()) {
+	  xout.header()->replace("CCDNUM",diter->second.ccdnum);
+	  yout.header()->replace("CCDNUM",diter->second.ccdnum);
+	}
+      
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
-      for (int iy = mid.getYMin(); iy<=mid.getYMax(); iy++)
-	for (int ix = mid.getXMin(); ix<=mid.getXMax(); ix++) {
-	  double a = (xout(ix+1,iy)-xout(ix-1,iy))*(yout(ix,iy+1)-yout(ix,iy-1)) -
-	    (xout(ix,iy+1)-xout(ix,iy-1))*(yout(ix+1,iy)-yout(ix-1,iy));
-	  if (roundto>0)
-	    a = floor(a*rescale/roundto + 0.5) * roundto;
-	  area(ix,iy) = a;
+	for (int iy = drawBounds.getYMin(); iy<=drawBounds.getYMax(); iy++) {
+	  double xw, yw;
+	  double yp = (iy-1)*decimate + 1.;
+	  for (int ix = drawBounds.getXMin(); ix<=drawBounds.getXMax(); ix++) {
+	    double xp = (ix-1)*decimate + 1.;
+	    pm->toWorld(xp,yp,xw,yw,color);
+	    xout(ix,iy) = xw;
+	    yout(ix,iy) = yw;
+	  }
 	}
+      
+	// Now draw the pixel area
+	area.header()->replace("DETPOS",device);
+	if (diter != decammap.end()) {
+	  area.header()->replace("CCDNUM",diter->second.ccdnum);
+	}
+	// Conversion from differentials to area relative to reference pixel
+	double rescale = pow( 2 * decimate * nominalPixel / 3600., -2.);
+	// Store image area rounded,
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+	for (int iy = mid.getYMin(); iy<=mid.getYMax(); iy++)
+	  for (int ix = mid.getXMin(); ix<=mid.getXMax(); ix++) {
+	    double a = (xout(ix+1,iy)-xout(ix-1,iy))*(yout(ix,iy+1)-yout(ix,iy-1)) -
+	      (xout(ix,iy+1)-xout(ix,iy-1))*(yout(ix+1,iy)-yout(ix-1,iy));
+	    if (roundto>0)
+	      a = floor(a*rescale/roundto + 0.5) * roundto;
+	    area(ix,iy) = a;
+	  }
+      } // End if (makeFITS)
       
       if (makeTPV) {
 	// Fit TPV solution to this (add projection to 00+00)
@@ -208,67 +214,71 @@ main(int argc, char *argv[])
 	// Write TPV header to text file
 	*ofs << hdr;
 	  
-	// Place TPV into FITS Image headers
-	area.header()->copyFrom(hdr);
-	xout.header()->copyFrom(hdr);
-	yout.header()->copyFrom(hdr);
+	if (makeFITS) {
+	  // Place TPV into FITS Image headers
+	  area.header()->copyFrom(hdr);
+	  xout.header()->copyFrom(hdr);
+	  yout.header()->copyFrom(hdr);
 
-	// Get difference btwn exact and TPV
-	Image<double> xtpv(drawBounds);
-	Image<double> ytpv(drawBounds);
-	xout.header()->replace("DETPOS",device);
-	yout.header()->replace("DETPOS",device);
+	  // Get difference btwn exact and TPV
+	  Image<double> xtpv(drawBounds);
+	  Image<double> ytpv(drawBounds);
+	  xout.header()->replace("DETPOS",device);
+	  yout.header()->replace("DETPOS",device);
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
-	for (int iy = drawBounds.getYMin(); iy<=drawBounds.getYMax(); iy++) {
-	  double xw, yw;
-	  double yp = (iy-1)*decimate + 1.;
-	  for (int ix = drawBounds.getXMin(); ix<=drawBounds.getXMax(); ix++) {
-	    double xp = (ix-1)*decimate + 1.;
-	    tpv->getMap()->toWorld(xp,yp,xw,yw,color);
-	    xtpv(ix,iy) = xw;
-	    ytpv(ix,iy) = yw;
+	  for (int iy = drawBounds.getYMin(); iy<=drawBounds.getYMax(); iy++) {
+	    double xw, yw;
+	    double yp = (iy-1)*decimate + 1.;
+	    for (int ix = drawBounds.getXMin(); ix<=drawBounds.getXMax(); ix++) {
+	      double xp = (ix-1)*decimate + 1.;
+	      tpv->getMap()->toWorld(xp,yp,xw,yw,color);
+	      xtpv(ix,iy) = xw;
+	      ytpv(ix,iy) = yw;
+	    }
 	  }
-	}
-	xout -= xtpv;
-	yout -= ytpv;
+	  xout -= xtpv;
+	  yout -= ytpv;
 
 	   
-	// Convert back to pixel displacement, round, save as floats
-	Image<> dx(drawBounds,0.);
-	Image<> dy(drawBounds,0.);
+	  // Convert back to pixel displacement, round, save as floats
+	  Image<> dx(drawBounds,0.);
+	  Image<> dy(drawBounds,0.);
 
-	for (int iy = mid.getYMin(); iy<=mid.getYMax(); iy++)
-	  for (int ix = mid.getXMin(); ix<=mid.getXMax(); ix++) {
-	    double dxdx = (xtpv(ix+1,iy)-xtpv(ix-1,iy)) / (2.*decimate);
-	    double dydx = (ytpv(ix+1,iy)-ytpv(ix-1,iy)) / (2.*decimate);
-	    double dxdy = (xtpv(ix,iy+1)-xtpv(ix,iy-1)) / (2.*decimate);
-	    double dydy = (ytpv(ix,iy+1)-ytpv(ix,iy-1)) / (2.*decimate);
-	    double det = dxdx*dydy - dxdy*dydx;
-	    double d = (xout(ix,iy) * dydy - yout(ix,iy)*dxdy) / det;
-	    if (roundto>0)
-	      d = floor(d/roundto+0.5) * roundto;
-	    dx(ix,iy) = d;
-	    d = (-xout(ix,iy) * dydx + yout(ix,iy)*dxdx) / det;
-	    if (roundto>0)
-	      d = floor(d/roundto+0.5) * roundto;
-	    dy(ix,iy) = d;
-	  }
+	  for (int iy = mid.getYMin(); iy<=mid.getYMax(); iy++)
+	    for (int ix = mid.getXMin(); ix<=mid.getXMax(); ix++) {
+	      double dxdx = (xtpv(ix+1,iy)-xtpv(ix-1,iy)) / (2.*decimate);
+	      double dydx = (ytpv(ix+1,iy)-ytpv(ix-1,iy)) / (2.*decimate);
+	      double dxdy = (xtpv(ix,iy+1)-xtpv(ix,iy-1)) / (2.*decimate);
+	      double dydy = (ytpv(ix,iy+1)-ytpv(ix,iy-1)) / (2.*decimate);
+	      double det = dxdx*dydy - dxdy*dydx;
+	      double d = (xout(ix,iy) * dydy - yout(ix,iy)*dxdy) / det;
+	      if (roundto>0)
+		d = floor(d/roundto+0.5) * roundto;
+	      dx(ix,iy) = d;
+	      d = (-xout(ix,iy) * dydx + yout(ix,iy)*dxdx) / det;
+	      if (roundto>0)
+		d = floor(d/roundto+0.5) * roundto;
+	      dy(ix,iy) = d;
+	    }
       
-	dx.header()->copyFrom(hdr);
-	dy.header()->copyFrom(hdr);
-	FitsImage<>::writeToFITS(xFITS, dx, device);
-	FitsImage<>::writeToFITS(yFITS, dy, device);
-
-      } else {
+	  dx.header()->copyFrom(hdr);
+	  dy.header()->copyFrom(hdr);
+	  FitsImage<>::writeToFITS(xFITS, dx, device);
+	  FitsImage<>::writeToFITS(yFITS, dy, device);
+	}
+      } else if (makeFITS) {
 	// Save double-precision x and y maps
 	FitsImage<double>::writeToFITS(xFITS, xout, device);
 	FitsImage<double>::writeToFITS(yFITS, yout, device);
       }
 
-      // Write x, y, area maps
-      FitsImage<>::writeToFITS(aFITS, area, device);
+      if (makeFITS) {
+	// Write area map
+	FitsImage<>::writeToFITS(aFITS, area, device);
+      }
+
       delete pm;
     }
 
