@@ -320,7 +320,7 @@ class AttributeFinder:
 
         # Either get the value of the attribute, or information for extracting it from headers
         self.headerKey = None
-        if type(value)==str and len(value)>0 and value.strip()[0]==headerIndicator:
+        if type(value)==str and len(value.strip())>0 and value.strip()[0]==headerIndicator:
             # The given value is a string indicating a header keyword lookup
             self.headerKey = value.strip()[1:].strip()
             if default == None:

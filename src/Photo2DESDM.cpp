@@ -111,6 +111,9 @@ main(int argc, char *argv[])
     photometry::PhotoArguments args;
     args.xExposure = args.yExposure = args.color = 0.;
 
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
     for (int iy = bDevice.getYMin(); iy <= bDevice.getYMax(); iy++)
       for (int ix = bDevice.getXMin(); ix <= bDevice.getXMax(); ix++) {
 	args.xDevice = ix;

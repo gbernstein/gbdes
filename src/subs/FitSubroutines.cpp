@@ -541,7 +541,7 @@ readExtensions(img::FTable& extensionTable,
   int processed=0;
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic,100)
+  //**#pragma omp parallel for schedule(dynamic,100)
 #endif
   for (int i=0; i<extensionTable.nrows(); i++) {
     int iExposure;
@@ -562,7 +562,10 @@ readExtensions(img::FTable& extensionTable,
 	
     if (!exposures[iExposure]) continue;
     
-    ++processed; // ??? Shouldn't do this in parallel!
+#ifdef _OPENMP
+#pragma omp critical(processed)
+#endif
+    ++processed; 
     typename S::Extension* extn = new typename S::Extension;
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];
@@ -578,7 +581,7 @@ readExtensions(img::FTable& extensionTable,
     extn->device = iDevice;
     extn->airmass = expo.airmass;
     extn->apcorr = expo.apcorr;
-    extn->magshift = +2.5*log10(expo.exptime); // ?? Aperture correction here?
+    extn->magshift = +2.5*log10(expo.exptime);
 
     // Get systematic error values
     if (!sysErrorColumn.empty()) {

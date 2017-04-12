@@ -32,7 +32,7 @@ def doStep(stepname):
     if stepname==args.first:
         doStep.stepsActive = True
     if stepname==args.last:
-        doStep.stepsDone = False
+        doStep.stepsDone = True
     return doStep.stepsActive
 doStep.stepsActive = False   # True if we are to currently executing steps
 doStep.stepsDone = False   # True if we are done with all requested steps
@@ -50,7 +50,8 @@ astroParams = os.path.join(args.setup_dir,'wcsfit.params')
 # Model specifications
 photoInput = os.path.join(args.setup_dir,'nocolor.input.photo')
 colorInput = os.path.join(args.setup_dir,'color.input.photo')
-astroInput = os.path.join(args.setup_dir,'input.astro')
+astroInput = os.path.join(args.setup_dir,'color.input.astro')
+astroNocolorInput = os.path.join(args.setup_dir,'nocolor.input.astro')
 # Pre-solved model components
 oldPhoto = os.path.join(args.setup_dir,'allsf.guts.photo')
 oldAstro = os.path.join(args.setup_dir,'allsf.guts.astro')
@@ -205,13 +206,13 @@ if doStep("photo"):
         if args.color:
             cmd.append('-colorExposures='+colorFile)
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+colorInput+','+oldPhoto)
+                cmd.append('-inputMaps='+','.join([colorInput,oldPhoto]))
             else:
                 cmd.append('-inputMaps='+colorInput)
         else:
             cmd.append('-colorExposures=""')
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+noColorInput+','+oldPhoto)
+                           cmd.append('-inputMaps='+','.join([noColorInput,oldPhoto]))
             else:
                 cmd.append('-inputMaps='+noColorInput)
 
@@ -224,15 +225,16 @@ if doStep('astro'):
     cmd = ['WCSFit']
     if args.color:
         cmd.append(colorFofFile)
-        cmd.append('-inputMaps=' + ','.join([astroInput,oldAstro,dcrFile]))
+        cmd.append(astroParams)
+        cmd.append('-inputMaps=' + ','.join([oldAstro,astroInput,dcrFile]))
         cmd.append('-colorExposures='+colorFile)
     else:
         cmd.append(fofFile)
-        cmd.append('-inputMaps=' + ','.join([astroInput,oldAstro]))
+        cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput]))
         cmd.append('-colorExposures=""')
     cmd.append('-outcatalog='+astroCat)
     cmd.append('-outwcs='+astroFile)
-    with open(astroLog.format(b),'w') as log:
+    with open(astroLog,'w') as log:
         subprocess.check_call(cmd, stdout=log, 
                               stderr=subprocess.STDOUT)
 

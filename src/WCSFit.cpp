@@ -76,7 +76,7 @@ main(int argc, char *argv[])
   double clipThresh;
   double maxPixError;
   string sysErrorColumn;
-  double pixSysError;
+  double sysError;
   double referenceSysError;
 
   int minMatches;
@@ -110,7 +110,7 @@ main(int argc, char *argv[])
 			 "Cut objects with pixel posn uncertainty above this", 0.1, 0.);
     parameters.addMember("sysErrorColumn",&sysErrorColumn, def,
 			 "Extension table column holding systematic error, if any", "");
-    parameters.addMember("pixSysError",&pixSysError, def | low,
+    parameters.addMember("sysError",&sysError, def | low,
 			 "Fixed systematic error for detections (pixels)", 0.01, 0.);
     parameters.addMember("referenceSysError",&referenceSysError, def | low,
 			 "Fixed systematic error for reference objects (arcsec)", 0.003, 0.);
@@ -275,7 +275,7 @@ main(int argc, char *argv[])
 			    colorExtensions,
 			    inputYAML,
 			    sysErrorColumn,
-			    pixSysError,
+			    sysError,
 			    referenceSysError);
 
 		    
