@@ -1,10 +1,18 @@
+* Parallelize Photo2DESDM loops
+
 * Change priors to YAML format
+
+* Bring in setup directory
+
+* Bring in python analysis scripts
+
+* clean up gmbpy dependence
+
+* Write auto-prior script
 
 * Fix configure.py to use exposure-level APCORR more gracefully, maybe make more
   general the option to prefer exposure-level keywords.
   
-* Fix allfit.py script
-
 * Go through test programs (AUDIT file)
 
 * Occasional segfault in ReadExtensions, something to do with multithreading??
@@ -35,3 +43,5 @@
 
 * Investigate color term degeneracy breaking
 
+---DONE---
+* Fix allfit.py script
