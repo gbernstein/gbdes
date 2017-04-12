@@ -223,8 +223,8 @@ PhotoPrior::clipAll() {
 void
 PhotoPrior::reportHeader(ostream& os) {
   os <<  
-    "Name        chisq  / dof  sigma   zpt    airmass  color  apcorr \n"
-    "* Exposure   Device   Residual  magIn  airmass  color  apcorr  \n"
+    "Name        chisq  / dof  sigma    zpt    airmass  color  apcorr \n"
+    "* Exposure   Device   Residual   magIn  airmass   color  apcorr   \n"
     "----------------------------------------------------------"
      << endl;
 }
@@ -245,7 +245,7 @@ PhotoPrior::report(ostream& os) const {
      << " "  << fixed << right << noshowpos << setprecision(1) << setw(6) << chi
      << " / " << setw(3) << dof
      << " " << setprecision(3) << setw(5) << getSigma()
-     << " " << showpos << setprecision(3) << setw(7) << getZeropoint()
+     << " " << showpos << setprecision(4) << setw(8) << getZeropoint()
      << " " << (zeropointIsFree() ? " " : "*" )
      << " " << setprecision(3) << setw(6) << getAirmass()
      << " " << (airmassIsFree() ? " " : "*" )
@@ -261,11 +261,11 @@ PhotoPrior::report(ostream& os) const {
     os << (i.isClipped ? "- " : "+ ")
        << setw(12) << left << i.exposureName
        << " " << setw(8) << i.deviceName
-       << " " << right << showpos << setprecision(3) << setw(6) << resid
+       << " " << right << showpos << setprecision(4) << setw(7) << resid
        << " " << noshowpos << setprecision(3) << setw(7) << i.magIn
-       << " " << setprecision(3) << setw(5) << i.airmass
+       << " " << setprecision(4) << setw(6) << i.airmass
        << " " << showpos << setprecision(3) << setw(6) << i.args.color
-       << " " << showpos << setprecision(3) << setw(6) << i.apcorr
+       << " " << showpos << setprecision(4) << setw(7) << i.apcorr
        << endl;
   }
 }
