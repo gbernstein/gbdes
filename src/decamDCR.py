@@ -43,20 +43,27 @@ def parallactic(dec, ha, lat=-30.1716):
 dcrConstant = {'g':45.0, 'r':8.4}  # DCR amplitude in mas/mag/tan(z)
 latitude = -30.1716  # Observatory latitude, degrees
 referenceColor = 0.61  # zeropoint for color terms
+# Extinction coeffs from https://cdcvs.fnal.gov/redmine/projects/descalibration/wiki
+nominalExtinction = {'u':0.45, 'g':0.20,'r':0.10,'i':0.07,'z':0.08,'Y':0.07}
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description=\
      'Create DCR pixelmaps for exposures in FOF file and update airmass entries')
     parser.add_argument("fof", help='Filename of FOF file to update', type=str)
     parser.add_argument("dcr", help='Filename of output YAML DCR specs', type=str)
+    parser.add_argument("gradient", help='Filename of output YAML extinction gradients', type=str)
     parser.add_argument('--no_update',help='Do not update FOF file airmasses',
                         action='store_true')
 
     args = parser.parse_args()
     fits = args.fof
     dcrFile = args.dcr
+    gradientFile = args.gradient
 
     pixmaps = {}
+    photomaps = {}
+    pixmaps['PixelMapCollection'] = ' '.join(sys.argv)
+    photomaps['PhotoMapCollection'] = ' '.join(sys.argv)
     
     if args.no_update:
         ff = pf.open(fits)
@@ -91,6 +98,7 @@ if __name__=='__main__':
         airmass, p = parallactic(dec, ha, lat = latitude)
         # replace airmass in table
         exposures['airmass'][i] = airmass
+
         # Write DCR to pixmaps
         b = bands[iinst]
         if b in dcrConstant.keys():
@@ -108,9 +116,30 @@ if __name__=='__main__':
             # not a band that needs DCR
             pixmaps[name+'/dcr'] = {'Type':'Identity'}
 
+        # Write extinction gradient to pixmaps.  *Add* mags to points *closer* to zenith
+        if b in nominalExtinction.keys():
+            # Get local extinction gradient in mag per degree
+            ampl = nominalExtinction[b] * airmass * np.sqrt(airmass**2-1) * np.pi/180.;
+            dcry = ampl * np.cos(p) 
+            dcrx = ampl * np.sin(p)
+            # Specify the distortion.  XMin/Max will default to +-1 to give native scaling
+            photomap = {'Type':'Poly',
+                        'UsePixelCoords':False,
+                        'Poly':{'OrderX':1,
+                                'SumOrder': True,
+                                'Coefficients':[0.,float(dcrx),float(dcry)]} }
+            photomaps[name+'/gradient'] = photomap
+        else:
+            # Extinction not known
+            print "WARNING: no nominal extinction in band",b
+            photomaps[name+'/gradient'] = {'Type':'Identity'}
+            
     # write yaml
     fout = open(dcrFile,'w')
     yaml.dump(pixmaps,fout)
+    fout.close()
+    fout = open(gradientFile,'w')
+    yaml.dump(photomaps,fout)
     fout.close()
     ff.close()
     sys.exit(0)
