@@ -1,5 +1,13 @@
 * Change priors to YAML format
 
+* Bring in setup directory
+
+* Bring in python analysis scripts
+
+* clean up gmbpy dependence
+
+* Write auto-prior script
+
 * Fix configure.py to use exposure-level APCORR more gracefully, maybe make more
   general the option to prefer exposure-level keywords.
   
@@ -35,6 +43,6 @@
 
 -------------DONE
 * Fix allfit.py script
-* openmp for Photo2DESDM
 * option for DrawAstro to not draw, just make TPVs
+* Parallelize Photo2DESDM loops
 
