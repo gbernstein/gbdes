@@ -60,6 +60,7 @@ oldAstro = os.path.join(args.setup_dir,'allsf.guts.astro')
 dbFile = args.basename + '.db'
 configLog = args.basename + '.config.log'
 dcrFile = args.basename + '.dcr.astro'
+gradientFile = args.basename + '.gradient.photo'
 fofFile = args.basename + '.fof'
 fofLog = args.basename + '.fof.log'
 photoFile = args.basename + '.{:s}.photo'
@@ -96,6 +97,7 @@ if doStep('dcr'):
     cmd = ['decamDCR.py']
     cmd.append(dbFile)
     cmd.append(dcrFile)
+    cmd.append(gradientFile)
     subprocess.check_call(cmd, stdout=sys.stdout, stderr=sys.stderr)
         
 if doStep('recenter'):    
@@ -135,9 +137,9 @@ if doStep("photo"):
             cmd.append('-outPhotFile='+photoFile.format(b))
             cmd.append('-colorExposures=""')
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+photoInput+','+oldPhoto)
+                cmd.append('-inputMaps='+','.join([noColorInput,gradientFile,oldPhoto]))
             else:
-                cmd.append('-inputMaps='+photoInput)
+                cmd.append('-inputMaps='+','.join([noColorInput,gradientFile]))
             with open(photoLog.format(b),'w') as log:
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
@@ -169,9 +171,9 @@ if doStep("photo"):
             cmd.append('-outPhotFile='+photoFile.format(b))
             cmd.append('-colorExposures='+colorFile)
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+colorInput+','+oldPhoto)
+                cmd.append('-inputMaps='+','.join([colorInput,gradientFile,oldPhoto]))
             else:
-                cmd.append('-inputMaps='+colorInput)
+                cmd.append('-inputMaps='+','.join([colorInput,gradientFile]))
             with open(photoLog.format(b),'w') as log:
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
@@ -206,15 +208,15 @@ if doStep("photo"):
         if args.color:
             cmd.append('-colorExposures='+colorFile)
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+','.join([colorInput,oldPhoto]))
+                cmd.append('-inputMaps='+','.join([colorInput,oldPhoto,gradientFile]))
             else:
-                cmd.append('-inputMaps='+colorInput)
+                cmd.append('-inputMaps='+','.join([colorInput,gradientFile]))
         else:
             cmd.append('-colorExposures=""')
             if os.path.isfile(oldPhoto):
-                           cmd.append('-inputMaps='+','.join([noColorInput,oldPhoto]))
+                cmd.append('-inputMaps='+','.join([noColorInput,oldPhoto,gradientFile]))
             else:
-                cmd.append('-inputMaps='+noColorInput)
+                cmd.append('-inputMaps='+','.join([noColorInput,gradientFile]))
 
         with open(photoLog.format(b),'w') as log:
             subprocess.check_call(cmd, stdout=log, 
