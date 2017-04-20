@@ -113,7 +113,7 @@ readPriors(string filename,
       double colorCoeff=0.;
       double apcorrCoeff=0.;
       if (node["Zeropoint"]) 
-	sigma = node["Zeropoint"].as<double>();
+	zeropoint = node["Zeropoint"].as<double>();
       if (node["Airmass"])
 	airmassCoeff = node["Airmass"].as<double>();
       if (node["Color"])

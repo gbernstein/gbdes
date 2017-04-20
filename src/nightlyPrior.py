@@ -64,6 +64,7 @@ baseline = {'Zeropoint':0.,
             'Airmass':-extinction,
             'Color':0.,
             'Apcorr':args.apcorr,
+            'Sigma':sigma*0.001,
             'Free':[]}
 if args.device is not None:
     baseline['Device'] = args.device
@@ -191,12 +192,13 @@ while nights:
         exposure = nights[mjd].exposures.pop()
 
     print 'Absolute contraint at exposure',exposure,'on',mjd
-    print 'Have',len(nights),'nights' ##
+    print '...Checking',len(nights),'nights' ##
     
     # Add an absolute prior for this point
     constraintName = 'Absolute_'+exposure
-    # It need only have the Exposures keyword in the node.
-    root[constraintName] = {'Exposures':[exposure]}
+    # It need only have the Exposures and sigma keywords in the node.
+    root[constraintName] = {'Exposures':[exposure],
+                            'Sigma':sigma*0.001 }
     
     # Now "cross out" all nights that are tied to this exposure's night by common fields
     newFields = nights[mjd].fields.copy()
@@ -212,7 +214,6 @@ while nights:
                 newerFields |= n.fields - newFields
                 # And get rid of this night
                 nights.pop(k)
-                print 'Done with night',k ###
         # Now prepare for another trip through the nights
         newFields = newerFields
         
