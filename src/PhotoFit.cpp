@@ -304,6 +304,11 @@ main(int argc, char *argv[])
     // maps to Identity to break such degeneracies.
     /////////////////////////////////////////////////////
 
+    // Now fix all map elements requested to be fixed
+    fixMapComponents<Photo>(*pmcInit,
+			    fixMapList,
+			    instruments);
+
     /**/cerr << "Checking for polynomial degeneracies" << endl;
     set<string> degenerateTypes={"Poly","Linear","Constant"};
     {

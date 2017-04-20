@@ -206,6 +206,9 @@ PhotoPrior::sigmaClip(double sigThresh) {
   for (auto i=points.begin(); i!=points.end(); ++i) {
     if (i==worst || i->isClipped) continue;
     if (i->exposureName == worst->exposureName) {
+      /**/cerr << "Clipping prior at " << worst->exposureName 
+	       << " maxDev " << maxDev << endl;
+      /**/cerr << " m a b c " << m << " " << a << " " << b << " " << c << endl;
       i->isClipped = true;
       nFit--;
     }  
