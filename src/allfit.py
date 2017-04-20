@@ -137,9 +137,9 @@ if doStep("photo"):
             cmd.append('-outPhotFile='+photoFile.format(b))
             cmd.append('-colorExposures=""')
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+','.join([noColorInput,gradientFile,oldPhoto]))
+                cmd.append('-inputMaps='+','.join([photoInput,gradientFile,oldPhoto]))
             else:
-                cmd.append('-inputMaps='+','.join([noColorInput,gradientFile]))
+                cmd.append('-inputMaps='+','.join([photoInput,gradientFile]))
             with open(photoLog.format(b),'w') as log:
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
@@ -214,9 +214,9 @@ if doStep("photo"):
         else:
             cmd.append('-colorExposures=""')
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+','.join([noColorInput,oldPhoto,gradientFile]))
+                cmd.append('-inputMaps='+','.join([photoInput,oldPhoto,gradientFile]))
             else:
-                cmd.append('-inputMaps='+','.join([noColorInput,gradientFile]))
+                cmd.append('-inputMaps='+','.join([photoInput,gradientFile]))
 
         with open(photoLog.format(b),'w') as log:
             subprocess.check_call(cmd, stdout=log, 
