@@ -216,7 +216,7 @@ if doStep("photo"):
             cmd.append(fofFile)
         cmd.append(photoParams)
         cmd.append('-useInstruments='+b+'.*') 
-        cmd.append('-priorFiles='+priorFile)
+        cmd.append('-priorFiles='+priorFile.format(b))
         cmd.append('-outCatalog='+photoCat.format(b))
         cmd.append('-outPriorFile='+priorLog.format(b))
         cmd.append('-outPhotFile='+photoFile.format(b))
