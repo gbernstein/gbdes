@@ -369,9 +369,6 @@ main(int argc, char *argv[])
 	  if (haveEpoch) expo->epoch = epoch[i];
 
 	  exposures.push_back(expo);
-	  /**/cerr << "Exposure " << names[i] 
-		   << " using instrument " << expo->instrument 
-		   << endl;
 	}
       }
 
@@ -960,7 +957,8 @@ clipMeanAndError(vector<MagPoint>& vmp, double color,
   }
 
   bool anyclip = true;
-  const int MaxIterations = 10;
+  //**const int MaxIterations = 10;
+  const int MaxIterations = MAX(int(x.size()/3),3);
   int iteration = 0;
   double sumw, sumxw;
   double threshsq = threshold*threshold;

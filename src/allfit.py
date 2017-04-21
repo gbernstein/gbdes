@@ -9,7 +9,7 @@ import os.path
 import sys
 import argparse
 
-steps = ("config", "dcr", "recenter", "match", "photo", "astro", "draw")
+steps = ("config", "dcr", "recenter", "match", "prior", "photo", "astro", "draw")
 
 parser = argparse.ArgumentParser(description='Derive photometric and astrometric solutions from a set of detection catalogs')
 parser.add_argument("basename", help='Root name for solution-specific files', type=str)
@@ -22,6 +22,7 @@ parser.add_argument('--last',help='Last step of process to execute',type=str, ch
                         default=steps[-1])
 parser.add_argument('--bands',help='Comma-separated list of bands for photometry', type=str,
                         default='g,r,i,z,Y')
+parser.add_argument('--prior',help='Names of photometric prior files, if pre-constructed', type=str)
 
 args = parser.parse_args()
 
@@ -39,7 +40,6 @@ doStep.stepsDone = False   # True if we are done with all requested steps
 
 # Types of files that will be expected to exist locally:
 configFile = "{:s}.config".format(args.basename)
-priorFile = "{:s}.photo.prior".format(args.basename)
 
 # Parameter and configuration files
 stdConfig = os.path.join(args.setup_dir,'std.config')
@@ -63,6 +63,11 @@ dcrFile = args.basename + '.dcr.astro'
 gradientFile = args.basename + '.gradient.photo'
 fofFile = args.basename + '.fof'
 fofLog = args.basename + '.fof.log'
+if args.prior:
+    priorFile = args.prior   # Use pre-existing of this name
+else:
+    priorFile = args.basename + ".{:s}.prior"
+
 photoFile = args.basename + '.{:s}.photo'
 photoCat = args.basename + '.{:s}.photo.fits'
 photoLog = args.basename + '.{:s}.photofit.log'
@@ -116,6 +121,16 @@ if doStep("match"):
     cmd.append('-outName='+fofFile)
     with open(fofLog,'w') as log:
         subprocess.check_call(cmd, stdout=log, stderr=subprocess.STDOUT)
+    
+
+if doStep("prior"):
+    if not args.prior:
+        for b in bands:
+            cmd = ['nightlyPrior.py']
+            cmd.append(fofFile)
+            cmd.append(b)
+            cmd.append(priorFile.format(b))
+            subprocess.check_call(cmd, stdout=sys.stdout, stderr=sys.stderr)
 
 if doStep("photo"):
     if args.color:
@@ -131,7 +146,7 @@ if doStep("photo"):
             cmd.append(fofFile)
             cmd.append(photoParams)
             cmd.append('-useInstruments='+b+'.*') 
-            cmd.append('-priorFiles='+priorFile)
+            cmd.append('-priorFiles='+priorFile.format(b))
             cmd.append('-outCatalog='+photoCat.format(b))
             cmd.append('-outPriorFile='+priorLog.format(b))
             cmd.append('-outPhotFile='+photoFile.format(b))
@@ -165,7 +180,7 @@ if doStep("photo"):
             cmd.append(colorFofFile)
             cmd.append(photoParams)
             cmd.append('-useInstruments='+b+'.*') 
-            cmd.append('-priorFiles='+priorFile)
+            cmd.append('-priorFiles='+priorFile.format(b))
             cmd.append('-outCatalog='+photoCat.format(b))
             cmd.append('-outPriorFile='+priorLog.format(b))
             cmd.append('-outPhotFile='+photoFile.format(b))
@@ -201,7 +216,7 @@ if doStep("photo"):
             cmd.append(fofFile)
         cmd.append(photoParams)
         cmd.append('-useInstruments='+b+'.*') 
-        cmd.append('-priorFiles='+priorFile)
+        cmd.append('-priorFiles='+priorFile.format(b))
         cmd.append('-outCatalog='+photoCat.format(b))
         cmd.append('-outPriorFile='+priorLog.format(b))
         cmd.append('-outPhotFile='+photoFile.format(b))
