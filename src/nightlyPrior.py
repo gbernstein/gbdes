@@ -64,7 +64,7 @@ baseline = {'Zeropoint':0.,
             'Airmass':-extinction,
             'Color':0.,
             'Apcorr':args.apcorr,
-            'Sigma':sigma*0.001,
+            'Sigma':args.sigma*0.001,
             'Free':[]}
 if args.device is not None:
     baseline['Device'] = args.device
@@ -120,10 +120,10 @@ class Night:
         # Freeze airmass and apcorr coefficients if needed
         if self.max_airmass - self.min_airmass < airmass_span:
             if 'airmass' in self.d['Free']:
-                self.d['Free'].remove['airmass']
+                self.d['Free'].remove('airmass')
         if self.max_apcorr - self.min_apcorr < apcorr_span:
             if 'apcorr' in self.d['Free']:
-                self.d['Free'].remove['apcorr']
+                self.d['Free'].remove('apcorr')
         # Add list of all exposures to dictionary
         self.d['Exposures'] = [i for i in self.exposures]
             
@@ -161,6 +161,8 @@ for mjd in nights:
     nights[mjd].prepare(args.airmass_span,args.apcorr_span)
     # Add to YAML output
     root[constraintName] = copy.deepcopy(nights[mjd].d)
+    # Add MJD to YAML file for documenation
+    root[constraintName]['MJD'] = mjd
 
 # Now start finding which exposures must be set as absolute references to
 # remove any shift degeneracies from the solution.
@@ -198,7 +200,7 @@ while nights:
     constraintName = 'Absolute_'+exposure
     # It need only have the Exposures and sigma keywords in the node.
     root[constraintName] = {'Exposures':[exposure],
-                            'Sigma':sigma*0.001 }
+                            'Sigma':args.sigma*0.001 }
     
     # Now "cross out" all nights that are tied to this exposure's night by common fields
     newFields = nights[mjd].fields.copy()
