@@ -18,7 +18,7 @@ import fitsio
 import re
 import argparse
 import numpy as np
-from gmbpy import clippedMean
+from gbutil import clippedMean
 from astropy.time import Time
 
 parser = argparse.ArgumentParser(description='Compress and process SExtractor catalogs for high-quality stars')

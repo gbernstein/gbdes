@@ -9,7 +9,7 @@ import sys
 import numpy as np
 import astropy.io.fits as pf
 import astropy.wcs as wcs
-from gmbpy import headerFromString
+from gbutil import headerFromString
 
 def fixRADec(fits):
     try:

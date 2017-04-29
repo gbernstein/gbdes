@@ -6,7 +6,7 @@ angle into columns of the EXPOSURE table in the FOF file.
 '''
 import numpy as np
 import yaml
-from gmbpy import dmsToDegrees
+from gbutil import dmsToDegrees
 import sys
 import astropy.io.fits as pf
 import argparse

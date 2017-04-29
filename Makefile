@@ -43,8 +43,9 @@ $(error Require CFITSIO_DIR in environment)
 endif
 
 ifdef GBUTIL_DIR
-INCLUDES += -I $(GBUTIL_DIR)
+INCLUDES += -I $(GBUTIL_DIR)/include
 EXTDIRS += $(GBUTIL_DIR)
+GBUTIL_OBJ = $(GBUTIL_DIR)/obj
 else
 $(error Require GBUTIL_DIR in environment)
 endif
@@ -89,10 +90,10 @@ INCLUDES += -I $(MKL_DIR)/include -D USE_MKL
 endif
 
 # Object files found in external packages:
-EXTOBJS =$(GBUTIL_DIR)/BinomFact.o $(GBUTIL_DIR)/StringStuff.o $(GBUTIL_DIR)/Interpolant.o \
-	$(GBUTIL_DIR)/fft.o $(GBUTIL_DIR)/Table.o $(GBUTIL_DIR)/Pset.o \
-	$(GBUTIL_DIR)/Poly2d.o $(GBUTIL_DIR)/Expressions.o $(GBUTIL_DIR)/Shear.o \
-	$(GBUTIL_DIR)/Lookup1d.o \
+EXTOBJS =$(GBUTIL_OBJ)/BinomFact.o $(GBUTIL_OBJ)/StringStuff.o $(GBUTIL_OBJ)/Interpolant.o \
+	$(GBUTIL_OBJ)/fft.o $(GBUTIL_OBJ)/Table.o $(GBUTIL_OBJ)/Pset.o \
+	$(GBUTIL_OBJ)/Poly2d.o $(GBUTIL_OBJ)/Expressions.o $(GBUTIL_OBJ)/Shear.o \
+	$(GBUTIL_OBJ)/Lookup1d.o \
 	$(GBFITS_DIR)/FITS.o $(GBFITS_DIR)/Header.o $(GBFITS_DIR)/Hdu.o \
 	$(GBFITS_DIR)/FitsTable.o $(GBFITS_DIR)/FTable.o $(GBFITS_DIR)/FTableExpression.o \
 	$(GBFITS_DIR)/Image.o $(GBFITS_DIR)/FitsImage.o $(GBFITS_DIR)/HeaderFromStream.o \
@@ -136,7 +137,7 @@ RM = /bin/rm -f
 # Rules - ?? dependencies on INCLUDES ??
 #######################
 
-all: local-depend cpp python
+all: cpp python
 
 cpp: exts $(TARGETS)
 

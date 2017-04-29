@@ -170,6 +170,8 @@ for mjd in nights:
 # will have its zeropoint connected to the same absolute level by either overlap
 # or a relative prior
 
+absolutes_out = []
+
 while nights:
     # Pick one exposure from one night to fix as absolute
     mjd = None
@@ -197,10 +199,7 @@ while nights:
     print '...Checking',len(nights),'nights' ##
     
     # Add an absolute prior for this point
-    constraintName = 'Absolute_'+exposure
-    # It need only have the Exposures and sigma keywords in the node.
-    root[constraintName] = {'Exposures':[exposure],
-                            'Sigma':args.sigma*0.001 }
+    absolutes_out.append(exposure)
     
     # Now "cross out" all nights that are tied to this exposure's night by common fields
     newFields = nights[mjd].fields.copy()
@@ -219,6 +218,11 @@ while nights:
         # Now prepare for another trip through the nights
         newFields = newerFields
         
+# Write the absolute constraint node
+constraintName = 'Absolute_'+band
+# It need only have the Exposures and sigma keywords in the node.
+root[constraintName] = {'Exposures':absolutes_out,
+                        'Sigma':args.sigma*0.001 }
 # write the YAML file
 with open(args.priorfile,'w') as f:
     yaml.dump(root,f)

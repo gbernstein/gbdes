@@ -74,7 +74,7 @@ import re
 import importlib
 import glob
 import subprocess
-import gmbpy.utilities
+import gbutil
 
 import astropy
 # Major annoyance: incompatible interfaces in astropy
@@ -554,8 +554,8 @@ if __name__=='__main__':
                 tmphead = getHeader(fits, iextn, fitsname)
                 if 'EXTNAME' in tmphead and tmphead['EXTNAME'] == 'LDAC_IMHEAD':
                     # For LDAC header extension, we just read header and move on
-                    # eHeader = gmbpy.utilities.readLDACHeader(fitsname, iextn)
-                    eHeader = gmbpy.utilities.headerFromString(fits[iextn].data[0][0])
+                    # eHeader = gbutil.readLDACHeader(fitsname, iextn)
+                    eHeader = gbutil.headerFromString(fits[iextn].data[0][0])
                 else:
                     if eHeader == None:
                         # This should be a catalog extension.  Get its header
@@ -702,7 +702,7 @@ if __name__=='__main__':
                     wcsin = attributes['WCSIN'](**attargs)
                     if wcsin.strip()=='_HEADER':
                         # Retrieve the header from FITS WCS information in headers
-                        wcshdr = gmbpy.utilities.extractWCS( [pHeader, eHeader])
+                        wcshdr = gbutil.extractWCS( [pHeader, eHeader])
                         extn['WCSIN'] = wcshdr.tostring(sep='\n',
                                                         padding=False,endcard=True) + '\n'
                     else:
