@@ -18,11 +18,11 @@ The `src/subs` directory contains C++ code for shared classes and functions.  Th
  * [Eigen](https://eigen.tuxfamily.org).  
  * Either of these can make good use of the [Intel Math Kernel Library](https://software.intel.com/en-us/intel-mkl)
 * These other repos of mine are compiled into `gbdes` so you need to have them cloned on your machine for builds:
- * [`gbutil`](https://github.com/gbernstein/gbutil) general utilities
+ * [`gbutil`](https://github.com/gbernstein/gbutil) general utilities, both C++ and Python
  * [`gbfits`](https://github.com/gbernstein/gbfits) C++ interface to CFITSIO
- * [`astrometry`[(https://github.com/gbernstein/astrometry) routines for astrometric transformations and model construction
+ * [`astrometry`](https://github.com/gbernstein/astrometry) routines for astrometric transformations and model construction
  * [`photometry`](https://github.com/gbernstein/photometry) routines for photometric model construction
- * [`gmbpy`](https://github.com/gbernstein/gmbpy) Python module has a few utilities called by some of the Python routines in `gbdes`.  You may not need this, which is good since that repo does not yet have proper setup.py and such.
+
 
 ## Installation
 You of course need to install the external libraries FFTW, yaml-cpp, CFITSIO, TMV/Eigen, and (optionally) MKL.  The Makefile for `gbdes` will call the Makefiles for the other gbernstein repos as needed, so you don't need to build them explicitly, and they do not (yet) have library files to keep track of.
@@ -38,11 +38,11 @@ The Makefile requires these environment variables to be set:
 * `MKL_DIR`: Path to the MKL.  This is optional, and should be given if you want to use Eigen with MKL.  TMV usage of MKL will have been determined when you built it.
 * `GBUTIL_DIR`, `GBFITS_DIR`, `ASTROMETRY_DIR`, and `PHOTOMETRY_DIR` are the directories where you've cloned these repos.
 
-Once these are all set you should be able to just run `make cpp` to build the C++ programs.  `make python` will copy over the Python executables into the bin/ directory.  `make` should do both.
+Once these are all set you should be able to just run `make cpp` to build the C++ programs.  `make python` will copy over the Python executables into the bin/ directory.  `make` should do both.  You will also need to `make python` in the `GBUTIL_DIR` to install packages that the `gbdes` python routines use.
 
 ## Use
 When the codes are built, the executables of the C++, as well as copies of Python executables, are in the `bin/` directory.  Put this in your path or move them where you please - there is no `make install` yet.
-The `LD_LIBRARY_PATH` environment variable will need to be set to reach your FFTW, yaml-cpp, TMV, Eigen, and MKL libraries.
+The `LD_LIBRARY_PATH` environment variable will need to be set to reach your FFTW, yaml-cpp, TMV, Eigen, and MKL libraries.  The `CAL_PATH` environment variable must be set to include the path(s) to any lookup tables of astrometric or photometric corrections.
 
 See the [Starflat cookbook](https://github.com/gbernstein/gbdes/wiki/Starflat-cookbook) in the wiki for details about using the code to derive astrometric and photometric solutions.  In brief, a
 typical workflow for deriving photometric and astrometric homogenization models for a load of exposures would use these programs:
@@ -56,7 +56,7 @@ typical workflow for deriving photometric and astrometric homogenization models 
 8. `MagColor` can be run once there are `.photo` models for multiple filters. It calculates mean magnitudes and colors for all of the objects by combining the data from all exposures.  This step can be iterated with `PhotoFit` to allow chromatic photometric models.
 9. `WCSFit` does the next big job of optimizing the parameters of an astrometric model to maximize agreement among the exposures and any reference catalogs.  Again, very complicated configuration, and the output is an `.astro` file.  
 
-The `allfit.py` script is meant to orchestrate this process but is not yet generally useful.
+The `allfit.py` script orchestrates this process for a standard configuration, but is certainly not the only way the code can be used.
 
 Once the models have been derived, we can use them in various ways:
 * `ApplyPhoto` and `ApplyWCS` take as input an ASCII list of object pixel positions / magnitudes and will output calibrated mags / positions according to the derived `.photo` and `.astro` models, respectively.
@@ -69,6 +69,7 @@ Other programs here of some utility for DECam processing:
 * `ListClipped` can be used to save a list of detections discarded as outliers by `PhotoFit` or `WCSFit`, which can then be used as given to other fitting steps as objects to be ignored.
 * `Tpv2Pixmap` converts ASCII versions of the FITS TPV WCS solutions into the more general YAML format used by the `.astro` files.
 * `UpdateHeaders` is something I use to add/replace header values in DECam images with new values before processing them.
+* The `analysis` directory contains various (undocumented) Python modules for creating diagnostics of the astro/photometric solutions.
 
 ## Notes
 * The `tests` programs are not functional yet, don't try to build them.
