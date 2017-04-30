@@ -6,7 +6,13 @@ This repo contains code for deriving photometric and astrometric calibration sol
 
 The astrometric and photometric solutions derived and used by this code are stored in YAML format. Python code that can read the astrometric solution files and execute the transformations they specify is available in the [pixmappy repo](https://github.com/gbernstein/pixmappy).
 
-The `src/subs` directory contains C++ code for shared classes and functions.  The `src` contains C++ code for executable programs and Python code meant to be called at the command line.  Right now there are no importable Python modules.  
+## Contents
+The repository is structured as follows:
+* `src` contains C++ code for executable programs and Python code meant to be called at the command line.  The `src/subs` directory contains C++ code for shared classes and functions.  There are no importable Python modules to install. 
+* `include` holds the C++ include files
+* `obj, bin, testbin` directories are populated with all executable code during `make cpp`, `make python`, or `make tests` commands.  There is no `make install` right now, so your executables just end up in the latter two.  These are wiped clean by `make clean` so don't put anything precious here.
+* `analysis` contains some (undocumented) Python modules to produce diagnostic plots and quantities after fitting.  Not documented.
+* `setups` contains examples of configuration files for analysis of DECam star flats.  There are README files within.  The setup subdirectories are appropriate to give as the `--setup` argument to the master script `allfit.py`.  The `setup/decam_tables` directory holds some lookup tables needed for fitting DECam data.  This directory can be put in your `CAL_PATH` environment variable during execution.
 
 ## Prerequisites
 * A C++ compiler that is compliant with C++-11 standards.  The time-intensive codes are multithreaded with OpenMP, so your compiler will need this capability for solutions of typical size.  Note the MacOS clang compiler does not do the latter.
