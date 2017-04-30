@@ -1,0 +1,16 @@
+# WCSFit parameters for solution of single star flat
+# Keep rings, edges, chromatic terms from allsf solution
+# but let polynomial terms vary
+maxPixError = 0.1                 ;Cut objects with pixel posn uncertainty above this
+sysError = 0.02                   ;Additional systematic error for detections (pixels)
+referenceSysError= 0.01           ;Reference object additional error (arcsec)
+minMatch    = 5                   ;Minimum number of detections for usable match
+minFitExposures = 1200		  ;Minimum detections per exposure to be used
+clipThresh  = 5                   ;Clipping threshold (sigma)
+clipEntireMatch= F                   ;Discard entire object if one outlier
+reserveFraction= 0.3
+chisqTolerance= 0.001               ;Fractional change in chisq for convergence
+minColor = 0.
+maxColor = 2.
+fixMaps = .*edge,.*rings,.*dcr,.*color
+

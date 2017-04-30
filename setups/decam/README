@@ -1,0 +1,1 @@
+This directory holds YAML files that encode the lookup tables used in DECam astrometry and photometry solutions.  These describe the edge and ring solutions.  When using these, the CAL_PATH environment variable should include an entry for this directory (or wherever you put these files). 

@@ -1,0 +1,10 @@
+# Parameters for MagColor for first round of allsf derivation
+maxMagError = 0.05                ;Only output mags with errors below this level
+magSysError = 0.002               ;Systematic added in quadrature to mag error
+clipThresh  = 5                   ;Magnitude clipping threshold (sigma)
+skipFile    =                     ;Optional file containing extension,object pairs to ignore
+bands       = g,r,i,z,Y
+colors      = g-i@allsf.gi.cat    ;colors to tabulate and files they go into
+useInstruments= .*                  ;list of instruments to use for mags
+wcsFiles    =                     ;files holding WCS maps to override starting WCSs
+photoFiles  =  allsf.g.photo,allsf.r.photo,allsf.i.photo,allsf.z.photo,allsf.Y.photo

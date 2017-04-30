@@ -1,0 +1,5 @@
+# Parameters for WCSFoF runs when matching a typical star-flat epoch
+matchRadius = 1         ;Matching tolerance (arcsec)
+useAffinities= T        ;Disallow inter-filter galaxy matches
+minMatch    = 4         ;Minimum number of detections for usable match
+selfMatch   = F         ;Discarding any match w/2 detections in 1 exposure

@@ -1,0 +1,5 @@
+# Parameters for MagColor for single epoch of star flats
+maxMagError = 0.05                ;Only output mags with errors below this level
+sysError = 0.002               ;Systematic added in quadrature to mag error
+clipThresh  = 5                   ;Magnitude clipping threshold (sigma)
+useInstruments= .*                  ;list of instruments to use for mags

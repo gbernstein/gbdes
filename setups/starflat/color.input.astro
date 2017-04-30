@@ -1,0 +1,19 @@
+# Specification for the final chromatic astrometric model
+# for a single epoch of star flats
+EXPOSURE/DEVICE/base:
+  Type: Composite
+  Elements: [INSTRUMENT/DEVICE, EXPOSURE/dcr, EXPOSURE]
+EXPOSURE:
+  Type: Linear
+INSTRUMENT/DEVICE:
+  Type: Composite
+  Elements:
+    - BAND/DEVICE/rings
+    - BAND/DEVICE/lowedge
+    - BAND/DEVICE/highedge
+    - BAND/DEVICE/poly
+    - BAND/color
+#
+# The components of above will be read from allsf.guts.astro,
+# including the BAND/color taken from lateralcolor.astro
+

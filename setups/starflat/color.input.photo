@@ -1,0 +1,25 @@
+# YAML startup file for single-filter solutions with color term
+# for star flats.
+EXPOSURE/DEVICE:
+  Type: Composite
+  Elements: [BAND/DEVICE, EXPOSURE]
+BAND/DEVICE:
+  Type: Composite
+  Elements:
+    - BAND/DEVICE/rings
+    - BAND/DEVICE/lowedge
+    - BAND/DEVICE/highedge
+    - BAND/DEVICE/poly
+    - BAND/DEVICE/color
+#
+#
+# The definitions and starting values of the device elements
+# will be taken from the allsf solution.
+#
+# The exposure solution: a constant offset per exposure.
+# For a single starflat epoch, do not allow color variation with time.
+EXPOSURE:
+  Type: Constant
+#
+# Might need to add one exposure with identity color term??
+# Code will not do that yet.

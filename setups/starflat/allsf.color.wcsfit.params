@@ -1,0 +1,19 @@
+# Test run of chromatic WCS on single g sequence
+maxPixError = 0.1                 ;Cut objects with pixel posn uncertainty above this
+pixSysError = 0.02                ;Additional systematic error for detections (pixels)
+referenceSysError= 0.01           ;Reference object additional error (arcsec)
+minMatch    = 5                   ;Minimum number of detections for usable match
+clipThresh  = 5                   ;Clipping threshold (sigma)
+clipEntireMatch= F                   ;Discard entire object if one outlier
+reserveFraction= 0.3
+inputMaps = s30guts2.astro,allsf.color.input.astro,lateralcolor.astro,allsf.dcr.astro
+fixMaps = .*/color,.*/dcr
+chisqTolerance= 0.001               ;Fractional change in chisq for convergence
+outCatalog  = allsf.color.fits         ;Output FITS binary catalog
+outWcs      = allsf.color.astro          ;Output serialized Wcs systems
+useInstruments = [grizY].*
+skipexposures = D180679,D18068[045678],D18074[016],D18075[12378],D180761,D406680,D40677[89],D40678.
+minColor = 0.
+maxColor = 2.
+colorExposures = allsf.gi.cat
+minFitExposures = 1200
