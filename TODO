@@ -1,8 +1,4 @@
-* Bring in setup directory
-
 * Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat.
-
-* Bring in python analysis scripts
 
 * Fix configure.py to use exposure-level APCORR more gracefully, maybe make more
   general the option to prefer exposure-level keywords.
@@ -44,3 +40,5 @@
 * Change priors to YAML format
 * Write auto-prior script
 * clean up gmbpy dependence
+* Bring in setup directory
+* Bring in python analysis scripts

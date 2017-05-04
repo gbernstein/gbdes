@@ -23,6 +23,7 @@ parser.add_argument('--last',help='Last step of process to execute',type=str, ch
 parser.add_argument('--bands',help='Comma-separated list of bands for photometry', type=str,
                         default='g,r,i,z,Y')
 parser.add_argument('--prior',help='Names of photometric prior files, if pre-constructed', type=str)
+parser.add_argument('--make_dcr',help='Make DCR and gradient files?', type=bool,default=True)
 
 args = parser.parse_args()
 
@@ -97,13 +98,14 @@ if doStep('config'):
         subprocess.check_call(cmd, stdout=log, stderr=subprocess.STDOUT)
 
 if doStep('dcr'):    
-    # Make DCR file
-    print 'Doing dcr'
-    cmd = ['decamDCR.py']
-    cmd.append(dbFile)
-    cmd.append(dcrFile)
-    cmd.append(gradientFile)
-    subprocess.check_call(cmd, stdout=sys.stdout, stderr=sys.stderr)
+    if args.make_dcr:
+        # Make DCR file
+        print 'Doing dcr'
+        cmd = ['decamDCR.py']
+        cmd.append(dbFile)
+        cmd.append(dcrFile)
+        cmd.append(gradientFile)
+        subprocess.check_call(cmd, stdout=sys.stdout, stderr=sys.stderr)
         
 if doStep('recenter'):    
     # Recenter exposures' RA/Dec
@@ -151,10 +153,12 @@ if doStep("photo"):
             cmd.append('-outPriorFile='+priorLog.format(b))
             cmd.append('-outPhotFile='+photoFile.format(b))
             cmd.append('-colorExposures=""')
+            inmaps = [photoInput]
+            if os.path.isfile(gradientFile):
+                inmaps.append(gradientFile)
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+','.join([photoInput,gradientFile,oldPhoto]))
-            else:
-                cmd.append('-inputMaps='+','.join([photoInput,gradientFile]))
+                inmaps.append(gradientFile)
+            cmd.append('-inputMaps='+','.join(inmaps))
             with open(photoLog.format(b),'w') as log:
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
@@ -185,10 +189,12 @@ if doStep("photo"):
             cmd.append('-outPriorFile='+priorLog.format(b))
             cmd.append('-outPhotFile='+photoFile.format(b))
             cmd.append('-colorExposures='+colorFile)
+            inmaps = [photoInput]
+            if os.path.isfile(gradientFile):
+                inmaps.append(gradientFile)
             if os.path.isfile(oldPhoto):
-                cmd.append('-inputMaps='+','.join([colorInput,gradientFile,oldPhoto]))
-            else:
-                cmd.append('-inputMaps='+','.join([colorInput,gradientFile]))
+                inmaps.append(gradientFile)
+            cmd.append('-inputMaps='+','.join(inmaps))
             with open(photoLog.format(b),'w') as log:
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
