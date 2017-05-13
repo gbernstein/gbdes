@@ -157,7 +157,7 @@ for mjd in nights:
     t = Time(mjd,format='mjd')
     iso = t.iso
     ymd = iso[:4] + iso[5:7] + iso[8:10]
-    constraintName = 'Relative_{:s}'.format(ymd)
+    constraintName = 'Relative_{:s}{:s}'.format(b,ymd)
     nights[mjd].prepare(args.airmass_span,args.apcorr_span)
     # Add to YAML output
     root[constraintName] = copy.deepcopy(nights[mjd].d)
@@ -219,7 +219,7 @@ while nights:
         newFields = newerFields
         
 # Write the absolute constraint node
-constraintName = 'Absolute_'+band
+constraintName = 'Absolute_'+b
 # It need only have the Exposures and sigma keywords in the node.
 root[constraintName] = {'Exposures':absolutes_out,
                         'Sigma':args.sigma*0.001 }
