@@ -336,6 +336,8 @@ readMatches(img::FTable& table,
 	    list<typename S::Match*>& matches,
 	    vector<typename S::Extension*>& extensions,
 	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const vector<Exposure*>& exposures,
+	    const vector<Instrument*>& instruments,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches);
 

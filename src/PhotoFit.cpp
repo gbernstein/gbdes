@@ -421,7 +421,8 @@ main(int argc, char *argv[])
       ff.getHdrValue("Affinity", dummy2);
       /**/cerr << "Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
       
-      readMatches<Photo>(ff, matches, extensions, colorExtensions, skipSet, minMatches);
+      readMatches<Photo>(ff, matches, extensions, colorExtensions,
+			 exposures, instruments, skipSet, minMatches);
       
     } // End loop over input matched catalogs
 

@@ -872,14 +872,39 @@ whoNeedsColor(vector<typename S::Extension*> extensions) {
 	      
 // Read a MatchCatalog Extension, recording in each extension the
 // objects from it that need to be read from catalog.
+// In photometric case, we will split matches up by band.
 template <class S>
 void
 readMatches(img::FTable& table,
 	    list<typename S::Match*>& matches,
 	    vector<typename S::Extension*>& extensions,
 	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const vector<Exposure*>& exposures,
+	    const vector<Instrument*>& instruments,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches) {
+
+  // If we're doing photometry, we'll want to split up matches by band,
+  // so make a table of bands used by valid extensions
+  vector<int> bandNums(extensions.size(),0);
+  if (!S::isAstro) {
+    std::map<string,int> bandIds;
+    for (int i=0; i<extensions.size(); i++) {
+      if (!extensions[i]) continue; // Skip unused exposures
+      // For valid exposure, get its band name
+      int iexpo = extensions[i]->exposure;
+      string band = instruments[exposures[iexpo]->instrument]->band;
+      // Then assign it a number, or make a new number if this is new band
+      auto iter = bandIds.find(band);
+      if (iter==bandIds.end()) {
+	int next = bandIds.size();
+	bandIds[band] = next;
+	bandNums.push_back(next);
+      } else {
+	bandNums.push_back(iter->second);
+      }
+    }
+  }
 
   vector<int> seq;
   vector<LONGLONG> extn;
@@ -891,6 +916,8 @@ readMatches(img::FTable& table,
   // Smaller collections for each match
   vector<long> matchExtns;
   vector<long> matchObjs;
+  vector<int> matchBands; // Which band is each detection in?
+  map<int,int> bandCounts;  // Keep track of # points in each band in this match
   // These variables determine what the highest-priority color information available
   // in the match is so far.
   long matchColorExtension = -1;
@@ -900,50 +927,59 @@ readMatches(img::FTable& table,
   for (int i=0; i<=seq.size(); i++) {
     if (i>=seq.size() || seq[i]==0) {
       // Processing the previous (or final) match.
-      int nValid = matchExtns.size();
       if (matchColorExtension < 0) {
 	// There is no color information for this match. 
 	// Discard any detection which requires a color to produce its map:
-	nValid = 0;
 	for (int j=0; j<matchExtns.size(); j++) {
 	  Assert(extensions[matchExtns[j]]);
 	  if (extensions[matchExtns[j]]->needsColor) {
 	    // Mark this detection as useless
 	    matchExtns[j] = -1;
-	  } else {
-	    nValid++;
+	    // Decrement count of detections in this band
+	    bandCounts[matchBands[j]]--;
 	  }
 	}
       }
 
-      if (nValid >= minMatches) {
-	// Make a match from the valid entries, and note need to get data for the detections and color
-	typename S::Match* m=nullptr;
-	for (int j=0; j<matchExtns.size(); j++) {
-	  if (matchExtns[j]<0) continue;  // Skip detections starved of their color
-	  auto d = new typename S::Detection;
-	  d->catalogNumber = matchExtns[j];
-	  d->objectNumber = matchObjs[j];
-	  extensions[matchExtns[j]]->keepers.insert(std::pair<long,typename S::Detection*>
-						    (matchObjs[j], d));
-	  if (m)
-	    m->add(d);
-	  else
-	    m = new typename S::Match(d);
+      // Now create a match for each distinct band represented in the match
+      bool getColor = false; // Will we need to retrieve color from catalog?
+      for (auto bc : bandCounts) {
+	if (bc.second >= minMatches) {
+	  // We'll make a match out of this band
+	  getColor = true; // So we'll need to get its color if it has one
+	  typename S::Match* m=nullptr;
+	  for (int j=0; j<matchExtns.size(); j++) {
+	    if (matchExtns[j]<0) continue;  // Skip detections starved of their color
+	    if (matchBands[j]!=bc.first) continue; // Only using matches in this band
+	    auto d = new typename S::Detection;
+	    d->catalogNumber = matchExtns[j];
+	    d->objectNumber = matchObjs[j];
+	    // Note need to get data for the detections and color
+	    extensions[matchExtns[j]]->keepers.insert(std::pair<long,typename S::Detection*>
+						      (matchObjs[j], d));
+	    if (m)
+	      m->add(d);
+	    else
+	      m = new typename S::Match(d);
+	  }
+	  Assert(m);
+	  matches.push_back(m);
 	}
-	matches.push_back(m);
+      } // move on to next band
 
-	if (matchColorExtension >=0) {
-	  // Tell the color catalog that it needs to look this guy up:
-	  Assert(colorExtensions[matchColorExtension]);
-	  colorExtensions[matchColorExtension]->keepers.insert
-	    (std::pair<long,typename S::Match*>(matchColorObject,
-						matches.back()));
-	}
+      if (getColor && matchColorExtension>=0) {
+	// Tell the color catalog that it needs to look this guy up:
+	Assert(colorExtensions[matchColorExtension]);
+	colorExtensions[matchColorExtension]->keepers.insert
+	  (std::pair<long,typename S::Match*>(matchColorObject,
+					      matches.back()));
       }
+      
       // Clear out previous Match:
       matchExtns.clear();
       matchObjs.clear();
+      matchBands.clear();
+      bandCounts.clear();
       matchColorExtension = -1;
       colorPriority = -1;
     } // Finished processing previous match
@@ -959,6 +995,10 @@ readMatches(img::FTable& table,
       // Record a Detection in a useful extension:
       matchExtns.push_back(extn[i]);
       matchObjs.push_back(obj[i]);
+      // Record its band number and add this band to those in use
+      int bandNum = bandNums[extn[i]];
+      matchBands.push_back(bandNum);
+      bandCounts[bandNum]++; // Count number in this band, starting new entry if needed
     }
 
     // Record if we've got color information here
@@ -1880,6 +1920,8 @@ readMatches<AP>(img::FTable& table, \
 		list<AP::Match*>& matches, \
 		vector<AP::Extension*>& extensions, \
 		vector<AP::ColorExtension*>& colorExtensions, \
+		const vector<Exposure*>& exposures,  \
+		const vector<Instrument*>& instruments,	\
 		const ExtensionObjectSet& skipSet, \
 		int minMatches); \
 template void \
