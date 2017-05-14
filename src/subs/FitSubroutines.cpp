@@ -899,9 +899,9 @@ readMatches(img::FTable& table,
       if (iter==bandIds.end()) {
 	int next = bandIds.size();
 	bandIds[band] = next;
-	bandNums.push_back(next);
+	bandNums[i] = next;
       } else {
-	bandNums.push_back(iter->second);
+	bandNums[i] = iter->second;
       }
     }
   }
@@ -943,6 +943,13 @@ readMatches(img::FTable& table,
 
       // Now create a match for each distinct band represented in the match
       bool getColor = false; // Will we need to retrieve color from catalog?
+      /**/if (false) { //(bandCounts.size()>0) {
+	cerr << matches.size() << ": " << bandCounts.size() << " bands, ";
+	for (auto bc : bandCounts) 
+	  cerr << bc.first << ":" << bc.second << ", ";
+	cerr << endl;
+      }
+
       for (auto bc : bandCounts) {
 	if (bc.second >= minMatches) {
 	  // We'll make a match out of this band
