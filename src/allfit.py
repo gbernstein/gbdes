@@ -23,7 +23,7 @@ parser.add_argument('--last',help='Last step of process to execute',type=str, ch
 parser.add_argument('--bands',help='Comma-separated list of bands for photometry', type=str,
                         default='g,r,i,z,Y')
 parser.add_argument('--prior',help='Names of photometric prior files, if pre-constructed', type=str)
-parser.add_argument('--skip_dcr',help='Skip creation of DCR and gradient files', action='store_true')
+parser.add_argument('--dcr_file',help='Name of pre-existing DCR file; "omit" to omit DCR and gradient corrections', type=str)
 
 args = parser.parse_args()
 
@@ -60,8 +60,17 @@ oldAstro = os.path.join(args.setup_dir,'allsf.guts.astro')
 # Files we will create
 dbFile = args.basename + '.db'
 configLog = args.basename + '.config.log'
-dcrFile = args.basename + '.dcr.astro'
+
 gradientFile = args.basename + '.gradient.photo'
+if not args.dcr_file:
+    makeDCR = True
+    dcrFile = args.basename + '.dcr.astro'
+elif args.dcr_file=='omit':
+    makeDCR = False
+    dcrFile = None
+else:
+    makeDCR = False
+    dcrFile = args.dcr_file
 fofFile = args.basename + '.fof'
 fofLog = args.basename + '.fof.log'
 if args.prior:
@@ -98,7 +107,7 @@ if doStep('config'):
         subprocess.check_call(cmd, stdout=log, stderr=subprocess.STDOUT)
 
 if doStep('dcr'):    
-    if not args.skip_dcr:
+    if makeDCR:
         # Make DCR file
         print 'Doing dcr'
         cmd = ['decamDCR.py']
@@ -247,7 +256,10 @@ if doStep('astro'):
     if args.color:
         cmd.append(colorFofFile)
         cmd.append(astroParams)
-        cmd.append('-inputMaps=' + ','.join([oldAstro,astroInput,dcrFile]))
+        if dcrFile:
+            cmd.append('-inputMaps=' + ','.join([oldAstro,astroInput,dcrFile]))
+        else:
+            cmd.append('-inputMaps=' + ','.join([oldAstro,astroInput]))
         cmd.append('-colorExposures='+colorFile)
     else:
         cmd.append(fofFile)

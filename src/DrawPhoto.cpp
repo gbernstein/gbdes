@@ -22,11 +22,13 @@ using photometry::PhotoMap;
 
 string usage = 
   "DrawPhoto: make a FITS image a photometric solution, mapping all CCDs into sky plane.\n"
-  "usage: DrawPhoto <out pix scale> <photo file> <solution name> <output FITS> [fill value]\n"
+  "usage: DrawPhoto <out pix scale> <photo file> <solution name> <output FITS> \n"
+  "                 [ref color] [fill value]\n"
   "     <out pix scale> is number of DECam pixels (0.264\"/pix) per output pixel\n"
   "     <photo file> is file holding the serialized solution from PhotoFit\n"
   "     <solution name> is the prefix of the name of the photometric solution to use from the file\n"
   "     <output FITS> is name of output FITS file portraying array on sky.\n"
+  "     [ref color] is color used to draw the star flat (default 0.61)\n"
   "     [fill value] is placed in pixels not falling on the array.  (default=-1)";
 
 int
@@ -41,7 +43,8 @@ main(int argc, char *argv[])
   string photoPrefix = argv[3];
   photoPrefix += "/";
   string outFits = argv[4];
-  const float noData = argc>5 ? atof(argv[5]) : -1.;
+  const double refColor = argc>5 ? atof(argv[5]) : 0.61;
+  const float noData = argc>6 ? atof(argv[6]) : -1.;
   
   loadPhotoMapParser();
 
@@ -93,6 +96,7 @@ main(int argc, char *argv[])
       devPhoto = photomaps.issueMap(photoPrefix + i.first);
     } catch (photometry::PhotometryError& pm) {
       // Might not have data for some extensions.  Just skip them.
+      /**/cerr << "Skipping " << photoPrefix + i.first << endl;
       devPhoto = 0;
     }
     if (devPhoto) {
@@ -106,9 +110,9 @@ main(int argc, char *argv[])
 	  if (!bDevice.includes(args.xDevice,args.yDevice)) continue;	// Skip if outside device
 
 	  // Calculate photometric correction
-	  args.color = 0.;
+	  args.color = refColor;
 	  double photo = devPhoto->forward(0., args);
-	  args.color = 1;
+	  args.color = refColor+1.;
 	  colorterm(ix,iy) = devPhoto->forward(0.,args) - photo;
 	  starflat(ix, iy) = -photo;
 	}
