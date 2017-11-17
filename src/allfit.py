@@ -24,6 +24,7 @@ parser.add_argument('--bands',help='Comma-separated list of bands for photometry
                         default='g,r,i,z,Y')
 parser.add_argument('--prior',help='Names of photometric prior files, if pre-constructed', type=str)
 parser.add_argument('--dcr_file',help='Name of pre-existing DCR file; "omit" to omit DCR and gradient corrections', type=str)
+parser.add_argument('--skip_recenter',help='Skip exposure recentering',action='store_true')
 
 args = parser.parse_args()
 
@@ -116,7 +117,7 @@ if doStep('dcr'):
         cmd.append(gradientFile)
         subprocess.check_call(cmd, stdout=sys.stdout, stderr=sys.stderr)
         
-if doStep('recenter'):    
+if doStep('recenter') and not args.skip_recenter:    
     # Recenter exposures' RA/Dec
     print 'Doing recenter'
     cmd = ['recenter.py']
