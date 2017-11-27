@@ -33,7 +33,7 @@ const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting)
 const int TAG_INSTRUMENT=-2;	// Exposure number for tag objects (no fitting nor contrib to stats)
 const int NO_INSTRUMENT=-3;
 
-const string stellarAffinity="STELLAR";
+const string stellarAffinity="S";
 
 const double NO_MAG_DATA = -100.;	// Value entered when there is no valid mag or color
 

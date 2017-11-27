@@ -13,6 +13,19 @@
 # PHOTOMETRY_DIR
 
 # MKL_DIR (optional, used with Eigen)
+CXX = g++ -fopenmp
+CXXFLAGS = -O2 -std=c++11
+TMV_DIR=/nfs/slac/g/ki/ki18/cpd/.local
+EIGEN_DIR=/nfs/slac/g/ki/ki18/cpd/.local/anaconda2/include/eigen3
+CFITSIO_DIR=/afs/slac/g/ki/software/cfitsio/3.41
+FFTW_DIR=/afs/slac/g/ki/software/fftw
+YAML_DIR=/nfs/slac/g/ki/ki18/cpd/.local
+
+MKL_DIR=/nfs/slac/g/ki/ki18/cpd/.local/anaconda2
+GBUTIL_DIR=/nfs/slac/g/ki/ki18/cpd//Projects/DES/gbutil
+GBFITS_DIR=/nfs/slac/g/ki/ki18/cpd//Projects/DES/gbfits
+ASTROMETRY_DIR=/nfs/slac/g/ki/ki18/cpd//Projects/DES/astrometry
+PHOTOMETRY_DIR=/nfs/slac/g/ki/ki18/cpd//Projects/DES/photometry
 
 INCLUDES := 
 

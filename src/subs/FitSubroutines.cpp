@@ -162,7 +162,8 @@ void
 int 
 elementNumber(string& key) {
   int out = -1;
-  list<string> l = stringstuff::split( stringstuff::regexReplace("^(.*)\\[([0-9]*)\\]$",
+  /* list<string> l = stringstuff::split( stringstuff::regexReplace("^(.*)\\[([0-9]*)\\]$", */
+  list<string> l = stringstuff::split( stringstuff::regexReplace("^(.*)\\[([0-9]*)]$",
 								 "\\1;\\2",
 								 key),
 				       ';');
@@ -1136,6 +1137,7 @@ void readObjects(const img::FTable& extensionTable,
 #endif
   for (int iext = 0; iext < extensions.size(); iext++) {
     if (!extensions[iext]) continue; // Skip unused 
+    cerr << "# iext " << iext << endl;
 
     // Relevant structures for this extension
     typename S::Extension& extn = *extensions[iext];
@@ -1193,7 +1195,6 @@ void readObjects(const img::FTable& extensionTable,
       neededColumns.push_back(idKey);
     neededColumns.push_back(xKey);
     neededColumns.push_back(yKey);
-      
     int magKeyElement;
     int magErrKeyElement;
     if (S::isAstro) {
