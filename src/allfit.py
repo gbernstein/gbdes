@@ -267,9 +267,7 @@ if doStep('astro'):
         cmd.append('-colorExposures='+colorFile)
     else:
         cmd.append(fofFile)
-        # cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput]))
         cmd.append(astroParams)
-        # there is never a dcrFile for nocolor
         cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput]))
         cmd.append('-colorExposures=""')
     cmd.append('-outcatalog='+astroCat)
