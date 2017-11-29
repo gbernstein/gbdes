@@ -268,15 +268,13 @@ if doStep('astro'):
     else:
         cmd.append(fofFile)
         # cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput]))
-        # TODO: modifying WCSFit here...
         cmd.append(astroParams)
-        if dcrFile:
-            cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput,dcrFile]))
-        else:
-            cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput]))
+        # there is never a dcrFile for nocolor
+        cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput]))
         cmd.append('-colorExposures=""')
     cmd.append('-outcatalog='+astroCat)
     cmd.append('-outwcs='+astroFile)
+    print ' '.join(cmd)
     with open(astroLog,'w') as log:
         subprocess.check_call(cmd, stdout=log, 
                               stderr=subprocess.STDOUT)

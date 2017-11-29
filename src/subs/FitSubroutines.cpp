@@ -1137,7 +1137,7 @@ void readObjects(const img::FTable& extensionTable,
 #endif
   for (int iext = 0; iext < extensions.size(); iext++) {
     if (!extensions[iext]) continue; // Skip unused 
-    cerr << "# iext " << iext << endl;
+    /* cerr << "# iext " << iext << endl; */
 
     // Relevant structures for this extension
     typename S::Extension& extn = *extensions[iext];
