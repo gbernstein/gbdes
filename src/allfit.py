@@ -264,6 +264,7 @@ if doStep('astro'):
         cmd.append('-colorExposures='+colorFile)
     else:
         cmd.append(fofFile)
+        cmd.append(astroParams)
         cmd.append('-inputMaps=' + ','.join([oldAstro,astroNocolorInput]))
         cmd.append('-colorExposures=""')
     cmd.append('-outcatalog='+astroCat)
