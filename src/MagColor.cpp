@@ -716,6 +716,9 @@ main(int argc, char *argv[])
 	mp.magErr = getTableDouble(ff, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
 	mp.photomap = photomap;
 
+	// If we have any inf or nan magnitudes, do not propagate this point
+	if (isnan(mp.magIn) || isinf(mp.magIn) || isnan(mp.magErr) || isinf(mp.magErr))
+	  continue;
 	// Add this point's info to our MagPoint catalog
 	pointMaps[iext][id[irow]] = mp;
       } // End loop over input rows of this extension

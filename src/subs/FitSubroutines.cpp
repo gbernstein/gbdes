@@ -1032,6 +1032,11 @@ Photo::fillDetection(Photo::Detection* d,
     + magshift;
   double sigma = getTableDouble(table, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
 
+  if ( isnan(d->magIn) || isinf(d->magIn)) {
+    cerr << "** NaN input at row " << irow << endl;
+    d->isClipped = true;
+    d->magIn = 0.;
+  }
   // Map to output and estimate output error
   d->magOut = d->map->forward(d->magIn, d->args);
 
@@ -1346,6 +1351,7 @@ readColors(img::FTable extensionTable,
 // Find all matched Detections that exceed allowable error, then
 // delete them from their Match and delete the Detection.
 // Does not apply to reference/tag detections.
+// Also deletes anything that is already marked as clipped
 template <class S>
 void
 purgeNoisyDetections(double maxError,
@@ -1357,8 +1363,8 @@ purgeNoisyDetections(double maxError,
     while (j != mptr->end()) {
       auto d = *j; // Yields pointer to each detection
       // Keep it if pixel error is small or if it's from a tag or reference "instrument"
-      if ( d->sigma > maxError
-	   && exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
+      if ( (d->isClipped || d->sigma > maxError) &&
+	   exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
 	j = mptr->erase(j, true);  // will delete the detection too.
       } else {
 	++j;

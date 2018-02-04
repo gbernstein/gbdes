@@ -441,13 +441,7 @@ main(int argc, char *argv[])
 
     /**/cerr << "Done reading catalogs." << endl;
 
-    // Now loop again over all catalogs being used to supply colors,
-    // and insert colors into all the PhotoArguments for Detections they match
-    readColors<Photo>(extensionTable, colorExtensions);
-
-    /**/cerr << "Done reading colors" << endl;
-
-    // Get rid of Detections with errors too high
+    // Get rid of Detections with errors too high or already clipped
     purgeNoisyDetections<Photo>(maxMagError, matches, exposures, extensions);
 			 
     // Get rid of Matches with too few detections
