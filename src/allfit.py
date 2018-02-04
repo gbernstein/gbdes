@@ -82,10 +82,13 @@ else:
 photoFile = args.basename + '.{:s}.photo'
 photoCat = args.basename + '.{:s}.photo.fits'
 photoLog = args.basename + '.{:s}.photofit.log'
+photoLog_2 = args.basename + '.{:s}.photofit_2.log'
+photoLog_3 = args.basename + '.{:s}.photofit_3.log'
 priorLog = args.basename + '.{:s}.prior.out'
 colorFile = args.basename + '.color.cat'
 magFile = args.basename + '.mags.cat'
 magLog = args.basename + '.magcolor.log'
+magLog_2 = args.basename + '.magcolor_2.log'
 colorFofFile = args.basename + '.color.fof'
 astroFile = args.basename + '.astro'
 astroLog = args.basename + '.wcsfit.log'
@@ -205,7 +208,7 @@ if doStep("photo"):
             if os.path.isfile(oldPhoto):
                 inmaps.append(oldPhoto)
             cmd.append('-inputMaps='+','.join(inmaps))
-            with open(photoLog.format(b),'w') as log:
+            with open(photoLog_2.format(b),'w') as log:
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
 
@@ -218,7 +221,7 @@ if doStep("photo"):
         cmd.append('-bands='+','.join(colorBands))
         cmd.append('-photofiles='+','.join([photoFile.format(b) for b in colorBands]))
         cmd.append(colorCmd)
-        with open(magLog.format(b),'w') as log:
+        with open(magLog_2.format(b),'w') as log:
             subprocess.check_call(cmd, stdout=log, 
                                   stderr=subprocess.STDOUT)
 
@@ -247,7 +250,7 @@ if doStep("photo"):
         if os.path.isfile(gradientFile):
             inmaps.append(gradientFile)
         cmd.append('-inputMaps='+','.join(inmaps))
-        with open(photoLog.format(b),'w') as log:
+        with open(photoLog_3.format(b),'w') as log:
             subprocess.check_call(cmd, stdout=log, 
                                   stderr=subprocess.STDOUT)
 
