@@ -108,20 +108,19 @@ main(int argc, char *argv[])
     starflat.header()->addHistory("Created from starflat solution " + photoFile);
 
     // Loop over pixels
-    photometry::PhotoArguments args;
-    args.xExposure = args.yExposure = args.color = 0.;
-
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
-    for (int iy = bDevice.getYMin(); iy <= bDevice.getYMax(); iy++)
+    for (int iy = bDevice.getYMin(); iy <= bDevice.getYMax(); iy++) {
+      photometry::PhotoArguments args;
+      args.xExposure = args.yExposure = args.color = 0.;
       for (int ix = bDevice.getXMin(); ix <= bDevice.getXMax(); ix++) {
 	args.xDevice = ix;
 	args.yDevice = iy;
 	double photo = devPhoto->forward(0., args);
 	starflat(ix, iy) = pow(10., 0.4*photo);
       }
-
+    }
     if (useNorms) starflat *= i->second.norm;
 
     // Calculate the median value of each amplifier and store in header

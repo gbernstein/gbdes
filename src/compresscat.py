@@ -182,7 +182,7 @@ for i in range(hduStep,len(fitsin),hduStep):
 
     # Isolate the stars we want to hold onto
     use = data['MAGERR_AUTO'] <= args.max_err
-    if 'SPREAD_MODEL' in data:
+    if 'SPREAD_MODEL' in data:  ## ??? string comparison to numpy array potential problem ???
         use = np.logical_and(use, np.abs(data['SPREAD_MODEL'])<=0.003)
     use = np.logical_and(use, np.logical_not(data['FLAGS'] & args.flags_mask))
     use = np.logical_and(use, np.logical_not(data['IMAFLAGS_ISO'] & args.imaflags_mask))
