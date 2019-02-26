@@ -1,3 +1,15 @@
+For py3 branch, upgrading all Python to work with Python 3.x:
+    * from __future__ import division,print_function
+    * Check all /, change to // where integer floor is desired
+    * change print statements
+    * switch "if/for x in dict.keys()" to "if/for x in dict"
+    * iteritems()->items() (slow now in Python2 since it makes a list? from future.utils import iteritems)
+    * range(),zip(),dict.keys(),values(),items() are now iterables, not lists.  Check these...  Note that iterators in dicts won't work if objects are popped out of dict during iteration (or added).
+    * xrange -> range
+    * __builtin__ module now builtins.  Don't see a __future__ for this.
+    
+Files needing this:  nightlyPrior.py
+
 * Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat.
 
 * Fix configure.py to use exposure-level APCORR more gracefully, maybe make more

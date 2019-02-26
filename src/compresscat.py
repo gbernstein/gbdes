@@ -10,7 +10,7 @@ Process multi-extension SExtractor catalog to accomplish the following:
 * Create a header keyword MJD-MDPT if not present giving time at center of
   exposure, if one was not present.
 """
-
+from __future__ import division,print_function
 import sys
 import os
 import shutil
@@ -168,18 +168,18 @@ for i in range(hduStep,len(fitsin),hduStep):
             hdr.add_record(line.strip())
 
     # Get MJD if we have it
-    if 'MJD-OBS' in hdr.keys():
+    if 'MJD-OBS' in hdr:
         if mjd is None:
             mjd = float(hdr['MJD-OBS'])
         elif mjd != float(hdr['MJD-OBS']):
-            print 'WARNING: disagreeing MJDs: ',mjd,hdr['MJD-OBS']
+            print('WARNING: disagreeing MJDs: ',mjd,hdr['MJD-OBS'])
 
     # and exposure time
-    if 'EXPTIME' in hdr.keys():
+    if 'EXPTIME' in hdr:
         if exptime is None:
             exptime = float(hdr['EXPTIME'])
         elif exptime != float(hdr['EXPTIME']):
-            print 'WARNING: disagreeing EXPTIMEs: ',exptime,hdr['EXPTIME']
+            print('WARNING: disagreeing EXPTIMEs: ',exptime,hdr['EXPTIME'])
 
     # Isolate the stars we want to hold onto
     use = data['MAGERR_AUTO'] <= args.max_err
@@ -198,12 +198,12 @@ for i in range(hduStep,len(fitsin),hduStep):
     if naper is None:
         naper = len(tab['MAG_APER'][0])
         if naper <= args.reference_aperture:
-            print "Aperture mag array length",naper, \
-              "is too small for reference_aperture=",args.reference_aperture
+            print("Aperture mag array length",naper, \
+              "is too small for reference_aperture=",args.reference_aperture)
             sys.exit(1)
     else:
         if naper!=len(tab['MAG_APER'][0]):
-            print "Mismatched number of photometric apertures at extension",j
+            print("Mismatched number of photometric apertures at extension",j)
             sys.exit(1)
     # collect differences between aperture mags
     apcorr = tab['MAG_APER']
@@ -259,18 +259,18 @@ phdr['CALEPOCH'] =epoch
 # Save the MJD at the temporal center of the exposure
 if args.add_mjdmid:
  if exptime is None:
-     print 'ERROR: add_mjdmid set but EXPTIME not found'
+     print('ERROR: add_mjdmid set but EXPTIME not found')
      sys.exit(1)
  else:
     phdr['MJD-MDPT'] = mjd + 0.5*(args.shutter_transit_time + exptime)/(24.*3600.)
 
 # Dump some basic information
-print "{:6d} {:12.6f} {:5.1f} {:s} {:s} {:1s} {:+6.4f} {:6.4f} {:5.3f} {:5.3f}".format(hdr['EXPNUM'],hdr['MJD-OBS'],hdr['EXPTIME'],hdr['TELDEC'],hdr['HA'],hdr['BAND'].strip(),phdr['APCOR09'],phdr['AP09_RMS'],phdr['FLUXRAD']*2*0.264,phdr['FRAD_RMS']*2.*0.264), epoch
+print("{:6d} {:12.6f} {:5.1f} {:s} {:s} {:1s} {:+6.4f} {:6.4f} {:5.3f} {:5.3f}".format(hdr['EXPNUM'],hdr['MJD-OBS'],hdr['EXPTIME'],hdr['TELDEC'],hdr['HA'],hdr['BAND'].strip(),phdr['APCOR09'],phdr['AP09_RMS'],phdr['FLUXRAD']*2*0.264,phdr['FRAD_RMS']*2.*0.264), epoch)
 
 # Make an output FITS and save
 out = fitsio.FITS(args.outcat, 'rw', clobber=True)
 for d,h in zip(tabs,hdrs):
-    if 'DETPOS' in h.keys():
+    if 'DETPOS' in h:
         out.write(d, header=h, extname=h['DETPOS'])
     else:
         out.write(d, header=h)

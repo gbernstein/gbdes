@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from __future__ import division,print_function
+
 """
 Collect information needed for astrometric and photometric matching of a collection of catalogs.
 Successor to Bob Armstrong's parse3.py that will take YAML input files, and also do all
@@ -123,7 +125,7 @@ def py_to_fits(val):
         size=len(max(val,key=len))
         return 'A'+str(size)
     else:
-        print "ERROR: No known FITS type for python type",vtype
+        print("ERROR: No known FITS type for python type",vtype)
         sys.exit(1)
     
 
@@ -205,7 +207,7 @@ def buildInstrumentTable(inst):
     for n in names:
         # If any of the device names is null, then the indices are screwed up
         if n=="":
-            print 'ERROR: Device indices screwed up for instrument',inst.name
+            print('ERROR: Device indices screwed up for instrument',inst.name)
             sys.exit(1)
     # Make an array of zeros to build the [xy]Min/Max columns
     z = [0. for n in names]
@@ -316,7 +318,10 @@ class AttributeFinder:
             self.select=None
 
         # Determine the Python builtin type that the attribute must have, defaults to str
-        self.valueType = getattr(importlib.import_module('__builtin__'),vtype)
+        if sys.version_info >= (3,0):
+            self.valueType = getattr(importlib.import_module('builtins'),vtype)
+        else:
+            self.valueType = getattr(importlib.import_module('__builtin__'),vtype)
 
         # Either get the value of the attribute, or information for extracting it from headers
         self.headerKey = None
@@ -334,8 +339,8 @@ class AttributeFinder:
                 # The header value should be read as a string and run through a regex/replace
                 rr = translation.split('=')
                 if len(rr)!=2:
-                    print "ERROR: Attribute translator is not of form <regex>=<replace>: ",\
-                      initdict['Translation']
+                    print("ERROR: Attribute translator is not of form <regex>=<replace>: ",\
+                      initdict['Translation'])
                     sys.exit(1)
                 self.translation = (re.compile(rr[0]),rr[1])
         else:
@@ -356,9 +361,9 @@ class AttributeFinder:
 
         val = None
         # Look in both headers for a value
-        if extnHeader!=None and self.headerKey in extnHeader.keys():
+        if extnHeader!=None and self.headerKey in extnHeader:
             val = extnHeader[self.headerKey]
-        elif primaryHeader!=None and self.headerKey in primaryHeader.keys():
+        elif primaryHeader!=None and self.headerKey in primaryHeader:
             val = primaryHeader[self.headerKey]
 
         if val!=None and self.translation!=None:
@@ -390,10 +395,10 @@ class Attribute:
 
     def addFinder(self, next):
         if next.key != self.key:
-            print "ERROR: Attribute with wrong name",first.key,"being added to",self.key
+            print("ERROR: Attribute with wrong name",first.key,"being added to",self.key)
             sys.exit(1)
         if next.valueType != self.seq[0].valueType:
-            print "ERROR: Mismatched types for Attribute",self.key
+            print("ERROR: Mismatched types for Attribute",self.key)
             sys.exit(1)
         self.seq.append(next)
         return
@@ -419,12 +424,12 @@ def variableSubstitution(d):
     variable = re.compile(r"^(.*)\$\{(.*)\}(.*)")
 
     # translate the dictionary to lower-case keys:
-    dd = {k.lower():v for k,v in d.iteritems()}
+    dd = {k.lower():v for k,v in d.items()}
     maxIterations=4
     
     for i in range(maxIterations):
         anyChanges=False
-        for k,v in dd.iteritems():
+        for k,v in dd.items():
             if not isinstance(v,str):
                 # Only operate on string-valued entries
                 continue
@@ -435,14 +440,14 @@ def variableSubstitution(d):
             vout = str(v)
             while m:
                 key = m.group(2).lower()
-                if key not in dd.keys():
-                    print "ERROR: variable substitution asks for nonexistent Attribute", key, "in", v
+                if key not in dd:
+                    print("ERROR: variable substitution asks for nonexistent Attribute", key, "in", v)
                     sys.exit(1)
                 if key==k:
-                    print "ERROR: self-reference to Attribute", key, "in", v
+                    print("ERROR: self-reference to Attribute", key, "in", v)
                 vv = dd[key]
                 if not isinstance(vv,str):
-                    print "ERROR: variable substitution using non-string-valued Attribute",key
+                    print("ERROR: variable substitution using non-string-valued Attribute",key)
                     sys.exit(1)
                 vout = m.expand(r"\g<1>"+vv+r"\g<3>")
                 m = variable.match(vout)
@@ -450,17 +455,17 @@ def variableSubstitution(d):
         if not anyChanges:
             break   # Done
         if i==maxIterations:
-            print "ERROR: Too many iterations in variableSubstitution"
+            print("ERROR: Too many iterations in variableSubstitution")
             sys.exit(1)
         # restore case of original dictionary
-        for k in d.keys():
+        for k in d:
             d[k] = dd[k.lower()]
     return
 
 if __name__=='__main__':
     # Check for input & output file names in sys.argv (multiple inputs ok?)
     if len(sys.argv)<3:
-        print "Usage: configure.py <input yaml> [more yaml...] <output fits>"
+        print("Usage: configure.py <input yaml> [more yaml...] <output fits>")
         sys.exit(1)
         
     # Read the YAML configuration file(s)
@@ -471,11 +476,11 @@ if __name__=='__main__':
         stream = open(yamlFile)
         y = yaml.load(stream)
         stream.close()
-        if 'Files' in y.keys():
+        if 'Files' in y:
             fileInput += y['Files']
-        if 'Fields' in y.keys():
+        if 'Fields' in y:
             fieldInput += y['Fields']
-        if 'Attributes' in y.keys():
+        if 'Attributes' in y:
             attributeInput += y['Attributes']
         
     outFile = sys.argv[-1]
@@ -484,21 +489,21 @@ if __name__=='__main__':
     fields = {}
     for d in fieldInput:
         f = Field(**d)
-        if f.name in fields.keys():
+        if f.name in fields:
             if not f==fields[f.name]:
                 # Error to have two distinct fields with same name
-                print 'ERROR: 2 different fields with name', name
+                print('ERROR: 2 different fields with name', name)
                 sys.exit(1)
         else:
             fields[f.name] = f
 
-    print "Number of fields: ", len(fields)
+    print("Number of fields: ", len(fields))
 
     # Make an Attribute sequence for all unique column names
     attributes = {}
     for d in attributeInput:
         af = AttributeFinder(**d)
-        if af.key in attributes.keys():
+        if af.key in attributes:
             attributes[af.key].addFinder(af)
         else:
             attributes[af.key] = Attribute(af)
@@ -518,7 +523,7 @@ if __name__=='__main__':
             start=int(rm.group(2))
             end=int(rm.group(3))
             if end<start:
-                print "ERROR: bad numerical range in file request", d
+                print("ERROR: bad numerical range in file request", d)
                 sys.exit(1)
             globList = [rm.group(1) + str(x) + rm.group(4) for x in range(start,end+1)]
         else:
@@ -529,12 +534,12 @@ if __name__=='__main__':
             files += glob.glob(g)
 
         if len(files)==0:
-            print "WARNING: No files found matching", d['glob']
+            print("WARNING: No files found matching", d['glob'])
             
         tmpdict = {'key':'EXPOSURE','value':'< EXPNUM'}
-        if 'expkey' in d.keys():
+        if 'expkey' in d:
             tmpdict['value'] = d['expkey']
-        if 'translation' in d.keys():
+        if 'translation' in d:
             tmpdict['translation'] = d['translation']
         if tmpdict['value'] == '_FILENAME':
             # Special signal means to use filename, not a header keyword, as EXPOSURE value
@@ -543,7 +548,7 @@ if __name__=='__main__':
         exposureAttrib = AttributeFinder(**tmpdict)
 
         for fitsname in files:
-            print "Reading", fitsname
+            print("Reading", fitsname)
             fits = pf.open(fitsname, memmap=True)
             # Primary extension can have a useful header but no table data
             pHeader = getHeader(fits,0,fitsname)
@@ -563,8 +568,8 @@ if __name__=='__main__':
                     else:
                         # This should be the objects part of an LDAC pair
                         if tmphead['EXTNAME'] != 'LDAC_OBJECTS':
-                            print 'ERROR: Did not get expected LDAC_OBJECTS at extn',iextn,\
-                                'of file',fitsname
+                            print('ERROR: Did not get expected LDAC_OBJECTS at extn',iextn,\
+                                'of file',fitsname)
                             sys.exit(1)
                     # Now have our headers, start filling in attributes in a dictionary
                     extn = {'FILENAME':fitsname,
@@ -574,7 +579,7 @@ if __name__=='__main__':
                     # Determine EXPOSURE  for this extension
                     expo = exposureAttrib(fitsname, primaryHeader=pHeader, extnHeader=eHeader)
                     if expo==None:
-                        print 'ERROR: no exposure ID for file',fitsname,'extension',iextn
+                        print('ERROR: no exposure ID for file',fitsname,'extension',iextn)
                         sys.exit(1)
                     extn['EXPOSURE']=expo
 
@@ -589,7 +594,7 @@ if __name__=='__main__':
                     # Get INSTRUMENT
                     expoAttr['instrument'] = attributes['INSTRUMENT'](**attargs)
                     if expoAttr['instrument']==None:
-                        print "ERROR: Missing Instrument at file",fitsname,"extension",iextn
+                        print("ERROR: Missing Instrument at file",fitsname,"extension",iextn)
                         sys.exit(1)
                     
                     # Other exposure-specific quantities:
@@ -636,29 +641,30 @@ if __name__=='__main__':
                            (expoAttr['mjd']!=None and abs(expoAttr['mjd'] - e.mjd)>0.0002) or \
                            (expoAttr['coords']!=None
                             and getDegree(expoAttr['coords'].separation(e.coords)) > 1.):
-                            print "ERROR: info mismatch at exposure",expo, "file",fitsname, \
-                                  'extension',iextn
+                            print("ERROR: info mismatch at exposure",expo, "file",fitsname, \
+                                  'extension',iextn)
                             sys.exit(1)
                         # Also check the field for a match, unless it is _NEAREST
                         if expoAttr['field'] != '_NEAREST' and expoAttr['field']!=e.field:
-                            print "ERROR: FIELD mismatch for exposure",expo
-                            print "Exposure has",e.field,"file",fitsname,"extension",iextn, \
-                                  "has",expoAttr['field']
+                            print("ERROR: FIELD mismatch for exposure",expo)
+                            print("Exposure has",e.field,"file",fitsname,"extension",iextn, \
+                                  "has",expoAttr['field'])
                             sys.exit(1)
                         # Check the instrument for a match
                         if inst!=e.instrument:
-                            print "ERROR: INSTRUMENT mismatch for exposure",expo
-                            print "Exposure has",e.instrument,"file",fitsname,"extension",iextn,"has",inst
+                            print("ERROR: INSTRUMENT mismatch for exposure",expo)
+                            print("Exposure has",e.instrument,"file",fitsname,"extension",iextn,"has",inst)
                             sys.exit(1)
                     else:
                         # New exposure.  Need coordinates to create it
                         if expoAttr['coords']==None:
-                            print "ERROR: Missing RA/DEC for new exposure",expo, \
-                              "at file",fitsname,"extension",iextn
+                            print("ERROR: Missing RA/DEC for new exposure",expo, \
+                              "at file",fitsname,"extension",iextn)
                             sys.exit(1)
+                        print("Exposure",expo,"at coords",expoAttr['coords']) ###??
                         if expoAttr['field']==None:
-                            print "ERROR: Missing FIELD for new exposure",expo, \
-                              "at file",fitsname,"extension",iextn
+                            print("ERROR: Missing FIELD for new exposure",expo, \
+                              "at file",fitsname,"extension",iextn)
                             sys.exit(1)
                         elif expoAttr['field']=="_NEAREST":
                             # Finding nearest field center.
@@ -680,9 +686,9 @@ if __name__=='__main__':
                         if instruments[inst].band is None:
                             instruments[inst].band = expoAttr['band']
                         elif instruments[inst].band != expoAttr['band']:
-                            print "ERROR: Band",expoAttr['band'],"does not match instrument",\
+                            print("ERROR: Band",expoAttr['band'],"does not match instrument",\
                               instruments[inst].name,"band",inst.band,\
-                              "in catalog file",fitsname
+                              "in catalog file",fitsname)
                             sys.exit(1)
                         
                     # Get device name, not needed for special devices
@@ -692,7 +698,7 @@ if __name__=='__main__':
                             # Give a blank device name
                             dev = ''
                         else:
-                            print "ERROR: Missing Device at file",fitsname,"exposure",iextn
+                            print("ERROR: Missing Device at file",fitsname,"exposure",iextn)
                             sys.exit(1)
 
                     # Record the device for this extension.
@@ -725,7 +731,7 @@ if __name__=='__main__':
 
     # Completed loop through all input files from all globs
     # Get rid of fields with only 1 exposure:
-    for k in fields.keys():
+    for k in list(fields):
         count = 0
         for e,v in exposures.items():
             if v.field==k:
@@ -735,16 +741,16 @@ if __name__=='__main__':
         if count<=1:
             # No matches will occur in this field.  Purge.
             fields.pop(k)
-            print "WARNING: Ignoring field", k, "with <=1 exposure"
+            print("WARNING: Ignoring field", k, "with <=1 exposure")
 
     # Now get rid of exposures that are not in a usable field, and
     # extensions that are from these exposures
     killedThese = []
-    for e,v in exposures.items():
+    for e,v in list(exposures.items()):
         if v.field not in fields:
             exposures.pop(e)
             killedThese.append(e)
-            print "WARNING: Ignoring isolated exposure",e
+            print("WARNING: Ignoring isolated exposure",e)
     tmplist = []
     for e in extensions:
         if e['EXPOSURE'] not in killedThese:
@@ -754,7 +760,7 @@ if __name__=='__main__':
     del tmplist
     
     # Get rid of instruments that are not used in useful exposures
-    for i in instruments.keys():
+    for i in list(instruments):
         used = False
         for e,v in exposures.items():
             if v.instrument==i:
@@ -816,7 +822,7 @@ if __name__=='__main__':
     # Now create a column for every other attribute we have
     for k,a in attributes.items():
         if a.key not in specialAttributes:
-            print "*** Getting",a.key
+            print("*** Getting",a.key)
             cols.append(colForAttribute(extensions, a.key))
 
     # Add the EXTENSION table as an HDU

@@ -4,6 +4,7 @@ Read FOF file and generate YAML-format specifications for differential chromatic
 for each exposure (DCR).  Also calculates an improved airmass value, placing this and parallactic
 angle into columns of the EXPOSURE table in the FOF file.
 '''
+from __future__ import division,print_function
 import numpy as np
 import yaml
 from gbutil import dmsToDegrees
@@ -91,7 +92,7 @@ if __name__=='__main__':
         # Get HA from them, do they agree?
         ha = np.unique(extns['HA'][used])
         if len(ha) > 1:
-            print "Disagreeing HA's for exposure",name,ha
+            print("Disagreeing HA's for exposure",name,ha)
         ha = dmsToDegrees(ha[0]) * 15.
         # get declination, derive parallactic angle
         dec = exposures['dec'][i]
@@ -101,7 +102,7 @@ if __name__=='__main__':
 
         # Write DCR to pixmaps
         b = bands[iinst]
-        if b in dcrConstant.keys():
+        if b in dcrConstant:
             # Convert DCR amplitude from mas to degrees
             ampl = dcrConstant[b] / (3600.*1000.)
             dcry = ampl * np.cos(p)*np.sqrt(airmass*airmass-1)
@@ -117,7 +118,7 @@ if __name__=='__main__':
             pixmaps[name+'/dcr'] = {'Type':'Identity'}
 
         # Write extinction gradient to pixmaps.  *Add* mags to points *closer* to zenith
-        if b in nominalExtinction.keys():
+        if b in nominalExtinction:
             # Get local extinction gradient in mag per degree
             ampl = nominalExtinction[b] * airmass * np.sqrt(airmass**2-1) * np.pi/180.;
             dcry = ampl * np.cos(p) 
@@ -131,7 +132,7 @@ if __name__=='__main__':
             photomaps[name+'/gradient'] = photomap
         else:
             # Extinction not known
-            print "WARNING: no nominal extinction in band",b
+            print("WARNING: no nominal extinction in band",b)
             photomaps[name+'/gradient'] = {'Type':'Identity'}
             
     # write yaml

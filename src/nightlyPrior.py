@@ -4,6 +4,7 @@ Produce photometric prior file that breaks degeneracies arising from zeropoint s
 Output is YAML format suitable for input to PhotoFit.
 Nominal airmass extinction coefficient is taken from table if none is given
 '''
+from __future__ import division,print_function
 import astropy.io.fits as pf
 from astropy.time import Time
 import numpy as np
@@ -56,7 +57,7 @@ if args.extinction is not None:
 elif b in nominalExtinction:
     extinction = nominalExtinction[b]
 else:
-    print "WARNING: no default extinction found for band",b
+    print("WARNING: no default extinction found for band",b)
     extinction = 0.1
 
 # Put nominal values into dictionary
@@ -81,7 +82,7 @@ for j in ('zeropoint','airmass','color','apcorr'):
         free.remove(j)
 if free:
     # Shouldn't be anything left in the list
-    print 'Unknown arguments for --free:',free
+    print('Unknown arguments for --free:',free)
     sys.exit(1)
 
 absolutes = [i.strip() for i in args.absolutes.split(',') if i.strip()]
@@ -188,15 +189,15 @@ while nights:
         if mjd is not None:
             # Found it.
             break
-        print 'WARNING: Did not use {:s} as absolute reference exposure'.format(expo)
+        print('WARNING: Did not use {:s} as absolute reference exposure'.format(expo))
 
     # If there are no more user suggestions, pull out an exposure from front of lists
     if mjd is None:
-        mjd = nights.keys()[0]
+        mjd = list(nights.keys())[0]
         exposure = nights[mjd].exposures.pop()
 
-    print 'Absolute contraint at exposure',exposure,'on',mjd
-    print '...Checking',len(nights),'nights' ##
+    print('Absolute contraint at exposure',exposure,'on',mjd)
+    print('...Checking',len(nights),'nights') ##
     
     # Add an absolute prior for this point
     absolutes_out.append(exposure)
@@ -207,7 +208,7 @@ while nights:
     # Iterate graph traversal until no new fields found
     while newFields:
         newerFields = set()
-        for k,n in nights.items():
+        for k,n in list(nights.items()):
             if n.fields & newFields:
                 # This night touches calibrated fields.
                 # Record any fields it touches that are not already

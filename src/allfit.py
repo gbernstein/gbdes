@@ -3,6 +3,8 @@
 Python script for doing photometric fits given a set of catalogs
 from starflat sequences.
 """
+from __future__ import division,print_function
+
 import subprocess
 import os
 import os.path
@@ -98,7 +100,7 @@ starflatName = args.basename + '.{:s}.sf'
 bands = set(args.bands.split(','))
 
 if doStep('config'):
-    print 'Doing config'
+    print('Doing config')
     # Collect all configuration information
     cmd = ['configure.py']
     if os.path.isfile(stdConfig):
@@ -113,7 +115,7 @@ if doStep('config'):
 if doStep('dcr'):    
     if makeDCR:
         # Make DCR file
-        print 'Doing dcr'
+        print('Doing dcr')
         cmd = ['decamDCR.py']
         cmd.append(dbFile)
         cmd.append(dcrFile)
@@ -122,14 +124,14 @@ if doStep('dcr'):
         
 if doStep('recenter') and not args.skip_recenter:    
     # Recenter exposures' RA/Dec
-    print 'Doing recenter'
+    print('Doing recenter')
     cmd = ['recenter.py']
     cmd.append(dbFile)
     subprocess.check_call(cmd, stdout=sys.stdout, stderr=sys.stderr)
         
 if doStep("match"):
     # Match objects
-    print 'Doing WCSFoF'
+    print('Doing WCSFoF')
     cmd = ["WCSFoF"]
     cmd.append(dbFile)
     cmd.append(fofParams)
@@ -152,10 +154,10 @@ if doStep("photo"):
         colorBands = ['g','i']
         for b in colorBands:
             if b not in bands:
-                print 'Missing band',b,'required for color terms'
+                print('Missing band',b,'required for color terms')
                 sys.exit(1)
 
-        print 'Doing PhotoFit w/o color'
+        print('Doing PhotoFit w/o color')
         for b in colorBands:
             cmd = ['PhotoFit']
             cmd.append(fofFile)
@@ -176,7 +178,7 @@ if doStep("photo"):
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
 
-        print 'Doing first MagColor'
+        print('Doing first MagColor')
         colorCmd = '-colors='+colorBands[0]+'-'+colorBands[1]+\
                    '@'+colorFile
         cmd = ['MagColor']
@@ -191,7 +193,7 @@ if doStep("photo"):
             subprocess.check_call(cmd, stdout=log, 
                                   stderr=subprocess.STDOUT)
 
-        print 'Doing PhotoFit w/ color'
+        print('Doing PhotoFit w/ color')
         for b in colorBands:
             cmd = ['PhotoFit']
             cmd.append(colorFofFile)
@@ -212,7 +214,7 @@ if doStep("photo"):
                 subprocess.check_call(cmd, stdout=log, 
                                       stderr=subprocess.STDOUT)
 
-        print 'Doing second MagColor'
+        print('Doing second MagColor')
         cmd = ['MagColor']
         cmd.append(fofFile)
         cmd.append(colorFofFile)
@@ -226,7 +228,7 @@ if doStep("photo"):
                                   stderr=subprocess.STDOUT)
 
     # Now make final photofits, with or without color terms
-    print 'Doing final PhotoFit'
+    print('Doing final PhotoFit')
     for b in bands:
         cmd = ['PhotoFit']
         if args.color:
@@ -255,7 +257,7 @@ if doStep("photo"):
                                   stderr=subprocess.STDOUT)
 
 if doStep('astro'):
-    print 'Doing WCSFit'
+    print('Doing WCSFit')
     cmd = ['WCSFit']
     if args.color:
         cmd.append(colorFofFile)
@@ -278,13 +280,13 @@ if doStep('astro'):
 
 if doStep('draw'):
     for b in bands:
-        print 'Doing Phot2DESDM band',b
+        print('Doing Phot2DESDM band',b)
         cmd = ['Photo2DESDM']
         cmd.append(photoFile.format(b))
         cmd.append(b) # ??? Here assuming that the instrument name = band
         cmd.append(starflatName.format(b))
         subprocess.check_call(cmd, stdout=sys.stdout, stderr=sys.stderr)
 
-    print 'Doing DrawAstro'
+    print('Doing DrawAstro')
 
 sys.exit(0)
