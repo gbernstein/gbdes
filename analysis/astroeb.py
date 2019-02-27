@@ -1,6 +1,7 @@
 # Routines for E/B separations of astrometric residuals
 # and investigation of correlation functions etc.
 # Note the use of Mike Jarvis's treecorr below
+from __future__ import division,print_function
 import numpy as np
 import astropy.io.fits as pf
 import astropy.wcs as wcs
@@ -26,13 +27,13 @@ def vcorr(x,y,dx,dy,
     if len(x) > maxpts:
         # Subsample array to get desired number of points
         rate = float(maxpts) / len(x)
-        print "Subsampling rate {:5.3f}%".format(rate*100.)
+        print("Subsampling rate {:5.3f}%".format(rate*100.))
         use = np.random.random(len(x)) <= rate
         x = x[use]
         y = y[use]
         dx = dx[use]
         dy = dy[use]
-    print "Length ",len(x)
+    print("Length ",len(x))
     # Get index arrays that make all unique pairs
     i1, i2 = np.triu_indices(len(x))
     # Omit self-pairs
@@ -118,8 +119,8 @@ def ebSums(fitsname, exposures):
         nsum += 1
         var = np.sum(out[1]*wr)
         ee = np.sum(out[4]*wr) / var
-        print exp, var, np.absolute(ee), np.angle(ee,deg=True)/2.
-        print >>outfile, exp, var, np.absolute(ee), np.angle(ee,deg=True)/2.
+        print(exp, var, np.absolute(ee), np.angle(ee,deg=True)/2.)
+        print(exp, var, np.absolute(ee), np.angle(ee,deg=True)/2.,file=outfile)
     outfile.close()
     return logr, esum/nsum, bsum/nsum, xsum/nsum
 
@@ -157,13 +158,13 @@ def vcorr2d(x,y,dx,dy,
     if len(x) > maxpts:
         # Subsample array to get desired number of points
         rate = float(maxpts) / len(x)
-        print "Subsampling rate {:5.3f}%".format(rate*100.)
+        print("Subsampling rate {:5.3f}%".format(rate*100.))
         use = np.random.random(len(x)) <= rate
         x = x[use]
         y = y[use]
         dx = dx[use]
         dy = dy[use]
-    print "Length ",len(x)
+    print("Length ",len(x))
     # Get index arrays that make all unique pairs
     i1, i2 = np.triu_indices(len(x))
     # Omit self-pairs
@@ -179,7 +180,7 @@ def vcorr2d(x,y,dx,dy,
 
     # Accumulate displacement sums
     v =  dx + 1j*dy
-    print 'xiplus' ##
+    print('xiplus') ##
     vv = dx[i1] * dx[i2] + dy[i1] * dy[i2]
     xiplus = np.histogram2d(xshift,yshift, bins=bins, range=hrange, weights=vv)[0]/counts
 
@@ -202,7 +203,7 @@ def polyfit(x,y,dx,dy,order=3):
     dxy = np.transpose(np.vstack( (dx,dy)))
     # Fit and subtract dx, dy concurrently
     a = np.linalg.lstsq(xy, dxy)[0]
-    print "Coefficients: ",a
+    print("Coefficients: ",a)
     fit = np.dot(xy,a)
     dx -= fit[:,0]
     dy -= fit[:,1]
@@ -298,24 +299,24 @@ def allExposuresSummary(fitsname, savefile, order=3):
     # ap.select is too slow to do every exposure so I'm going to speed it up knowing
     # we want to use basically all objects anyway
     objtab = ff['WCSOut'].data
-    print "..read",len(objtab) ##
+    print("..read",len(objtab)) ##
     use = objtab['CLIP']==0
     use = np.logical_and(use, objtab['WTFRAC'] < 0.35)
     objtab = objtab[use]
-    print "..using",len(objtab) ##
+    print("..using",len(objtab)) ##
     # Sort the table by increasing extension number
     ii = np.argsort(objtab['EXTENSION'])
     objtab = objtab[ii]
-    print "..sorted" ##
+    print("..sorted") ##
     # Locations of first ii for each extension
     inew = np.where(objtab['EXTENSION'][1:]!=objtab['EXTENSION'][:-1])[0] + 1  
-    print "..len(inew)",len(inew) ##
+    print("..len(inew)",len(inew)) ##
     extnSlices = {}
     for j in range(len(inew)-1):
         extnSlices[objtab['EXTENSION'][inew[j]]] = slice(inew[j],inew[j+1])
     extnSlices[objtab['EXTENSION'][inew[-1]]] = slice(inew[-1])  # Last extension
     del inew
-    print len(extnSlices), 'slices'
+    print(len(extnSlices), 'slices')
 
     # Put each exposure's data into the table
     # Process the exposures in order of their names
@@ -349,18 +350,18 @@ def allExposuresSummary(fitsname, savefile, order=3):
             dxx.append(objtab['xresw'][extnSlices[extn]])
             dyy.append(objtab['yresw'][extnSlices[extn]])
         if len(xx) < 10:
-            print "Skipping",expname,"with too few matched extensions: ",len(xx)
+            print("Skipping",expname,"with too few matched extensions: ",len(xx))
             continue
         x = np.concatenate(xx)
         if len(x) < 2000:
-            print "Skipping",expname,"with too few stars: ",len(x)
+            print("Skipping",expname,"with too few stars: ",len(x))
         y = np.concatenate(yy)
         dx = np.concatenate(dxx)
         dy = np.concatenate(dyy)
         
         out = summary(x,y,dx,dy, order=order)
         hdu.data[iout] = (expname, band, mjd, exptime) + out  # Write whole table line
-        print expname, out[:3]
+        print(expname, out[:3])
 
     hdu.writeto(savefile, clobber=True)
     return

@@ -1,4 +1,5 @@
 # Routines for use in plotting astrometry residuals
+from __future__ import division,print_function
 import numpy as np
 import astropy.io.fits as pf
 import astropy.wcs as wcs
@@ -56,7 +57,7 @@ class Poly2d:
     def setCoeffs(self,c):
         # Set the coefficients to the specified vector.
         if len(c.shape)!=1 or c.shape[0]!=np.count_nonzero(self.use):
-            print "Poly2d.setCoeffs did not get proper-size array", c.shape
+            print("Poly2d.setCoeffs did not get proper-size array", c.shape)
             sys.exit(1)
         self.coeffs[self.use] = c
         return
@@ -216,7 +217,7 @@ def select(fits, instrument=None, device=None, exposure=None,
                 use = np.logical_or(use,
                                     np.logical_and(useExtnN[objTab['EXTENSION']], lowX))
             else:
-                print 'Bad amp value:', amp
+                print('Bad amp value:', amp)
                 sys.exit(1)
 
     if iMatch('REFERENCE') and dMatch(''):
@@ -242,7 +243,7 @@ def select(fits, instrument=None, device=None, exposure=None,
     if wtFracMax is not None:
         use = np.logical_and(use, objTab['WTFRAC']<=wtFracMax)
 
-    ## print 'Select',np.count_nonzero(use), '/',len(use)
+    ## print('Select',np.count_nonzero(use), '/',len(use))
                 
     outTable = objTab[use]
 
@@ -271,7 +272,7 @@ def getFieldCoords(fits, expNums):
         exposures = fits['Exposures'].data
         fields = fits['Fields'].data
     except KeyError:
-        print "File does not have necessary extensions"
+        print("File does not have necessary extensions")
         return 1
     # Add columns to the exposure table ???
     dx = []
@@ -364,13 +365,13 @@ def residInPixels(fits, binpix=64, scaleFudge=1.,
     sumw = np.where( sumw > minWeight, 1./sumw, noData)
     rmsx = np.std(sumxw[sumw>0.])
     rmsy = np.std(sumyw[sumw>0.])
-    print 'RMSx, RMSy, noise:', rmsx, rmsy, np.sqrt(np.mean(sumw[sumw>0.]))
+    print('RMSx, RMSy, noise:', rmsx, rmsy, np.sqrt(np.mean(sumw[sumw>0.])))
 
     # Make an x and y position for each cell to be the center of its cell
     xpos = np.arange(xsize*ysize,dtype=int)
     xpos = ((xpos%xsize)+0.5)*cellSize + xmin
     ypos = np.arange(xsize*ysize,dtype=int)
-    ypos = ((ypos/xsize)+0.5)*cellSize + ymin
+    ypos = ((ypos//xsize)+0.5)*cellSize + ymin
 
     useful = np.logical_and(sumw!=0, sumw<(maxErr*maxErr))
     dx = sumxw[useful]
@@ -459,8 +460,8 @@ def ebPlot(dx, dy, xpos, ypos,scale=50.):
     # Some stats:
     vardiv = gbutil.clippedMean(div[div==div],5.)[1]
     varcurl = gbutil.clippedMean(curl[div==div],5.)[1]
-    print "RMS of div: {:.2f}; curl: {:.2f}".format(np.sqrt(vardiv),
-                                                    np.sqrt(varcurl))
+    print("RMS of div: {:.2f}; curl: {:.2f}".format(np.sqrt(vardiv),
+                                                    np.sqrt(varcurl)))
     return
     
 def xPlot(fits, cellSize, doY=False, maxErr=2, color='g', **kwargs):
@@ -500,7 +501,7 @@ def xPlot(fits, cellSize, doY=False, maxErr=2, color='g', **kwargs):
 
     dx = sumxw / sumw
     err = np.where(sumw>0. , pixScale/np.sqrt(sumw), 2*maxErr)
-    print err
+    print(err)
 
     #useful = np.logical_and(sumw!=0, sumw>1./(maxErr*maxErr))
     useful = err < maxErr
@@ -637,7 +638,7 @@ def ringplot(fits, device, photo, astro, **kwargs):
     xx = np.vstack((np.interp(r,rast,drast), s(r))).transpose()
     tmp = tmp + np.interp(r,rast,drast) # put template back into data
     c = np.linalg.lstsq(xx,tmp)[0]
-    print device, c
+    print(device, c)
     resid = dr - np.dot(xx,c)
     pl.subplot(313)
     pl.plot(r, resid, 'go-', label='Resid after spline spline')
@@ -663,7 +664,7 @@ def allRingPlots(filename):
     import yaml
     photo = yaml.load(open('photorings3.yaml'))
     astro = yaml.load(open('astrorings3.yaml'))
-    kk = decam.ccdnums.keys()
+    kk = list(decam.ccdnums.keys())
     kk.sort()
     kk.pop(23) # get rid of N30
     from matplotlib.backends.backend_pdf import PdfPages
@@ -714,7 +715,7 @@ def ringFactors(wcs):
     
     #f = open('ringscales.dat','w')
     #for i in range(len(ccd)):
-    #print >>f,ccd[i],gri[i]
+    #print(ccd[i],gri[i],file=f)
     return
 
 def lateralColor(astro, band, scale):

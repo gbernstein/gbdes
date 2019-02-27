@@ -7,8 +7,8 @@ For py3 branch, upgrading all Python to work with Python 3.x:
     * range(),zip(),dict.keys(),values(),items() are now iterables, not lists.  Check these...  Note that iterators in dicts won't work if objects are popped out of dict during iteration (or added).
     * xrange -> range
     * __builtin__ module now builtins.  Don't see a __future__ for this.
-    
-Files needing this:  nightlyPrior.py
+
+Need to do this for the analysis/ programs.
 
 * Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat.
 

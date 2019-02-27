@@ -1,4 +1,5 @@
 # Plots of photometric fitting results
+from __future__ import division,print_function
 import numpy as np
 import astropy.io.fits as pf
 import pylab as pl
@@ -164,7 +165,7 @@ def select(fits, instrument=None, device=None, exposure=None,
                 use = np.logical_or(use,
                                     np.logical_and(useExtnN[objTab['EXTENSION']], lowX))
             else:
-                print 'Bad amp value:', amp
+                print('Bad amp value:', amp)
                 sys.exit(1)
 
     if clip is not None:
@@ -174,7 +175,7 @@ def select(fits, instrument=None, device=None, exposure=None,
     if wtFracMax is not None:
         use = np.logical_and(use, objTab['WTFRAC']<=wtFracMax)
 
-    ## print 'Select',np.count_nonzero(use), '/',len(use)
+    ## print('Select',np.count_nonzero(use), '/',len(use))
                 
     return objTab[use]
 
@@ -205,7 +206,7 @@ def rmsVsSigma(fitsfile, color='r',label=None, **kw):
     # Report fit to model of systematic + scaled internal scatter
     A = np.array( [s*s, np.ones(len(s))] )
     w = np.linalg.lstsq(A.T, rms*rms)[0]
-    print "color " , color, " Fitted error multiplier ", np.sqrt(w[0]), "RMS in first bin: ", rms[0]
+    print("color " , color, " Fitted error multiplier ", np.sqrt(w[0]), "RMS in first bin: ", rms[0])
     
     pl.plot(s,rms,color+'o',label=label)
     s = np.arange(0,0.01,0.0001)
@@ -294,7 +295,7 @@ def residInPixels(fitsfile, binpix=128, plotRMS=False, scaleLimit = 0.003,
         sumxw = np.where( sumw > minWeight, sumxw / sumw, noData)
         sumw = np.where( sumw > minWeight, 1./sumw, noData)
         rms = np.std(sumxw[sumw>0.])
-        print 'RMS, noise:', rms, np.sqrt(np.mean(sumw[sumw>0.]))
+        print('RMS, noise:', rms, np.sqrt(np.mean(sumw[sumw>0.])))
         pl.imshow(sumxw, aspect='equal', vmin=-scaleLimit, vmax=scaleLimit, origin='lower',
                  interpolation='nearest', extent=(xmin,xmax,ymin,ymax),cmap='Spectral')
 
@@ -459,8 +460,8 @@ def resid1d(fitsfile, npix=4, plotRMS=False, scaleLimit = 3., maxerr=2., doY = F
         sumxw = (sumxw/sumw)[use]
         sumw = 1./sumw[use]
         xbin = xbin[use]
-        print 'RMS of useful pixels: ', np.std(sumxw)
-        print 'Expected noise: ', np.sqrt(np.mean(sumw))
+        print('RMS of useful pixels: ', np.std(sumxw))
+        print('Expected noise: ', np.sqrt(np.mean(sumw)))
         ##pl.errorbar(xbin, sumxw, yerr=1./np.sqrt(sumw), fmt='ro',ecolor='r')
         pl.plot(xbin, sumxw,'ro')
         pl.ylim(-scaleLimit,scaleLimit)
@@ -506,7 +507,7 @@ def excessVariance(fitsfile, color='r',label=None, **kw):
     # Report fit to model of systematic + scaled internal scatter
     A = np.array( [s*s, np.ones(len(s))] )
     w = np.linalg.lstsq(A.T, rms*rms)[0]
-    print "color " , color, " Fitted error multiplier ", np.sqrt(w[0]), "RMS in first bin: ", rms[0]
+    print("color " , color, " Fitted error multiplier ", np.sqrt(w[0]), "RMS in first bin: ", rms[0])
     
     pl.plot(s,rms,color+'o',label=label)
     s = np.arange(0,0.01,0.0001)
@@ -607,7 +608,7 @@ def imageChange(fits1, fits2, lowerValid=-0.5, upperValid = 0.5, colorRange=None
     img1 = pf.getdata(fits1, 0)
     img2 = pf.getdata(fits2, 0)
     if img1.shape != img2.shape:
-        print "Shape mismatch: ", img1.shape, img2.shape
+        print("Shape mismatch: ", img1.shape, img2.shape)
         return (0.,0.,0.)
     valid = np.logical_and(img1 >= lowerValid, img1 <= upperValid)
     valid = np.logical_and(valid, img2 >= lowerValid)
@@ -636,7 +637,7 @@ def imageChange(fits1, fits2, lowerValid=-0.5, upperValid = 0.5, colorRange=None
     else:
         A = np.array( [np.ones(len(data)), x, y] )
     w = np.linalg.lstsq(A.T,data)[0]
-    print A.shape, w
+    print(A.shape, w)
     data -= np.dot(w, A)
     rms = np.std(data)
     if (colorRange==None): colorRange = 4*rms
@@ -707,7 +708,7 @@ def pixelPhase(fitsfile, device='', nphase=20, plotRMS=False, maxSigma=0.006,
                 deviceNumber = i;
                 break
         if (deviceNumber < 0):
-            print 'Did not find device named ' + device
+            print('Did not find device named ' + device)
             return
 
         exttab = f['Extensions'].data
@@ -719,7 +720,7 @@ def pixelPhase(fitsfile, device='', nphase=20, plotRMS=False, maxSigma=0.006,
         #Now select points from one of the extensions for this device.
         extn = data['Extension'][use]
         use = np.in1d(extn, useExtensions)
-        print 'points in: ', len(use), ' chosen ', np.count_nonzero(use)
+        print('points in: ', len(use), ' chosen ', np.count_nonzero(use))
         xPix = xPix[use]
         yPix = yPix[use]
         resid = resid[use]
@@ -762,8 +763,8 @@ def pixelPhase(fitsfile, device='', nphase=20, plotRMS=False, maxSigma=0.006,
     else:
         sumxw = np.where( sumw > minWeight, sumxw / sumw, noData)
         sumw = np.where( sumw > minWeight, 1./sumw, noData)
-        print 'RMS of useful pixels: ', np.std(sumxw[sumw>0.])
-        print 'Expected noise: ', np.sqrt(np.mean(sumw[sumw>0.]))
+        print('RMS of useful pixels: ', np.std(sumxw[sumw>0.]))
+        print('Expected noise: ', np.sqrt(np.mean(sumw[sumw>0.])))
         scaleLimit = 0.002
         pl.imshow(sumxw, aspect='equal', vmin=-scaleLimit, vmax=scaleLimit, origin='lower',
                   interpolation='nearest', extent=(0.,1.,0.,1.))
