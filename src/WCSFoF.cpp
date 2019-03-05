@@ -295,11 +295,11 @@ main(int argc,
       int hduNumber;
       extensionTable.readCell(hduNumber, "EXTENSION", iextn);
 
-      /**/if (true/*iextn%10==0**/) cerr << "# Reading object catalog " << iextn
-				<< "/" << extensionTable.nrows()
-			       << " in " << filename 
-			       << " HDU #" << hduNumber
-			       << endl;
+      if (iextn%10==0) cerr << "# Reading object catalog " << iextn
+			    << "/" << extensionTable.nrows()
+			    << " in " << filename 
+			    << " HDU #" << hduNumber
+			    << endl;
       FTable ft = FitsTable(filename, FITS::ReadOnly, hduNumber).extract();
 
       string idKey;
@@ -473,8 +473,6 @@ main(int argc,
 	  yw /= DEGREE;
 	}
 
-	/**/cout << iextn << " " << xw << " " << yw << endl;
-	
 	allPoints.push_back(Point(xw, yw, iextn, vid[iObj], exposureNumber));
 
 	// Now we match!!!!

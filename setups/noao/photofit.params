@@ -1,0 +1,9 @@
+# Parameter file for photometry fitting of a single epoch of star flats
+maxMagError 0.03
+sysError 0.002
+priorClipThresh 10
+reserveFraction = 0.2
+minFitExposures = 200
+minColor = 0.
+maxColor = 2.
+fixMaps = .*edge,.*rings

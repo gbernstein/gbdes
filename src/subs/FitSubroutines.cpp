@@ -983,14 +983,15 @@ Astro::fillDetection(Astro::Detection* d,
 		     string xKey, string yKey, string errKey,
 		     string magKey, string magErrKey,
 		     int magKeyElement, int magErrKeyElement,
+		     bool xColumnIsDouble, bool yColumnIsDouble,
 		     bool errorColumnIsDouble,
 		     bool magColumnIsDouble, bool magErrColumnIsDouble,
 		     double magshift,
 		     const astrometry::PixelMap* startWcs,
 		     double sysErrorSq,
 		     bool isTag) {
-  table.readCell(d->xpix, xKey, irow);
-  table.readCell(d->ypix, yKey, irow);
+  d->xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
+  d->ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
 
   double sigma = isTag ? 0. : getTableDouble(table, errKey, -1, magColumnIsDouble,irow);
   sigma = std::sqrt(sysErrorSq + sigma*sigma);
@@ -1016,14 +1017,15 @@ Photo::fillDetection(Photo::Detection* d,
 		     string xKey, string yKey, string errKey,
 		     string magKey, string magErrKey,
 		     int magKeyElement, int magErrKeyElement,
+		     bool xColumnIsDouble, bool yColumnIsDouble,
 		     bool errorColumnIsDouble,
 		     bool magColumnIsDouble, bool magErrColumnIsDouble,
 		     double magshift,
 		     const astrometry::PixelMap* startWcs,
 		     double sysErrorSq,
 		     bool isTag) {
-  table.readCell(d->args.xDevice, xKey, irow);
-  table.readCell(d->args.yDevice, yKey, irow);
+  d->args.xDevice = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
+  d->args.yDevice = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
   startWcs->toWorld(d->args.xDevice, d->args.yDevice,
 		    d->args.xExposure, d->args.yExposure);
 
@@ -1231,6 +1233,8 @@ void readObjects(const img::FTable& extensionTable,
     }
     Assert(id.size() == ff.nrows());
 
+    bool xColumnIsDouble = isDouble(ff, xKey, -1);
+    bool yColumnIsDouble = isDouble(ff, yKey, -1);
     bool magColumnIsDouble;
     bool magErrColumnIsDouble;
     bool errorColumnIsDouble;
@@ -1256,6 +1260,7 @@ void readObjects(const img::FTable& extensionTable,
 		       weight,
 		       xKey, yKey, errKey, magKey, magErrKey,
 		       magKeyElement, magErrKeyElement,
+		       xColumnIsDouble,yColumnIsDouble,
 		       errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble,
 		       magshift,
 		       startWcs, sysErrorSq, isTag);

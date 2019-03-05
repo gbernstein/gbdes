@@ -1,0 +1,20 @@
+# YAML startup file for single-filter solutions with NO color
+# No epochs in use here
+EXPOSURE/DEVICE:
+  Type: Composite
+  Elements: [BAND/DEVICE, EXPOSURE]
+BAND/DEVICE:
+  Type: Composite
+  Elements:
+    - BAND/DEVICE/rings
+    - BAND/DEVICE/lowedge
+    - BAND/DEVICE/highedge
+    - BAND/DEVICE/poly
+#
+# The definitions and starting values of the device elements
+# will be taken from the allsf solution.
+#
+# The exposure solution: a constant offset per exposure.
+EXPOSURE:
+  Type: Constant
+#

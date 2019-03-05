@@ -1,0 +1,68 @@
+This set of files configures the gbdes code to produce DECam starflat
+images from catalogs produced in Frank Valdes's FITS format (a primary
+extension with some exposure-level information in the header, then
+additional extensions with binary catalog tables and some CCD-specific
+information in their headers, like WCS, DETPOS, etc.)
+
+Here's a step-by-step guide to producing the starflats, assuming that
+you have produced the catalog files already.
+
+To begin, the following must be properly set up in your environment:
+* The "gbdes" package has been successfully built.
+* The gbdes/bin directory is in your PATH
+* This tar file has been unpacked into a directory I'll call <SETUP>
+* <SETUP> is also in your PATH
+* Tell the codes where the standard tables of DECam features (tree
+rings, etc.) can be found, via an environment variable.  These tables
+were included in the gbdes repo so (for tcsh) do this:
+% setenv CAL_PATH .:<path-to-gbdes-repo>/setups/decam
+
+Next you need to configure for your particular run.
+* Copy the file "basename.config" to <destdir>/<base>.config, where
+  <destdir> is a new directory for building these starflats, and
+  <base> is the prefix all these files will have, e.g. "Feb2019" or
+  whatever.
+* Edit this <base>.config file so that the "glob" entry contains
+  a glob that the shell will use to find all your catalog files.
+  [If you need multiple globs to catch all your files, you can add
+  additional blocks of:
+
+- glob: CATS/STARFLAT*pcat.fits
+  expkey: < EXPNUM
+  translation: '(.+)=D\1'
+
+  to the file.
+
+Now you are ready to run the code.  Do
+
+% makestarflat.py <base> --setup_dir <SETUP> --bands g,i
+
+The --bands option should contain all the bands for which you want to
+make a star flat.  It will require at least g and i to make use of the
+color terms since these are quantified by g-i.  There are some other
+options, which you can get by giving the --help command-line option.
+
+The script will run through various tasks. At the end your directory
+will have a big pile of FITS files for each band/CCD combination.
+These will contain two image extensions.  The first is the star flat,
+the second extension is the color term.  I *think* that the sign is
+such that you should divide your exposures by these images to
+homogenize the photometry.
+
+I believe I have updated all of my python code to work properly with
+Python3 now.  Python 2 should still work but I haven't checked.
+
+----------------------
+For reference, the files in this directory are:
+README	       - this file
+makestarflat.py	- master script to produce star flats
+frankcat.py    - program to add aperture corrections to catalogs
+basename.config	- example configuration file for locating catalogs
+std.config     - standard decam starflat config file
+allsf.guts.photo - specifies the photometric functions for DECam
+color.input.photo - functional forms with color terms
+nocolor.input.photo - functional forms w/o color terms
+magcolor.params	 - parameter file for 1st run of MagColor
+allsf.magcolor2.params - ...for 2nd run of MagColor
+photofit.params  - ...for PhotoFit
+wcsfof.params    - ...for WCSFoF

@@ -369,7 +369,7 @@ class AttributeFinder:
         if val!=None and self.translation!=None:
             # Translate the header value through the regex
             val = self.translation[0].sub(self.translation[1],str(val))
-            ### Note that if regex does not match, will pass unchanged.  Also just one match replaced
+            ### Note that if regex does not match, will pass unchanged.  Confusing with empty matches possible
 
         if val!=None:
             # Found something; return it as desired type
