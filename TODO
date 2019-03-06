@@ -1,14 +1,16 @@
-For py3 branch, upgrading all Python to work with Python 3.x:
-    * from __future__ import division,print_function
-    * Check all /, change to // where integer floor is desired
-    * change print statements
-    * switch "if/for x in dict.keys()" to "if/for x in dict"
-    * iteritems()->items() (slow now in Python2 since it makes a list? from future.utils import iteritems)
-    * range(),zip(),dict.keys(),values(),items() are now iterables, not lists.  Check these...  Note that iterators in dicts won't work if objects are popped out of dict during iteration (or added).
-    * xrange -> range
-    * __builtin__ module now builtins.  Don't see a __future__ for this.
+* Implement proper motion and parallax, Gaia DR2 (or other) references
+  * Augment Detection with time, earth position 2d, allow 2d error ellipses?
+  * Derive PMDetection having priors on 5d
+  * Derive PMMatch for objects with PM freedom
+  * Work out new configuration methods for Gaia
+  * Change output data to include PM's
+  * wtx/y to invCov.
+  * chisq and DOF counting
+  * Have parallax prior
+  * Convert Gaia position to reference epoch
+  * Free parallax, PM are options.
 
-Need to do this for the analysis/ programs.
+* Allow or derive asymmetric errors and excess variance from turbulence
 
 * Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat.
 
@@ -54,3 +56,13 @@ Need to do this for the analysis/ programs.
 * clean up gmbpy dependence
 * Bring in setup directory
 * Bring in python analysis scripts
+
+For py3 branch, upgrading all Python to work with Python 3.x:
+    * from __future__ import division,print_function
+    * Check all /, change to // where integer floor is desired
+    * change print statements
+    * switch "if/for x in dict.keys()" to "if/for x in dict"
+    * iteritems()->items() (slow now in Python2 since it makes a list? from future.utils import iteritems)
+    * range(),zip(),dict.keys(),values(),items() are now iterables, not lists.  Check these...  Note that iterators in dicts won't work if objects are popped out of dict during iteration (or added).
+    * xrange -> range
+    * __builtin__ module now builtins.  Don't see a __future__ for this.

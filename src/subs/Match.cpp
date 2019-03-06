@@ -30,7 +30,7 @@ using namespace astrometry;
 bool
 Match::isFit(const Detection* e) {
   // A Detection will contribute to fit if it has nonzero weight and is not clipped.
-  return !(e->isClipped) && !( e->wtx==0. && e->wty==0.);
+  return !(e->isClipped) && e->invCov(0,0)>0.;
 }
 
 Match::Match(Detection *e): elist(), nFit(0), isReserved(false) {
@@ -90,33 +90,28 @@ Match::clipAll() {
 
 void
 Match::centroid(double& x, double& y) const {
-  double wtx, wty;
-  centroid(x,y,wtx,wty);
+  Matrix22 invCov;
+  centroid(x,y,invCov);
 }
 
 void
 Match::centroid(double& x, double& y,
-		double& wtx, double& wty) const {
+		Matrix22& invCovCentroid) const {
+  invCovCentroid.setZero();
   if (nFit<1) {
-    wtx=wty=x=y=0.;
+    x=y=0.;
     return;
   }
-  double swx, swy;
-  swx = swy =0.;
-  wtx = wty = 0.;
+  Vector2 swx(0.);  
   for (auto i : elist) {
     if (!isFit(i)) continue;
-    double xx = i->xw;
-    double yy = i->yw;
-    double wx = i->wtx;
-    double wy = i->wty;
-    swx += xx*wx;
-    wtx += wx;
-    swy += yy*wy;
-    wty += wy;
+    swx[0] += i->invCov(0,0) * i->xw + i->invCov(0,1) * i->yw;
+    swx[1] += i->invCov(1,0) * i->xw + i->invCov(1,1) * i->yw;
+    invCovCentroid += i->invCov;
   }
-  x = swx/wtx;
-  y = swy/wty;
+  Vector2 out = invCovCentroid.inverse() * swx;
+  x = out[0];
+  y = out[1];
 }
 
 void
@@ -143,15 +138,15 @@ Match::accumulateChisq(double& chisq,
 		       DVector& beta,
 		       SymmetricUpdater& updater,
 		       bool reuseAlpha) {
-  double xmean, ymean;
-  double xW, yW;
+  double xMean, yMean;
+  Matrix22 invCovCentroid;
   int nP = beta.size();
 
   // No contributions to fit for <2 detections:
   if (nFit<=1) return 0;
 
   // Update mapping and save derivatives for each detection:
-  vector<DMatrix*> dxyi(elist.size(), 0);
+  vector<DMatrix*> dxyi(elist.size(), nullptr);
   int ipt=0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
@@ -172,22 +167,19 @@ Match::accumulateChisq(double& chisq,
     (*i)->yw = yw;
   }
 
-  centroid(xmean,ymean, xW, yW);
-  DVector dxmean(nP, 0.);
-  DVector dymean(nP, 0.);
-
+  centroid(xMean,yMean, invCovCentroid);
+  DMatrix dxyMean(2,nP, 0.);
+  Matrix22 invCov;
+  Vector2 err;
   map<int, iRange> mapsTouched;
   ipt = 0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
-    double wxi=(*i)->wtx;
-    double wyi=(*i)->wty;
-    double xi=(*i)->xw;
-    double yi=(*i)->yw;
+    invCov = (*i)->invCov;
+    err[0] = (*i)->xw - xMean;
+    err[1] = (*i)->yw - yMean;
 
-    chisq += 
-      (xi-xmean)*(xi-xmean)*wxi
-      + (yi-ymean)*(yi-ymean)*wyi;
+    chisq += err.transpose() * invCov * err; 
 
     // Accumulate derivatives:
     int istart=0;
@@ -198,25 +190,22 @@ Match::accumulateChisq(double& chisq,
       int mapNumber = (*i)->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
-#ifdef USE_TMV
-      tmv::ConstVectorView<double> dx=dxyi[ipt]->row(0,istart,istart+np);
-      tmv::ConstVectorView<double> dy=dxyi[ipt]->row(1,istart,istart+np);
-#elif defined USE_EIGEN
-      DVector dx=dxyi[ipt]->block(0,istart,1,np).transpose();
-      DVector dy=dxyi[ipt]->block(1,istart,1,np).transpose();
-#endif
-      beta.subVector(ip, ip+np) -= (wxi*(xi-xmean))*dx;
-      beta.subVector(ip, ip+np) -= (wyi*(yi-ymean))*dy;
 
-      // Derivatives of the mean position:
-      dxmean.subVector(ip, ip+np) += wxi*dx;
-      dymean.subVector(ip, ip+np) += wyi*dy;
+#ifdef USE_TMV
+      tmv::ConstVectorView<double> dxy1=dxyi[ipt]->subMatrix(0,2,istart,istart+np);
+#elif defined USE_EIGEN
+      DMatrix dxy1 = dxyi[ipt]->block(0,istart,2,np);
+#endif
+      beta.subVector(ip, ip+np) -= dxy1.transpose() * invCov * err;
+
+      // Contribution to derivatives of the mean position:
+      // (actually \sum_i C_i^{-1} dx_i/dp)
+      dxyMean.subMatrix(0,2, ip, ip+np) += invCov * dxy1;
 
       if (!reuseAlpha) {
 	// Increment the alpha matrix
 	// First the blocks astride the diagonal:
-	updater.rankOneUpdate(mapNumber, ip, dx, wxi);
-	updater.rankOneUpdate(mapNumber, ip, dy, wyi);
+	updater.update(mapNumber, ip, dxy1, invCov);
 
 	int istart2 = istart+np;
 	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
@@ -225,17 +214,14 @@ Match::accumulateChisq(double& chisq,
 	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
 	  if (np2==0) continue;
 #ifdef USE_TMV
-	  tmv::ConstVectorView<double> dx2=dxyi[ipt]->row(0,istart2,istart2+np2);
-	  tmv::ConstVectorView<double> dy2=dxyi[ipt]->row(1,istart2,istart2+np2);
+	  tmv::ConstVectorView<double> dxy2=dxyi[ipt]->subMatrix(0,2,istart2,istart2+np2);
 #elif defined USE_EIGEN
-	  DVector dx2=dxyi[ipt]->block(0,istart2,1,np2).transpose();
-	  DVector dy2=dxyi[ipt]->block(1,istart2,1,np2).transpose();
+	  DMatrix dxy2 = dxyi[ipt]->block(0,istart2,2,np2);
 #endif
 	  // Now update below diagonal
-	  updater.rankOneUpdate(mapNumber2, ip2, dx2, 
-				mapNumber,  ip,  dx, wxi);
-	  updater.rankOneUpdate(mapNumber2, ip2, dy2, 
-				mapNumber,  ip,  dy, wyi);
+	  updater.update(mapNumber2, ip2, dxy2,
+			 invCov,
+			 mapNumber,  ip,  dxy1);
 	  istart2+=np2;
 	}
       }
@@ -247,11 +233,11 @@ Match::accumulateChisq(double& chisq,
   if (!reuseAlpha) {
     // Subtract effects of derivatives on mean
     /*  We want to do this, but without touching the entire alpha matrix every time:
-	alpha -=  (dxmean ^ dxmean)/xW;
-	alpha -=  (dymean ^ dymean)/yW;
+	alpha -=  dxyMean^T * invCovCentroid^-1 * dxmean);
     */
 
     // Do updates parameter block by parameter block
+    Matrix22 negCovCentroid = -invCovCentroid.inverse();
     for (auto m1 = mapsTouched.begin();
 	 m1!=mapsTouched.end();
 	 ++m1) {
@@ -259,14 +245,9 @@ Match::accumulateChisq(double& chisq,
       int i1 = m1->second.startIndex;
       int n1 = m1->second.nParams;
       if (n1<=0) continue;
-      DVector dx1 = dxmean.subVector(i1, i1+n1);
-      DVector dy1 = dymean.subVector(i1, i1+n1);
-      updater.rankOneUpdate(map1, i1, dx1, -1./xW);
-      updater.rankOneUpdate(map1, i1, dy1, -1./yW);
+      DMatrix dxy1 = dxyMean.subMatrix(0,2, i1, i1+n1);
+      updater.update(map1, i1, dxy1, negCovCentroid);
 
-      // For cross terms, put the weight into dx1,dy1:
-      dx1 *= -1./xW;
-      dy1 *= -1./yW;
       auto m2 = m1;
       ++m2;
       for ( ; m2 != mapsTouched.end(); ++m2) {
@@ -274,12 +255,10 @@ Match::accumulateChisq(double& chisq,
 	int i2 = m2->second.startIndex;
 	int n2 = m2->second.nParams;
 	if (n2<=0) continue;
-	DVector dx2 = dxmean.subVector(i2, i2+n2);
-	DVector dy2 = dymean.subVector(i2, i2+n2);
-	updater.rankOneUpdate(map2, i2, dx2,
-			      map1, i1, dx1);
-	updater.rankOneUpdate(map2, i2, dy2,
-			      map1, i1, dy1);
+	DMatrix dxy2 = dxyMean.subMatrix(0,2,i2, i2+n2);
+	updater.update(map2, i2, dxy2,
+		       negCovCentroid,
+		       map1, i1, dxy1);
       }
     }
   } // Finished putting terms from mean into alpha
@@ -296,14 +275,12 @@ Match::sigmaClip(double sigThresh,
   double maxSq=0.;
   Detection* worst=nullptr;
   centroid(xmean,ymean);
+  Vector2 err;
   for (auto i : elist) {
     if (!isFit(i)) continue;
-    double xi = i->xw;
-    double yi = i->yw;
-    double clipx = i->clipsqx;
-    double clipy = i->clipsqy;
-    double devSq = (xi-xmean)*(xi-xmean)*clipx
-      + (yi-ymean)*(yi-ymean)*clipy;
+    err[0] =  i->xw - xmean;
+    err[1] =  i->yw - xmean;
+    double devSq = err.transpose() * i->invCovClip * err;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
       worst = i;
@@ -341,14 +318,12 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
   double chi=0.;
   if (nFit<=1) return chi;
   centroid(xmean,ymean);
+  Vector2 dxy;
   for (auto i : elist) {
     if (!isFit(i)) continue;
-    double xi = i->xw;
-    double yi = i->yw;
-    double wxi = i->wtx;
-    double wyi = i->wty;
-    double cc = (xi-xmean)*(xi-xmean)*wxi
-      + (yi-ymean)*(yi-ymean)*wyi;
+    dxy[0] = i->xw - xmean;
+    dxy[0] = i->yw - ymean;
+    double cc = dxy.transpose() * i->invCov * dxy;
     maxDeviateSq = MAX(cc , maxDeviateSq);
     chi += cc;
   }

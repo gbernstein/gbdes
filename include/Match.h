@@ -22,30 +22,49 @@ namespace astrometry {
   using linalg::SymmetricUpdater;
   class Match;  // Forward declaration
 
+  // Some typedefs for proper motion
+  typedef linalg::SVector<double, 5> PMSolution;
+  typedef linalg::SMatrix<double,5,5> PMCovariance;
+  enum PM {X0, Y0, VX, VY, PAR};  // Standard order of 5d params
+
   class Detection {
   public:
+    EIGEN_NEW
     long catalogNumber;
     long objectNumber;
     double xpix;
     double ypix;
     double color;
-    double sigma;	// Uncertainty, in pixel units
     double xw;
     double yw;
-    // weight, nominally inverse sigma squared in each world coord dimen:
-    double wtx;
-    double wty;
-    // Inverse square of the sigma used for sig-clipping:
-    double clipsqx;
-    double clipsqy;
+    // For proper motion and parallax
+    double tdb;	        // Time in yrs since reference epoch
+    double xObs;        // Position of observatory, AU from 
+    double yObs;        // barycenter, transverse to LOS
+    // Inverse covariance, in world coords, for fitting
+    Matrix22 invCov;
+    // Inverse covariance of observation, for clipping:
+    Matrix22 invCovClip;
     bool isClipped;
     const Match* itsMatch;
     const SubMap* map;
-  Detection(): itsMatch(nullptr), map(nullptr), isClipped(false), color(astrometry::NODATA) {}
+
+    Detection(): itsMatch(nullptr), map(nullptr), isClipped(false), color(astrometry::NODATA) {}
+    virtual ~Detection() {};
   };
-  
+
+  class PMDetection: public Detection {
+    // Derive a class which is for Gaia or other measurements that come with full 5d
+    // constraints
+  public:
+    EIGEN_NEW
+    PMSolution meanPM;
+    PMCovariance invCovPM;
+  };
+    
   class Match {
-  private:
+    // Class for a set of matched Detections, with no PM or parallax freedom
+  protected:
     list<Detection*> elist;
     int nFit;	// Number of un-clipped points with non-zero weight in fit
     bool isReserved;	// Do not contribute to re-fitting if true
@@ -75,31 +94,31 @@ namespace astrometry {
     bool getReserved() const {return isReserved;}
     void setReserved(bool b) {isReserved = b;}
 
-    void remap();  // Remap *all* points to world coords with current map
+    virtual void remap();  // Remap *all* points to world coords with current map
     // Get centroids - these do *not* recalculate xw,yw 
-    void centroid(double& x, double& y) const;
-    void centroid(double& x, double& y, 
-		  double& wtx, double &wty) const;
+    virtual void centroid(double& x, double& y) const;
+    virtual void centroid(double& x, double& y, 
+			  Matrix22& invCovCentroid) const;
 
     // Increment chisq, beta, and alpha for this match.
     // Returned integer is the DOF count.  This *does* remap points being fitted.
     // reuseAlpha=true will skip the incrementing of alpha.
-    int accumulateChisq(double& chisq,
-			DVector& beta,
-			SymmetricUpdater& updater,
-			bool reuseAlpha=false);
+    virtual int accumulateChisq(double& chisq,
+				DVector& beta,
+				SymmetricUpdater& updater,
+				bool reuseAlpha=false);
    
     // sigmaClip returns true if clipped, 
     // and deletes the clipped guy if 2nd arg is true.  
     // Does *not* remap the points, but does call centroid()
-    bool sigmaClip(double sigThresh,
-		   bool deleteDetection=false); 
+    virtual bool sigmaClip(double sigThresh,
+			   bool deleteDetection=false); 
     void clipAll(); // Mark all detections as clipped
 
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
     // Does *not* remap the points.
-    double chisq(int& dof, double& maxDeviateSq) const;
+    virtual double chisq(int& dof, double& maxDeviateSq) const;
 
     typedef list<Detection*>::iterator iterator;
     typedef list<Detection*>::const_iterator const_iterator;
@@ -107,6 +126,36 @@ namespace astrometry {
     iterator end() {return elist.end();}
     const_iterator begin() const {return elist.begin();}
     const_iterator end() const {return elist.end();}
+  };
+
+  class PMMatch: public Match {
+    // Class for a set of matched Detections, with free PM and parallax
+  public:
+    PMMatch(Detection* e);
+
+    virtual void remap();  // Remap *all* points to world coords with current map
+    // Get centroids - these do *not* recalculate xw,yw 
+    virtual void centroid(double& x, double& y) const;
+    virtual void centroid(double& x, double& y, 
+			  double& wtx, double &wty) const;
+
+    // Increment chisq, beta, and alpha for this match.
+    // Returned integer is the DOF count.  This *does* remap points being fitted.
+    // reuseAlpha=true will skip the incrementing of alpha.
+    virtual int accumulateChisq(double& chisq,
+				DVector& beta,
+				SymmetricUpdater& updater,
+				bool reuseAlpha=false);
+   
+    // sigmaClip returns true if clipped, 
+    // and deletes the clipped guy if 2nd arg is true.  
+    // Does *not* remap the points, but does call centroid()
+    virtual bool sigmaClip(double sigThresh,
+			   bool deleteDetection=false); 
+    // Chisq for this match, and largest-sigma-squared deviation
+    // 2 arguments are updated with info from this match.
+    // Does *not* remap the points.
+    virtual double chisq(int& dof, double& maxDeviateSq) const;
   };
 
   typedef list<Match*> MCat;
