@@ -5,12 +5,12 @@
   * Work out new configuration methods for Gaia
   * Change output data to include PM's
   * wtx/y to invCov.
-  * chisq and DOF counting
   * Have parallax prior
   * Convert Gaia position to reference epoch
   * Free parallax, PM are options.
   * MaxDeviateSq is different for PMDetection with 5 DOF.  Make it per DOF.
   * Check that PMMatch will appropriately skip when too few DOF, no prior
+  * Treat PMDetection as single epoch properly if not using PMMatch
 
 * Allow or derive asymmetric errors and excess variance from turbulence
 
@@ -68,3 +68,6 @@ For py3 branch, upgrading all Python to work with Python 3.x:
     * range(),zip(),dict.keys(),values(),items() are now iterables, not lists.  Check these...  Note that iterators in dicts won't work if objects are popped out of dict during iteration (or added).
     * xrange -> range
     * __builtin__ module now builtins.  Don't see a __future__ for this.
+
+* Parallax / PM update:
+  * chisq and DOF counting

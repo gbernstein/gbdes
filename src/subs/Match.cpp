@@ -34,7 +34,7 @@ Match::isFit(const Detection* e) {
   return !(e->isClipped) && (dynamic_cast<const PMDetection*> (e) || e->invCov(0,0)>0.);
 }
 
-Match::Match(Detection *e): elist(), nFit(0),
+Match::Match(Detection *e): elist(), nFit(0),dof(0),
 			    isReserved(false), isPrepared(false), isSolved(false) {
   add(e);
 }
@@ -103,13 +103,17 @@ Match::prepare() const {
   if (isPrepared) return;
   isSolved = false;   // Change here means centroid solution is invalid
   centroidF.setZero();
+  dof = 0;
   for (auto i : elist) {
     if (dynamic_cast<const PMDetection*> (i)) {
       throw AstrometryError("PMDetection included in a non-PM Match");
+      // ??? Could treat PMDetection as a single epoch
     }
     if (!isFit(i)) continue;
     centroidF += i->invCov;
+    dof += 2;
   }
+  dof -= 2;  // Remove 2 parameters in this fit
   isPrepared = true;
 }
 
@@ -119,7 +123,8 @@ Match::solve() const {
   prepare();
   if (isSolved) return;
   isSolved = true;
-  if (nFit<1) {
+  if (dof<0) {
+    // Do not execute degenerate fit
     xyMean.setZero();
     return;
   }
@@ -159,23 +164,23 @@ Match::accumulateChisq(double& chisq,
 		       bool reuseAlpha) {
   int nP = beta.size();
 
-  // No contributions to fit for <2 detections:
-  if (nFit<=1) return 0;
+  // No contributions to fit for degenerate fit
+  if (dof<0) return 0;
 
   // Update mapping and save derivatives for each detection:
   // Note this invalidates the centroid solution
   isSolved = false;
-  vector<DMatrix*> dxyi(elist.size(), nullptr);
+  vector<DMatrix*> dXYdP(elist.size(), nullptr);
   int ipt=0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
     int npi = (*i)->map->nParams();
     double xw, yw;
     if (npi>0) {
-      dxyi[ipt] = new DMatrix(2,npi);
+      dXYdP[ipt] = new DMatrix(2,npi);
       (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
 			       xw, yw,
-			       *dxyi[ipt],
+			       *dXYdP[ipt],
 			       (*i)->color);
     } else {
       (*i)->map->toWorld((*i)->xpix, (*i)->ypix, 
@@ -214,9 +219,9 @@ Match::accumulateChisq(double& chisq,
       mapsTouched[mapNumber] = iRange(ip,np);
 
 #ifdef USE_TMV
-      tmv::ConstVectorView<double> dxy1=dxyi[ipt]->subMatrix(0,2,istart,istart+np);
+      tmv::ConstVectorView<double> dxy1=dXYdP[ipt]->subMatrix(0,2,istart,istart+np);
 #elif defined USE_EIGEN
-      DMatrix dxy1 = dxyi[ipt]->block(0,istart,2,np);
+      DMatrix dxy1 = dXYdP[ipt]->block(0,istart,2,np);
 #endif
       beta.subVector(ip, ip+np) -= dxy1.transpose() * invCov * err;
 
@@ -236,9 +241,9 @@ Match::accumulateChisq(double& chisq,
 	  int mapNumber2 = (*i)->map->mapNumber(iMap2);
 	  if (np2==0) continue;
 #ifdef USE_TMV
-	  tmv::ConstVectorView<double> dxy2=dxyi[ipt]->subMatrix(0,2,istart2,istart2+np2);
+	  tmv::ConstVectorView<double> dxy2=dXYdP[ipt]->subMatrix(0,2,istart2,istart2+np2);
 #elif defined USE_EIGEN
-	  DMatrix dxy2 = dxyi[ipt]->block(0,istart2,2,np2);
+	  DMatrix dxy2 = dXYdP[ipt]->block(0,istart2,2,np2);
 #endif
 	  // Now update below diagonal
 	  updater.update(mapNumber2, ip2, dxy2,
@@ -249,7 +254,7 @@ Match::accumulateChisq(double& chisq,
       }
       istart+=np;
     } // outer parameter segment loop
-    if (dxyi[ipt]) {delete dxyi[ipt]; dxyi[ipt]=nullptr;}
+    if (dXYdP[ipt]) {delete dXYdP[ipt]; dXYdP[ipt]=nullptr;}
   } // object loop
 
   if (!reuseAlpha) {
@@ -285,14 +290,14 @@ Match::accumulateChisq(double& chisq,
     }
   } // Finished putting terms from mean into alpha
 
-  return 2*(nFit-1);
+  return dof;
 }
 
 bool
 Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
   // Only clip the worst outlier at most
-  if (nFit<=1) return false;
+  if (dof<0) return false; // Already degenerate, not fitting
   solve();  // Recalculate mean position if out of date
   double maxSq=0.;
   Detection* worst=nullptr;
@@ -338,9 +343,9 @@ Match::sigmaClip(double sigThresh,
 }
 
 double
-Match::chisq(int& dof, double& maxDeviateSq) const {
+Match::chisq(int& dofAccum, double& maxDeviateSq) const {
   double chi=0.;
-  if (nFit<=1) return chi;
+  if (dof<0) return chi; // No info from degenerate fits
   solve();
   Vector2 dxy;
   for (auto i : elist) {
@@ -352,7 +357,7 @@ Match::chisq(int& dof, double& maxDeviateSq) const {
     maxDeviateSq = MAX(cc/2. , maxDeviateSq);
     chi += cc;
   }
-  dof += 2*(nFit-1);
+  dofAccum += dof;
   return chi;
 }
 
@@ -370,7 +375,8 @@ PMMatch::prepare() const {
   pmFisher.setZero();
   priorMean.setZero();
   priorChisq = 0.;
-
+  dof = 0;
+  
   // First put any parallax prior into Fisher
   if (parallaxPrior > 0.) {
     pmFisher(PAR,PAR) = 1./(parallaxPrior*parallaxPrior);
@@ -386,13 +392,16 @@ PMMatch::prepare() const {
     if (auto ii = dynamic_cast<const PMDetection*>(i)) {
       // This detection has full PM covariance of its own
       pmFisher += ii->invCovPM;
+      dof += 5;
     } else {
       // Regular single-epoch detection
       i->fillProjector(m,true);
       pmFisher += m.transpose() * i->invCov * m;
+      dof += 2;
     }
   }
   pmCov = pmFisher.inverse(); // ??? More stable?
+  dof -= 5;  // 5 parameter fit here.
   
   // Go through again and accumulate the PMDetection
   // contributions to chisq
@@ -433,10 +442,9 @@ PMMatch::solve() const {
     } else {
       // Regular single-epoch detection
       i->fillProjector(m,true);
-      PMProjector cInvM = i->invCov * m;
       xy[0] = i->xw;
       xy[1] = i->yw;
-      beta += m.transpose() * i->invCov * xy;
+      beta += m.transpose() * (i->invCov * xy);
     }
   }
   // Solve the system now
@@ -444,9 +452,9 @@ PMMatch::solve() const {
 }
 
 double
-PMMatch::chisq(int& dof, double& maxDeviateSq) const {
+PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
   double chi=0.;
-  if (nFit<=1) return chi; // ???
+  if (dof<0) return chi; // No info from degenerate fits
   solve();  // Get best PM for current parameters
   PMProjector m(0.);  // (x,y) = m * pm
   m(0,X0) = 1.;
@@ -481,7 +489,7 @@ bool
 PMMatch::sigmaClip(double sigThresh,
 		   bool deleteDetection) {
   // Only clip the worst outlier at most
-  if (nFit<=1) return false;
+  if (dof<0) return false; // Already unusable for fitting
   solve();   // Get PM solution
   double maxSq=0.;
   Detection* worst=nullptr;
@@ -568,8 +576,175 @@ PMMatch::accumulateChisq(double& chisq,
 			 DVector& beta,
 			 SymmetricUpdater& updater,
 			 bool reuseAlpha) {
-  // ???
+  int nP = beta.size();
+
+  // No contributions to fit for <2 detections:
+  if (dof<0) return 0; // No contribution for degenerate fits
+
+  // First loop updates mapping and accumulates derivs.
+  // This invalidates the centroid solution
+  isSolved = false;
+  
+  // Save away the derivatives
+  vector<DMatrix*> dXYdP(elist.size(), nullptr);
+
+  // And accumulate quantity related to deriv of PM
+  DMatrix dPMdP(5,nP,0.);
+
+  // Projector array to use for all points
+  PMProjector m(0.);  // (x,y) = m * pm
+  m(0,X0) = 1.;
+  m(1,Y0) = 1.;
+  // And a coordinate holder
+  Vector2 xy;
+
+  int ipt=0;  // Index for detections
+  for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
+    if (!isFit(*i)) continue;
+    if (dynamic_cast<const PMDetection*>(*i)) continue;
+
+    // Regular single-epoch detection
+    (*i)->fillProjector(m,true);
+    int npi = (*i)->map->nParams();
+    double xw, yw;
+    if (npi>0) {
+      dXYdP[ipt] = new DMatrix(2,npi);
+      (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
+			       xw, yw,
+			       *dXYdP[ipt],
+			       (*i)->color);
+    } else {
+      // Remap but no derivs needed
+      (*i)->map->toWorld((*i)->xpix, (*i)->ypix, 
+			 xw, yw,
+			 (*i)->color);
+    }
+
+    (*i)->xw = xw;
+    (*i)->yw = yw;
+    // For calculating best-fit PM
+    xy[0] = (*i)->xw;
+    xy[1] = (*i)->yw;
+    beta += m.transpose() * (*i)->invCov * xy;
+  }
+  // Solve the system now
+  pm = pmCov * beta + priorMean;
+  isSolved = true;
+  
+  // Next loop through detections will
+  // accumulate chisq, derivs of PM,
+  // and chisq derivs that depend on
+  // only one detection.
+
+  Matrix22 invCov;
+  Vector2 xyErr;
+  PMSolution pmErr;
+  PMProjector cInvM;
+  
+  map<int, iRange> mapsTouched;
+  ipt = 0;
+  for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
+    if (!isFit(*i)) continue;
+
+    if (auto ii = dynamic_cast<const PMDetection*> (*i)) {
+      // PMDetection has no parameter dependence, just chisq
+      pmErr = ii->pmMean - pm;
+      chisq += pmErr.transpose() * ii->invCovPM * pmErr;
+    } else {
+      // First calculate chisq contribution
+      xyErr[0] = (*i)->xw;
+      xyErr[1] = (*i)->yw;
+      xyErr -= m * pm;
+      chisq += xyErr.transpose() * (*i)->invCov * xyErr; 
+
+      // Then contributions to chisq derivs
+      int istart=0;  // running index into the Detection's params
+      for (int iMap=0; iMap<(*i)->map->nMaps(); iMap++) {
+	int ip=(*i)->map->startIndex(iMap);
+	int np=(*i)->map->nSubParams(iMap);
+	if (np==0) continue;
+	int mapNumber = (*i)->map->mapNumber(iMap);
+	// Keep track of parameter ranges we've messed with:
+	mapsTouched[mapNumber] = iRange(ip,np);
+
+#ifdef USE_TMV
+	tmv::ConstVectorView<double> dxy1=dXYdP[ipt]->subMatrix(0,2,istart,istart+np);
+#elif defined USE_EIGEN
+	DMatrix dxy1 = dXYdP[ipt]->block(0,istart,2,np);
+#endif
+	// Contribution to first derivative of chisq:
+	DMatrix cInvD = (*i)->invCov * dxy1;
+	beta.subVector(ip, ip+np) -= xyErr.transpose() * cInvD;
+
+	// Contribution to derivatives of PM:
+	dPMdP.subMatrix(0, 5, ip, ip+np) += m.transpose() * cInvD;
+
+	if (!reuseAlpha) {
+	  // Increment the alpha matrix
+	  // First the blocks astride the diagonal:
+	  updater.update(mapNumber, ip, dxy1, (*i)->invCov);
+
+	  // Then loop through all blocks below diagonal
+	  int istart2 = istart+np;
+	  for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
+	    int ip2=(*i)->map->startIndex(iMap2);
+	    int np2=(*i)->map->nSubParams(iMap2);
+	    int mapNumber2 = (*i)->map->mapNumber(iMap2);
+	    if (np2==0) continue;
+#ifdef USE_TMV
+	    tmv::ConstVectorView<double> dxy2=dXYdP[ipt]->subMatrix(0,2,istart2,istart2+np2);
+#elif defined USE_EIGEN
+	    DMatrix dxy2 = dXYdP[ipt]->block(0,istart2,2,np2);
+#endif
+	    // Now update below diagonal
+	    updater.update(mapNumber2, ip2, dxy2,
+			   (*i)->invCov,
+			   mapNumber,  ip,  dxy1);
+	    istart2+=np2;
+	  }
+	} // End inner loop of dXYdP^T * invC * dXYdP for t
+	istart+=np;
+      } // outer parameter segment loop
+      if (dXYdP[ipt]) {delete dXYdP[ipt]; dXYdP[ipt]=nullptr;}
+    } // endif for PMDetections
+  } // object loop
+
+  if (!reuseAlpha) {
+    // Subtract terms with derivatives of PM,
+    /* but without touching the entire alpha matrix every time:
+       alpha -=  dPMdP^T * pmCov * dPMdP);
+    */
+
+    // Do updates parameter block by parameter block
+    PMCovariance negCov = -pmCov;
+    for (auto m1 = mapsTouched.begin();
+	 m1!=mapsTouched.end();
+	 ++m1) {
+      int map1 = m1->first;
+      int i1 = m1->second.startIndex;
+      int n1 = m1->second.nParams;
+      if (n1<=0) continue;
+      DMatrix dxy1 = dPMdP.subMatrix(0,5, i1, i1+n1);
+      updater.update(map1, i1, dxy1, negCov);
+
+      auto m2 = m1;
+      ++m2;
+      for ( ; m2 != mapsTouched.end(); ++m2) {
+	int map2 = m2->first;
+	int i2 = m2->second.startIndex;
+	int n2 = m2->second.nParams;
+	if (n2<=0) continue;
+	DMatrix dxy2 = dPMdP.subMatrix(0,5,i2, i2+n2);
+	updater.update(map2, i2, dxy2,
+		       negCov,
+		       map1, i1, dxy1);
+      }
+    }
+  } // Finished putting terms from mean into alpha
+
+  return dof;
 }
+
 
 
 /////////////////////////////////////////////////////////////////////

@@ -91,9 +91,10 @@ namespace astrometry {
     // True if a Detection will contribute to chisq:
     static bool isFit(const Detection* e);
 
-    virtual void prepare() const;   // Calculate the Fisher matrix
+    virtual void prepare() const;   // Calculate the Fisher matrix and DOF
     mutable bool isPrepared;  // Flag to set if Fisher matrix is current
     mutable Matrix22 centroidF;  // Fisher matrix for centroid (=inverse cov)
+    mutable int dof;
 
     virtual void solve() const;     // Calculate best-fit centroid
     mutable bool isSolved;    // Flag set if centroid/PM is for current coords
@@ -155,7 +156,7 @@ namespace astrometry {
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
     // Does *not* remap the points.
-    virtual double chisq(int& dof, double& maxDeviateSq) const;
+    virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
 
     typedef list<Detection*>::iterator iterator;
     typedef list<Detection*>::const_iterator const_iterator;
@@ -191,7 +192,7 @@ namespace astrometry {
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
     // Does *not* remap the points.
-    virtual double chisq(int& dof, double& maxDeviateSq) const;
+    virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
 
     // 
     const PMSolution& getPM() const {return pm;}
