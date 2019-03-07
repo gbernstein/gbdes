@@ -127,11 +127,11 @@ namespace astrometry {
 
     // Get predicted position (and inverse covariance) for a Detection.
     // The argument is needed only if there is full PM solution.
-    virtual const Vector2& predict(const Detection* d = nullptr) const {
+    virtual Vector2 predict(const Detection* d = nullptr) const {
       solve();
       return xyMean;
     }
-    virtual const Matrix22& predictFisher(const Detection* d = nullptr)  const {
+    virtual Matrix22 predictFisher(const Detection* d = nullptr)  const {
       prepare();
       return centroidF;
     }
@@ -199,14 +199,8 @@ namespace astrometry {
     
     // Get predicted position (and inverse covariance) for a Detection.
     // The argument is needed only if there is full PM solution.
-    virtual const Vector2& predict(const Detection* d = nullptr) const {
-      solve();
-      return xyMean;
-    }
-    virtual const Matrix22& predictFisher(const Detection* d = nullptr)  const {
-      prepare();
-      return centroidF;
-    }
+    virtual Vector2 predict(const Detection* d = nullptr) const;
+    virtual Matrix22 predictFisher(const Detection* d = nullptr)  const;
 
   protected:
   private:

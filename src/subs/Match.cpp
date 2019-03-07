@@ -541,6 +541,37 @@ PMMatch::sigmaClip(double sigThresh,
   }
 }
 
+Vector2
+PMMatch::predict(const Detection* d) const {
+  if (!d)
+    throw AstrometryError("PMMatch::predict called without Detection");
+  solve();   // Update full PM solution
+  PMProjector m;
+  d->fillProjector(m);
+  Vector2 out = m * pm;
+  return out;
+}
+
+Matrix22
+PMMatch::predictFisher(const Detection* d)  const {
+  if (!d)
+    throw AstrometryError("PMMatch::predict called without Detection");
+  prepare();
+  PMProjector m;
+  d->fillProjector(m);
+  Matrix22 out = (m * pmCov * m.transpose()).inverse();
+  return out;
+}
+
+int
+PMMatch::accumulateChisq(double& chisq,
+			 DVector& beta,
+			 SymmetricUpdater& updater,
+			 bool reuseAlpha) {
+  // ???
+}
+
+
 /////////////////////////////////////////////////////////////////////
 // Parameter adjustment operations
 /////////////////////////////////////////////////////////////////////
