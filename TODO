@@ -9,6 +9,8 @@
   * Have parallax prior
   * Convert Gaia position to reference epoch
   * Free parallax, PM are options.
+  * MaxDeviateSq is different for PMDetection with 5 DOF.  Make it per DOF.
+  * Check that PMMatch will appropriately skip when too few DOF, no prior
 
 * Allow or derive asymmetric errors and excess variance from turbulence
 

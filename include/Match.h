@@ -25,6 +25,8 @@ namespace astrometry {
   // Some typedefs for proper motion
   typedef linalg::SVector<double, 5> PMSolution;
   typedef linalg::SMatrix<double,5,5> PMCovariance;
+  // Projection matrix from 5d PM to 2d position:
+  typedef linalg::SMatrix<double,2,5> PMProjector;  
   enum PM {X0, Y0, VX, VY, PAR};  // Standard order of 5d params
 
   class Detection {
@@ -51,6 +53,20 @@ namespace astrometry {
 
     Detection(): itsMatch(nullptr), map(nullptr), isClipped(false), color(astrometry::NODATA) {}
     virtual ~Detection() {};
+    // Build the projection matrix for this detection.
+    // If refill=true, assume there are already 1's and 0's
+    // in standard places
+    void fillProjector(PMProjector& m, bool refill=false) const {
+      if (!refill) {
+	m.setZero();
+	m(0,X0)=1.;
+	m(1,Y0)=1.;
+      }
+      m(0,VX) = tdb;
+      m(1,VY) = tdb;
+      m(0,PAR) = -xObs;
+      m(1,PAR) = -yObs;
+    }
   };
 
   class PMDetection: public Detection {
@@ -58,8 +74,12 @@ namespace astrometry {
     // constraints
   public:
     EIGEN_NEW
-    PMSolution meanPM;
+    PMSolution pmMean;
     PMCovariance invCovPM;
+    // This function adjusts the solution and covariance matrix
+    // to refer to the specified reference epoch instead of current tdb.
+    // The tdb of this Detection will be updated.
+    void setReferenceEpoch(double newTdb);
   };
     
   class Match {
@@ -70,6 +90,14 @@ namespace astrometry {
     bool isReserved;	// Do not contribute to re-fitting if true
     // True if a Detection will contribute to chisq:
     static bool isFit(const Detection* e);
+
+    virtual void prepare() const;   // Calculate the Fisher matrix
+    mutable bool isPrepared;  // Flag to set if Fisher matrix is current
+    mutable Matrix22 centroidF;  // Fisher matrix for centroid (=inverse cov)
+
+    virtual void solve() const;     // Calculate best-fit centroid
+    mutable bool isSolved;    // Flag set if centroid/PM is for current coords
+    mutable Vector2 xyMean;   // Best-fit centroid (valid if isSolved).
   public:
     Match(Detection* e);
 
@@ -95,13 +123,22 @@ namespace astrometry {
     void setReserved(bool b) {isReserved = b;}
 
     virtual void remap();  // Remap *all* points to world coords with current map
-    // Get centroids - these do *not* recalculate xw,yw 
-    virtual void centroid(double& x, double& y) const;
-    virtual void centroid(double& x, double& y, 
-			  Matrix22& invCovCentroid) const;
+    void forceRecalculation() const {isPrepared = false;}  // Invalidate caches
+
+    // Get predicted position (and inverse covariance) for a Detection.
+    // The argument is needed only if there is full PM solution.
+    virtual const Vector2& predict(const Detection* d = nullptr) const {
+      solve();
+      return xyMean;
+    }
+    virtual const Matrix22& predictFisher(const Detection* d = nullptr)  const {
+      prepare();
+      return centroidF;
+    }
 
     // Increment chisq, beta, and alpha for this match.
-    // Returned integer is the DOF count.  This *does* remap points being fitted.
+    // Returned integer is the DOF count.  This *does* remap points
+    // but only those used for parameter fitting.
     // reuseAlpha=true will skip the incrementing of alpha.
     virtual int accumulateChisq(double& chisq,
 				DVector& beta,
@@ -110,7 +147,7 @@ namespace astrometry {
    
     // sigmaClip returns true if clipped, 
     // and deletes the clipped guy if 2nd arg is true.  
-    // Does *not* remap the points, but does call centroid()
+    // Does *not* remap the points.
     virtual bool sigmaClip(double sigThresh,
 			   bool deleteDetection=false); 
     void clipAll(); // Mark all detections as clipped
@@ -133,11 +170,9 @@ namespace astrometry {
   public:
     PMMatch(Detection* e);
 
+    void setParallaxPrior(double p) {parallaxPrior = p;}
+
     virtual void remap();  // Remap *all* points to world coords with current map
-    // Get centroids - these do *not* recalculate xw,yw 
-    virtual void centroid(double& x, double& y) const;
-    virtual void centroid(double& x, double& y, 
-			  double& wtx, double &wty) const;
 
     // Increment chisq, beta, and alpha for this match.
     // Returned integer is the DOF count.  This *does* remap points being fitted.
@@ -149,13 +184,42 @@ namespace astrometry {
    
     // sigmaClip returns true if clipped, 
     // and deletes the clipped guy if 2nd arg is true.  
-    // Does *not* remap the points, but does call centroid()
+    // Does *not* remap the points
     virtual bool sigmaClip(double sigThresh,
 			   bool deleteDetection=false); 
+
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
     // Does *not* remap the points.
     virtual double chisq(int& dof, double& maxDeviateSq) const;
+
+    // 
+    const PMSolution& getPM() const {return pm;}
+    const PMCovariance& getInvCov() const {prepare(); return pmFisher;}
+    
+    // Get predicted position (and inverse covariance) for a Detection.
+    // The argument is needed only if there is full PM solution.
+    virtual const Vector2& predict(const Detection* d = nullptr) const {
+      solve();
+      return xyMean;
+    }
+    virtual const Matrix22& predictFisher(const Detection* d = nullptr)  const {
+      prepare();
+      return centroidF;
+    }
+
+  protected:
+  private:
+    double parallaxPrior;   // sigma for prior on parallax (radians)
+
+    virtual void solve() const;     // Recalculate and cache, if needed:
+    mutable PMSolution pm;          // Chisq-minimizing position/parallax/pm
+
+    virtual void prepare() const;  // Recalculate and cache, if needed:
+    mutable PMCovariance pmFisher;  // Fisher matrix for PM
+    mutable PMCovariance pmCov;     // Inverse of Fisher matrix
+    mutable double priorChisq;      // Chisq term quadratic in PMDetection means
+    mutable PMSolution priorMean;   // PM contribution from PMDetection means
   };
 
   typedef list<Match*> MCat;
