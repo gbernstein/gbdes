@@ -961,7 +961,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     // SVD, which is what we want anyway to find the non-pos-def values
 
     if (choleskyFails) {
-      cerr << "Caught exception" << endl;
+      cerr << "Caught exception during Cholesky" << endl;
       if (inPlace) {
 	cerr << "Cannot describe degeneracies while dividing in place" << endl;
 	exit(1);
@@ -1100,6 +1100,11 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
   double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
   setParams(p);
   remap();
+  {
+    int dof;
+    double maxDev;
+    chisq = chisqDOF(dof, maxDev);
+  }
   return chisq;
 }
 
@@ -1112,16 +1117,28 @@ CoordAlign::remap() {
 int
 CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   int nclip=0;
-  // ??? parallelize this loop!
+
   cerr << "## Sigma clipping...";
   Stopwatch timer;
   timer.start();
 
-  for (auto i : mlist) {
+#ifdef _OPENMP
+  const int chunk=100;
+  // Make a vector version on mlist since openMP requires
+  // integers in a for loop.
+  int n = mlist.size();
+  vector<Match*> mvec(n);
+  std::copy(mlist.begin(), mlist.end(), mvec.begin());
+#pragma omp parallel for schedule(dynamic,chunk) 
+  for (auto ii=0; ii<n; ++ii) {
+    auto i = mvec[ii];
+#else
+    for (auto i : mlist) {
+#endif
     // Skip this one if it's reserved and doReserved=false,
     // or vice-versa
     if (doReserved ^ i->getReserved()) continue;
-    if ( i->sigmaClip(sigThresh)) {
+  if ( i->sigmaClip(sigThresh)) {
       nclip++;
       if (clipEntireMatch) i->clipAll();
     }
@@ -1137,10 +1154,20 @@ CoordAlign::chisqDOF(int& dof, double& maxDeviate,
   dof=0;
   maxDeviate=0.;
   double chisq=0.;
-  // ??? parallelize this loop!
+
+#ifdef _OPENMP
+  const int chunk=100;
+  // Make a vector version on mlist since openMP requires
+  // integers in a for loop.
+  int n = mlist.size();
+  vector<Match*> mvec(n);
+  std::copy(mlist.begin(), mlist.end(), mvec.begin());
+#pragma omp parallel for schedule(dynamic,chunk) 
+  for (auto ii=0; ii<n; ++ii) {
+    auto i = mvec[ii];
+#else
   for (auto i : mlist) {
-    // Skip this one if it's reserved and doReserved=false,
-    // or vice-versa
+#endif
     if (doReserved ^ i->getReserved()) continue;
     chisq += i->chisq(dof, maxDeviate);
   }
