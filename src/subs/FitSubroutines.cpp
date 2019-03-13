@@ -422,6 +422,12 @@ readExposures(const vector<Instrument*>& instruments,
   vector<double> mjd;
   vector<double> apcorr;
   vector<string> epoch;
+  // ??? Fill and save these:
+  vector<vector<double>> observatory;
+  vector<vector<double>> astrometricCov;
+  vector<double> photometricVar;
+  vector<double> weight;
+  vector<double> magWeight;
 
   ff.readCells(names, "Name");
   ff.readCells(ra, "RA");
@@ -921,7 +927,7 @@ readMatches(img::FTable& table,
 	typename S::Match* m=nullptr;
 	for (int j=0; j<matchExtns.size(); j++) {
 	  if (matchExtns[j]<0) continue;  // Skip detections starved of their color
-	  auto d = new typename S::Detection;
+	  auto d = new typename S::Detection;  // ?? Need to differentiate PMDetection here
 	  d->catalogNumber = matchExtns[j];
 	  d->objectNumber = matchObjs[j];
 	  extensions[matchExtns[j]]->keepers.insert(std::pair<long,typename S::Detection*>
@@ -975,11 +981,16 @@ readMatches(img::FTable& table,
 }
 
 // Subroutine to get what we want from a catalog entry for WCS fitting
+// ??? Amend this and Photo version to read PM catalog properly.
+// ??? Read full cov matrix for positions
+// ??? Clean up addition of "systematic" errors
+// ??? Translate PM reference epoch to field's epoch
+// ??? Save observatory position from exposure
 inline
 void
 Astro::fillDetection(Astro::Detection* d,
+		     const Exposure* e,
 		     img::FTable& table, long irow,
-		     double weight,
 		     string xKey, string yKey, string errKey,
 		     string magKey, string magErrKey,
 		     int magKeyElement, int magErrKeyElement,
@@ -988,32 +999,41 @@ Astro::fillDetection(Astro::Detection* d,
 		     bool magColumnIsDouble, bool magErrColumnIsDouble,
 		     double magshift,
 		     const astrometry::PixelMap* startWcs,
-		     double sysErrorSq,
 		     bool isTag) {
   d->xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
   d->ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
 
-  double sigma = isTag ? 0. : getTableDouble(table, errKey, -1, magColumnIsDouble,irow);
-  sigma = std::sqrt(sysErrorSq + sigma*sigma);
-  d->sigma = sigma;
-
+  // Get coordinates and transformation matrix
   startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);  // no color in startWCS
   auto dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
 
-  // no clips on tags
-  double wt = isTag ? 0. : pow(sigma,-2.);
-  d->clipsqx = wt / (dwdp(0,0)*dwdp(0,0)+dwdp(0,1)*dwdp(0,1));
-  d->clipsqy = wt / (dwdp(1,0)*dwdp(1,0)+dwdp(1,1)*dwdp(1,1));
-  d->wtx = d->clipsqx * weight;
-  d->wty = d->clipsqy * weight;
+  // ??? Check here for full invCov on input?
+  // ??? Units ok?
+  if (isTag) {
+    d->invCovMeas.setZero();
+    d->invCovFit.setZero();
+  } else {
+    double sigma = getTableDouble(table, errKey, -1, errorColumnIsDouble,irow);
+    Matrix22 cov(0.);
+    cov(0,0) = sigma*sigma;  // ??? Make this use full 2x2 errors when available
+    cov(1,1) = sigma*sigma;
+    cov = dwdp * cov * dwdp.transpose();
+    d->invCovMeas = cov.inverse();
+    cov += e->astrometricCovariance; // ???Units??
+    d->invCovFit = e->weight * cov.inverse();
+    d->fitWeight = e->weight;
+  }
+
+  // ??? Set up tdb and xyObs
+
 }
 
 // And a routine to get photometric information too
 inline
 void
 Photo::fillDetection(Photo::Detection* d,
+		     const Exposure* e,
 		     img::FTable& table, long irow,
-		     double weight,
 		     string xKey, string yKey, string errKey,
 		     string magKey, string magErrKey,
 		     int magKeyElement, int magErrKeyElement,
@@ -1022,7 +1042,6 @@ Photo::fillDetection(Photo::Detection* d,
 		     bool magColumnIsDouble, bool magErrColumnIsDouble,
 		     double magshift,
 		     const astrometry::PixelMap* startWcs,
-		     double sysErrorSq,
 		     bool isTag) {
   d->args.xDevice = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
   d->args.yDevice = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
@@ -1042,7 +1061,7 @@ Photo::fillDetection(Photo::Detection* d,
   // Map to output and estimate output error
   d->magOut = d->map->forward(d->magIn, d->args);
 
-  sigma = std::sqrt(sysErrorSq + sigma*sigma);
+  sigma = std::sqrt(e->photometricVariance + sigma*sigma);
   d->sigma = sigma;
   sigma *= d->map->derivative(d->magIn, d->args);
 
@@ -1256,8 +1275,7 @@ void readObjects(const img::FTable& extensionTable,
       extn.keepers.erase(pr);
       d->map = sm;
 
-      S::fillDetection(d, ff, irow,
-		       weight,
+      S::fillDetection(d, &expo, ff, irow,
 		       xKey, yKey, errKey, magKey, magErrKey,
 		       magKeyElement, magErrKeyElement,
 		       xColumnIsDouble,yColumnIsDouble,

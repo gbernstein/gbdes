@@ -53,9 +53,8 @@ struct Astro {
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef astrometry::PixelMapCollection Collection;
   typedef astrometry::CoordAlign Align;
-  static void fillDetection(Detection* d,
+  static void fillDetection(Detection* d, const Exposure* e,
 			    img::FTable& table, long irow,
-			    double weight,
 			    string xKey, string yKey, string errKey,
 			    string magKey, string magErrKey,
 			    int magKeyElement, int magErrKeyElement,
@@ -64,7 +63,6 @@ struct Astro {
 			    bool magColumnIsDouble, bool magErrColumnIsDouble,
 			    double magshift,
 			    const astrometry::PixelMap* startWcs,
-			    double sysErrorSq,
 			    bool isTag);
   static void setColor(Detection* d, double color) {
     d->color = color;
@@ -101,9 +99,8 @@ struct Photo {
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef photometry::PhotoMapCollection Collection;
   typedef photometry::PhotoAlign Align;
-  static void fillDetection(Detection* d,
+  static void fillDetection(Detection* d, const Exposure* e,
 			    img::FTable& table, long irow,
-			    double weight,
 			    string xKey, string yKey, string errKey,
 			    string magKey, string magErrKey,
 			    int magKeyElement, int magErrKeyElement,
@@ -112,7 +109,6 @@ struct Photo {
 			    bool magColumnIsDouble, bool magErrColumnIsDouble,
 			    double magshift,
 			    const astrometry::PixelMap* startWcs,
-			    double sysErrorSq,
 			    bool isTag);
   static void setColor(Detection* d, double color) {
     d->args.color = color;

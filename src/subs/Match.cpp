@@ -31,7 +31,7 @@ bool
 Match::isFit(const Detection* e) {
   // A Detection will contribute to fit if it is not clipped,
   // and if it's either a full PMDetection or has finite position cov
-  return !(e->isClipped) && (dynamic_cast<const PMDetection*> (e) || e->invCov(0,0)>0.);
+  return !(e->isClipped) && (dynamic_cast<const PMDetection*> (e) || e->invCovFit(0,0)>0.);
 }
 
 Match::Match(Detection *e): elist(), nFit(0),dof(0),
@@ -110,7 +110,7 @@ Match::prepare() const {
       // ??? Could treat PMDetection as a single epoch
     }
     if (!isFit(i)) continue;
-    centroidF += i->invCov;
+    centroidF += i->invCovFit;
     dof += 2;
   }
   dof -= 2;  // Remove 2 parameters in this fit
@@ -128,11 +128,13 @@ Match::solve() const {
     xyMean.setZero();
     return;
   }
-  Vector2 sumwx(0.);  
+  Vector2 sumwx(0.);
+  Vector2 xy;
   for (auto i : elist) {
     if (!isFit(i)) continue;
-    sumwx[0] += i->invCov(0,0) * i->xw + i->invCov(0,1) * i->yw;
-    sumwx[1] += i->invCov(1,0) * i->xw + i->invCov(1,1) * i->yw;
+    xy[0] = i->xw;
+    xy[1] = i->yw;
+    sumwx += i->invCovFit * xy;
   }
   xyMean = centroidF.inverse() * sumwx;
 }
@@ -201,7 +203,7 @@ Match::accumulateChisq(double& chisq,
   ipt = 0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
-    invCov = (*i)->invCov;
+    invCov = (*i)->invCovFit;
     err[0] = (*i)->xw;
     err[1] = (*i)->yw;
     err -= xyMean;
@@ -308,7 +310,8 @@ Match::sigmaClip(double sigThresh,
     err[1] =  i->yw;
     err -= xyMean;
     // Calculate deviation per DOF
-    double devSq = (err.transpose() * i->invCovClip * err);
+    double devSq = (err.transpose() * i->invCovFit * err);
+    devSq /= i->fitWeight;  // When clipping, remove any weight change to invCov
     devSq /= 2.;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
@@ -353,7 +356,7 @@ Match::chisq(int& dofAccum, double& maxDeviateSq) const {
     dxy[0] = i->xw;
     dxy[1] = i->yw;
     dxy -= xyMean;
-    double cc = dxy.transpose() * i->invCov * dxy;
+    double cc = dxy.transpose() * i->invCovFit * dxy;
     maxDeviateSq = MAX(cc/2. , maxDeviateSq);
     chi += cc;
   }
@@ -396,7 +399,7 @@ PMMatch::prepare() const {
     } else {
       // Regular single-epoch detection
       i->fillProjector(m,true);
-      pmFisher += m.transpose() * i->invCov * m;
+      pmFisher += m.transpose() * i->invCovFit * m;
       dof += 2;
     }
   }
@@ -444,7 +447,7 @@ PMMatch::solve() const {
       i->fillProjector(m,true);
       xy[0] = i->xw;
       xy[1] = i->yw;
-      beta += m.transpose() * (i->invCov * xy);
+      beta += m.transpose() * (i->invCovFit * xy);
     }
   }
   // Solve the system now
@@ -475,7 +478,7 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
       dxy[1] = i->yw;
       i->fillProjector(m,true);
       dxy -= m * pm;
-      cc = dxy.transpose() * i->invCov * dxy;
+      cc = dxy.transpose() * i->invCovFit * dxy;
       dof += 2;
       maxDeviateSq = MAX(cc/2. , maxDeviateSq);
     }
@@ -501,13 +504,13 @@ PMMatch::sigmaClip(double sigThresh,
     if (auto ii = dynamic_cast<const PMDetection*>(i)) {
       dpm = ii->pmMean - pm;
       devSq = dpm.transpose() * ii->invCovPM * dpm;
-      devSq /= 5.;
+      devSq /= (5. * ii->fitWeight);  // Per DOF; remove any weight from invCov for clips
     } else {
       err[0] =  i->xw;
       err[1] =  i->yw;
       err -= predict(i);
-      double devSq = err.transpose() * i->invCovClip * err;
-      devSq /= 2.;
+      double devSq = err.transpose() * i->invCovFit * err;
+      devSq /= (2.*i->fitWeight);     // per DOF; remove any weight from invCov for clips
     }
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
@@ -625,7 +628,7 @@ PMMatch::accumulateChisq(double& chisq,
     // For calculating best-fit PM
     xy[0] = (*i)->xw;
     xy[1] = (*i)->yw;
-    beta += m.transpose() * (*i)->invCov * xy;
+    beta += m.transpose() * (*i)->invCovFit * xy;
   }
   // Solve the system now
   pm = pmCov * beta + priorMean;
@@ -636,7 +639,6 @@ PMMatch::accumulateChisq(double& chisq,
   // and chisq derivs that depend on
   // only one detection.
 
-  Matrix22 invCov;
   Vector2 xyErr;
   PMSolution pmErr;
   PMProjector cInvM;
@@ -655,7 +657,7 @@ PMMatch::accumulateChisq(double& chisq,
       xyErr[0] = (*i)->xw;
       xyErr[1] = (*i)->yw;
       xyErr -= m * pm;
-      chisq += xyErr.transpose() * (*i)->invCov * xyErr; 
+      chisq += xyErr.transpose() * (*i)->invCovFit * xyErr; 
 
       // Then contributions to chisq derivs
       int istart=0;  // running index into the Detection's params
@@ -673,7 +675,7 @@ PMMatch::accumulateChisq(double& chisq,
 	DMatrix dxy1 = dXYdP[ipt]->block(0,istart,2,np);
 #endif
 	// Contribution to first derivative of chisq:
-	DMatrix cInvD = (*i)->invCov * dxy1;
+	DMatrix cInvD = (*i)->invCovFit * dxy1;
 	beta.subVector(ip, ip+np) -= xyErr.transpose() * cInvD;
 
 	// Contribution to derivatives of PM:
@@ -682,7 +684,7 @@ PMMatch::accumulateChisq(double& chisq,
 	if (!reuseAlpha) {
 	  // Increment the alpha matrix
 	  // First the blocks astride the diagonal:
-	  updater.update(mapNumber, ip, dxy1, (*i)->invCov);
+	  updater.update(mapNumber, ip, dxy1, (*i)->invCovFit);
 
 	  // Then loop through all blocks below diagonal
 	  int istart2 = istart+np;
@@ -698,11 +700,11 @@ PMMatch::accumulateChisq(double& chisq,
 #endif
 	    // Now update below diagonal
 	    updater.update(mapNumber2, ip2, dxy2,
-			   (*i)->invCov,
+			   (*i)->invCovFit,
 			   mapNumber,  ip,  dxy1);
 	    istart2+=np2;
 	  }
-	} // End inner loop of dXYdP^T * invC * dXYdP for t
+	} // End inner loop of dXYdP^T * invC * dXYdP for this segment
 	istart+=np;
       } // outer parameter segment loop
       if (dXYdP[ipt]) {delete dXYdP[ipt]; dXYdP[ipt]=nullptr;}

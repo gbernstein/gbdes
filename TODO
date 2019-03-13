@@ -1,16 +1,22 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
-  * Augment Detection with time, earth position 2d, allow 2d error ellipses?
-  * Derive PMDetection having priors on 5d
-  * Derive PMMatch for objects with PM freedom
+  * ReadObjects must produce new Detection members.
   * Work out new configuration methods for Gaia
+  * WCSFoF needs to get Gaia coords with PM.
   * Change output data to include PM's
   * wtx/y to invCov.
   * Have parallax prior
   * Convert Gaia position to reference epoch
   * Free parallax, PM are options.
-  * MaxDeviateSq is different for PMDetection with 5 DOF.  Make it per DOF.
   * Check that PMMatch will appropriately skip when too few DOF, no prior
   * Treat PMDetection as single epoch properly if not using PMMatch
+  * Make a new output file for stellar PM's.
+  * readExposure should look for systematic errors (or install them)
+  * Program-level systematic errors need to work with any already in config files.
+  * Change photometric fit / clip to use fitWeight?
+  * Make weights per exposure (readExposure, config files)
+  * Are sigmas stored as arcsec or radiancs?
+
+* Allow photmetric reference catalog
 
 * Allow or derive asymmetric errors and excess variance from turbulence
 
@@ -71,3 +77,7 @@ For py3 branch, upgrading all Python to work with Python 3.x:
 
 * Parallax / PM update:
   * chisq and DOF counting
+  * Augment Detection with time, earth position 2d, allow 2d error ellipses?
+  * Derive PMDetection having priors on 5d
+  * Derive PMMatch for objects with PM freedom
+  * MaxDeviateSq is different for PMDetection with 5 DOF.  Make it per DOF.

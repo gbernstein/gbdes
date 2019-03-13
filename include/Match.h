@@ -43,10 +43,13 @@ namespace astrometry {
     double tdb;	        // Time in yrs since reference epoch
     double xObs;        // Position of observatory, AU from 
     double yObs;        // barycenter, transverse to LOS
-    // Inverse covariance, in world coords, for fitting
-    Matrix22 invCov;
-    // Inverse covariance of observation, for clipping:
-    Matrix22 invCovClip;
+    // Inverse covariance, in world coords, for fitting.
+    // This will include systematic errors and have been
+    // increased by the weight factor:
+    Matrix22 invCovFit;
+    double fitWeight;  // For clipping, we remove weight from invCovFit
+    // Inverse covariance of original measurement - no weights
+    Matrix22 invCovMeas;
     bool isClipped;
     const Match* itsMatch;
     const SubMap* map;
@@ -196,7 +199,7 @@ namespace astrometry {
 
     // 
     const PMSolution& getPM() const {return pm;}
-    const PMCovariance& getInvCov() const {prepare(); return pmFisher;}
+    const PMCovariance& getInvCovPM() const {prepare(); return pmFisher;}
     
     // Get predicted position (and inverse covariance) for a Detection.
     // The argument is needed only if there is full PM solution.

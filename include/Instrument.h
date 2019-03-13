@@ -57,7 +57,12 @@ public:
   double exptime;
   double mjd;
   double apcorr;
+  double weight;	// Relative weight applied to this exposure during fitting
+  double magWeight;     // ...and for photometry.  Usually 1.
   string epoch;
+  Vector3 observatory;   // Barycentric ICRS position of observatory
+  Matrix22 astrometricCovariance; // Error atop cataloged meas. error for positions (arcsec ICRS)
+  double photometricVariance;   // Additional error for magnitudes on this exposure.
   // No copying:
   Exposure(const Exposure& rhs) =delete;
   void operator=(const Exposure& rhs) =delete;
