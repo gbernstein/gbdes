@@ -26,6 +26,54 @@ using std::set;
 using namespace astrometry;
 
 
+void
+Detection::buildProjector(double tdb,	// Time in years from reference epoch
+			  const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
+			  SphericalCoords* fieldProjection,
+			  double wScale) {
+
+  if (pmProj) {
+    pmProj->setZero();
+  } else {
+    pmProj = new PMProjector(0.);
+  }
+  PMProjector& m = *pmProj;  // Just making a shorter name
+  m(0,X0) = 1.;
+  m(1,Y0) = 1.;
+
+  // Get the ICRS direction of this detection, and derivative between
+  // world coords and ICRS values
+  fieldProjection->setLonLat(xw*wScale,yw*wScale);
+  SphericalICRS icrs(*fieldProjection);  // Convert to ICRS
+
+  Matrix22 dWdICRS;  // Coordinate derivative
+  fieldProjection->convertFrom(icrs, dWdICRS);
+  // Apply cos(dec) terms to ICRS RA derivatives:
+  double ra,dec;
+  icrs.getRADec(ra,dec);
+  dWdICRS.col(0) /= cos(dec);
+  
+  // Use Astrometry classes to get observatory position components
+  // to E/N of line of sight
+  // First make a reference frame aligned to line of sight
+  ReferenceFrame frame( CartesianICRS(0.,0.,0.),
+			Orientation(icrs));
+  // Then convert observatory position to this frame
+  CartesianICRS obs(xObs);
+  CartesianCustom cc(obs, frame);
+  // Pull out components directed along ICRS E and N:
+  Vector2 icrsParallax = cc.getVector().subVector(0,2);
+  // Transform into WCS, and from units of PAR (mas) to WCS units
+  Vector2 wcsParallax = (-MILLIARCSEC / wScale) * (dWdICRS * icrsParallax);
+  m.col(PAR) = wcsParallax;
+  
+  // Convert proper motion from ICRS directions to WCS
+  Matrix22 pm;
+  pm.setToIdentity();
+  pm = dWdICRS * pm;
+  pm *= (tdb * MILLIARCSEC / wScale);
+  m.subMatrix(0,2,VX,VY+1) = pm;
+}
 
 bool
 Match::isFit(const Detection* e) {
@@ -386,9 +434,7 @@ PMMatch::prepare() const {
   }
 
   // Now sum Fisher over all Detections
-  PMProjector m(0.);  // (x,y) = m * pm
-  m(0,X0) = 1.;
-  m(1,Y0) = 1.;
+  PMProjector m;  // (x,y) = m * pm
   for (auto i : elist) {
     if (!isFit(i)) continue;
     m.setZero();
@@ -398,7 +444,7 @@ PMMatch::prepare() const {
       dof += 5;
     } else {
       // Regular single-epoch detection
-      i->fillProjector(m,true);
+      m = i->getProjector();
       pmFisher += m.transpose() * i->invCovFit * m;
       dof += 2;
     }
@@ -429,8 +475,6 @@ void
 PMMatch::solve() const {
   prepare();
   PMProjector m(0.);  // (x,y) = m * pm
-  m(0,X0) = 1.;
-  m(1,Y0) = 1.;
   PMSolution beta(0.);
   Vector2 xy;
   // chisq = pm^T * pmFisher * pm - 2 beta^T * pm + const
@@ -444,7 +488,7 @@ PMMatch::solve() const {
       continue;  // already cached
     } else {
       // Regular single-epoch detection
-      i->fillProjector(m,true);
+      m = i->getProjector();
       xy[0] = i->xw;
       xy[1] = i->yw;
       beta += m.transpose() * (i->invCovFit * xy);
@@ -459,9 +503,7 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
   double chi=0.;
   if (dof<0) return chi; // No info from degenerate fits
   solve();  // Get best PM for current parameters
-  PMProjector m(0.);  // (x,y) = m * pm
-  m(0,X0) = 1.;
-  m(1,Y0) = 1.;
+  PMProjector m;  // (x,y) = m * pm
   Vector2 dxy;
   PMSolution dpm;
   double cc;
@@ -476,7 +518,7 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
       // Regular single-epoch detection
       dxy[0] = i->xw;
       dxy[1] = i->yw;
-      i->fillProjector(m,true);
+      m = i->getProjector();
       dxy -= m * pm;
       cc = dxy.transpose() * i->invCovFit * dxy;
       dof += 2;
@@ -557,9 +599,7 @@ PMMatch::predict(const Detection* d) const {
   if (!d)
     throw AstrometryError("PMMatch::predict called without Detection");
   solve();   // Update full PM solution
-  PMProjector m;
-  d->fillProjector(m);
-  Vector2 out = m * pm;
+  Vector2 out = d->getProjector() * pm;
   return out;
 }
 
@@ -568,8 +608,7 @@ PMMatch::predictFisher(const Detection* d)  const {
   if (!d)
     throw AstrometryError("PMMatch::predict called without Detection");
   prepare();
-  PMProjector m;
-  d->fillProjector(m);
+  PMProjector m = d->getProjector();
   Matrix22 out = (m * pmCov * m.transpose()).inverse();
   return out;
 }
@@ -595,9 +634,7 @@ PMMatch::accumulateChisq(double& chisq,
   DMatrix dPMdP(5,nP,0.);
 
   // Projector array to use for all points
-  PMProjector m(0.);  // (x,y) = m * pm
-  m(0,X0) = 1.;
-  m(1,Y0) = 1.;
+  PMProjector m;  // (x,y) = m * pm
   // And a coordinate holder
   Vector2 xy;
 
@@ -607,7 +644,7 @@ PMMatch::accumulateChisq(double& chisq,
     if (dynamic_cast<const PMDetection*>(*i)) continue;
 
     // Regular single-epoch detection
-    (*i)->fillProjector(m,true);
+    m = (*i)->getProjector();
     int npi = (*i)->map->nParams();
     double xw, yw;
     if (npi>0) {

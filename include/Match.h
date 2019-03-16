@@ -25,9 +25,14 @@ namespace astrometry {
   // Some typedefs for proper motion
   typedef linalg::SVector<double, 5> PMSolution;
   typedef linalg::SMatrix<double,5,5> PMCovariance;
+  enum PM {X0, Y0, VX, VY, PAR};  // Standard order of 5d params
+  // Note we will assume that VX, VY are in mas/yr, oriented
+  // toward ICRS E and N, respectively.  PAR will be in
+  // mas.  Both as per Gaia catalog convention.
+  // X0, Y0 are in units of the field's WCS.
+
   // Projection matrix from 5d PM to 2d position:
   typedef linalg::SMatrix<double,2,5> PMProjector;  
-  enum PM {X0, Y0, VX, VY, PAR};  // Standard order of 5d params
 
   class Detection {
   public:
@@ -39,10 +44,10 @@ namespace astrometry {
     double color;
     double xw;
     double yw;
-    // For proper motion and parallax
-    double tdb;	        // Time in yrs since reference epoch
-    double xObs;        // Position of observatory, AU from 
-    double yObs;        // barycenter, transverse to LOS
+    // For proper motion and parallax:
+    PMProjector* pmProj;
+    const PMProjector& getProjector() const {return *pmProj;}
+    
     // Inverse covariance, in world coords, for fitting.
     // This will include systematic errors and have been
     // increased by the weight factor:
@@ -54,22 +59,16 @@ namespace astrometry {
     const Match* itsMatch;
     const SubMap* map;
 
-    Detection(): itsMatch(nullptr), map(nullptr), isClipped(false), color(astrometry::NODATA) {}
+    Detection(): color(astrometry::NODATA), pmProj(nullptr),
+		 isClipped(false), itsMatch(nullptr), map(nullptr)  {}
     virtual ~Detection() {};
+
     // Build the projection matrix for this detection.
-    // If refill=true, assume there are already 1's and 0's
-    // in standard places
-    void fillProjector(PMProjector& m, bool refill=false) const {
-      if (!refill) {
-	m.setZero();
-	m(0,X0)=1.;
-	m(1,Y0)=1.;
-      }
-      m(0,VX) = tdb;
-      m(1,VY) = tdb;
-      m(0,PAR) = -xObs;
-      m(1,PAR) = -yObs;
-    }
+    void buildProjector(double tdb,	// Time in years from reference epoch
+			const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
+			SphericalCoords* fieldProjection, // Projection used for world coords
+			double wScale=DEGREE); // units of world coordinates (relative to radians)
+
   };
 
   class PMDetection: public Detection {

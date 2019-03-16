@@ -1290,6 +1290,11 @@ void readObjects(const img::FTable& extensionTable,
 	   << endl;
       exit(1);
     }
+
+    if (S::isAstro) {
+      // ???? Create the projection matrix for all detections
+      // ???? Move any PMDetections to reference epoch
+    }
   } // end loop over catalogs to read
   
 }

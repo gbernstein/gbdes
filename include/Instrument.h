@@ -62,7 +62,7 @@ public:
   string epoch;
   Vector3 observatory;   // Barycentric ICRS position of observatory
   Matrix22 astrometricCovariance; // Error atop cataloged meas. error for positions (arcsec ICRS)
-  double photometricVariance;   // Additional error for magnitudes on this exposure.
+  double photometricVariance;     // Additional variance for magnitudes on this exposure.
   // No copying:
   Exposure(const Exposure& rhs) =delete;
   void operator=(const Exposure& rhs) =delete;
