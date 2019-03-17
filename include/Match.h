@@ -61,10 +61,10 @@ namespace astrometry {
 
     Detection(): color(astrometry::NODATA), pmProj(nullptr),
 		 isClipped(false), itsMatch(nullptr), map(nullptr)  {}
-    virtual ~Detection() {};
+    virtual ~Detection() {if (pmProj) delete pmProj;}
 
     // Build the projection matrix for this detection.
-    void buildProjector(double tdb,	// Time in years from reference epoch
+    void buildProjector(double pmTDB,	// Time in years from PM reference epoch
 			const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
 			SphericalCoords* fieldProjection, // Projection used for world coords
 			double wScale=DEGREE); // units of world coordinates (relative to radians)
@@ -78,10 +78,13 @@ namespace astrometry {
     EIGEN_NEW
     PMSolution pmMean;
     PMCovariance invCovPM;
-    // This function adjusts the solution and covariance matrix
-    // to refer to the specified reference epoch instead of current tdb.
-    // The tdb of this Detection will be updated.
-    void setReferenceEpoch(double newTdb);
+    // This function sets up the values and covariances to refer to
+    // a reference PM epoch shifted by the specified number of years.
+    // Also will fill in xw,yw, and covariances in the base class
+    // members to refer to the (possibly shifted) pmTDB.  Then the
+    // class can be sliced to a Detection and work for fitting without
+    // free PM/parallax.
+    void shiftReferenceEpoch(double tdbShift);
   };
     
   class Match {

@@ -15,6 +15,10 @@
   * Change photometric fit / clip to use fitWeight?
   * Make weights per exposure (readExposure, config files)
   * Are sigmas stored as arcsec or radiancs?
+  * configure (and config files) need to get 2 weights, epoch, and xObs per exposure and an epoch per field
+  * Change python codes to have new PM_INSTRUMENT designations
+  * No more sysError in Extension, it's in Exposure
+  * make a "key" dictionary for extensions.
 
 * Allow photmetric reference catalog
 

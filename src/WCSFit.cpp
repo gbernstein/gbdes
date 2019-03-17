@@ -78,6 +78,9 @@ main(int argc, char *argv[])
   string sysErrorColumn;
   double sysError;
   double referenceSysError;
+  bool   freePM; 
+  double pmEpoch;
+  double parallaxPrior;
 
   int minMatches;
   int minFitExposures;
@@ -114,6 +117,12 @@ main(int argc, char *argv[])
 			 "Fixed systematic error for detections (pixels)", 0.01, 0.);
     parameters.addMember("referenceSysError",&referenceSysError, def | low,
 			 "Fixed systematic error for reference objects (arcsec)", 0.003, 0.);
+    parameters.addMember("freePM",&freePM, def,
+			 "Allow free proper motion and parallax?", true);
+    parameters.addMember("pmEpoch",&pmEpoch, def,
+			 "Time origin for proper motion (2015.5)", 2015.5);
+    parameters.addMember("parallaxPrior",&parallaxPrior, def | low,
+			 "Prior on parallax for each star (mas)", 0.1, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
     parameters.addMember("minFitExposures",&minFitExposures, def | low,
@@ -216,8 +225,10 @@ main(int argc, char *argv[])
     // All we care about fields are names and orientations:
     NameIndex fieldNames;
     vector<SphericalCoords*> fieldProjections;
+    vector<double> fieldEpochs;
     // Read the Fields table from input, copy to a new output FITS file, extract needed info
-    readFields(inputTables, outCatalog, fieldNames, fieldProjections);
+    readFields(inputTables, outCatalog, fieldNames, fieldProjections,
+	       fieldEpochs, pmEpoch);
 
 
     /**/cerr << "Reading instruments" << endl;
@@ -255,6 +266,7 @@ main(int argc, char *argv[])
 		    true, // Use reference exposures for astrometry
 		    outputCatalogAlreadyOpen);
 
+    // ??? Set systematic-error values in exposures
 		    
     /**/cerr << "Reading extensions" << endl;
 
@@ -528,12 +540,19 @@ main(int argc, char *argv[])
     for (int icat = 0; icat < catalogHDUs.size(); icat++) {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
       FTable ff = ft.use();
-      string dummy1, dummy2;
+      string dummy1, affinity;
       ff.getHdrValue("Field", dummy1);
-      ff.getHdrValue("Affinity", dummy2);
-      /**/cerr << "Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
+      ff.getHdrValue("Affinity", affinity);
+      stringstuff::stripWhite(affinity);
       
-      readMatches<Astro>(ff, matches, extensions, colorExtensions, skipSet, minMatches);
+      /**/cerr << "Parsing catalog field " << dummy1 << " Affinity " << affinity << endl;
+
+      // Set this true if we are going to want to create PMMatches from
+      // this extension's matches:
+      bool usePM = stringstuff::nocaseEqual(affinity,stellarAffinity) && freePM;
+      
+      readMatches<Astro>(ff, matches, extensions, colorExtensions, skipSet, minMatches,
+			 usePM);
       
     } // End loop over input matched catalogs
 

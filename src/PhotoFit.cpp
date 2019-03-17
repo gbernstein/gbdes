@@ -226,7 +226,9 @@ main(int argc, char *argv[])
     {
       NameIndex fieldNames;
       vector<astrometry::SphericalCoords*> fieldProjections;
-      readFields(inputTables, outCatalog, fieldNames, fieldProjections);
+      vector<double> fieldEpochs;  // dummy, will not use this info
+      readFields(inputTables, outCatalog, fieldNames,
+		 fieldProjections, fieldEpochs);
       for (auto ptr : fieldProjections) delete ptr;
     }
 
@@ -258,6 +260,7 @@ main(int argc, char *argv[])
 		    false, // Do not use reference exposures for photometry
 		    outputCatalogAlreadyOpen);
 
+    // ??? Set systematic-error values in exposures
 
     // Read info about all Extensions - we will keep the Table around.
     /**/cerr << "Reading extensions" << endl;
@@ -276,9 +279,7 @@ main(int argc, char *argv[])
 			    exposures,
 			    exposureColorPriorities,
 			    colorExtensions,
-			    inputYAML,
-			    sysErrorColumn,
-			    sysError);
+			    inputYAML);
 
 
     /////////////////////////////////////////////////////

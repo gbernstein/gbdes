@@ -30,8 +30,9 @@
 using namespace std;
 
 const int REF_INSTRUMENT=-1;	// Instrument for reference objects (no fitting)
-const int TAG_INSTRUMENT=-2;	// Exposure number for tag objects (no fitting nor contrib to stats)
-const int NO_INSTRUMENT=-3;
+const int PM_INSTRUMENT =-2;    // Reference catalog with 5d proper motion / parallax solutions
+const int TAG_INSTRUMENT=-3;	// Exposure number for tag objects (no fitting nor contrib to stats)
+const int NO_INSTRUMENT=-4;
 
 const string stellarAffinity="STELLAR";
 
@@ -138,6 +139,19 @@ struct Photo {
   static const int isAstro = 0;
 };
 
+// Specialized function for reading detection from a catalog
+// holding proper motion solution.
+// It will incorporate the basic info in (non-PM) Detection d
+// into a new PMDetection object and return it.
+astrometry::PMDetection*
+makePMDetection(astrometry::Detection* d, const Exposure* e,
+		img::FTable& table, long irow,
+		string xKey, string yKey, string errKey,
+		string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
+		bool xColumnIsDouble, bool yColumnIsDouble,
+		bool errorColumnIsDouble,
+		const astrometry::PixelMap* startWcs);
+
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
 void
@@ -239,11 +253,14 @@ inventoryFitsTables(string inputTables,
 		    vector<int>& catalogHDUs);
 
 // Read the Fields table from input, copy to output, extract needed info
+// If a usable default is given, unassigned field epochs are set to default.
 void
 readFields(string inputTables,
 	   string outCatalog,
 	   NameIndex& fieldNames,
-	   vector<astrometry::SphericalCoords*>& fieldProjections);
+	   vector<astrometry::SphericalCoords*>& fieldProjections,
+	   vector<double>& fieldEpochs,
+	   double defaultEpoch=0.);
 
 // Read in all the instrument extensions and their device info from input
 // FITS file, save useful ones and write to output FITS file.
@@ -285,10 +302,7 @@ readExtensions(img::FTable& extensionTable,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
-	       astrometry::YAMLCollector& inputYAML,
-	       const string sysErrorColumn="",
-	       double sysError=0.,
-	       double referenceSysError=0.);
+	       astrometry::YAMLCollector& inputYAML);
 
 // fix all maps in a photo/pixelMapCollection whose names match
 // any regex in the fixMapList.  Also any instrument whose name
@@ -335,7 +349,8 @@ readMatches(img::FTable& table,
 	    vector<typename S::Extension*>& extensions,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
-	    int minMatches);
+	    int minMatches,
+	    bool usePM=false);  // If true, create PMMatches
 
 // Read each Extension's objects' data from it FITS catalog
 // and place into Detection structures.

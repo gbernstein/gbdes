@@ -295,7 +295,11 @@ void
 readFields(string inputTables,
 	   string outCatalog,
 	   NameIndex& fieldNames,
-	   vector<astrometry::SphericalCoords*>& fieldProjections) {
+	   vector<astrometry::SphericalCoords*>& fieldProjections,
+	   vector<double>& fieldEpochs,
+	   double defaultEpoch) {
+  const double MINIMUM_EPOCH=1900.;
+  
   FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
   FITS::FitsTable out(outCatalog,
 		      FITS::ReadWrite + FITS::OverwriteFile + FITS::Create,
@@ -313,6 +317,26 @@ readFields(string inputTables,
     fieldNames.append(name[i]);
     astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
     fieldProjections.push_back( new astrometry::Gnomonic(orient));
+  }
+  if (ft.hasColumn("Epoch")) {
+    ft.readCells(fieldEpochs, "Epoch");
+    // Set reference epochs for each field to defaultEpoch if
+    // they have a signal value like 0 or -1 
+    for (int i=0; i<fieldEpochs.size(); i++) {
+      if (fieldEpochs[i] < MINIMUM_EPOCH && defaultEpoch>MINIMUM_EPOCH) {
+	// Update to reference epoch if it's sensible
+	fieldEpochs[i] = defaultEpoch;
+	ft.writeCell(defaultEpoch, "Epoch", i);
+      }
+    }
+  } else {
+    // Assign default epoch to every field
+    fieldEpochs.clear();
+    fieldEpochs.resize(name.size(), defaultEpoch);
+    // And save back to output if this is a sensible default
+    if (defaultEpoch > MINIMUM_EPOCH) {
+      ft.addColumn(fieldEpochs, "Epoch");
+    }
   }
 }
 
@@ -477,7 +501,8 @@ readExposures(const vector<Instrument*>& instruments,
     }
     // Are we going to want use data this exposure?
     // Yes, if it's a reference exposure and we are using references
-    bool useThisExposure = instrumentNumber[i]==REF_INSTRUMENT 
+    bool useThisExposure = (instrumentNumber[i]==REF_INSTRUMENT ||
+			    instrumentNumber[i]==PM_INSTRUMENT)
       && useReferenceExposures;
     // or if it's a normal exposure using an instrument that has been included
     useThisExposure = useThisExposure || (instrumentNumber[i]>=0 && 
@@ -537,10 +562,7 @@ readExtensions(img::FTable& extensionTable,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
-	       astrometry::YAMLCollector& inputYAML,
-	       const string sysErrorColumn,
-	       double sysError,
-	       double referenceSysError) {
+	       astrometry::YAMLCollector& inputYAML) {
       
   vector<typename S::Extension*> extensions(extensionTable.nrows(), nullptr);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), nullptr);
@@ -576,7 +598,8 @@ readExtensions(img::FTable& extensionTable,
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];
 
-    bool isReference = (expo.instrument == REF_INSTRUMENT);
+    bool isReference = (expo.instrument == REF_INSTRUMENT ||
+			expo.instrument == PM_INSTRUMENT);
 
     int iDevice;
     extensionTable.readCell(iDevice, "Device", i);
@@ -589,15 +612,6 @@ readExtensions(img::FTable& extensionTable,
     extn->apcorr = expo.apcorr;
     extn->magshift = +2.5*log10(expo.exptime);
 
-    // Get systematic error values
-    if (!sysErrorColumn.empty()) {
-      extensionTable.readCell(extn->sysError, sysErrorColumn, i);
-    } else if (isReference) {
-      extn->sysError = referenceSysError;
-    } else {
-      extn->sysError = sysError;
-    }
-      
     // Create the starting WCS for the exposure
     string s;
     extensionTable.readCell(s, "WCSIn", i);
@@ -885,7 +899,8 @@ readMatches(img::FTable& table,
 	    vector<typename S::Extension*>& extensions,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
-	    int minMatches) {
+	    int minMatches,
+	    bool usePM) {
 
   vector<int> seq;
   vector<LONGLONG> extn;
@@ -934,8 +949,13 @@ readMatches(img::FTable& table,
 						    (matchObjs[j], d));
 	  if (m)
 	    m->add(d);
-	  else
-	    m = new typename S::Match(d);
+	  else {
+	    if (S::isAstro && usePM) {
+	      m = new astrometry::PMMatch(d);
+	    } else {
+	      m = new typename S::Match(d);
+	    }
+	  }
 	}
 	matches.push_back(m);
 
@@ -1014,7 +1034,7 @@ Astro::fillDetection(Astro::Detection* d,
     d->invCovFit.setZero();
   } else {
     double sigma = getTableDouble(table, errKey, -1, errorColumnIsDouble,irow);
-    Matrix22 cov(0.);
+    astrometry::Matrix22 cov(0.);
     cov(0,0) = sigma*sigma;  // ??? Make this use full 2x2 errors when available
     cov(1,1) = sigma*sigma;
     cov = dwdp * cov * dwdp.transpose();
@@ -1024,10 +1044,69 @@ Astro::fillDetection(Astro::Detection* d,
     d->fitWeight = e->weight;
   }
 
-  // ??? Set up tdb and xyObs
-
 }
 
+// This one reads a full 5d stellar solution
+astrometry::PMDetection*
+makePMDetection(astrometry::Detection* d, const Exposure* e,
+		img::FTable& table, long irow,
+		string xKey, string yKey, string errKey,
+		string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
+		bool xColumnIsDouble, bool yColumnIsDouble,
+		bool errorColumnIsDouble,
+		const astrometry::PixelMap* startWcs) {
+
+  auto out = new astrometry::PMDetection;
+  out->catalogNumber = d->catalogNumber;
+  out->objectNumber = d->objectNumber;
+  
+  out->xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
+  out->ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
+
+  // Get coordinates and transformation matrix
+  startWcs->toWorld(out->xpix, out->ypix, out->xw, out->yw);  // no color in startWCS
+  auto dwdp = startWcs->dWorlddPix(out->xpix, out->ypix);
+  // ?? OK with cos(dec) here??
+
+  // Read in the reference solution
+  double pmRA, pmDec, parallax;
+  table.readCell(pmRA, pmRaKey, irow);
+  table.readCell(pmDec, pmDecKey, irow);
+  table.readCell(parallax, parallaxKey, irow);
+  out->pmMean[astrometry::X0] = out->xw;
+  out->pmMean[astrometry::Y0] = out->yw;
+  out->pmMean[astrometry::VX] = pmRA;
+  out->pmMean[astrometry::VY] = pmDec;
+  out->pmMean[astrometry::PAR] = parallax;
+
+  // And its covariance matrix
+  vector<double> tmp;
+  table.readCell(tmp, pmCovKey, irow);
+  astrometry::PMCovariance pmCov;  // Covariance from catalog
+  astrometry::PMCovariance dwdp5(0.);  // 5d transformation matrix to world coords
+  int k=0;
+  for (int i=0; i<5; i++) {
+    dwdp5(i,i) = 1.;
+    for (int j=0; j<5; j++, k++) {
+      pmCov(i,j) = tmp[k];
+    }
+  }
+  dwdp5.subMatrix(0,2,0,2) = dwdp;
+  // Subtlety here: X0 and Y0 are in world coords.
+  // The proper motion and parallax are kept in ICRS.
+  // So only X0, Y0 are altered by spherical projection.
+  astrometry::PMCovariance wCov = (dwdp5 * pmCov * dwdp5.transpose());
+  // Save inverse
+#ifdef USE_EIGEN
+  pmCov.setIdentity();
+  out->invCovPM = wCov.ldlt().solve(pmCov);
+#else
+  out->invCovPM = wCov.inverse();
+#endif
+  out->fitWeight = e->weight;
+}
+
+ 
 // And a routine to get photometric information too
 inline
 void
@@ -1068,7 +1147,7 @@ Photo::fillDetection(Photo::Detection* d,
   // no clips on tags
   double wt = isTag ? 0. : pow(sigma,-2.);
   d->clipsq = wt;
-  d->wt = wt * weight;
+  d->wt = wt * e->magWeight;
 }
 
 inline
@@ -1097,6 +1176,7 @@ Astro::getOutputA(const Astro::Detection& d,
 		  double& xw, double& yw, double& sigmaw,
 		  double& xerrw, double& yerrw,
 		  double& wf) {
+  /*** ???? Needs fixing...
   wf = d.isClipped ? 0. : 0.5 * (d.wtx + d.wty) / wtot;  
   sigmaw = 0.5*(d.clipsqx + d.clipsqy);
   sigmaw = (sigmaw > 0.) ? 1./sqrt(sigmaw) : 0.;
@@ -1105,6 +1185,7 @@ Astro::getOutputA(const Astro::Detection& d,
   xw = d.xw;
   yw = d.yw;
   sigma = d.sigma;
+  ***/
   
   // Calculate residuals if we have a centroid for the match:
   if (mx!=0. || my!=0.) {
@@ -1168,6 +1249,9 @@ void readObjects(const img::FTable& extensionTable,
     Exposure& expo = *exposures[extn.exposure];
     if (extn.keepers.empty()) continue; // or useless
 
+    bool pmCatalog = S::isAstro && extn.instrument==PM_INSTRUMENT;
+    bool isTag = expo.instrument == TAG_INSTRUMENT;
+
     string filename;
     extensionTable.readCell(filename, "Filename", iext);
     /**/if (iext%50==0) cerr << "# Reading object catalog " << iext
@@ -1178,54 +1262,53 @@ void readObjects(const img::FTable& extensionTable,
     int hduNumber;
     string xKey;
     string yKey;
+    string errKey;  // Astrometric error, full ellipse??
     string idKey;
+    // For PM catalogs:
+    string pmRaKey;
+    string pmDecKey;
+    string parallaxKey;
+    string pmCovKey;
+    // For magnitudes
     string magKey;
     string magErrKey;
-    double weight;
-    string errKey;
+    int magKeyElement;
+    int magErrKeyElement;
+    
     extensionTable.readCell(hduNumber, "Extension", iext);
     extensionTable.readCell(xKey, "xKey", iext);
     extensionTable.readCell(yKey, "yKey", iext);
     extensionTable.readCell(idKey, "idKey", iext);
 
-    if (S::isAstro) {
-      extensionTable.readCell(errKey, "errKey", iext);
-      extensionTable.readCell(weight, "Weight", iext);
-    } else {
-      extensionTable.readCell(magKey, "magKey", iext);
-      extensionTable.readCell(magErrKey, "magErrKey", iext);
-      extensionTable.readCell(weight, "magWeight", iext);
-    }
-    
-    const typename S::SubMap* sm=extn.map;
-
-    bool isReference = (expo.instrument == REF_INSTRUMENT);
-    bool isTag = (expo.instrument == TAG_INSTRUMENT);
-
-    double sysErrorSq = pow(extn.sysError, 2.);
-    
-    astrometry::Wcs* startWcs = extn.startWcs;
-
-    if (!startWcs) {
-      cerr << "Failed to find initial Wcs for exposure " << expo.name
-	   << endl;
-      exit(1);
-    }
-
-    bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
-    // What we need to read from the FitsTable:
+    // Keep track of what rows we need to read from this catalog
     vector<string> neededColumns;
+    bool useRows = stringstuff::nocaseEqual(idKey, "_ROW");
     if (!useRows)
       neededColumns.push_back(idKey);
     neededColumns.push_back(xKey);
     neededColumns.push_back(yKey);
-      
-    int magKeyElement;
-    int magErrKeyElement;
+
     if (S::isAstro) {
-      if (!isTag)
+      if (!isTag) {
+	extensionTable.readCell(errKey, "errKey", iext);
 	neededColumns.push_back(errKey);
+      }
+      if (pmCatalog) {
+	// Need PM information
+	extensionTable.readCell(pmRaKey, "pmRaKey", iext);
+	extensionTable.readCell(pmDecKey, "pmDecKey", iext);
+	extensionTable.readCell(pmCovKey, "pmCovKey", iext);
+	extensionTable.readCell(parallaxKey, "parallaxKey", iext);
+	neededColumns.push_back(pmRaKey);
+	neededColumns.push_back(pmDecKey);
+	neededColumns.push_back(pmCovKey);
+	neededColumns.push_back(parallaxKey);
+      }
+	
     } else {
+      // For photometry:
+      extensionTable.readCell(magKey, "magKey", iext);
+      extensionTable.readCell(magErrKey, "magErrKey", iext);
       // Be willing to get an element of array-valued bintable cell
       // for mag or magerr.  Syntax would be
       // MAGAPER[4]  to get 4th (0-indexed) element of MAGAPER column
@@ -1234,6 +1317,17 @@ void readObjects(const img::FTable& extensionTable,
       neededColumns.push_back(magKey);
       neededColumns.push_back(magErrKey);
     }
+    
+    const typename S::SubMap* sm=extn.map;
+
+    astrometry::Wcs* startWcs = extn.startWcs;
+
+    if (!startWcs) {
+      cerr << "Failed to find initial Wcs for exposure " << expo.name
+	   << endl;
+      exit(1);
+    }
+
     img::FTable ff;
 #ifdef _OPENMP
 #pragma omp critical(fitsio)
@@ -1260,7 +1354,7 @@ void readObjects(const img::FTable& extensionTable,
     double magshift = extn.magshift;
 
     if (S::isAstro) {
-      errorColumnIsDouble = isDouble(ff, errKey, -1);
+      errorColumnIsDouble = isDouble(ff, errKey, -1); // ?? full ellipse
     } else {
       magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
       magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
@@ -1270,18 +1364,37 @@ void readObjects(const img::FTable& extensionTable,
       auto pr = extn.keepers.find(id[irow]);
       if (pr == extn.keepers.end()) continue; // Not a desired object
 
+      // ??? Need a branch here for PM catalogs
+      
       // Have a desired object now.  Fill its Detection structure
       typename S::Detection* d = pr->second;
       extn.keepers.erase(pr);
       d->map = sm;
 
-      S::fillDetection(d, &expo, ff, irow,
-		       xKey, yKey, errKey, magKey, magErrKey,
-		       magKeyElement, magErrKeyElement,
-		       xColumnIsDouble,yColumnIsDouble,
-		       errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble,
-		       magshift,
-		       startWcs, sysErrorSq, isTag);
+      if (pmCatalog) {
+	// Need to read data differently from catalog with
+	// full proper motion solution.  Get PMDetection.
+	auto pmd = makePMDetection(d, &expo, ff, irow,
+				   xKey, yKey,
+				   pmRaKey, pmDecKey, parallaxKey, pmCovKey,
+				   xColumnIsDouble,yColumnIsDouble,
+				   errorColumnIsDouble, 
+				   startWcs);
+	// Replace plain old Detection with this PMDetection in the match
+	auto mm = d->itsMatch;
+	mm->remove(d);
+	delete d;
+	mm->add(pmd);
+      } else {
+	// Normal photometric or astrometric entry
+	S::fillDetection(d, &expo, ff, irow,
+			 xKey, yKey, errKey, magKey, magErrKey,
+			 magKeyElement, magErrKeyElement,
+			 xColumnIsDouble,yColumnIsDouble,
+			 errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble,
+			 magshift,
+			 startWcs, isTag);
+      }
     } // End loop over catalog objects
 
     if (!extn.keepers.empty()) {
@@ -1817,6 +1930,8 @@ reportStatistics(const list<typename S::Match*>& matches,
 	if (expo->instrument==REF_INSTRUMENT) {
 	  refAccReserve.add(dptr, xc, yc, wtot, dofPerPt);
 	  vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
+	} else if (expo->instrument==PM_INSTRUMENT) {
+	  // ??? What to do here with PM catalogs??
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
@@ -1828,6 +1943,8 @@ reportStatistics(const list<typename S::Match*>& matches,
 	if (expo->instrument==REF_INSTRUMENT) {
 	  refAccFit.add(dptr, xc, yc, wtot, dofPerPt);
 	  vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
+	} else if (expo->instrument==PM_INSTRUMENT) {
+	  // ??? What to do here with PM catalogs??
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
@@ -1884,13 +2001,10 @@ template \
 vector<AP::Extension*> \
 readExtensions<AP> (img::FTable& extensionTable, \
 		    const vector<Instrument*>& instruments,	\
-		    const vector<Exposure*>& exposures,		   \
-		    const vector<int>& exposureColorPriorities,	     \
-		    vector<AP::ColorExtension*>& colorExtensions,    \
-		    astrometry::YAMLCollector& inputYAML,	     \
-		    const string sysErrorColumn,                     \
-		    double sysError,                                 \
-		    double referenceSysError);			     \
+		    const vector<Exposure*>& exposures,		\
+		    const vector<int>& exposureColorPriorities,	\
+		    vector<AP::ColorExtension*>& colorExtensions,\
+		    astrometry::YAMLCollector& inputYAML);       \
 template int \
 findCanonical<AP>(Instrument& instr,	\
 		  int iInst,			\

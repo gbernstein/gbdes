@@ -27,7 +27,7 @@ using namespace astrometry;
 
 
 void
-Detection::buildProjector(double tdb,	// Time in years from reference epoch
+Detection::buildProjector(double pmTDB,	       // Time in years from PM reference epoch
 			  const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
 			  SphericalCoords* fieldProjection,
 			  double wScale) {
@@ -71,7 +71,7 @@ Detection::buildProjector(double tdb,	// Time in years from reference epoch
   Matrix22 pm;
   pm.setToIdentity();
   pm = dWdICRS * pm;
-  pm *= (tdb * MILLIARCSEC / wScale);
+  pm *= (pmTDB * MILLIARCSEC / wScale);
   m.subMatrix(0,2,VX,VY+1) = pm;
 }
 

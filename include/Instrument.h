@@ -60,8 +60,9 @@ public:
   double weight;	// Relative weight applied to this exposure during fitting
   double magWeight;     // ...and for photometry.  Usually 1.
   string epoch;
-  Vector3 observatory;   // Barycentric ICRS position of observatory
-  Matrix22 astrometricCovariance; // Error atop cataloged meas. error for positions (arcsec ICRS)
+  double pmTDB;	         // Observation time relative to PM reference epoch (yrs)
+  astrometry::Vector3 observatory;   // Barycentric ICRS position of observatory
+  astrometry::Matrix22 astrometricCovariance; // Error atop cataloged meas. error for positions (arcsec ICRS)
   double photometricVariance;     // Additional variance for magnitudes on this exposure.
   // No copying:
   Exposure(const Exposure& rhs) =delete;
@@ -74,14 +75,12 @@ public:
 template <class T1, class T2>
 class ExtensionBase {
 public:
- ExtensionBase(): map(nullptr), wcs(nullptr), startWcs(nullptr), needsColor(false),
-    sysError(0.) {}
+  ExtensionBase(): map(nullptr), wcs(nullptr), startWcs(nullptr), needsColor(false) {}
   int exposure;
   int device;
   double airmass;      // airmass and apcorr used for nightly priors
   double apcorr;
   double magshift;	// Additive adjustment to all incoming mags (exposure time)
-  double sysError;	// Systematic error to add to mags or (pixel) positions
 
   string wcsName;      // Name of final WCS (and map into field coordinates)
   string mapName;      // Name of photometry map or astrometric map into exposure coords
