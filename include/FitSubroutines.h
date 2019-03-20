@@ -55,6 +55,7 @@ struct Astro {
   typedef astrometry::PixelMapCollection Collection;
   typedef astrometry::CoordAlign Align;
   static void fillDetection(Detection* d, const Exposure* e,
+			    astrometry::SphericalCoords& fieldProjection,
 			    img::FTable& table, long irow,
 			    string xKey, string yKey, string errKey,
 			    string magKey, string magErrKey,
@@ -101,6 +102,7 @@ struct Photo {
   typedef photometry::PhotoMapCollection Collection;
   typedef photometry::PhotoAlign Align;
   static void fillDetection(Detection* d, const Exposure* e,
+			    astrometry::SphericalCoords& fieldProjection,
 			    img::FTable& table, long irow,
 			    string xKey, string yKey, string errKey,
 			    string magKey, string magErrKey,
@@ -281,6 +283,7 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 // last Boolean is as above.
 vector<Exposure*>
 readExposures(const vector<Instrument*>& instruments,
+	      const vector<double> fieldEpochs,
 	      vector<int>& exposureColorPriorities,
 	      const list<string>&  useColorList,
 	      string inputTables,
@@ -350,14 +353,16 @@ readMatches(img::FTable& table,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
-	    bool usePM=false);  // If true, create PMMatches
+	    bool usePM=false,        // If true, create PMMatches
+	    double parallaxPrior=0.);   // And use this to set parallax prior
 
 // Read each Extension's objects' data from it FITS catalog
 // and place into Detection structures.
 template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
-		 vector<typename S::Extension*>& extensions);
+		 vector<typename S::Extension*>& extensions,
+		 vector<astrometry::SphericalCoords*> fieldProjections);
 
 // Read color information from files marked as holding such, insert into
 // relevant Matches.

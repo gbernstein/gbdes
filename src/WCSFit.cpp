@@ -75,7 +75,6 @@ main(int argc, char *argv[])
 
   double clipThresh;
   double maxPixError;
-  string sysErrorColumn;
   double sysError;
   double referenceSysError;
   bool   freePM; 
@@ -111,12 +110,10 @@ main(int argc, char *argv[])
     parameters.addMemberNoValue("INPUTS");
     parameters.addMember("maxPixError",&maxPixError, def | lowopen,
 			 "Cut objects with pixel posn uncertainty above this", 0.1, 0.);
-    parameters.addMember("sysErrorColumn",&sysErrorColumn, def,
-			 "Extension table column holding systematic error, if any", "");
     parameters.addMember("sysError",&sysError, def | low,
 			 "Fixed systematic error for detections (pixels)", 0.01, 0.);
     parameters.addMember("referenceSysError",&referenceSysError, def | low,
-			 "Fixed systematic error for reference objects (arcsec)", 0.003, 0.);
+			 "Fixed systematic error for non-PM reference objects (arcsec)", 0.003, 0.);
     parameters.addMember("freePM",&freePM, def,
 			 "Allow free proper motion and parallax?", true);
     parameters.addMember("pmEpoch",&pmEpoch, def,
@@ -266,7 +263,27 @@ main(int argc, char *argv[])
 		    true, // Use reference exposures for astrometry
 		    outputCatalogAlreadyOpen);
 
-    // ??? Set systematic-error values in exposures
+    if (sysError > 0.) {
+      Matrix22 astrometricCovariance(0.);
+      astrometricCovariance(0,0) = sysError*sysError;
+      astrometricCovariance(1,1) = sysError*sysError;
+      for (auto e : exposures) {
+	if (e->instrument >= 0)
+	  e->astrometricCovariance = astrometricCovariance;
+      }
+    }
+    if (referenceSysError > 0.) {
+      Matrix22 astrometricCovariance(0.);
+      astrometricCovariance(0,0) = referenceSysError*referenceSysError;
+      astrometricCovariance(1,1) = referenceSysError*referenceSysError;
+      for (auto e : exposures) {
+	if (e->instrument == REF_INSTRUMENT)
+	  e->astrometricCovariance = astrometricCovariance;
+	// Note that we are not adding this covariance to PM_INSTRUMENT
+	// since we'll assume these (Gaia!) have treated errors well.
+	// For older catalogs, PM is probably the largest sys error.
+      }
+    }
 		    
     /**/cerr << "Reading extensions" << endl;
 
@@ -286,8 +303,6 @@ main(int argc, char *argv[])
 			    exposureColorPriorities,
 			    colorExtensions,
 			    inputYAML,
-			    sysErrorColumn,
-			    sysError,
 			    referenceSysError);
 
 		    
@@ -552,7 +567,7 @@ main(int argc, char *argv[])
       bool usePM = stringstuff::nocaseEqual(affinity,stellarAffinity) && freePM;
       
       readMatches<Astro>(ff, matches, extensions, colorExtensions, skipSet, minMatches,
-			 usePM);
+			 usePM, parallaxPrior);
       
     } // End loop over input matched catalogs
 
@@ -560,8 +575,20 @@ main(int argc, char *argv[])
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
-    /**/cerr << "Reading catalogs." << endl;
-    readObjects<Astro>(extensionTable, exposures, extensions);
+    /**/cerr << "Reading catalogs" << endl;
+    readObjects<Astro>(extensionTable, exposures, extensions,fieldProjections);
+
+    // For every Match, prep its Detections for appropriate treatment of PM.
+    // If it's a PMMatch, we need to getProjector() for each non-PM Detection, and
+    // we need to set the epoch for PMDetections.  If it's a plain Match,
+    // we just need to project the PMDetections into the desired epoch of observation.
+    /**/cerr << "Prepping Detections for PM" << endl;
+    for (auto m : matches) {
+      if (auto pmm = dynamic_cast<PMMatch*>(m)) {
+	// We are fitting for proper motion.
+	pmm->setParallaxPrior(parallaxPrior);
+	for (auto d : *pmm) {
+	  
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the Detections they match

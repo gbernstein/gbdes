@@ -10,7 +10,6 @@
   * Check that PMMatch will appropriately skip when too few DOF, no prior
   * Treat PMDetection as single epoch properly if not using PMMatch
   * Make a new output file for stellar PM's.
-  * readExposure should look for systematic errors (or install them)
   * Program-level systematic errors need to work with any already in config files.
   * Change photometric fit / clip to use fitWeight?
   * Make weights per exposure (readExposure, config files)
@@ -19,6 +18,7 @@
   * Change python codes to have new PM_INSTRUMENT designations
   * No more sysError in Extension, it's in Exposure
   * make a "key" dictionary for extensions.
+  * insert command-line systematic errors into Exposure objects.
 
 * Allow photmetric reference catalog
 
@@ -85,3 +85,4 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Derive PMDetection having priors on 5d
   * Derive PMMatch for objects with PM freedom
   * MaxDeviateSq is different for PMDetection with 5 DOF.  Make it per DOF.
+  * readExposure should look for systematic errors (or install them)

@@ -29,9 +29,10 @@ using namespace astrometry;
 void
 Detection::buildProjector(double pmTDB,	       // Time in years from PM reference epoch
 			  const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
-			  SphericalCoords* fieldProjection,
-			  double wScale) {
+			  SphericalCoords* fieldProjection) {
 
+  const double wScale = DEGREE;   // units for the world coordinate system (radians = 1.)
+  
   if (pmProj) {
     pmProj->setZero();
   } else {

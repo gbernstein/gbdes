@@ -46,8 +46,9 @@ public:
 class Exposure {
 public:
   Exposure(const string& name_, const astrometry::SphericalCoords& coords): 
-  name(name_), projection(coords.duplicate()), mjd(0.), exptime(1.), airmass(1.),
-  apcorr(0.) {}
+  name(name_), projection(coords.duplicate()), airmass(1.), exptime(1.),  mjd(0.),
+  apcorr(0.), weight(1.), magWeight(1.), pmTDB(0.), observatory(0.),
+  astrometricCovariance(0.), photometricVariance(0.) {}
   ~Exposure() {delete projection;}
   string name;   // The exposure map will have this name too.
   astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for exposure

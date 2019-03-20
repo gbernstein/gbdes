@@ -68,6 +68,9 @@ string usage=
 // magKey and magErrKey can be of form COLUMN[#] when COLUMN is an array column (float or double)
 // and # is the element of this array that we want to use.
 
+// The sysError command-line option will override values of photSysVar that are in input Exposure table,
+// if it is >0.
+
 int
 main(int argc, char *argv[])
 {
@@ -77,7 +80,6 @@ main(int argc, char *argv[])
 
   double clipThresh;
   double maxMagError;
-  string sysErrorColumn;
   double sysError;
 
   int minMatches;
@@ -112,10 +114,8 @@ main(int argc, char *argv[])
     parameters.addMemberNoValue("INPUTS");
     parameters.addMember("maxMagError",&maxMagError, def | lowopen,
 			 "cut objects with magnitude uncertainty above this", 0.05, 0.);
-    parameters.addMember("sysErrorColumn",&sysErrorColumn, def,
-			 "Extension table column holding systematic error, if any", "");
     parameters.addMember("sysError",&sysError, def | low,
-			 "additional systematic error for all detected mags", 0.002, 0.);
+			 "systematic error to add to exposures (mag RMS)", 0.002, 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "minimum number of detections for usable match", 2, 2);
     parameters.addMember("minFitExposures",&minFitExposures, def | low,
@@ -260,7 +260,13 @@ main(int argc, char *argv[])
 		    false, // Do not use reference exposures for photometry
 		    outputCatalogAlreadyOpen);
 
-    // ??? Set systematic-error values in exposures
+    if (sysError > 0.) {
+      // Override systematic-error values in exposuress
+      double photometricVariance = sysError*sysError;
+      for (auto e : exposures) {
+	e->photometricVariance = photometricVariance;
+      }
+    }
 
     // Read info about all Extensions - we will keep the Table around.
     /**/cerr << "Reading extensions" << endl;

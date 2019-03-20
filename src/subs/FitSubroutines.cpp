@@ -153,7 +153,7 @@ loadPixelMapParser() {
 }
 
 void
-  loadPhotoMapParser() {
+loadPhotoMapParser() {
   // put all new kinds of PhotoMap atoms here:
   photometry::PhotoMapCollection::registerMapType<photometry::PhotoTemplate>();
   photometry::PhotoMapCollection::registerMapType<photometry::PhotoPiecewise>();
@@ -418,6 +418,7 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 // Read the Exposure table into an array.
 vector<Exposure*>
 readExposures(const vector<Instrument*>& instruments,
+	      const vector<double>& fieldEpochs,
 	      vector<int>& exposureColorPriorities,
 	      const list<string>&  useColorList,
 	      string inputTables,
@@ -460,24 +461,49 @@ readExposures(const vector<Instrument*>& instruments,
   ff.readCells(instrumentNumber, "InstrumentNumber");
   ff.readCells(airmass, "Airmass");
   ff.readCells(exptime, "Exptime");
+
+  // Columns that might not always be present:
   try {
     ff.readCells(mjd, "MJD");
   } catch (img::FTableError& e) {
-    // May not always have this column
     mjd.clear();
   }
   try {
     ff.readCells(epoch, "Epoch");
   } catch (img::FTableError& e) {
-    // May not always have this column
     epoch.clear();
   }
   try {
     ff.readCells(apcorr, "apcorr");
   } catch (img::FTableError& e) {
-    // May not always have this column
     apcorr.clear();
   }
+  try {
+    ff.readCells(weight, "weight");
+  } catch (img::FTableError& e) {
+    weight.clear();
+  }
+  try {
+    ff.readCells(magWeight, "magWeight");
+  } catch (img::FTableError& e) {
+    magWeight.clear();
+  }
+  try {
+    ff.readCells(photometricVariance, "sysMagVar");
+  } catch (img::FTableError& e) {
+    photometricVariance.clear();
+  }
+  try {
+    ff.readCells(astrometricCovariance, "sysAstCov");
+  } catch (img::FTableError& e) {
+    astrometricCovariance.clear();
+  }
+  try {
+    ff.readCells(observatory, "observatory");
+  } catch (img::FTableError& e) {
+    observatory.clear();
+  }
+
   // Initialize our output arrays to not-in-use values
   vector<Exposure*> exposures(names.size(), nullptr);
   exposureColorPriorities = vector<int>(names.size(), -1);
@@ -518,12 +544,32 @@ readExposures(const vector<Instrument*>& instruments,
       expo->airmass = airmass[i];
       expo->exptime = exptime[i];
       exposures[i] = expo;
-      if (!mjd.empty())
+      if (!mjd.empty()) {
 	expo->mjd = mjd[i];
+	// Also calculate time in years after field's reference epoch
+	astrometry::UT ut;
+	ut.setMJD(expo->mjd);
+	// Note that getTTyr returns years since J2000.
+	expo->pmTDB = ut.getTTyr() - (fieldEpochs[expo->field] - 2000.);
+      }
       if (!epoch.empty())
 	expo->epoch = epoch[i];
       if (!apcorr.empty())
 	expo->apcorr = apcorr[i];
+      if (!weight.empty())
+	expo->weight = weight[i];
+      if (!magWeight.empty())
+	expo->magWeight = magWeight[i];
+      if (!observatory.empty())
+	for (int j=0; j<3; j++) expo->observatory[j] = observatory[i][j];
+      if (!astrometricCovariance.empty()) {
+	expo->astrometricCovariance(0,0) = astrometricCovariance[i][0];
+	expo->astrometricCovariance(1,1) = astrometricCovariance[i][1];
+	expo->astrometricCovariance(0,1) = astrometricCovariance[i][2];
+	expo->astrometricCovariance(1,0) = astrometricCovariance[i][2];
+      }
+      if (!photometricVariance.empty())
+	expo->photometricVariance = photometricVariance[i];
     }
   } // End exposure loop
   return exposures;
@@ -900,7 +946,8 @@ readMatches(img::FTable& table,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
-	    bool usePM) {
+	    bool usePM,
+	    double parallaxPrior) {
 
   vector<int> seq;
   vector<LONGLONG> extn;
@@ -952,6 +999,8 @@ readMatches(img::FTable& table,
 	  else {
 	    if (S::isAstro && usePM) {
 	      m = new astrometry::PMMatch(d);
+	      if (parallaxPrior>0.) 
+		m->setParallaxPrior(parallaxPrior);
 	    } else {
 	      m = new typename S::Match(d);
 	    }
@@ -1010,6 +1059,7 @@ inline
 void
 Astro::fillDetection(Astro::Detection* d,
 		     const Exposure* e,
+		     SphericalCoords& fieldProjection, 
 		     img::FTable& table, long irow,
 		     string xKey, string yKey, string errKey,
 		     string magKey, string magErrKey,
@@ -1042,6 +1092,12 @@ Astro::fillDetection(Astro::Detection* d,
     cov += e->astrometricCovariance; // ???Units??
     d->invCovFit = e->weight * cov.inverse();
     d->fitWeight = e->weight;
+  }
+
+  if (dynamic_cast<const PMMatch*>(d->itsMatch)) {
+    // Build projection matrix if this Detection is being used in a PMMatch
+    d->buildProjector(e->pmTDB, e->observatory,
+		      &fieldProjection);
   }
 
 }
@@ -1104,6 +1160,11 @@ makePMDetection(astrometry::Detection* d, const Exposure* e,
   out->invCovPM = wCov.inverse();
 #endif
   out->fitWeight = e->weight;
+
+  // Shift this PMDetection back to that of the reference epoch for its field.
+  out->shiftReferenceEpoch(-e->pmTDB);
+
+  return out;
 }
 
  
@@ -1112,6 +1173,7 @@ inline
 void
 Photo::fillDetection(Photo::Detection* d,
 		     const Exposure* e,
+		     SphericalCoords& fieldProjection, 
 		     img::FTable& table, long irow,
 		     string xKey, string yKey, string errKey,
 		     string magKey, string magErrKey,
@@ -1234,7 +1296,8 @@ Photo::getOutputP(const Photo::Detection& d,
 template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
-		 vector<typename S::Extension*>& extensions) {
+		 vector<typename S::Extension*>& extensions
+		 vector<astrometry::SphericalCoords*> fieldProjections) {
 
   // Should be safe to multithread this loop as different threads write
   // only to distinct parts of memory.  Protect the FITS table read though.
@@ -1353,6 +1416,8 @@ void readObjects(const img::FTable& extensionTable,
     bool errorColumnIsDouble;
     double magshift = extn.magshift;
 
+    // ??? Make fieldProjection for this catalog
+    
     if (S::isAstro) {
       errorColumnIsDouble = isDouble(ff, errKey, -1); // ?? full ellipse
     } else {
@@ -1364,8 +1429,6 @@ void readObjects(const img::FTable& extensionTable,
       auto pr = extn.keepers.find(id[irow]);
       if (pr == extn.keepers.end()) continue; // Not a desired object
 
-      // ??? Need a branch here for PM catalogs
-      
       // Have a desired object now.  Fill its Detection structure
       typename S::Detection* d = pr->second;
       extn.keepers.erase(pr);
@@ -1374,20 +1437,33 @@ void readObjects(const img::FTable& extensionTable,
       if (pmCatalog) {
 	// Need to read data differently from catalog with
 	// full proper motion solution.  Get PMDetection.
-	auto pmd = makePMDetection(d, &expo, ff, irow,
+	auto pmd = makePMDetection(d, &expo,
+				   ff, irow,
 				   xKey, yKey,
 				   pmRaKey, pmDecKey, parallaxKey, pmCovKey,
 				   xColumnIsDouble,yColumnIsDouble,
 				   errorColumnIsDouble, 
 				   startWcs);
-	// Replace plain old Detection with this PMDetection in the match
+
 	auto mm = d->itsMatch;
-	mm->remove(d);
-	delete d;
-	mm->add(pmd);
+	if (dynamic_cast<const PMMatch*>(mm)) {
+	  // If this Detection is being used in a PMMatch,
+	  // replace plain old Detection with this PMDetection.
+	  mm->remove(d);
+	  delete d;
+	  mm->add(pmd);
+	} else {
+	  // PMDetection is being used in non-PM Match.  Slice it down
+	  // to pure Detection info, replace old detection with it.
+	  Detection* dd = new Detection(*pmd);
+	  mm->remove(d);
+	  delete d;
+	  mm->add(dd);
+	}
       } else {
 	// Normal photometric or astrometric entry
-	S::fillDetection(d, &expo, ff, irow,
+	S::fillDetection(d, &expo, fieldProjection,
+			 ff, irow,
 			 xKey, yKey, errKey, magKey, magErrKey,
 			 magKeyElement, magErrKeyElement,
 			 xColumnIsDouble,yColumnIsDouble,
@@ -1404,10 +1480,6 @@ void readObjects(const img::FTable& extensionTable,
       exit(1);
     }
 
-    if (S::isAstro) {
-      // ???? Create the projection matrix for all detections
-      // ???? Move any PMDetections to reference epoch
-    }
   } // end loop over catalogs to read
   
 }
