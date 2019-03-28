@@ -175,6 +175,7 @@ main(int argc, char *argv[])
     time_t now;
     time(&now);
     string date = ctime(&now);
+    stripWhite(date);  // Remove trailing LF/CR's.
     starflat.header()->append("DESMKICR", date);
     string s = "illumcor";
     starflat.header()->append("OBSTYPE", s);
