@@ -3,10 +3,6 @@
   * Work out new configuration methods for Gaia
   * WCSFoF needs to get Gaia coords with PM.
   * Change output data to include PM's
-  * wtx/y to invCov.
-  * Have parallax prior
-  * Convert Gaia position to reference epoch
-  * Free parallax, PM are options.
   * Check that PMMatch will appropriately skip when too few DOF, no prior
   * Treat PMDetection as single epoch properly if not using PMMatch
   * Make a new output file for stellar PM's.
@@ -19,6 +15,9 @@
   * No more sysError in Extension, it's in Exposure
   * make a "key" dictionary for extensions.
   * insert command-line systematic errors into Exposure objects.
+  * document that all PM catalogs are ICRS degrees for RA/Dec, mas for PM/Par
+  * readObjects makes xyErrKeys array
+  * New things for configure.py: get EPOCH for fields, observatory position for exposures somehow; PM_INSTRUMENT flag; 2x2 covariances (possible ERRX2, ERRY2, ERRXY keys); syserrors per exposure;
 
 * Allow photmetric reference catalog
 
@@ -86,3 +85,7 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Derive PMMatch for objects with PM freedom
   * MaxDeviateSq is different for PMDetection with 5 DOF.  Make it per DOF.
   * readExposure should look for systematic errors (or install them)
+  * wtx/y to invCov.
+  * Have parallax prior
+  * Convert Gaia position to reference epoch
+  * Free parallax, PM are options.

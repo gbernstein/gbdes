@@ -1061,7 +1061,8 @@ Astro::fillDetection(Astro::Detection* d,
 		     const Exposure* e,
 		     SphericalCoords& fieldProjection, 
 		     img::FTable& table, long irow,
-		     string xKey, string yKey, string errKey,
+		     string xKey, string yKey,
+		     vector<string>&  xyErrKeys,
 		     string magKey, string magErrKey,
 		     int magKeyElement, int magErrKeyElement,
 		     bool xColumnIsDouble, bool yColumnIsDouble,
@@ -1077,27 +1078,38 @@ Astro::fillDetection(Astro::Detection* d,
   startWcs->toWorld(d->xpix, d->ypix, d->xw, d->yw);  // no color in startWCS
   auto dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
 
-  // ??? Check here for full invCov on input?
-  // ??? Units ok?
   if (isTag) {
     d->invCovMeas.setZero();
     d->invCovFit.setZero();
   } else {
-    double sigma = getTableDouble(table, errKey, -1, errorColumnIsDouble,irow);
     astrometry::Matrix22 cov(0.);
-    cov(0,0) = sigma*sigma;  // ??? Make this use full 2x2 errors when available
-    cov(1,1) = sigma*sigma;
-    cov = dwdp * cov * dwdp.transpose();
+    if (xyErrKeys.size()==1) {
+      // We have a single pixel error, diagonal
+      double sigma = getTableDouble(table, xyErrKeys[0], -1, errorColumnIsDouble,irow);
+      cov(0,0) = sigma*sigma;
+      cov(1,1) = sigma*sigma;
+    } else if (xyErrKeys.size()==3) {
+      // We have three components of an ellipse, giving x^2, y^2, xy values:
+      cov(0,0) = getTableDouble(table, xyErrKeys[0], -1, errorColumnIsDouble,irow);
+      cov(1,1) = getTableDouble(table, xyErrKeys[1], -1, errorColumnIsDouble,irow);
+      cov(0,1) = getTableDouble(table, xyErrKeys[2], -1, errorColumnIsDouble,irow);
+      cov(1,0) = cov(0,1);
+    } else {
+      for (auto s : xyErrKeys)
+	cerr << " --- " << s;
+      cerr << " ---" << endl;
+      throw AstrometryError("Invalid number of xyErrKeys passed to fillDetection");
+    }
+    cov = dwdp * cov * dwdp.transpose();  // Note this converts to world units (degrees)
     d->invCovMeas = cov.inverse();
-    cov += e->astrometricCovariance; // ???Units??
+    cov += e->astrometricCovariance; 
     d->invCovFit = e->weight * cov.inverse();
     d->fitWeight = e->weight;
   }
 
   if (dynamic_cast<const PMMatch*>(d->itsMatch)) {
     // Build projection matrix if this Detection is being used in a PMMatch
-    d->buildProjector(e->pmTDB, e->observatory,
-		      &fieldProjection);
+    d->buildProjector(e->pmTDB, e->observatory, &fieldProjection);
   }
 
 }
@@ -1106,7 +1118,7 @@ Astro::fillDetection(Astro::Detection* d,
 astrometry::PMDetection*
 makePMDetection(astrometry::Detection* d, const Exposure* e,
 		img::FTable& table, long irow,
-		string xKey, string yKey, string errKey,
+		string xKey, string yKey,
 		string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
 		bool xColumnIsDouble, bool yColumnIsDouble,
 		bool errorColumnIsDouble,
@@ -1122,7 +1134,9 @@ makePMDetection(astrometry::Detection* d, const Exposure* e,
   // Get coordinates and transformation matrix
   startWcs->toWorld(out->xpix, out->ypix, out->xw, out->yw);  // no color in startWCS
   auto dwdp = startWcs->dWorlddPix(out->xpix, out->ypix);
-  // ?? OK with cos(dec) here??
+  // Add cos(dec) factors, since all error values are assumed for ra*cos(dec).
+  // and we are ASSUMING that PM catalogs are in RA/Dec, in degrees
+  dwdp.col(0) /= cos(out->ypix * DEGREE);
 
   // Read in the reference solution
   double pmRA, pmDec, parallax;
@@ -1161,6 +1175,9 @@ makePMDetection(astrometry::Detection* d, const Exposure* e,
 #endif
   out->fitWeight = e->weight;
 
+  // Amplify the invCov for the weight
+  out->invCovPM *= out->fitWeight;
+  
   // Shift this PMDetection back to that of the reference epoch for its field.
   out->shiftReferenceEpoch(-e->pmTDB);
 
@@ -1175,7 +1192,8 @@ Photo::fillDetection(Photo::Detection* d,
 		     const Exposure* e,
 		     SphericalCoords& fieldProjection, 
 		     img::FTable& table, long irow,
-		     string xKey, string yKey, string errKey,
+		     string xKey, string yKey,
+		     vector<string> xyErrKeys,
 		     string magKey, string magErrKey,
 		     int magKeyElement, int magErrKeyElement,
 		     bool xColumnIsDouble, bool yColumnIsDouble,
@@ -1212,6 +1230,7 @@ Photo::fillDetection(Photo::Detection* d,
   d->wt = wt * e->magWeight;
 }
 
+// ??? what's this for ??? continue here.
 inline
 void
 Astro::matchMean(const Astro::Match& m,
@@ -1325,7 +1344,7 @@ void readObjects(const img::FTable& extensionTable,
     int hduNumber;
     string xKey;
     string yKey;
-    string errKey;  // Astrometric error, full ellipse??
+    vector<string> xyErrKeys; // Holds name(s) of posn error keys
     string idKey;
     // For PM catalogs:
     string pmRaKey;
@@ -1352,11 +1371,36 @@ void readObjects(const img::FTable& extensionTable,
     neededColumns.push_back(yKey);
 
     if (S::isAstro) {
-      if (!isTag) {
-	extensionTable.readCell(errKey, "errKey", iext);
-	neededColumns.push_back(errKey);
-      }
-      if (pmCatalog) {
+      if (!isTag && !pmCatalog) {
+	// See if we have the keys for an error ellipse
+
+	if (extensionTable.hasColumn("errX2Key") &&
+	    extensionTable.hasColumn("errY2Key") &&
+	    extensionTable.hasColumn("errXYKey")) {
+	  string errX2Key, errY2Key, errXYKey;
+	  extensionTable.readCell(errX2Key, "errX2Key", iext);
+	  extensionTable.readCell(errY2Key, "errY2Key", iext);
+	  extensionTable.readCell(errXYKey, "errXYKey", iext);
+	  if (!(errX2Key.empty() || errY2Key.empty() || errXYKey.empty())) {
+	    // We have all the keys for an error ellipse
+	    xyErrKeys.push_back(errX2Key);
+	    xyErrKeys.push_back(errY2Key);
+	    xyErrKeys.push_back(errXYKey);
+	  }
+	}
+
+	if (xyErrKeys.empty()) {
+	  // We did not get an error ellipse.  We will need a
+	  // scalar error value
+	  string errKey;
+	  extensionTable.readCell(errKey, "errKey", iext);
+	  xyErrKeys.push_back(errKey);
+	}
+
+	for (auto s : xyErrKeys)
+	  neededColumns.push_back(s);
+
+      } else if (pmCatalog) {
 	// Need PM information
 	extensionTable.readCell(pmRaKey, "pmRaKey", iext);
 	extensionTable.readCell(pmDecKey, "pmDecKey", iext);
@@ -1419,7 +1463,7 @@ void readObjects(const img::FTable& extensionTable,
     // ??? Make fieldProjection for this catalog
     
     if (S::isAstro) {
-      errorColumnIsDouble = isDouble(ff, errKey, -1); // ?? full ellipse
+      errorColumnIsDouble = isDouble(ff, pmCatalog ? pmCovKey : xyErrKeys[0], -1);
     } else {
       magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
       magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
@@ -1464,7 +1508,8 @@ void readObjects(const img::FTable& extensionTable,
 	// Normal photometric or astrometric entry
 	S::fillDetection(d, &expo, fieldProjection,
 			 ff, irow,
-			 xKey, yKey, errKey, magKey, magErrKey,
+			 xKey, yKey, xyErrKeys,
+			 magKey, magErrKey,
 			 magKeyElement, magErrKeyElement,
 			 xColumnIsDouble,yColumnIsDouble,
 			 errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble,

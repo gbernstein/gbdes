@@ -156,13 +156,32 @@ Match::prepare() const {
   for (auto i : elist) {
     if (dynamic_cast<const PMDetection*> (i)) {
       throw AstrometryError("PMDetection included in a non-PM Match");
-      // ??? Could treat PMDetection as a single epoch
+      // Any PMDetection inputs should have been converted to
+      // fixed-epoch Detection for a non-PM match.
     }
     if (!isFit(i)) continue;
     centroidF += i->invCovFit;
     dof += 2;
   }
   dof -= 2;  // Remove 2 parameters in this fit
+
+  // Now get expected chisq for each detection
+  // From notes of 25 Mar 2019,
+  // <chisq_i> = 2 - Tr( invCov_i * covMean)
+  // where covMean is cov matrix of the mean posn estimate
+  Matrix22 covMean = centroidF.inverse();
+  for (auto i : elist) {
+    if (isFit(i)) {
+#ifdef USE_EIGEN
+      i->expectedChisq = 2. - (covMean.array() * i->invCovFit.array()).sum();
+#elif USE_TMV
+      i->expectedChisq = 2. - Trace(covMean * i->invCovFit); // Slower
+#endif
+    } else {
+      i->expectedChisq = 2.;  // Simple answer if Detection is not part of fit.
+    }    
+  }
+  // Calculate expected chisq for each Detection:
   isPrepared = true;
 }
 
@@ -468,6 +487,40 @@ PMMatch::prepare() const {
   tmp = pmCov * priorMean;
   priorChisq -= priorMean.transpose() * tmp;  // Constant term of chisq
   priorMean = tmp;         // linear term of chisq
+
+  // Now get expected chisq for each detection
+  // From notes of 25 Mar 2019,
+  // <chisq_i> = 5 - Tr( invCov_i * pmCov)
+  // for a PMDetection, where pmCov is cov matrix of the mean PM estimate.
+  // For a regular detection with projection matrix m, the answer is
+  // <chisq_i> = 2 - Tr( invCov_i * m * pmCov * m^T)
+  
+  Matrix22 covMean = centroidF.inverse();
+  for (auto i : elist) {
+    if  (auto ii = dynamic_cast<const PMDetection*>(i)) {
+      if (isFit(i)) {
+#ifdef USE_EIGEN
+      i->expectedChisq = 5. - (pmCov.array() * ii->invCovPM.array()).sum();
+#elif USE_TMV
+      i->expectedChisq = 2. - Trace(pmCov * ii->invCovPM);
+#endif
+      } else {
+	i->expectedChisq = 5.;
+      }
+    } else {
+      //Plain old Detection needs projection matrix
+      if (isFit(i)) {
+	Matrix22 tmp = i->getProjector() * pmCov * i->getProjector().transpose();
+#ifdef USE_EIGEN
+      i->expectedChisq = 2. - (tmp.array() * i->invCovFit.array()).sum();
+#elif USE_TMV
+      i->expectedChisq = 2. - Trace(tmp * i->invCovFit);
+#endif
+      } else {
+	i->expectedChisq = 2.;
+      }
+    } 
+  }
 
   isPrepared = true;
 }

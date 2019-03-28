@@ -119,7 +119,7 @@ main(int argc, char *argv[])
     parameters.addMember("pmEpoch",&pmEpoch, def,
 			 "Time origin for proper motion (2015.5)", 2015.5);
     parameters.addMember("parallaxPrior",&parallaxPrior, def | low,
-			 "Prior on parallax for each star (mas)", 0.1, 0.);
+			 "Prior on parallax for each star (mas)", 10., 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
     parameters.addMember("minFitExposures",&minFitExposures, def | low,
@@ -139,7 +139,7 @@ main(int argc, char *argv[])
 			 "use in-place Cholesky to save memory but lose debug of degeneracies",false);
     parameters.addMemberNoValue("FITTING");
     parameters.addMember("reserveFraction",&reserveFraction, def | low,
-			 "Fraction of matches reserved from re-fit", 0., 0.);
+			 "Fraction of matches reserved from fit", 0., 0.);
     parameters.addMember("seed",&randomNumberSeed, def,
 			 "seed for reserving randomizer, <=0 to seed with time", 0);
     parameters.addMember("chisqTolerance",&chisqTolerance, def | lowopen,
@@ -166,7 +166,7 @@ main(int argc, char *argv[])
 
   // Positional accuracy (in degrees) demanded of numerical solutions for inversion of 
   // pixel maps: 
-  const double worldTolerance = 0.001*ARCSEC/DEGREE;
+  const double worldTolerance = 0.1*MILLIARCSEC/DEGREE;
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
 

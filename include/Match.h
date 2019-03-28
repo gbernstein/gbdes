@@ -52,23 +52,27 @@ namespace astrometry {
     // This will include systematic errors and have been
     // increased by the weight factor:
     Matrix22 invCovFit;
-    double fitWeight;  // For clipping, we remove weight from invCovFit
-    // Inverse covariance of original measurement - no weights
+    // This is the initial pure measurement error (before any sys errors or weights)
     Matrix22 invCovMeas;
+    // This is the weighting factor applied here.  We will un-apply it when
+    // calculating sigma of deviations for sigma clipping.
+    double fitWeight;  
+    // This is the expectation of (dx * invCovFit * dx), taking
+    // into account the weight of this measurement in xmean for dx=x-xmean
+    // Tends to 2 for many observations (5 for PMDetection)
+    double expectedChisq;
     bool isClipped;
     const Match* itsMatch;
     const SubMap* map;
 
-    Detection(): color(astrometry::NODATA), pmProj(nullptr),
+    Detection(): color(astrometry::NODATA), pmProj(nullptr),expectedChisq(0.)
 		 isClipped(false), itsMatch(nullptr), map(nullptr)  {}
     virtual ~Detection() {if (pmProj) delete pmProj;}
 
     // Build the projection matrix for this detection.
     void buildProjector(double pmTDB,	// Time in years from PM reference epoch
 			const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
-			SphericalCoords* fieldProjection, // Projection used for world coords
-			double wScale=DEGREE); // units of world coordinates (relative to radians)
-
+			SphericalCoords* fieldProjection); // Projection used for world coords
   };
 
   class PMDetection: public Detection {
@@ -96,7 +100,7 @@ namespace astrometry {
     // True if a Detection will contribute to chisq:
     static bool isFit(const Detection* e);
 
-    virtual void prepare() const;   // Calculate the Fisher matrix and DOF
+    virtual void prepare() const;   // Calculate the Fisher matrix, DOF, and expectedChisq
     mutable bool isPrepared;  // Flag to set if Fisher matrix is current
     mutable Matrix22 centroidF;  // Fisher matrix for centroid (=inverse cov)
     mutable int dof;
