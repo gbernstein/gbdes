@@ -447,7 +447,7 @@ readExposures(const vector<Instrument*>& instruments,
   vector<double> mjd;
   vector<double> apcorr;
   vector<string> epoch;
-  // ??? Fill and save these:
+
   vector<vector<double>> observatory;
   vector<vector<double>> astrometricCov;
   vector<double> photometricVar;
@@ -1230,86 +1230,6 @@ Photo::fillDetection(Photo::Detection* d,
   d->wt = wt * e->magWeight;
 }
 
-// ??? what's this for ??? continue here.
-inline
-void
-Astro::matchMean(const Astro::Match& m,
-		 double& mx, double& my, double& mmag,
-		 double& wtot) {
-  double wx,wy;
-  m.centroid(mx,my,wx,wy);
-  wtot = 0.5*(wx+wy); // Use mean weight
-}
-inline
-void
-Photo::matchMean(const Photo::Match& m,
-		 double& mx, double& my, double& mmag,
-		 double& wtot) {
-  m.getMean(mmag,wtot);
-}
-
-inline
-void
-Astro::getOutputA(const Astro::Detection& d,
-		  double mx, double my, double wtot,
-		  double& xp, double& yp, double& sigma,
-		  double& xerrpix, double& yerrpix,
-		  double& xw, double& yw, double& sigmaw,
-		  double& xerrw, double& yerrw,
-		  double& wf) {
-  /*** ???? Needs fixing...
-  wf = d.isClipped ? 0. : 0.5 * (d.wtx + d.wty) / wtot;  
-  sigmaw = 0.5*(d.clipsqx + d.clipsqy);
-  sigmaw = (sigmaw > 0.) ? 1./sqrt(sigmaw) : 0.;
-  xp = d.xpix;
-  yp = d.ypix;
-  xw = d.xw;
-  yw = d.yw;
-  sigma = d.sigma;
-  ***/
-  
-  // Calculate residuals if we have a centroid for the match:
-  if (mx!=0. || my!=0.) {
-    double xcpix=xp, ycpix=yp;
-    Assert (d.map);
-    try {
-      d.map->toPix(mx, my, xcpix, ycpix, d.color);
-    } catch (astrometry::AstrometryError& e) {
-      cerr << "WARNING: toPix failure in map " << d.map->getName()
-	   << " at world coordinates (" << mx << "," << my << ")"
-	   << " approx pixel coordinates (" << xp << "," << yp << ")"
-	   << endl;
-      // Just set inverse map to pixel coords (i.e. zero pixel error reported)
-      xcpix = xp;
-      ycpix = yp;
-    }
-    xerrw = xw - mx;
-    yerrw = yw - my;
-    xerrpix = xp - xcpix;
-    yerrpix = yp - ycpix;
-  }
-  return;
-}
-inline
-void
-Photo::getOutputP(const Photo::Detection& d,
-		  double mmag, double wtot,
-		  double& xDevice, double& yDevice,
-		  double& xExposure, double& yExposure,
-		  double& mag, double& magerr, double& sigma,
-		  double& wf) {
-  xDevice = d.args.xDevice;
-  yDevice = d.args.yDevice;
-  xExposure = d.args.xExposure;
-  yExposure = d.args.yExposure;
-  mag = d.magOut;
-  magerr = mmag==0. ? 0. : mag - mmag;
-  sigma = d.clipsq;
-  sigma = sigma>0. ? 1./sqrt(sigma) : 0.;
-  wf = d.isClipped ? 0. : d.wt / wtot;
-}
-  
-
 // Read each Extension's objects' data from it FITS catalog
 // and place into Detection structures.
 template <class S>
@@ -1815,13 +1735,12 @@ clipReserved(typename S::Align& ca,
   } while (nclip>0);
 }
 
-// Save fitting results (residual) to output FITS table.
-template <class S>
+// Save photometric fitting results (residual) to output FITS table.
 void
-saveResults(const list<typename S::Match*>& matches,
-	    string outCatalog) {
-      // Open the output bintable
-  string tablename = S::isAstro? "WCSOut" : "PhotoOut";
+Photo::saveResults(const list<Match*>& matches,
+		   string outCatalog) {
+  // Open the output bintable
+  string tablename = "PhotoOut";
   FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tablename);
   img::FTable outTable = ft.use();;
 
@@ -1846,38 +1765,16 @@ saveResults(const list<typename S::Match*>& matches,
   vector<float> color;
   outTable.addColumn(color, "Color");
 
-  // Astro columns:
-  vector<float> sigpix;
-  vector<float> xrespix;
-  vector<float> yrespix;
-  vector<float> xworld;
-  vector<float> yworld;
-  vector<float> sigw;
-  vector<float> xresw;
-  vector<float> yresw;
-
-  // Photo columns
   vector<float> xExposure;
+  outTable.addColumn(xExposure, "xExpo");
   vector<float> yExposure;
+  outTable.addColumn(yExposure, "yExpo");
   vector<float> magOut;
+  outTable.addColumn(magOut, "magOut");
   vector<float> sigMag;
+  outTable.addColumn(sigMag, "sigMag");
   vector<float> magRes;
-  if (S::isAstro) {
-    outTable.addColumn(xrespix, "xresPix");
-    outTable.addColumn(sigpix, "sigPix");
-    outTable.addColumn(yrespix, "yresPix");
-    outTable.addColumn(xworld, "xW");
-    outTable.addColumn(yworld, "yW");
-    outTable.addColumn(sigw, "sigW");
-    outTable.addColumn(xresw, "xresW");
-    outTable.addColumn(yresw, "yresW");
-  } else {
-    outTable.addColumn(xExposure, "xExpo");
-    outTable.addColumn(yExposure, "yExpo");
-    outTable.addColumn(magOut, "magOut");
-    outTable.addColumn(sigMag, "sigMag");
-    outTable.addColumn(magRes, "magRes");
-  }  
+  outTable.addColumn(magRes, "magRes");
 
   // Cumulative counter for rows written to table:
   long pointCount = 0;
@@ -1890,6 +1787,185 @@ saveResults(const list<typename S::Match*>& matches,
   for (auto im = matches.begin(); true; ++im) {
     // First, write vectors to table if they've gotten big or we're at end
     if ( sequence.size() >= WriteChunk || im==matches.end()) {
+      long nAdded = sequence.size();
+
+      outTable.writeCells(sequence, "SequenceNumber", pointCount);
+      sequence.clear();
+      outTable.writeCells(catalogNumber, "Extension", pointCount);
+      catalogNumber.clear();
+      outTable.writeCells(objectNumber, "Object", pointCount);
+      objectNumber.clear();
+      outTable.writeCells(clip, "Clip", pointCount);
+      clip.clear();
+      outTable.writeCells(reserve, "Reserve", pointCount);
+      reserve.clear();
+      outTable.writeCells(xpix, "xPix", pointCount);
+      xpix.clear();
+      outTable.writeCells(ypix, "yPix", pointCount);
+      ypix.clear();
+      outTable.writeCells(wtFrac, "wtFrac", pointCount);
+      wtFrac.clear();
+      outTable.writeCells(color, "Color", pointCount);
+      color.clear();
+
+      outTable.writeCells(xExposure, "xExpo", pointCount);
+      xExposure.clear();
+      outTable.writeCells(yExposure, "yExpo", pointCount);
+      yExposure.clear();
+      outTable.writeCells(magOut, "magOut", pointCount);
+      magOut.clear();
+      outTable.writeCells(magRes, "magRes", pointCount);
+      magRes.clear();
+      outTable.writeCells(sigMag, "sigMag", pointCount);
+      sigMag.clear();
+
+      pointCount += nAdded;
+    }	// Done flushing the vectors to Table
+
+    if (im==matches.end()) break;
+
+    const Match& m = **im;
+    
+    // Get mean mag and weights for the whole match
+    double mmag, wtot;
+    m.getMean(mmag,wtot);
+
+    // Calculate number of DOF per Detection coordinate after
+    // allowing for fit to centroid:
+	    
+    int detcount=0;
+    for (auto detptr : m) {
+      // Save common quantities
+      sequence.push_back(detcount);
+      ++detcount;
+      catalogNumber.push_back(detptr->catalogNumber);
+      objectNumber.push_back(detptr->objectNumber);
+      clip.push_back(detptr->isClipped);
+      reserve.push_back(m.getReserved());
+      color.push_back(detptr->args.color);
+
+      // Photometry quantities:
+      xpix.push_back(detptr->args.xDevice);
+      ypix.push_back(detptr->args.yDevice);
+      xExposure.push_back(detptr->args.xExposure);
+      yExposure.push_back(detptr->args.yExposure);
+      magOut.push_back(detptr->magOut);
+      magRes.push_back(mmag==0. ? 0. : detptr->magOut - mmag);
+      double sigma = detptr->clipsq;
+      sigma = sigma>0. ? 1./sqrt(sigma) : 0.;
+      sigMag.push_back(sigma);
+      wtFrac.push_back(detptr->wt/wtot);
+    } // End detection loop
+  } // end match loop
+}
+
+/***** Astro version ***/
+// Save fitting results (residuals) to output FITS tables.
+template <class S>
+void
+saveResults(const list<typename S::Match*>& matches,
+	    string outCatalog) {
+
+  // Open the output bintable for pure position residuals
+  string tablename = "WCSOut";
+  FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tablename);
+  img::FTable outTable = ft.use();;
+
+  // Both of these will be created the first time we get a relevant row:
+  
+  // And a table for residuals to inputs with full PM solutions
+  img::FTable* pmDetTable = nullptr;
+
+  // And a table for the PM solutions that have been derived
+  img::FTable* pmOutTable = nullptr;
+
+  // Create vectors that will be put into output tables
+  vector<long> matchID;
+  outTable.addColumn(matchID, "matchID");
+  vector<long> catalogNumber;
+  outTable.addColumn(catalogNumber, "Extension");
+  vector<long> objectNumber;
+  outTable.addColumn(objectNumber, "Object");
+  vector<bool> clip;
+  outTable.addColumn(clip, "Clip");
+  vector<bool> reserve;
+  outTable.addColumn(reserve, "Reserve");
+  vector<bool> hasPM;  // Was this input a full PM estimate?
+  outTable.addColumn(hasPM, "hasPM");
+  vector<float> color;
+  outTable.addColumn(color, "Color");
+
+  vector<float> xpix;
+  outTable.addColumn(xpix, "xPix");
+  vector<float> ypix;
+  outTable.addColumn(ypix, "yPix");
+  vector<float> sigpix;  // Circularized total error in pixels
+  outTable.addColumn(sigpix, "sigPix");
+  vector<float> xrespix;
+  outTable.addColumn(xrespix, "xresPix");
+  vector<float> yrespix;
+  outTable.addColumn(yrespix, "yresPix");
+  vector<float> xworld;
+  outTable.addColumn(xworld, "xW");
+  vector<float> yworld;
+  outTable.addColumn(yworld, "yW");
+  vector<float> xresw;
+  outTable.addColumn(xresw, "xresW");
+  vector<float> yresw;
+  outTable.addColumn(yresw, "yresW");
+
+  // Give full error ellipses, meas only and total
+  vector<vector<float>> covMeasW;
+  outTable.addColumn(covMeasW, "covMeasW");
+  vector<vector<float>> covTotalW;
+  outTable.addColumn(covMeasW, "covTotalW");
+
+  // The chisq for this detection, and the expected value
+  vector<float> chisq;
+  outTable.addColumn(chisq, "chisq");
+  vector<float> chisqExpected;
+  outTable.addColumn(chisqExpected, "chisqExpected");
+
+  // These are quantities we will want for PMDetections
+  vector<long> pmMatchID;
+  vector<long> pmCatalogNumber;
+  vector<long> pmObjectNumber;
+  vector<bool> pmClip;
+  vector<bool> pmReserve;
+  vector<vector<float>> pmMean;
+  vector<vector<float>> pmInvCov;
+  vector<float> pmChisq;
+  vector<float> pmChisqExpected;
+  // (Not putting residuals here since PM's will be findable
+  //  by matchID in the star table)
+
+  // These are quantities we will want to put into our output PM catalog
+  vector<long> starcatMatchID;
+  vector<bool> starcatReserve;  // Is this star reserved from fit?
+  vector<int> starcatPMcount;   // How many PMDetections in it were fit?
+  vector<int> starcatDetCount;  // How many non-PM Detections in it were fit?
+  vector<int> starcatClipCount; // How many detections were clipped?
+  vector<int> starcatDOF;       // Number of DOF in PM fit
+  vector<float> starcatChisq;   // Total chisq
+  vector<float> starcatX;       // The solution
+  vector<float> starcatY;
+  vector<float> starcatPMx;
+  vector<float> starcatPMy;
+  vector<float> starcatParallax;
+  vector<vector<float>> starcatInvCov;  // flattened Fisher matrix of PM
+
+  // Cumulative counter for rows written to table:
+  long pointCount = 0;
+  // Write vectors to table when this many rows accumulate:
+  const long WriteChunk = 100000;
+
+  // Write all matches to output catalog, deleting them along the way
+  // and accumulating statistics of each exposure.
+  //
+  long matchCount = 0;
+  for (auto im = matches.begin(); true; ++im, ++matchCount) {
+    // First, write vectors to table if they've gotten big or we're at end
+    if ( matchID.size() >= WriteChunk || im==matches.end()) {
       long nAdded = sequence.size();
       // Common to photo and astro:
       outTable.writeCells(sequence, "SequenceNumber", pointCount);
@@ -1911,7 +1987,6 @@ saveResults(const list<typename S::Match*>& matches,
       outTable.writeCells(color, "Color", pointCount);
       color.clear();
 
-      if (S::isAstro) {
 	outTable.writeCells(xrespix, "xresPix", pointCount);
 	xrespix.clear();
 	outTable.writeCells(yrespix, "yresPix", pointCount);
@@ -1928,84 +2003,212 @@ saveResults(const list<typename S::Match*>& matches,
 	sigpix.clear();
 	outTable.writeCells(sigw, "sigW", pointCount);
 	sigw.clear();
-      } else {
-	outTable.writeCells(xExposure, "xExpo", pointCount);
-	xExposure.clear();
-	outTable.writeCells(yExposure, "yExpo", pointCount);
-	yExposure.clear();
-	outTable.writeCells(magOut, "magOut", pointCount);
-	magOut.clear();
-	outTable.writeCells(magRes, "magRes", pointCount);
-	magRes.clear();
-	outTable.writeCells(sigMag, "sigMag", pointCount);
-	sigMag.clear();
-      }
-      pointCount += nAdded;
+
+	// ??? Fix the table list..
+	pointCount += nAdded;
     }	// Done flushing the vectors to Table
 
     if (im==matches.end()) break;
 
-    const typename S::Match& m = **im;
+    const Match* m = *im;
     
-    // Get mean values and weights for the whole match
-    // (generic call that gets both mag & position)
-    double mx, my, mmag;
-    double wtot;
-    S::matchMean(m, mx,my,mmag, wtot);
-    // Calculate number of DOF per Detection coordinate after
-    // allowing for fit to centroid:
-	    
-    int detcount=0;
+    auto pmm = dynamic_cast<const PMMatch*> (m);  // Is this a PMMatch?
+
+    if ( !pmOutTable && pmm) {
+      // If this is the first PMMatch encountered, created the output table
+      // ???
+    }
+
+    Vector2 xyMean;    // Match's mean position, in world coords
+    if (!pmm) 
+      // We can use the same best-fit position for all detections
+      xyMean = m->predict();
+    }
+    
+    int detCount=0;
+    int pmDetCount = 0;
+    int clipCount = 0;
     for (auto detptr : m) {
-      // Save common quantities
-      sequence.push_back(detcount);
-      ++detcount;
+
+      auto pmDetptr = dynamic_cast<const PMDetection*> (detptr);
+
+      if (!pmDetTable && pmDetptr) {
+	// If this is the first PMDetection, create output table
+	// ???
+      }
+
+      if (detptr->isFit()) {
+	if (pmDetptr) {
+	  pmDetCount++;
+	} else {
+	  detCount++;
+	}
+      } else {
+	clipCount++;
+      }
+	
+      // Save some basics:
+      matchID.push_back(matchCount);
       catalogNumber.push_back(detptr->catalogNumber);
       objectNumber.push_back(detptr->objectNumber);
       clip.push_back(detptr->isClipped);
-      reserve.push_back(m.getReserved());
-      color.push_back(S::getColor(detptr));
+      reserve.push_back(m->getReserved());
+      hasPM.push_back( bool(pmDetptr));
+      if (pmDetptr)
+      color.push_back(detptr->color);
+      xpix.push_back(detptr->xpix);
+      ypix.push_back(detptr->ypix);
+      xworld.push_back(detptr->xw);
+      yworld.push_back(detptr->yw);
 
-      if (S::isAstro) {
-	// Variables needed to save for astrometry
-	double xp=0., yp=0., sigma=0., xerrpix=0., yerrpix=0.;
-	double xw=0., yw=0., xerrw=0., yerrw=0., sigmaw=0.;
-	double wf=0.;
-	S::getOutputA(*detptr, mx, my, wtot,
-		      xp, yp, sigma, xerrpix, yerrpix,
-		      xw, yw, sigmaw, xerrw, yerrw,
-		      wf);
-	xpix.push_back(xp);
-	ypix.push_back(yp);
-	sigpix.push_back(sigma);
-	xworld.push_back(xw);
-	yworld.push_back(yw);
-	xrespix.push_back(xerrpix);
-	yrespix.push_back(yerrpix);
-	// Put world residuals in milliarcsec
-	xresw.push_back(xerrw*1000.*DEGREE/ARCSEC);
-	yresw.push_back(yerrw*1000.*DEGREE/ARCSEC);
-	sigw.push_back(sigmaw*1000.*DEGREE/ARCSEC);
-	wtFrac.push_back(wf);
+      // Let's get the model prediction
+      if (pmm)
+	xyMean = pmm->predict(detptr);
+
+      // Put world residuals in milliarcsec
+      double dx = (detptr->xw-xyMean[0]) * DEGREE/MILLIARCSEC;
+      double dy = (detptr->yw-xyMean[1]) * DEGREE/MILLIARCSEC;
+      xresw.push_back(dx);
+      yresw.push_back(dy);
+
+      // Get pixel residuals
+      if (xyMean[0]!=0. || xyMean[1]!=0.) {
+	double xcpix=detptr->xp, ycpix=detptr->yp;
+	Assert (detptr->map);
+	try {
+	  detptr->map->toPix(xyMean[0], xyMean[1],
+			     xcpix, ycpix, detptr->color);
+	} catch (astrometry::AstrometryError& e) {
+	  cerr << "WARNING: toPix failure in map " << detptr->map->getName()
+	       << " at world coordinates (" << xyMean[0] << "," << xyMean[1] << ")"
+	       << " approx pixel coordinates (" << detptr->xpix << "," << detptr->ypix << ")"
+	       << endl;
+	  // Just set inverse map to pixel coords (i.e. zero pixel error reported)
+	  xcpix = detptr->xpix;
+	  ycpix = detptr->ypix;
+	}
+      }
+      xrespix.push_back(detptr->xpix - xcpix);
+      yrespix.push_back(detptr->ypix - ycpix);
+
+      // Get error covariances, if we have any
+      if (detptr->invCovMeas(0,0) > 0.) {
+	Matrix22 cov = detptr->invCovMeas.inverse() * pow(DEGREE/MILLIARCSEC,2.);
+	vector<float> vv(3);
+	vv[0] = cov(0,0);
+	vv[1] = cov(1,1);
+	vv[2] = cov(0,1);
+	covMeasW.push_back(vv);
       } else {
-	double xDevice=0., yDevice=0., xExpo=0., yExpo=0.;
-	double mag=0., magerr=0., sigma=0.;
-	double wf=0.;
-	S::getOutputP(*detptr, mmag, wtot,
-		      xDevice, yDevice, xExpo, yExpo,
-		      mag, magerr, sigma,
-		      wf);
-	xpix.push_back(xDevice);
-	ypix.push_back(yDevice);
-	xExposure.push_back(xExpo);
-	yExposure.push_back(yExpo);
-	magOut.push_back(mag);
-	magRes.push_back(magerr);
-	sigMag.push_back(sigma);
-	wtFrac.push_back(wf);
+	vector<float> vv(3,0.);
+	covMeasW.push_back(vv);
+      }
+
+      // Get error covariances, if we have any
+      double chisqThis;
+      if (detptr->invCovFit(0,0) > 0.) {
+	cov = detptr->invCovFit.inverse() * pow(DEGREE/MILLIARCSEC,2.);
+	cov *= detptr->fitWeight;
+	vv[0] = cov(0,0);
+	vv[1] = cov(1,1);
+	vv[2] = cov(0,1);
+	covTotalW.push_back(vv);
+
+	// Transform back to pixel errors to get circularized pixel error
+	{
+	  cov /= pow(DEGREE/MILLIARCSEC,2.); // Back to degrees 
+	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1]);
+	  Matrix22 covPix = dpdw * cov * dpdw.transpose();
+	  double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);
+	  sigpix.push_back(detCov>0. ? pow(detCov,0.25) : 0.);
+	}
+
+	// Chisq and expected
+	if (pmDetptr) {
+	  // Full 5d chisq, even though table has just 2d
+	  PMSolution dpm = pmDetptr->pmMean - pmm->getPM();
+	  chisqThis = dpm.transpose() * pmDetptr->invCovPM * dpm;
+	  chisqThis /= pmDetptr->fitWeight; // Remove weight factor from invCov
+	} else {
+	  // 2d chisq
+	  chisqThis = cov(0,0) * dx * dx + cov(1,1)*dy*dy +
+	    2.*cov(0,1) * dx * dy;
+	}
+	chisq.push_back(chisqThis);
+	chisqExpected.push_back(detptr->expectedChisq);
+      } else {
+	// Did not have a usable error matrix
+	chisqThis = 0.;
+	vector<float> vv(3,0.);
+	covTotalW.push_back(vv);
+	sigpix.push_back(0.);
+	chisq.push_back(chisqThis);
+	chisqExpected.push_back(detptr->expectedChisq);
+      }	
+
+      if (pmDetptr) {
+	// Add this object to PM output list
+	pmMatchID.push_back(matchCount);
+	pmCatalogNumber.push_back(detptr->catalogNumber);
+	pmObjectNumber.push_back(detptr->objectNumber);
+	pmClip.push_back(detptr->isClipped);
+	pmReserve.push_back(m->getReserved());
+	vv.resize(5);
+	for (int i=0; i<5; i++)
+	  vv[i] = pmDetptr->pmMean[i];
+	pmMean.push_back(vv);
+	vv.resize(25);
+	int k=0;
+	for (int i=0; i<5; i++)
+	  for (int j=0; j<5; j++, k++)
+	    vv[k] = pmDetptr->invCovPM(i,j);
+	pmInvCov.push_back(vv)
+	pmChisq.push_back(chisqThis);
+	pmChisqExpected.push_back(detptr->expectedChisq);
       }
     } // End detection loop
+
+    if (pmm) {
+      // Add this object to the PM output catalog
+      starcatMatchID.push_back(matchCount);
+      starcatReserve.push_back(pmm->getReserved());
+      starcatPMcount.push_back(pmCount);
+      starcatDetCount.push_back(detCount);
+      starcatClipCount.push_back(clipCount);
+      int dof=0.;
+      double dummy;
+      double chisqThis = pmm->chisq(dof,dummy);
+      starcatDOF.push_back(dof);
+      starcatChisq.push_back(chisqThis);
+      {
+	// Save the solution in a table
+	auto pm = pmm->getPM();
+	starcatX.push_back(pm[X0]);
+	starcatY.push_back(pm[Y0]);
+	starcatPMx.push_back(pm[VX]);
+	starcatPMy.push_back(pm[VY]);
+	starcatParallax.push_back(pm[PAR]);
+      }
+      {
+	// And the inverse covariance
+	auto fisher = pmm->getInvCovPM();
+	vector<float> vv(25);
+	int k=0;
+	for (int i=0; i<5; i++)
+	  for (int j=0; j<5; j++, k++)
+	    vv[k] = fisher(i,j);
+	starcatCov.push_back(vv);
+      }
+    }  // Done adding a row to the star catalog.
   } // end match loop
+
+  // ??? Write the PMDetection and PMSolution tables to file
+  if (pmDetTable) {
+    // ???
+  }
+  if (pmOutTable) {
+    // ???
+  }
 }
 
 template<class S>

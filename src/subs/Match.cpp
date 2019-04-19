@@ -165,6 +165,9 @@ Match::prepare() const {
   }
   dof -= 2;  // Remove 2 parameters in this fit
 
+  // ???? Change this calculation to get chisq expected
+  // if errors are true, not what weighted invCov gives ???
+  
   // Now get expected chisq for each detection
   // From notes of 25 Mar 2019,
   // <chisq_i> = 2 - Tr( invCov_i * covMean)

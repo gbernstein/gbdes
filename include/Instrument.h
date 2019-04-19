@@ -60,7 +60,7 @@ public:
   double apcorr;
   double weight;	// Relative weight applied to this exposure during fitting
   double magWeight;     // ...and for photometry.  Usually 1.
-  string epoch;
+  string epoch;         // string-named observation epoch, for time-evolving solutions
   double pmTDB;	         // Observation time relative to PM reference epoch (yrs)
   astrometry::Vector3 observatory;   // Barycentric ICRS position of observatory
   astrometry::Matrix22 astrometricCovariance; // Error atop cataloged meas. error for positions (arcsec ICRS)
