@@ -100,6 +100,9 @@ struct Photo {
   static double getColor(const Detection* d) {
     return d->args.color;
   }
+  static void saveResults(const list<Match*>& matches,
+		   string outCatalog);
+
   static const int isAstro = 0;
 };
 
@@ -397,7 +400,11 @@ clipReserved(typename S::Align& ca,
 #endif
 
 // Save fitting results (residual) to output FITS table.
-template <class S>
+void
+Photo::saveResults(const list<Match*>& matches,
+		   string outCatalog) {
+
+  template <class S>
 void
 saveResults(const list<typename S::Match*>& matches,
 	    string outCatalog);

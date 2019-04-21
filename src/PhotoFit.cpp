@@ -649,7 +649,7 @@ main(int argc, char *argv[])
     //////////////////////////////////////
 
     // Save the pointwise fitting results
-    saveResults<Photo>(matches, outCatalog);
+    Photo::saveResults(matches, outCatalog);
     
     /**/cerr << "Saved results to FITS table" << endl;
     

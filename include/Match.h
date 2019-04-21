@@ -65,7 +65,7 @@ namespace astrometry {
     const Match* itsMatch;
     const SubMap* map;
 
-    Detection(): color(astrometry::NODATA), pmProj(nullptr),expectedChisq(0.)
+    Detection(): color(astrometry::NODATA), pmProj(nullptr),expectedChisq(0.),
 		 isClipped(false), itsMatch(nullptr), map(nullptr)  {}
     virtual ~Detection() {if (pmProj) delete pmProj;}
 
@@ -73,6 +73,16 @@ namespace astrometry {
     void buildProjector(double pmTDB,	// Time in years from PM reference epoch
 			const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
 			SphericalCoords* fieldProjection); // Projection used for world coords
+
+    // Calculate chisq relative to best prediction of itsMatch,
+    // using full fitting covariance but *before* any weighting factor is applied.
+    // This and the resid*() routines do *not* automate remapping to world coords
+    // for clipped detections.
+    virtual double trueChisq() const;
+    // Report 2d residual of this Detection to itsMatch prediction in world coordinates
+    Vector2 residWorld() const;
+    // Or the residual mapped back to pixel coordinates
+    Vector2 residPix() const;
   };
 
   class PMDetection: public Detection {
@@ -89,6 +99,10 @@ namespace astrometry {
     // class can be sliced to a Detection and work for fitting without
     // free PM/parallax.
     void shiftReferenceEpoch(double tdbShift);
+
+    // Calculate full *5d* chisq relative to best prediction of itsMatch,
+    // using full fitting covariance but *before* any weighting factor is applied.
+    virtual double trueChisq() const;
   };
     
   class Match {
@@ -100,14 +114,31 @@ namespace astrometry {
     // True if a Detection will contribute to chisq:
     static bool isFit(const Detection* e);
 
-    virtual void prepare() const;   // Calculate the Fisher matrix, DOF, and expectedChisq
-    mutable bool isPrepared;  // Flag to set if Fisher matrix is current
+    // These flags will let a Match keep track of its internal state and
+    // avoid unnecessary recalculations.  Internal states can change
+    // even for logically const instance.
+    //
+    // First flag is set if the Fisher matrices, dof, and expected chisq's are
+    // current, and the solution matrices for PM's.  These only change if
+    // a Detection is added or removed from the set being fit.
+    mutable bool isPrepared;  
+    // These flags are set if the world coordinates of detection are valid.
+    // They need to be reset whenever the coordinate maps' parameters change
+    mutable bool isMappedFit;  // Detections involved in Fit are current
+    mutable bool isMappedAll;  // All detections (incl. clipped) are current
+    // This flag is set if the best-fit parameters of the Match position/PM
+    // are current.  isPrepared && isMappedFit are prereqs for being solved.
+    mutable bool isSolved;
+
+    // Here are cached quantities for the overall solution:
+    mutable Vector2 xyMean;   // Best-fit centroid (valid if isSolved).
     mutable Matrix22 centroidF;  // Fisher matrix for centroid (=inverse cov)
     mutable int dof;
 
-    virtual void solve() const;     // Calculate best-fit centroid
-    mutable bool isSolved;    // Flag set if centroid/PM is for current coords
-    mutable Vector2 xyMean;   // Best-fit centroid (valid if isSolved).
+    // Call this to redo the Fisher matrix if needed (=>set isPrepare)
+    virtual void prepare() const;
+    // Other state-changing calls are public.
+    
   public:
     Match(Detection* e);
 
@@ -132,8 +163,24 @@ namespace astrometry {
     bool getReserved() const {return isReserved;}
     void setReserved(bool b) {isReserved = b;}
 
-    virtual void remap();  // Remap *all* points to world coords with current map
-    void forceRecalculation() const {isPrepared = false;}  // Invalidate caches
+    // State-changing routines
+    void mapsHaveChanged() const {
+      // World coordinates of Detections no longer valid
+      isMappedFit = false;
+      isMappedAll = false;
+      isSolved = false;
+    }
+    void forceRecalculation() const {
+      // Mark everything as invalid
+      mapsHaveChanged();
+      isPrepared = false;
+    }
+
+    // Remap Detections to world coords with current map, either all or just
+    // the ones involved in fitting
+    virtual void remap(bool doAll = true) const;  
+    // Recalculate best-fit centroid (or PM)
+    virtual void solve() const;     
 
     // Get predicted position (and inverse covariance) for a Detection.
     // The argument is needed only if there is full PM solution.
@@ -157,14 +204,12 @@ namespace astrometry {
    
     // sigmaClip returns true if clipped, 
     // and deletes the clipped guy if 2nd arg is true.  
-    // Does *not* remap the points.
     virtual bool sigmaClip(double sigThresh,
 			   bool deleteDetection=false); 
     void clipAll(); // Mark all detections as clipped
 
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
-    // Does *not* remap the points.
     virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
 
     typedef list<Detection*>::iterator iterator;
@@ -182,10 +227,12 @@ namespace astrometry {
 
     void setParallaxPrior(double p) {parallaxPrior = p;}
 
-    virtual void remap();  // Remap *all* points to world coords with current map
+    // Remap points to world coords with current map:
+    virtual void remap(bool doAll=true) const;  
+    virtual void solve() const;  // Recalculate best-fit PM 
 
     // Increment chisq, beta, and alpha for this match.
-    // Returned integer is the DOF count.  This *does* remap points being fitted.
+    // Returned integer is the DOF count.  
     // reuseAlpha=true will skip the incrementing of alpha.
     virtual int accumulateChisq(double& chisq,
 				DVector& beta,
@@ -194,13 +241,11 @@ namespace astrometry {
    
     // sigmaClip returns true if clipped, 
     // and deletes the clipped guy if 2nd arg is true.  
-    // Does *not* remap the points
     virtual bool sigmaClip(double sigThresh,
 			   bool deleteDetection=false); 
 
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
-    // Does *not* remap the points.
     virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
 
     // 
@@ -216,7 +261,6 @@ namespace astrometry {
   private:
     double parallaxPrior;   // sigma for prior on parallax (radians)
 
-    virtual void solve() const;     // Recalculate and cache, if needed:
     mutable PMSolution pm;          // Chisq-minimizing position/parallax/pm
 
     virtual void prepare() const;  // Recalculate and cache, if needed:
@@ -242,7 +286,8 @@ namespace astrometry {
 				      pmc(pmc_), 
 				      relativeTolerance(0.001)  {}
 
-    void remap();	// Re-map all Detections using current params
+    // Re-map Detections using current params - either all or just those being fit.
+    void remap(bool doAll=true); 
     // Fitting routine: returns chisq of current fit, updates params. and remaps.
     double fitOnce(bool reportToCerr=true,
 		   bool inPlace=false);	  // Set inPlace to save space, but can't debug singularities
@@ -253,7 +298,7 @@ namespace astrometry {
 		  bool clipEntireMatch=false);
     // Calculate total chisq.  doReserved same meaning as above.
     double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
-    void setParams(const DVector& p) {pmc.setParams(p);}
+    void setParams(const DVector& p);
     DVector getParams() const {return pmc.getParams();}
     int nParams() const {return pmc.nParams();}
     // This is the calculation of normal equation components used in fitting.

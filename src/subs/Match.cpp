@@ -76,6 +76,63 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
   m.subMatrix(0,2,VX,VY+1) = pm;
 }
 
+Vector2
+Detection::residWorld() const {
+  Vector2 out;
+  Assert(itsMatch)
+  out[0] = xw;
+  out[1] = yw;
+  out -= itsMatch->predict(this);
+  return out;
+}
+
+Vector2
+Detection::residPix() const {
+  Vector2 xyMean = itsMatch->predict(this);
+  double xMeanPix=xpix, yMeanPix=ypix;
+  Assert(map);
+  try {
+    map->toPix(xyMean[0], xyMean[1],
+	       xMeanPix, yMeanPix, color);
+  } catch (astrometry::AstrometryError& e) {
+    cerr << "WARNING: toPix failure in map " << map->getName()
+	 << " at world coordinates (" << xyMean[0] << "," << xyMean[1] << ")"
+	 << " approx pixel coordinates (" << xpix << "," << ypix << ")"
+	 << endl;
+    // Just return zero residual
+    return Vector2(0.);
+  }
+  Vector2 out;
+  out[0] = xpix - xMeanPix;
+  out[1] = ypix - yMeanPix;
+  return out;
+}
+
+double
+Detection::trueChisq() const {
+  // Calculate chisq relative to best prediction of itsMatch,
+  // using full fitting covariance but *before* any weighting factor is applied.
+  auto xyW = residWorld();
+  double chisq = xyW.transpose() * invCovFit * xyW;
+  chisq *= fitWeight;  // Remove the weight factor that was built into invCovFit
+  return chisq;
+}
+
+double
+PMDetection::trueChisq() const {
+  // Get full 5d chisq for a PMDetection
+
+  auto pmMatch = dynamic_cast<const PMMatch*> (itsMatch);
+  Assert(pmMatch);
+  // Have the match solve for best fit if not in that state
+  pmMatch->solve();
+  // Now get chisq
+  PMSolution dpm = pmMean - pmMatch->getPM();
+  double chisq = dpm.transpose() * invCovPM * dpm;
+  chisq *= fitWeight;  // Remove the weight factor that was built into invCovPM
+  return chisq;
+}
+
 bool
 Match::isFit(const Detection* e) {
   // A Detection will contribute to fit if it is not clipped,
@@ -84,7 +141,9 @@ Match::isFit(const Detection* e) {
 }
 
 Match::Match(Detection *e): elist(), nFit(0),dof(0),
-			    isReserved(false), isPrepared(false), isSolved(false) {
+			    isReserved(false), isPrepared(false),
+			    isMappedFit(false), isMappedAll(false),
+			    isSolved(false) {
   add(e);
 }
 
@@ -94,6 +153,8 @@ Match::add(Detection *e) {
   elist.push_back(e);
   e->itsMatch = this;
   e->isClipped = false;
+  isMappedFit = false;
+  isMappedAll = false;
   if ( isFit(e)) nFit++;
 }
 
@@ -126,6 +187,8 @@ Match::clear(bool deleteDetections) {
   }
   elist.clear();
   nFit = 0;
+  isMappedFit = true;
+  isMappedAll = true;
 }
 
 void
@@ -191,7 +254,8 @@ Match::prepare() const {
 void
 Match::solve() const {
   // Recalculate the centroid, if needed.
-  prepare();
+  prepare();     // Make sure Fisher matrices are current
+  remap(false);  // Make sure world coords of fitted Detections are current
   if (isSolved) return;
   isSolved = true;
   if (dof<0) {
@@ -211,12 +275,30 @@ Match::solve() const {
 }
 
 void
-Match::remap() {
-  for (auto i : elist) 
-    i->map->toWorld(i->xpix, i->ypix,
-		    i->xw, i->yw,
-		    i->color);
-  isSolved = false;  // Solution has changed
+Match::remap(bool doAll) const { 
+  // No need to do anything if all is current
+  if (isMappedAll) return;
+  // Or if Fit are current and we only need them
+  if (!doAll && isMappedFit) return;
+  
+  for (auto i : elist) {
+    if (isFit(i)) {
+      if (!isMappedFit) {
+	i->map->toWorld(i->xpix, i->ypix,
+			i->xw, i->yw,
+			i->color);
+	isSolved = false;  // Solution has changed
+      }
+    } else if (doAll) {
+      // Only remap non-fits if requested
+      i->map->toWorld(i->xpix, i->ypix,
+		      i->xw, i->yw,
+		      i->color);
+    }
+  }
+  // Update state
+  isMappedFit = true;
+  if (doAll) isMappedAll = true;
 }
 
 ///////////////////////////////////////////////////////////
@@ -237,12 +319,12 @@ Match::accumulateChisq(double& chisq,
 		       bool reuseAlpha) {
   int nP = beta.size();
 
+  prepare();
+
   // No contributions to fit for degenerate fit
   if (dof<0) return 0;
 
   // Update mapping and save derivatives for each detection:
-  // Note this invalidates the centroid solution
-  isSolved = false;
   vector<DMatrix*> dXYdP(elist.size(), nullptr);
   int ipt=0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
@@ -252,16 +334,17 @@ Match::accumulateChisq(double& chisq,
     if (npi>0) {
       dXYdP[ipt] = new DMatrix(2,npi);
       (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
-			       xw, yw,
+			       (*i)->xw, (*i)->yw,
 			       *dXYdP[ipt],
 			       (*i)->color);
-    } else {
+    } else if (!isMappedFit) {
+      // If there are no free parameters, we only
+      // need to remap if the maps have changed.
       (*i)->map->toWorld((*i)->xpix, (*i)->ypix, 
-			 xw, yw,
+			 (*i)->xw, (*i)->yw,
 			 (*i)->color);
     }
-    (*i)->xw = xw;
-    (*i)->yw = yw;
+    isMappedFit = true;  // This is now true if it wasn't before.
   }
 
   // Get new centroid
@@ -369,9 +452,10 @@ Match::accumulateChisq(double& chisq,
 bool
 Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
-  // Only clip the worst outlier at most
-  if (dof<0) return false; // Already degenerate, not fitting
   solve();  // Recalculate mean position if out of date
+  if (dof<0) return false; // Already degenerate, not fitting
+
+  // Only clip the worst outlier at most
   double maxSq=0.;
   Detection* worst=nullptr;
   Vector2 err;
@@ -409,6 +493,7 @@ Match::sigmaClip(double sigThresh,
       }
       nFit--;
       isPrepared = false;
+      isSolved = false;  // Note that world coords still valid
       return true;
   } else {
     // Nothing to clip
@@ -418,9 +503,9 @@ Match::sigmaClip(double sigThresh,
 
 double
 Match::chisq(int& dofAccum, double& maxDeviateSq) const {
+  solve();
   double chi=0.;
   if (dof<0) return chi; // No info from degenerate fits
-  solve();
   Vector2 dxy;
   for (auto i : elist) {
     if (!isFit(i)) continue;
@@ -444,6 +529,9 @@ PMMatch::PMMatch(Detection *e): Match(e), parallaxPrior(0.), pm(0.) {}
 				  
 void
 PMMatch::prepare() const {
+  if (isPrepared) return;
+  isSolved = false;
+  
   // Calculate the total PM Fisher matrix and also
   // the sums over the PMDetection priors
   pmFisher.setZero();
@@ -531,6 +619,9 @@ PMMatch::prepare() const {
 void
 PMMatch::solve() const {
   prepare();
+  remap(false);  // Remap the fitted Detections if needed
+  if (isSolved) return;
+  
   PMProjector m(0.);  // (x,y) = m * pm
   PMSolution beta(0.);
   Vector2 xy;
@@ -553,13 +644,14 @@ PMMatch::solve() const {
   }
   // Solve the system now
   pm = pmCov * beta + priorMean;
+  isSolved = true;
 }
 
 double
 PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
+  solve();  // Get best PM for current parameters
   double chi=0.;
   if (dof<0) return chi; // No info from degenerate fits
-  solve();  // Get best PM for current parameters
   PMProjector m;  // (x,y) = m * pm
   Vector2 dxy;
   PMSolution dpm;
@@ -569,7 +661,6 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
     if (auto ii = dynamic_cast<const PMDetection*>(i)) {
       dpm = ii->pmMean - pm;
       cc = dpm.transpose() * ii->invCovPM * dpm;
-      dof += 5;
       maxDeviateSq = MAX(cc/5. , maxDeviateSq);
     } else {    
       // Regular single-epoch detection
@@ -578,21 +669,21 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
       m = i->getProjector();
       dxy -= m * pm;
       cc = dxy.transpose() * i->invCovFit * dxy;
-      dof += 2;
       maxDeviateSq = MAX(cc/2. , maxDeviateSq);
     }
     chi += cc;
   }
-  dof -= 5;
+  dofAccum += dof;
   return chi;
 }
 
 bool
 PMMatch::sigmaClip(double sigThresh,
 		   bool deleteDetection) {
-  // Only clip the worst outlier at most
-  if (dof<0) return false; // Already unusable for fitting
   solve();   // Get PM solution
+  if (dof<0) return false; // Already unusable for fitting
+
+  // Only clip the worst outlier at most
   double maxSq=0.;
   Detection* worst=nullptr;
   PMSolution dpm;
@@ -644,6 +735,7 @@ PMMatch::sigmaClip(double sigThresh,
       }
       nFit--;
       isPrepared = false;
+      isSolved = false;
       return true;
   } else {
     // Nothing to clip
@@ -677,6 +769,7 @@ PMMatch::accumulateChisq(double& chisq,
 			 bool reuseAlpha) {
   int nP = beta.size();
 
+  prepare();
   // No contributions to fit for <2 detections:
   if (dof<0) return 0; // No contribution for degenerate fits
 
@@ -707,23 +800,25 @@ PMMatch::accumulateChisq(double& chisq,
     if (npi>0) {
       dXYdP[ipt] = new DMatrix(2,npi);
       (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
-			       xw, yw,
+			       (*i)->xw, (*i)->yw,
 			       *dXYdP[ipt],
 			       (*i)->color);
-    } else {
+    } else if (!isMappedFit) {
+      // The world coordinates only need
+      // updating if not already mapped.
       // Remap but no derivs needed
       (*i)->map->toWorld((*i)->xpix, (*i)->ypix, 
-			 xw, yw,
+			 (*i)->xw, (*i)->yw,
 			 (*i)->color);
     }
 
-    (*i)->xw = xw;
-    (*i)->yw = yw;
     // For calculating best-fit PM
     xy[0] = (*i)->xw;
     xy[1] = (*i)->yw;
     beta += m.transpose() * (*i)->invCovFit * xy;
   }
+  isMappedFit = true;  // This is true now if not before.
+  
   // Solve the system now
   pm = pmCov * beta + priorMean;
   isSolved = true;
@@ -847,6 +942,15 @@ PMMatch::accumulateChisq(double& chisq,
 // Parameter adjustment operations
 /////////////////////////////////////////////////////////////////////
 void
+CoordAlign::setParams(const DVector& p) {
+  // First, change parameters in the map collection
+  pmc.setParams(p);
+  // Then alert all Matches that their world coordinates are crap
+  for (auto m : mlist)
+    m->mapsHaveChanged();
+}
+
+void
 CoordAlign::operator()(const DVector& p, double& chisq,
 		       DVector& beta, DMatrix& alpha,
 		       bool reuseAlpha) {
@@ -854,7 +958,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   Assert(p.size()==nP);
   Assert(beta.size()==nP);
   Assert(alpha.rows()==nP);
-  setParams(p);
+  setParams(p);  // Note this will force remapping
   double newChisq=0.;
   beta.setZero();
   if (!reuseAlpha) alpha.setZero();
@@ -1160,7 +1264,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       DVector newP = p + beta;
       setParams(newP);
       // Get chisq at the new parameters
-      remap();
       int dof;
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
@@ -1195,7 +1298,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
   marq.setSaveMemory();
   double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
   setParams(p);
-  remap();
   {
     int dof;
     double maxDev;
@@ -1205,9 +1307,9 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 }
 
 void
-CoordAlign::remap() {
+CoordAlign::remap(bool doAll) {
   for (auto i : mlist)
-    i->remap();
+    i->remap(doAll);
 }
 
 int

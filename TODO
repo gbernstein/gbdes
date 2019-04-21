@@ -1,5 +1,8 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
+  * are solve(), predict(), etc. ok when no valid fit for Match?
   * Change WCSFit summary output
+  * Insure that positions are calculated even for clipped / non-fit points before output and stats for astrometry
+  * prepare() should get expected chisq even for clipped detections
   * Work out expectedChisq considering non-unity weights.
   * ReadObjects must produce new Detection members.
   * Work out new configuration methods for Gaia
@@ -7,7 +10,6 @@
   * Change output data to include PM's
   * Check that PMMatch will appropriately skip when too few DOF, no prior
   * Treat PMDetection as single epoch properly if not using PMMatch
-  * Make a new output file for stellar PM's.
   * Program-level systematic errors need to work with any already in config files.
   * Change photometric fit / clip to use fitWeight?
   * Are sigmas stored as arcsec or radiancs?
@@ -91,3 +93,9 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Convert Gaia position to reference epoch
   * Free parallax, PM are options.
   * Make weights per exposure (readExposure, config files)
+  * Make a new output file for stellar PM's.
+  * get a color for each Match in astro output.
+  * Match maintains state telling when to remap coordinates.
+  * Check coordalign methods for proper state updating of Matches.
+  * Does sigmaClip routine efficiently use remap()?
+  

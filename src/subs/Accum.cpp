@@ -11,17 +11,22 @@ Accum<S>::Accum(): sumxw(0.), sumyw(0.),
 		   sum_m(0.), sum_mw(0.), sum_mm(0.), sum_mmw(0.),
 		   chisq(0.), sumdof(0.), n(0), ntot(0), nclipped(0) {}
 
-template <class S>
+// Specialization for Astro
+template <>
 void 
-Accum<S>::add(const typename S::Detection* d,
-	      double xoff, double yoff,
-	      double wtot,
-	      double dof) {
+Accum<Astro>::add(const typename S::Detection* d,
+		  double xoff, double yoff,
+		  double wtot,
+		  double dof) {
   ++ntot;
   if (d->isClipped) {
     ++nclipped;
     return;
   }
+  // ??? Change to use chisqExpected insted of wtot, wt ???
+  // ??? And use 5d chisq for PMDetection,
+  // ??? And full prediction for PMMatch
+  
   if (wtot <=0. || dof<=0. ) return;  // Can't do anything more with this
   double dx = (d->xw-xoff);
   double dy = (d->yw-yoff);

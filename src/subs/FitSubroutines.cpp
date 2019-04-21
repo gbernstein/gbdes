@@ -952,9 +952,9 @@ readMatches(img::FTable& table,
   vector<int> seq;
   vector<LONGLONG> extn;
   vector<LONGLONG> obj;
-  table.readCells(seq, "SequenceNumber");
-  table.readCells(extn, "Extension");
-  table.readCells(obj, "Object");
+  table.readCells(seq, "sequenceNumber");
+  table.readCells(extn, "extension");
+  table.readCells(obj, "object");
 
   // Smaller collections for each match
   vector<long> matchExtns;
@@ -1277,7 +1277,7 @@ void readObjects(const img::FTable& extensionTable,
     int magKeyElement;
     int magErrKeyElement;
     
-    extensionTable.readCell(hduNumber, "Extension", iext);
+    extensionTable.readCell(hduNumber, "extension", iext);
     extensionTable.readCell(xKey, "xKey", iext);
     extensionTable.readCell(yKey, "yKey", iext);
     extensionTable.readCell(idKey, "idKey", iext);
@@ -1466,7 +1466,7 @@ readColors(img::FTable extensionTable,
 	      << "/" << colorExtensions.size()
 	      << " from " << filename << endl;
     int hduNumber;
-    extensionTable.readCell(hduNumber, "Extension", iext);
+    extensionTable.readCell(hduNumber, "extension", iext);
     string idKey;
     extensionTable.readCell(idKey, "idKey", iext);
     string colorExpression;
@@ -1747,15 +1747,15 @@ Photo::saveResults(const list<Match*>& matches,
   // Create vectors that will be put into output table
   // (create union of photo and astro columns)
   vector<int> sequence;
-  outTable.addColumn(sequence, "SequenceNumber");
+  outTable.addColumn(sequence, "sequenceNumber");
   vector<long> catalogNumber;
-  outTable.addColumn(catalogNumber, "Extension");
+  outTable.addColumn(catalogNumber, "extension");
   vector<long> objectNumber;
-  outTable.addColumn(objectNumber, "Object");
+  outTable.addColumn(objectNumber, "object");
   vector<bool> clip;
-  outTable.addColumn(clip, "Clip");
+  outTable.addColumn(clip, "clip");
   vector<bool> reserve;
-  outTable.addColumn(reserve, "Reserve");
+  outTable.addColumn(reserve, "reserve");
   vector<float> xpix;
   outTable.addColumn(xpix, "xPix");
   vector<float> ypix;
@@ -1763,7 +1763,7 @@ Photo::saveResults(const list<Match*>& matches,
   vector<float> wtFrac;
   outTable.addColumn(wtFrac, "wtFrac");
   vector<float> color;
-  outTable.addColumn(color, "Color");
+  outTable.addColumn(color, "color");
 
   vector<float> xExposure;
   outTable.addColumn(xExposure, "xExpo");
@@ -1789,15 +1789,15 @@ Photo::saveResults(const list<Match*>& matches,
     if ( sequence.size() >= WriteChunk || im==matches.end()) {
       long nAdded = sequence.size();
 
-      outTable.writeCells(sequence, "SequenceNumber", pointCount);
+      outTable.writeCells(sequence, "sequenceNumber", pointCount);
       sequence.clear();
-      outTable.writeCells(catalogNumber, "Extension", pointCount);
+      outTable.writeCells(catalogNumber, "extension", pointCount);
       catalogNumber.clear();
-      outTable.writeCells(objectNumber, "Object", pointCount);
+      outTable.writeCells(objectNumber, "object", pointCount);
       objectNumber.clear();
-      outTable.writeCells(clip, "Clip", pointCount);
+      outTable.writeCells(clip, "clip", pointCount);
       clip.clear();
-      outTable.writeCells(reserve, "Reserve", pointCount);
+      outTable.writeCells(reserve, "reserve", pointCount);
       reserve.clear();
       outTable.writeCells(xpix, "xPix", pointCount);
       xpix.clear();
@@ -1805,7 +1805,7 @@ Photo::saveResults(const list<Match*>& matches,
       ypix.clear();
       outTable.writeCells(wtFrac, "wtFrac", pointCount);
       wtFrac.clear();
-      outTable.writeCells(color, "Color", pointCount);
+      outTable.writeCells(color, "color", pointCount);
       color.clear();
 
       outTable.writeCells(xExposure, "xExpo", pointCount);
@@ -1861,39 +1861,36 @@ Photo::saveResults(const list<Match*>& matches,
 
 /***** Astro version ***/
 // Save fitting results (residuals) to output FITS tables.
-template <class S>
+template <>
 void
-saveResults(const list<typename S::Match*>& matches,
-	    string outCatalog) {
+saveResults<Astro>(const list<typename S::Match*>& matches,
+		   string outCatalog) {
 
   // Open the output bintable for pure position residuals
-  string tablename = "WCSOut";
-  FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tablename);
+  string tableName = "WCSOut";
+  string pmTableName = "PMOut";
+  string starTableName = "StarCat";
+  FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tableName);
   img::FTable outTable = ft.use();;
 
-  // Both of these will be created the first time we get a relevant row:
-  
-  // And a table for residuals to inputs with full PM solutions
-  img::FTable* pmDetTable = nullptr;
-
-  // And a table for the PM solutions that have been derived
-  img::FTable* pmOutTable = nullptr;
+  // pmTable and starTable will be created after gathering all data
 
   // Create vectors that will be put into output tables
   vector<long> matchID;
   outTable.addColumn(matchID, "matchID");
   vector<long> catalogNumber;
-  outTable.addColumn(catalogNumber, "Extension");
+  // ??? uncapitalize column names ???
+  outTable.addColumn(catalogNumber, "extension");
   vector<long> objectNumber;
-  outTable.addColumn(objectNumber, "Object");
+  outTable.addColumn(objectNumber, "object");
   vector<bool> clip;
-  outTable.addColumn(clip, "Clip");
+  outTable.addColumn(clip, "clip");
   vector<bool> reserve;
-  outTable.addColumn(reserve, "Reserve");
+  outTable.addColumn(reserve, "reserve");
   vector<bool> hasPM;  // Was this input a full PM estimate?
   outTable.addColumn(hasPM, "hasPM");
   vector<float> color;
-  outTable.addColumn(color, "Color");
+  outTable.addColumn(color, "color");
 
   vector<float> xpix;
   outTable.addColumn(xpix, "xPix");
@@ -1942,6 +1939,7 @@ saveResults(const list<typename S::Match*>& matches,
   // These are quantities we will want to put into our output PM catalog
   vector<long> starcatMatchID;
   vector<bool> starcatReserve;  // Is this star reserved from fit?
+  vector<float> starcatColor;    // Color for this star
   vector<int> starcatPMcount;   // How many PMDetections in it were fit?
   vector<int> starcatDetCount;  // How many non-PM Detections in it were fit?
   vector<int> starcatClipCount; // How many detections were clipped?
@@ -1966,17 +1964,17 @@ saveResults(const list<typename S::Match*>& matches,
   for (auto im = matches.begin(); true; ++im, ++matchCount) {
     // First, write vectors to table if they've gotten big or we're at end
     if ( matchID.size() >= WriteChunk || im==matches.end()) {
-      long nAdded = sequence.size();
+      long nAdded = matchID.size();
       // Common to photo and astro:
-      outTable.writeCells(sequence, "SequenceNumber", pointCount);
-      sequence.clear();
-      outTable.writeCells(catalogNumber, "Extension", pointCount);
+      outTable.writeCells(matchID, "matchID", pointCount);
+      matchID.clear();
+      outTable.writeCells(catalogNumber, "extension", pointCount);
       catalogNumber.clear();
-      outTable.writeCells(objectNumber, "Object", pointCount);
+      outTable.writeCells(objectNumber, "object", pointCount);
       objectNumber.clear();
-      outTable.writeCells(clip, "Clip", pointCount);
+      outTable.writeCells(clip, "clip", pointCount);
       clip.clear();
-      outTable.writeCells(reserve, "Reserve", pointCount);
+      outTable.writeCells(reserve, "reserve", pointCount);
       reserve.clear();
       outTable.writeCells(xpix, "xPix", pointCount);
       xpix.clear();
@@ -1984,43 +1982,38 @@ saveResults(const list<typename S::Match*>& matches,
       ypix.clear();
       outTable.writeCells(wtFrac, "wtFrac", pointCount);
       wtFrac.clear();
-      outTable.writeCells(color, "Color", pointCount);
+      outTable.writeCells(color, "color", pointCount);
       color.clear();
 
-	outTable.writeCells(xrespix, "xresPix", pointCount);
-	xrespix.clear();
-	outTable.writeCells(yrespix, "yresPix", pointCount);
-	yrespix.clear();
-	outTable.writeCells(xworld, "xW", pointCount);
-	xworld.clear();
-	outTable.writeCells(yworld, "yW", pointCount);
-	yworld.clear();
-	outTable.writeCells(xresw, "xresW", pointCount);
-	xresw.clear();
-	outTable.writeCells(yresw, "yresW", pointCount);
-	yresw.clear();
-	outTable.writeCells(sigpix, "sigPix", pointCount);
-	sigpix.clear();
-	outTable.writeCells(sigw, "sigW", pointCount);
-	sigw.clear();
+      outTable.writeCells(xrespix, "xresPix", pointCount);
+      xrespix.clear();
+      outTable.writeCells(yrespix, "yresPix", pointCount);
+      yrespix.clear();
+      outTable.writeCells(xworld, "xW", pointCount);
+      xworld.clear();
+      outTable.writeCells(yworld, "yW", pointCount);
+      yworld.clear();
+      outTable.writeCells(xresw, "xresW", pointCount);
+      xresw.clear();
+      outTable.writeCells(yresw, "yresW", pointCount);
+      yresw.clear();
+      outTable.writeCells(sigpix, "sigPix", pointCount);
+      sigpix.clear();
+      outTable.writeCells(sigw, "sigW", pointCount);
+      sigw.clear();
 
-	// ??? Fix the table list..
-	pointCount += nAdded;
+      pointCount += nAdded;
     }	// Done flushing the vectors to Table
 
     if (im==matches.end()) break;
 
     const Match* m = *im;
     
-    auto pmm = dynamic_cast<const PMMatch*> (m);  // Is this a PMMatch?
-
-    if ( !pmOutTable && pmm) {
-      // If this is the first PMMatch encountered, created the output table
-      // ???
-    }
+    // Create a pointer to PMMatch if this is one:
+    auto pmm = dynamic_cast<const PMMatch*> (m); 
 
     Vector2 xyMean;    // Match's mean position, in world coords
-    if (!pmm) 
+    if (!pmm)  {
       // We can use the same best-fit position for all detections
       xyMean = m->predict();
     }
@@ -2028,14 +2021,13 @@ saveResults(const list<typename S::Match*>& matches,
     int detCount=0;
     int pmDetCount = 0;
     int clipCount = 0;
+    
+    double matchColor = astrometry::NODATA;
+
     for (auto detptr : m) {
 
+      // Get a pointer to a PMDetetion if this is one:
       auto pmDetptr = dynamic_cast<const PMDetection*> (detptr);
-
-      if (!pmDetTable && pmDetptr) {
-	// If this is the first PMDetection, create output table
-	// ???
-      }
 
       if (detptr->isFit()) {
 	if (pmDetptr) {
@@ -2047,6 +2039,11 @@ saveResults(const list<typename S::Match*>& matches,
 	clipCount++;
       }
 	
+      // Set color if this is the first detection to have one
+      if (matchColor!= astrometry::NODATA &&
+	  detptr->color != astrometry::NODATA)
+	matchColor = detptr->color;
+
       // Save some basics:
       matchID.push_back(matchCount);
       catalogNumber.push_back(detptr->catalogNumber);
@@ -2054,7 +2051,6 @@ saveResults(const list<typename S::Match*>& matches,
       clip.push_back(detptr->isClipped);
       reserve.push_back(m->getReserved());
       hasPM.push_back( bool(pmDetptr));
-      if (pmDetptr)
       color.push_back(detptr->color);
       xpix.push_back(detptr->xpix);
       ypix.push_back(detptr->ypix);
@@ -2172,6 +2168,7 @@ saveResults(const list<typename S::Match*>& matches,
       // Add this object to the PM output catalog
       starcatMatchID.push_back(matchCount);
       starcatReserve.push_back(pmm->getReserved());
+      starcatColor.push_back(matchColor);
       starcatPMcount.push_back(pmCount);
       starcatDetCount.push_back(detCount);
       starcatClipCount.push_back(clipCount);
@@ -2202,12 +2199,44 @@ saveResults(const list<typename S::Match*>& matches,
     }  // Done adding a row to the star catalog.
   } // end match loop
 
-  // ??? Write the PMDetection and PMSolution tables to file
-  if (pmDetTable) {
-    // ???
+  if (!pmMatchID.empty()) {
+    // Create and fill the PMDetection output table if we have any
+    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, pmTableName);
+    auto pmDetTable = ft.use();
+
+    pmDetTable.addColumn(pmMatchID,"matchID");
+    pmDetTable.addColumn(pmCatalogNumber, "extension");
+    pmDetTable.addColumn(pmObjectNumber, "object");
+    pmDetTable.addColumn(pmClip, "clip");
+    pmDetTable.addColumn(pmReserve, "reserve");
+    pmDetTable.addColumn(pmMean, "pm");
+    pmDetTable.addColumn(pmInvCov,"pmInvCov");
+    pmDetTable.addColumn(pmChisq, "chisq");
+    pmDetTable.addColumn(pmChisqExpected, "chisqExpected");
   }
-  if (pmOutTable) {
-    // ???
+    
+  }
+  if (!starcatMatchID.empty()) {
+    // Create and fill the star catalog table in the output file
+    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, starcatTableName);
+    auto starcatTable = ft.use();
+
+    starcatTable.addColumn(starcatMatchID,"matchID");
+    starcatTable.addColumn(starcatCatalogNumber, "extension");
+    starcatTable.addColumn(starcatObjectNumber, "object");
+    starcatTable.addColumn(starcatReserve, "reserve");
+    starcatTable.addColumn(starcatPMCount, "pmCount");
+    starcatTable.addColumn(starcatDetCount, "detCount");
+    starcatTable.addColumn(starcatClipCount, "clipCount");
+    starcatTable.addColumn(starcatChisq, "chisq");
+    starcatTable.addColumn(starcatDOF, "dof");
+    starcatTable.addColumn(starcatColor,"color");
+    starcatTable.addColumn(starcatX, "xW");
+    starcatTable.addColumn(starcatY, "yW");
+    starcatTable.addColumn(starcatPMx, "pmX");
+    starcatTable.addColumn(starcatPMy, "pmY");
+    starcatTable.addColumn(starcatParallax, "parallax");
+    starcatTable.addColumn(starcatInvCov,"pmInvCov");
   }
 }
 
@@ -2251,7 +2280,9 @@ reportStatistics(const list<typename S::Match*>& matches,
 	  refAccReserve.add(dptr, xc, yc, wtot, dofPerPt);
 	  vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
 	} else if (expo->instrument==PM_INSTRUMENT) {
-	  // ??? What to do here with PM catalogs??
+	  // Add stats of PM catalogs to the "reference" category,
+	  // using full 5d chisq values
+	  // ???
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
@@ -2264,7 +2295,9 @@ reportStatistics(const list<typename S::Match*>& matches,
 	  refAccFit.add(dptr, xc, yc, wtot, dofPerPt);
 	  vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
 	} else if (expo->instrument==PM_INSTRUMENT) {
-	  // ??? What to do here with PM catalogs??
+	  // Add stats of PM catalogs to the "reference" category,
+	  // using full 5d chisq values
+	  // ???
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
