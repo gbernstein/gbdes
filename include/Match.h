@@ -62,7 +62,7 @@ namespace astrometry {
     // Tends to 2 for many observations (5 for PMDetection)
     double expectedChisq;
     bool isClipped;
-    const Match* itsMatch;
+    Match* itsMatch;
     const SubMap* map;
 
     Detection(): color(astrometry::NODATA), pmProj(nullptr),expectedChisq(0.),
@@ -83,6 +83,12 @@ namespace astrometry {
     Vector2 residWorld() const;
     // Or the residual mapped back to pixel coordinates
     Vector2 residPix() const;
+
+    // Get a rough estimate of a 1-dimensional world-coordinate error
+    double getSigma() const {
+      double sigsq = 0.5*(invCovMeas(0,0)+invCovMeas(1,1));
+      return sigsq > 0. ? sqrt(fitWeight/sigsq) : 0.;
+    }
   };
 
   class PMDetection: public Detection {
@@ -109,10 +115,8 @@ namespace astrometry {
     // Class for a set of matched Detections, with no PM or parallax freedom
   protected:
     list<Detection*> elist;
-    int nFit;	// Number of un-clipped points with non-zero weight in fit
+    mutable int nFit;	// Number of un-clipped points with non-zero weight in fit
     bool isReserved;	// Do not contribute to re-fitting if true
-    // True if a Detection will contribute to chisq:
-    static bool isFit(const Detection* e);
 
     // These flags will let a Match keep track of its internal state and
     // avoid unnecessary recalculations.  Internal states can change
@@ -153,11 +157,14 @@ namespace astrometry {
     // then empty the list:
     void clear(bool deleteDetections=false);
     int size() const {return elist.size();}
+    // True if a Detection will contribute to chisq:
+    static bool isFit(const Detection* e);
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {return nFit;}
     // Recount the number of objects contributing to fit (e.g. after
     // meddling with object weights)
     void countFit();
+    int getDOF() const {prepare(); return dof;}
 
     // Is this object to be reserved from re-fitting?
     bool getReserved() const {return isReserved;}

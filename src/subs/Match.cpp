@@ -155,12 +155,14 @@ Match::add(Detection *e) {
   e->isClipped = false;
   isMappedFit = false;
   isMappedAll = false;
+  isSolved = false;
   if ( isFit(e)) nFit++;
 }
 
 void
 Match::remove(Detection* e) {
   isPrepared = false;
+  isSolved = false;
   elist.remove(e);  
   e->itsMatch = nullptr;
   if ( isFit(e) ) nFit--;
@@ -170,6 +172,7 @@ list<Detection*>::iterator
 Match::erase(list<Detection*>::iterator i,
 	     bool deleteDetection) {
   isPrepared = false;
+  isSolved = false;
   if (isFit(*i)) nFit--;
   if (deleteDetection) delete *i;
   return elist.erase(i);
@@ -189,6 +192,7 @@ Match::clear(bool deleteDetections) {
   nFit = 0;
   isMappedFit = true;
   isMappedAll = true;
+  isSolved = false;
 }
 
 void
@@ -228,6 +232,16 @@ Match::prepare() const {
   }
   dof -= 2;  // Remove 2 parameters in this fit
 
+  if (dof<0) {
+    // Degenerate fit, will never yield a solution of interest
+    for (auto i : elist)
+      i->expectedChisq = 0.;
+    centroidF.setZero();
+    isPrepared = true;
+    nFit = 0;
+    return;
+  }
+	
   // ???? Change this calculation to get chisq expected
   // if errors are true, not what weighted invCov gives ???
   
@@ -560,8 +574,21 @@ PMMatch::prepare() const {
       dof += 2;
     }
   }
-  pmCov = pmFisher.inverse(); // ??? More stable?
   dof -= 5;  // 5 parameter fit here.
+
+  if (dof<0) {
+    // Cannot fit a model to these data.
+    // Will not be used for anything
+    nFit = 0;
+    pmCov.setZero();
+    pmFisher.setZero();
+    for (auto i : elist)
+      i->expectedChisq = 0.;
+    isPrepared = true;
+    return;
+  }
+
+  pmCov = pmFisher.inverse(); // ??? More stable?
   
   // Go through again and accumulate the PMDetection
   // contributions to chisq
@@ -621,6 +648,13 @@ PMMatch::solve() const {
   prepare();
   remap(false);  // Remap the fitted Detections if needed
   if (isSolved) return;
+
+  if (dof<0) {
+    // Insufficient data for a solution
+    pm.setZero();
+    isSolved = true;
+    return;
+  }
   
   PMProjector m(0.);  // (x,y) = m * pm
   PMSolution beta(0.);
@@ -748,6 +782,10 @@ PMMatch::predict(const Detection* d) const {
   if (!d)
     throw AstrometryError("PMMatch::predict called without Detection");
   solve();   // Update full PM solution
+  if (dof<0) {
+    // No solution possible, return zeros
+    return Vector2(0.);
+  }
   Vector2 out = d->getProjector() * pm;
   return out;
 }
@@ -757,6 +795,10 @@ PMMatch::predictFisher(const Detection* d)  const {
   if (!d)
     throw AstrometryError("PMMatch::predict called without Detection");
   prepare();
+  if (dof<0) {
+    // Will not get any solution
+    return Matrix22(0.);
+  }
   PMProjector m = d->getProjector();
   Matrix22 out = (m * pmCov * m.transpose()).inverse();
   return out;
@@ -1381,6 +1423,7 @@ CoordAlign::count(long int& mcount, long int& dcount,
   dcount = 0;
   for (auto i : mlist) {
     if ((i->getReserved() ^ doReserved) 
+	|| i->getDOF() < 0
 	|| i->fitSize() < minMatches) {
       continue;
     }
@@ -1396,7 +1439,8 @@ CoordAlign::count(long int& mcount, long int& dcount,
   dcount = 0;
   for (auto i : mlist) {
     if ((i->getReserved() ^ doReserved)
-        || i->fitSize() < minMatches) continue;
+	|| i->getDOF() < 0
+	|| i->fitSize() < minMatches) continue;
 
     int ddcount=0;
     for(auto d : *i) {

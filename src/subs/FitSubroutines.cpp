@@ -16,6 +16,10 @@
 #include "Random.h"
 #include "Stopwatch.h"
 
+using astrometry::PMMatch;
+using astrometry::PMDetection;
+using astrometry::AstrometryError;
+
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
 void
@@ -449,8 +453,8 @@ readExposures(const vector<Instrument*>& instruments,
   vector<string> epoch;
 
   vector<vector<double>> observatory;
-  vector<vector<double>> astrometricCov;
-  vector<double> photometricVar;
+  vector<vector<double>> astrometricCovariance;
+  vector<double> photometricVariance;
   vector<double> weight;
   vector<double> magWeight;
 
@@ -997,13 +1001,10 @@ readMatches(img::FTable& table,
 	  if (m)
 	    m->add(d);
 	  else {
-	    if (S::isAstro && usePM) {
-	      m = new astrometry::PMMatch(d);
-	      if (parallaxPrior>0.) 
-		m->setParallaxPrior(parallaxPrior);
-	    } else {
-	      m = new typename S::Match(d);
-	    }
+	    // Make a new Match object from this detection.
+	    // It might be a PMMatch if this is an appropriate catalog,
+	    // in which case it will get the parallaxPrior too.
+	    m = S::makeNewMatch(d, usePM, parallaxPrior);
 	  }
 	}
 	matches.push_back(m);
@@ -1059,7 +1060,7 @@ inline
 void
 Astro::fillDetection(Astro::Detection* d,
 		     const Exposure* e,
-		     SphericalCoords& fieldProjection, 
+		     astrometry::SphericalCoords& fieldProjection, 
 		     img::FTable& table, long irow,
 		     string xKey, string yKey,
 		     vector<string>&  xyErrKeys,
@@ -1184,16 +1185,47 @@ makePMDetection(astrometry::Detection* d, const Exposure* e,
   return out;
 }
 
+void
+Astro::handlePMDetection(astrometry::PMDetection* pmd, Astro::Detection* d) {
+  auto mm = d->itsMatch;
+  if (dynamic_cast<PMMatch*>(mm)) {
+    // If this Detection is being used in a PMMatch,
+    // replace plain old Detection with this PMDetection.
+    mm->remove(d);
+    delete d;
+    mm->add(pmd);
+  } else {
+    // PMDetection is being used in non-PM Match.  Slice it down
+    // to pure Detection info, replace old detection with it.
+    auto dd = new typename Astro::Detection(*pmd);
+    mm->remove(d);
+    delete d;
+    mm->add(dd);
+  }
+}
  
+astrometry::Match*
+Astro::makeNewMatch(Astro::Detection* d, bool usePM, double parallaxPrior) {
+  if (usePM) {
+    // Make a PMMatch and give it parallax prior
+    auto mpm = new astrometry::PMMatch(dynamic_cast<Astro::Detection*>(d));
+    if (parallaxPrior>0.) 
+      mpm->setParallaxPrior(parallaxPrior);
+    return mpm;
+  } else {
+    // Plain old Match
+    return new Match(d);
+  }
+}
+
 // And a routine to get photometric information too
-inline
 void
 Photo::fillDetection(Photo::Detection* d,
 		     const Exposure* e,
-		     SphericalCoords& fieldProjection, 
+		     astrometry::SphericalCoords& fieldProjection, 
 		     img::FTable& table, long irow,
 		     string xKey, string yKey,
-		     vector<string> xyErrKeys,
+		     vector<string>& xyErrKeys,
 		     string magKey, string magErrKey,
 		     int magKeyElement, int magErrKeyElement,
 		     bool xColumnIsDouble, bool yColumnIsDouble,
@@ -1235,7 +1267,7 @@ Photo::fillDetection(Photo::Detection* d,
 template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
-		 vector<typename S::Extension*>& extensions
+		 vector<typename S::Extension*>& extensions,
 		 vector<astrometry::SphericalCoords*> fieldProjections) {
 
   // Should be safe to multithread this loop as different threads write
@@ -1251,7 +1283,7 @@ void readObjects(const img::FTable& extensionTable,
     Exposure& expo = *exposures[extn.exposure];
     if (extn.keepers.empty()) continue; // or useless
 
-    bool pmCatalog = S::isAstro && extn.instrument==PM_INSTRUMENT;
+    bool pmCatalog = S::isAstro && expo.instrument==PM_INSTRUMENT;
     bool isTag = expo.instrument == TAG_INSTRUMENT;
 
     string filename;
@@ -1380,7 +1412,9 @@ void readObjects(const img::FTable& extensionTable,
     bool errorColumnIsDouble;
     double magshift = extn.magshift;
 
-    // ??? Make fieldProjection for this catalog
+    // Get fieldProjection for this catalog
+    astrometry::SphericalCoords* fieldProjection =
+      fieldProjections[expo.field]->duplicate();
     
     if (S::isAstro) {
       errorColumnIsDouble = isDouble(ff, pmCatalog ? pmCovKey : xyErrKeys[0], -1);
@@ -1401,32 +1435,21 @@ void readObjects(const img::FTable& extensionTable,
       if (pmCatalog) {
 	// Need to read data differently from catalog with
 	// full proper motion solution.  Get PMDetection.
-	auto pmd = makePMDetection(d, &expo,
-				   ff, irow,
-				   xKey, yKey,
-				   pmRaKey, pmDecKey, parallaxKey, pmCovKey,
-				   xColumnIsDouble,yColumnIsDouble,
-				   errorColumnIsDouble, 
-				   startWcs);
+	auto pmd = S::makePMDetection(d, &expo,
+				      ff, irow,
+				      xKey, yKey,
+				      pmRaKey, pmDecKey, parallaxKey, pmCovKey,
+				      xColumnIsDouble,yColumnIsDouble,
+				      errorColumnIsDouble, 
+				      startWcs);
 
-	auto mm = d->itsMatch;
-	if (dynamic_cast<const PMMatch*>(mm)) {
-	  // If this Detection is being used in a PMMatch,
-	  // replace plain old Detection with this PMDetection.
-	  mm->remove(d);
-	  delete d;
-	  mm->add(pmd);
-	} else {
-	  // PMDetection is being used in non-PM Match.  Slice it down
-	  // to pure Detection info, replace old detection with it.
-	  Detection* dd = new Detection(*pmd);
-	  mm->remove(d);
-	  delete d;
-	  mm->add(dd);
-	}
+	// This routine will either replace the plain old Detection in
+	// a PMMatch with this PMDetection; or if it is part of a plain
+	// match, it will slice the PMDetection down to a Detection.
+	S::handlePMDetection(pmd, d);
       } else {
 	// Normal photometric or astrometric entry
-	S::fillDetection(d, &expo, fieldProjection,
+	S::fillDetection(d, &expo, *fieldProjection,
 			 ff, irow,
 			 xKey, yKey, xyErrKeys,
 			 magKey, magErrKey,
@@ -1540,8 +1563,8 @@ purgeNoisyDetections(double maxError,
     auto j=mptr->begin(); 
     while (j != mptr->end()) {
       auto d = *j; // Yields pointer to each detection
-      // Keep it if pixel error is small or if it's from a tag or reference "instrument"
-      if ( (d->isClipped || d->sigma > maxError) &&
+      // Keep it if error is small or if it's from a tag or reference "instrument"
+      if ( (d->isClipped || d->getSigma() > maxError) &&
 	   exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
 	j = mptr->erase(j, true);  // will delete the detection too.
       } else {
@@ -1861,9 +1884,8 @@ Photo::saveResults(const list<Match*>& matches,
 
 /***** Astro version ***/
 // Save fitting results (residuals) to output FITS tables.
-template <>
 void
-saveResults<Astro>(const list<typename S::Match*>& matches,
+Astro::saveResults(const list<typename Astro::Match*>& matches,
 		   string outCatalog) {
 
   // Open the output bintable for pure position residuals
@@ -1879,7 +1901,6 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
   vector<long> matchID;
   outTable.addColumn(matchID, "matchID");
   vector<long> catalogNumber;
-  // ??? uncapitalize column names ???
   outTable.addColumn(catalogNumber, "extension");
   vector<long> objectNumber;
   outTable.addColumn(objectNumber, "object");
@@ -1937,20 +1958,20 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
   //  by matchID in the star table)
 
   // These are quantities we will want to put into our output PM catalog
-  vector<long> starcatMatchID;
-  vector<bool> starcatReserve;  // Is this star reserved from fit?
-  vector<float> starcatColor;    // Color for this star
-  vector<int> starcatPMcount;   // How many PMDetections in it were fit?
-  vector<int> starcatDetCount;  // How many non-PM Detections in it were fit?
-  vector<int> starcatClipCount; // How many detections were clipped?
-  vector<int> starcatDOF;       // Number of DOF in PM fit
-  vector<float> starcatChisq;   // Total chisq
-  vector<float> starcatX;       // The solution
-  vector<float> starcatY;
-  vector<float> starcatPMx;
-  vector<float> starcatPMy;
-  vector<float> starcatParallax;
-  vector<vector<float>> starcatInvCov;  // flattened Fisher matrix of PM
+  vector<long> starMatchID;
+  vector<bool> starReserve;  // Is this star reserved from fit?
+  vector<float> starColor;    // Color for this star
+  vector<int> starPMCount;   // How many PMDetections in it were fit?
+  vector<int> starDetCount;  // How many non-PM Detections in it were fit?
+  vector<int> starClipCount; // How many detections were clipped?
+  vector<int> starDOF;       // Number of DOF in PM fit
+  vector<float> starChisq;   // Total chisq
+  vector<float> starX;       // The solution
+  vector<float> starY;
+  vector<float> starPMx;
+  vector<float> starPMy;
+  vector<float> starParallax;
+  vector<vector<float>> starInvCov;  // flattened Fisher matrix of PM
 
   // Cumulative counter for rows written to table:
   long pointCount = 0;
@@ -1965,7 +1986,7 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
     // First, write vectors to table if they've gotten big or we're at end
     if ( matchID.size() >= WriteChunk || im==matches.end()) {
       long nAdded = matchID.size();
-      // Common to photo and astro:
+
       outTable.writeCells(matchID, "matchID", pointCount);
       matchID.clear();
       outTable.writeCells(catalogNumber, "extension", pointCount);
@@ -1980,8 +2001,6 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
       xpix.clear();
       outTable.writeCells(ypix, "yPix", pointCount);
       ypix.clear();
-      outTable.writeCells(wtFrac, "wtFrac", pointCount);
-      wtFrac.clear();
       outTable.writeCells(color, "color", pointCount);
       color.clear();
 
@@ -1999,8 +2018,6 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
       yresw.clear();
       outTable.writeCells(sigpix, "sigPix", pointCount);
       sigpix.clear();
-      outTable.writeCells(sigw, "sigW", pointCount);
-      sigw.clear();
 
       pointCount += nAdded;
     }	// Done flushing the vectors to Table
@@ -2008,11 +2025,19 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
     if (im==matches.end()) break;
 
     const Match* m = *im;
+
+    // Update all world coords and mean solutions
+    m->remap(true);  // include remapping of clipped detections
+    m->solve();
+
+    // Don't report results for matches with no results
+    if (m->getDOF() < 0) 
+      continue;
     
     // Create a pointer to PMMatch if this is one:
     auto pmm = dynamic_cast<const PMMatch*> (m); 
 
-    Vector2 xyMean;    // Match's mean position, in world coords
+    astrometry::Vector2 xyMean;    // Match's mean position, in world coords
     if (!pmm)  {
       // We can use the same best-fit position for all detections
       xyMean = m->predict();
@@ -2024,12 +2049,12 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
     
     double matchColor = astrometry::NODATA;
 
-    for (auto detptr : m) {
+    for (auto detptr : *m) {
 
       // Get a pointer to a PMDetetion if this is one:
       auto pmDetptr = dynamic_cast<const PMDetection*> (detptr);
 
-      if (detptr->isFit()) {
+      if (m->isFit(detptr)) {
 	if (pmDetptr) {
 	  pmDetCount++;
 	} else {
@@ -2062,34 +2087,19 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
 	xyMean = pmm->predict(detptr);
 
       // Put world residuals in milliarcsec
-      double dx = (detptr->xw-xyMean[0]) * DEGREE/MILLIARCSEC;
-      double dy = (detptr->yw-xyMean[1]) * DEGREE/MILLIARCSEC;
-      xresw.push_back(dx);
-      yresw.push_back(dy);
+      astrometry::Vector2 residW = detptr->residWorld() * DEGREE/MILLIARCSEC;
+      xresw.push_back(residW[0]);
+      yresw.push_back(residW[1]);
 
       // Get pixel residuals
-      if (xyMean[0]!=0. || xyMean[1]!=0.) {
-	double xcpix=detptr->xp, ycpix=detptr->yp;
-	Assert (detptr->map);
-	try {
-	  detptr->map->toPix(xyMean[0], xyMean[1],
-			     xcpix, ycpix, detptr->color);
-	} catch (astrometry::AstrometryError& e) {
-	  cerr << "WARNING: toPix failure in map " << detptr->map->getName()
-	       << " at world coordinates (" << xyMean[0] << "," << xyMean[1] << ")"
-	       << " approx pixel coordinates (" << detptr->xpix << "," << detptr->ypix << ")"
-	       << endl;
-	  // Just set inverse map to pixel coords (i.e. zero pixel error reported)
-	  xcpix = detptr->xpix;
-	  ycpix = detptr->ypix;
-	}
-      }
-      xrespix.push_back(detptr->xpix - xcpix);
-      yrespix.push_back(detptr->ypix - ycpix);
+      astrometry::Vector2 residP = detptr->residPix();
+      xrespix.push_back(residP[0]);
+      yrespix.push_back(residP[1]);
 
+      astrometry::Matrix22 cov;
       // Get error covariances, if we have any
       if (detptr->invCovMeas(0,0) > 0.) {
-	Matrix22 cov = detptr->invCovMeas.inverse() * pow(DEGREE/MILLIARCSEC,2.);
+	cov = detptr->invCovMeas.inverse() * pow(DEGREE/MILLIARCSEC,2.);
 	vector<float> vv(3);
 	vv[0] = cov(0,0);
 	vv[1] = cov(1,1);
@@ -2105,6 +2115,7 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
       if (detptr->invCovFit(0,0) > 0.) {
 	cov = detptr->invCovFit.inverse() * pow(DEGREE/MILLIARCSEC,2.);
 	cov *= detptr->fitWeight;
+	vector<float> vv(3,0.);
 	vv[0] = cov(0,0);
 	vv[1] = cov(1,1);
 	vv[2] = cov(0,1);
@@ -2114,23 +2125,13 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
 	{
 	  cov /= pow(DEGREE/MILLIARCSEC,2.); // Back to degrees 
 	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1]);
-	  Matrix22 covPix = dpdw * cov * dpdw.transpose();
+	  astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
 	  double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);
 	  sigpix.push_back(detCov>0. ? pow(detCov,0.25) : 0.);
 	}
 
 	// Chisq and expected
-	if (pmDetptr) {
-	  // Full 5d chisq, even though table has just 2d
-	  PMSolution dpm = pmDetptr->pmMean - pmm->getPM();
-	  chisqThis = dpm.transpose() * pmDetptr->invCovPM * dpm;
-	  chisqThis /= pmDetptr->fitWeight; // Remove weight factor from invCov
-	} else {
-	  // 2d chisq
-	  chisqThis = cov(0,0) * dx * dx + cov(1,1)*dy*dy +
-	    2.*cov(0,1) * dx * dy;
-	}
-	chisq.push_back(chisqThis);
+	chisq.push_back(detptr->trueChisq());
 	chisqExpected.push_back(detptr->expectedChisq);
       } else {
 	// Did not have a usable error matrix
@@ -2149,7 +2150,7 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
 	pmObjectNumber.push_back(detptr->objectNumber);
 	pmClip.push_back(detptr->isClipped);
 	pmReserve.push_back(m->getReserved());
-	vv.resize(5);
+	vector<float> vv(5);
 	for (int i=0; i<5; i++)
 	  vv[i] = pmDetptr->pmMean[i];
 	pmMean.push_back(vv);
@@ -2158,33 +2159,33 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
 	for (int i=0; i<5; i++)
 	  for (int j=0; j<5; j++, k++)
 	    vv[k] = pmDetptr->invCovPM(i,j);
-	pmInvCov.push_back(vv)
-	pmChisq.push_back(chisqThis);
+	pmInvCov.push_back(vv);
+	pmChisq.push_back(detptr->trueChisq());
 	pmChisqExpected.push_back(detptr->expectedChisq);
       }
     } // End detection loop
 
     if (pmm) {
       // Add this object to the PM output catalog
-      starcatMatchID.push_back(matchCount);
-      starcatReserve.push_back(pmm->getReserved());
-      starcatColor.push_back(matchColor);
-      starcatPMcount.push_back(pmCount);
-      starcatDetCount.push_back(detCount);
-      starcatClipCount.push_back(clipCount);
+      starMatchID.push_back(matchCount);
+      starReserve.push_back(pmm->getReserved());
+      starColor.push_back(matchColor);
+      starPMCount.push_back(pmDetCount);
+      starDetCount.push_back(detCount);
+      starClipCount.push_back(clipCount);
       int dof=0.;
       double dummy;
       double chisqThis = pmm->chisq(dof,dummy);
-      starcatDOF.push_back(dof);
-      starcatChisq.push_back(chisqThis);
+      starDOF.push_back(dof);
+      starChisq.push_back(chisqThis);
       {
 	// Save the solution in a table
 	auto pm = pmm->getPM();
-	starcatX.push_back(pm[X0]);
-	starcatY.push_back(pm[Y0]);
-	starcatPMx.push_back(pm[VX]);
-	starcatPMy.push_back(pm[VY]);
-	starcatParallax.push_back(pm[PAR]);
+	starX.push_back(pm[astrometry::X0]);
+	starY.push_back(pm[astrometry::Y0]);
+	starPMx.push_back(pm[astrometry::VX]);
+	starPMy.push_back(pm[astrometry::VY]);
+	starParallax.push_back(pm[astrometry::PAR]);
       }
       {
 	// And the inverse covariance
@@ -2194,7 +2195,7 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
 	for (int i=0; i<5; i++)
 	  for (int j=0; j<5; j++, k++)
 	    vv[k] = fisher(i,j);
-	starcatCov.push_back(vv);
+	starInvCov.push_back(vv);
       }
     }  // Done adding a row to the star catalog.
   } // end match loop
@@ -2215,41 +2216,37 @@ saveResults<Astro>(const list<typename S::Match*>& matches,
     pmDetTable.addColumn(pmChisqExpected, "chisqExpected");
   }
     
-  }
-  if (!starcatMatchID.empty()) {
+  if (!starMatchID.empty()) {
     // Create and fill the star catalog table in the output file
-    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, starcatTableName);
-    auto starcatTable = ft.use();
+    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, starTableName);
+    auto starTable = ft.use();
 
-    starcatTable.addColumn(starcatMatchID,"matchID");
-    starcatTable.addColumn(starcatCatalogNumber, "extension");
-    starcatTable.addColumn(starcatObjectNumber, "object");
-    starcatTable.addColumn(starcatReserve, "reserve");
-    starcatTable.addColumn(starcatPMCount, "pmCount");
-    starcatTable.addColumn(starcatDetCount, "detCount");
-    starcatTable.addColumn(starcatClipCount, "clipCount");
-    starcatTable.addColumn(starcatChisq, "chisq");
-    starcatTable.addColumn(starcatDOF, "dof");
-    starcatTable.addColumn(starcatColor,"color");
-    starcatTable.addColumn(starcatX, "xW");
-    starcatTable.addColumn(starcatY, "yW");
-    starcatTable.addColumn(starcatPMx, "pmX");
-    starcatTable.addColumn(starcatPMy, "pmY");
-    starcatTable.addColumn(starcatParallax, "parallax");
-    starcatTable.addColumn(starcatInvCov,"pmInvCov");
+    starTable.addColumn(starMatchID,"matchID");
+    starTable.addColumn(starReserve, "reserve");
+    starTable.addColumn(starPMCount, "pmCount");
+    starTable.addColumn(starDetCount, "detCount");
+    starTable.addColumn(starClipCount, "clipCount");
+    starTable.addColumn(starChisq, "chisq");
+    starTable.addColumn(starDOF, "dof");
+    starTable.addColumn(starColor,"color");
+    starTable.addColumn(starX, "xW");
+    starTable.addColumn(starY, "yW");
+    starTable.addColumn(starPMx, "pmX");
+    starTable.addColumn(starPMy, "pmY");
+    starTable.addColumn(starParallax, "parallax");
+    starTable.addColumn(starInvCov,"pmInvCov");
   }
 }
 
-template<class S>
 void
-reportStatistics(const list<typename S::Match*>& matches,
-		 const vector<Exposure*>& exposures,
-		 const vector<typename S::Extension*>& extensions,
-		 ostream& os) {
+Photo::reportStatistics(const list<typename Photo::Match*>& matches,
+			const vector<Exposure*>& exposures,
+			const vector<typename Photo::Extension*>& extensions,
+			ostream& os) {
   // Create Accum instances for fitted and reserved Detections on every
   // exposure, plus total accumulator for all reference
   // and all non-reference objects.
-  typedef Accum<S> Acc;
+  typedef Accum<Photo> Acc;
   vector<Acc> vaccFit(exposures.size());
   vector<Acc> vaccReserve(exposures.size());
   Acc refAccFit;
@@ -2259,12 +2256,12 @@ reportStatistics(const list<typename S::Match*>& matches,
 
   // Accumulate stats over all detections.
   for (auto mptr : matches) {
+
     // Get mean values and weights for the whole match
     // (generic call that gets both mag & position)
-    double xc, yc, mmag;
+    double magMean;
     double wtot;
-    S::matchMean(*mptr, xc, yc, mmag, wtot);
-    if (!S::isAstro) xc = mmag;  // For Photometry put mean mag into xc
+    mptr->getMean(magMean, wtot);
     
     // Calculate number of DOF per Detection coordinate after
     // allowing for fit to centroid:
@@ -2276,33 +2273,29 @@ reportStatistics(const list<typename S::Match*>& matches,
       int exposureNumber = extensions[dptr->catalogNumber]->exposure;
       Exposure* expo = exposures[exposureNumber];
       if (mptr->getReserved()) {
-	if (expo->instrument==REF_INSTRUMENT) {
-	  refAccReserve.add(dptr, xc, yc, wtot, dofPerPt);
-	  vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
-	} else if (expo->instrument==PM_INSTRUMENT) {
-	  // Add stats of PM catalogs to the "reference" category,
-	  // using full 5d chisq values
-	  // ???
+	if (expo->instrument==REF_INSTRUMENT ||
+	    expo->instrument==PM_INSTRUMENT) {
+	  // Treat PM like reference for photometry
+	  refAccReserve.add(dptr, magMean, wtot, dofPerPt);
+	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accReserve.add(dptr, xc, yc, wtot, dofPerPt);
-	  vaccReserve[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
+	  accReserve.add(dptr, magMean, wtot, dofPerPt);
+	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
 	}
       } else {
 	// Not a reserved object:
-	if (expo->instrument==REF_INSTRUMENT) {
-	  refAccFit.add(dptr, xc, yc, wtot, dofPerPt);
-	  vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
-	} else if (expo->instrument==PM_INSTRUMENT) {
-	  // Add stats of PM catalogs to the "reference" category,
-	  // using full 5d chisq values
-	  // ???
+	if (expo->instrument==REF_INSTRUMENT ||
+	    expo->instrument==PM_INSTRUMENT) {
+	  // Treat PM like reference for photometry
+	  refAccFit.add(dptr, magMean, wtot, dofPerPt);
+	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accFit.add(dptr, xc, yc, wtot, dofPerPt);
-	  vaccFit[exposureNumber].add(dptr, xc, yc, wtot, dofPerPt);
+	  accFit.add(dptr, magMean, wtot, dofPerPt);
+	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
 	}
       }
     } // end Detection loop
@@ -2316,7 +2309,93 @@ reportStatistics(const list<typename S::Match*>& matches,
   std::sort(ii.begin(), ii.end(), NameSorter<Exposure>(exposures));
   
   // Print summary statistics for each exposure
-  os << "#   Exposure           | " << Accum<S>::header() << endl;
+  os << "#   Exposure           | " << Accum<Photo>::header() << endl;
+  for (int i=0; i<ii.size(); i++) {
+    int iexp = ii[i];
+    os << setw(3) << iexp
+       << " " << setw(10) << exposures[iexp]->name
+       << " Fit     | " << vaccFit[iexp].summary()
+       << endl;
+      if (vaccReserve[iexp].n > 0) 
+	os << setw(3) << iexp
+	   << " " << setw(10) << exposures[iexp]->name
+	   << " Reserve | " << vaccReserve[iexp].summary()
+	   << endl;
+  } // exposure summary loop
+
+  // Output summary data for reference catalog and detections
+  cout << "# ------------------------------------------------" << endl;
+  os << "Detection fit          | " << accFit.summary() << endl;
+  if (accReserve.n>0)
+    os << "Detection reserve      | " << accReserve.summary() << endl;
+}
+
+void
+Astro::reportStatistics(const list<typename Astro::Match*>& matches,
+			const vector<Exposure*>& exposures,
+			const vector<typename Astro::Extension*>& extensions,
+			ostream& os) {
+  // Create Accum instances for fitted and reserved Detections on every
+  // exposure, plus total accumulator for all reference
+  // and all non-reference objects.
+  typedef Accum<Astro> Acc;
+  vector<Acc> vaccFit(exposures.size());
+  vector<Acc> vaccReserve(exposures.size());
+  Acc refAccFit;
+  Acc refAccReserve;
+  Acc accFit;
+  Acc accReserve;
+
+  // Accumulate stats over all detections.
+  for (auto mptr : matches) {
+
+    // Make sure match is ready, world coords for all detections done
+    mptr->remap(true);
+    mptr->solve();
+    int matchDOF = mptr->getDOF();
+
+    for (auto dptr : *mptr) {
+      // Accumulate statistics for meaningful residuals
+      int exposureNumber = extensions[dptr->catalogNumber]->exposure;
+      Exposure* expo = exposures[exposureNumber];
+      double magMean=0.; // Dummy variable for accum::add() interface
+      double wtot=0.; // ???
+      if (mptr->getReserved()) {
+	if (expo->instrument==REF_INSTRUMENT ||
+	    expo->instrument==PM_INSTRUMENT) {
+	  refAccReserve.add(dptr, magMean, wtot, matchDOF);
+	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	} else if (expo->instrument==TAG_INSTRUMENT) {
+	  // do nothing
+	} else {
+	  accReserve.add(dptr, magMean, wtot, matchDOF);
+	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	}
+      } else {
+	// Not a reserved object:
+	if (expo->instrument==REF_INSTRUMENT ||
+	    expo->instrument==PM_INSTRUMENT) {
+	  refAccFit.add(dptr, magMean, wtot, matchDOF);
+	  vaccFit[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	} else if (expo->instrument==TAG_INSTRUMENT) {
+	  // do nothing
+	} else {
+	  accFit.add(dptr, magMean, wtot, matchDOF);
+	  vaccFit[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	}
+      }
+    } // end Detection loop
+  } // end match loop
+
+  // Sort the exposures by name lexical order
+  vector<int> ii;
+  for (int i=0; i<exposures.size(); i++)
+    if (exposures[i])
+      ii.push_back(i);
+  std::sort(ii.begin(), ii.end(), NameSorter<Exposure>(exposures));
+  
+  // Print summary statistics for each exposure
+  os << "#   Exposure           | " << Accum<Astro>::header() << endl;
   for (int i=0; i<ii.size(); i++) {
     int iexp = ii[i];
     os << setw(3) << iexp
@@ -2333,12 +2412,11 @@ reportStatistics(const list<typename S::Match*>& matches,
   // Output summary data for reference catalog and detections
 
   cout << "# ------------------------------------------------" << endl;
-  if (S::isAstro) {
-    // Only Astrometric fits have references
-    os << "Reference fit          | " << refAccFit.summary() << endl;
-    if (refAccReserve.n>0)
-      os << "Reference reserve      | " << refAccReserve.summary() << endl;
-  }
+
+  os << "Reference fit          | " << refAccFit.summary() << endl;
+  if (refAccReserve.n>0)
+    os << "Reference reserve      | " << refAccReserve.summary() << endl;
+
   os << "Detection fit          | " << accFit.summary() << endl;
   if (accReserve.n>0)
     os << "Detection reserve      | " << accReserve.summary() << endl;
@@ -2377,16 +2455,19 @@ createMapCollection<AP>(const vector<Instrument*>& instruments, \
 template void							\
 whoNeedsColor<AP>(vector<AP::Extension*> extensions); \
 template void \
-readMatches<AP>(img::FTable& table, \
-		list<AP::Match*>& matches, \
-		vector<AP::Extension*>& extensions, \
-		vector<AP::ColorExtension*>& colorExtensions, \
-		const ExtensionObjectSet& skipSet, \
-		int minMatches); \
-template void \
 readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<Exposure*>& exposures, \
-		vector<AP::Extension*>& extensions);\
+		vector<typename AP::Extension*>& extensions, \
+		vector<astrometry::SphericalCoords*> fieldProjections); \
+template void \
+readMatches<AP>(img::FTable& table, \
+		list<typename AP::Match*>& matches, \
+		vector<typename AP::Extension*>& extensions, \
+		vector<typename AP::ColorExtension*>& colorExtensions, \
+		const ExtensionObjectSet& skipSet, \
+		int minMatches, \
+		bool usePM, \
+		double parallaxPrior);  \
 template void \
 readColors<AP>(img::FTable extensionTable, \
 	       vector<AP::ColorExtension*> colorExtensions);  \
@@ -2426,14 +2507,6 @@ clipReserved<AP>(AP::Align& ca,  \
 		 double minimumImprovement,  \
 		 bool clipEntireMatch,  \
 		 bool reportToCerr); \
-template void \
-saveResults<AP>(const list<AP::Match*>& matches, \
-		string outCatalog); \
-template void \
-reportStatistics<AP>(const list<AP::Match*>& matches,  \
-		     const vector<Exposure*>& exposures,  \
-		     const vector<AP::Extension*>& extensions,  \
-		     ostream& os);
 
 INSTANTIATE(Astro)
 INSTANTIATE(Photo)

@@ -57,7 +57,8 @@ struct Astro {
   static void fillDetection(Detection* d, const Exposure* e,
 			    astrometry::SphericalCoords& fieldProjection,
 			    img::FTable& table, long irow,
-			    string xKey, string yKey, string errKey,
+			    string xKey, string yKey,
+			    vector<string>&  xyErrKeys,
 			    string magKey, string magErrKey,
 			    int magKeyElement, int magErrKeyElement,
 			    bool xColumnIsDouble, bool yColumnIsDouble,
@@ -72,6 +73,33 @@ struct Astro {
   static double getColor(const Detection* d) {
     return d->color;
   }
+
+  static void saveResults(const list<Match*>& matches,
+			  string outCatalog);
+
+  static void reportStatistics(const list<typename Astro::Match*>& matches,
+			       const vector<Exposure*>& exposures,
+			       const vector<typename Astro::Extension*>& extensions,
+			       ostream& os);
+
+  // Specialized function for reading detection from a catalog
+  // holding proper motion solution.
+  // It will incorporate the basic info in (non-PM) Detection d
+  // into a new PMDetection object and return it.
+  static astrometry::PMDetection*
+  makePMDetection(astrometry::Detection* d, const Exposure* e,
+		img::FTable& table, long irow,
+		string xKey, string yKey,
+		string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
+		bool xColumnIsDouble, bool yColumnIsDouble,
+		bool errorColumnIsDouble,
+		const astrometry::PixelMap* startWcs);
+
+  static void handlePMDetection(astrometry::PMDetection* pmd, Detection* d);
+  
+  static Match*
+  makeNewMatch(Detection* d, bool usePM, double parallaxPrior);
+
   static const int isAstro = 1;
 };
 struct Photo {
@@ -85,7 +113,8 @@ struct Photo {
   static void fillDetection(Detection* d, const Exposure* e,
 			    astrometry::SphericalCoords& fieldProjection,
 			    img::FTable& table, long irow,
-			    string xKey, string yKey, string errKey,
+			    string xKey, string yKey,
+			    vector<string>&  xyErrKeys,
 			    string magKey, string magErrKey,
 			    int magKeyElement, int magErrKeyElement,
 			    bool xColumnIsDouble, bool yColumnIsDouble,
@@ -101,23 +130,33 @@ struct Photo {
     return d->args.color;
   }
   static void saveResults(const list<Match*>& matches,
-		   string outCatalog);
+			  string outCatalog);
 
+  static void reportStatistics(const list<typename Photo::Match*>& matches,
+			       const vector<Exposure*>& exposures,
+			       const vector<typename Photo::Extension*>& extensions,
+			       ostream& os);
+
+  // This is a no-op for photometry:
+  static astrometry::PMDetection*
+  makePMDetection(photometry::Detection* d, const Exposure* e,
+		  img::FTable& table, long irow,
+		  string xKey, string yKey,
+		  string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
+		  bool xColumnIsDouble, bool yColumnIsDouble,
+		  bool errorColumnIsDouble,
+		  const astrometry::PixelMap* startWcs) {return nullptr;}
+
+  static void handlePMDetection(astrometry::PMDetection* pmd,
+				Detection* d) {};   // This is a no-op for photo
+
+  static Match*
+  makeNewMatch(Detection* d, bool usePM, double parallaxPrior) {
+    return new Match(d);
+  }
   static const int isAstro = 0;
 };
 
-// Specialized function for reading detection from a catalog
-// holding proper motion solution.
-// It will incorporate the basic info in (non-PM) Detection d
-// into a new PMDetection object and return it.
-astrometry::PMDetection*
-makePMDetection(astrometry::Detection* d, const Exposure* e,
-		img::FTable& table, long irow,
-		string xKey, string yKey, string errKey,
-		string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
-		bool xColumnIsDouble, bool yColumnIsDouble,
-		bool errorColumnIsDouble,
-		const astrometry::PixelMap* startWcs);
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -397,24 +436,6 @@ clipReserved(typename S::Align& ca,
 	     double minimumImprovement,
 	     bool clipEntireMatch,
 	     bool reportToCerr);
-#endif
-
-// Save fitting results (residual) to output FITS table.
-void
-Photo::saveResults(const list<Match*>& matches,
-		   string outCatalog) {
-
-  template <class S>
-void
-saveResults(const list<typename S::Match*>& matches,
-	    string outCatalog);
-		 
-template<class S>
-void
-reportStatistics(const list<typename S::Match*>& matches,
-		 const vector<Exposure*>& exposures,
-		 const vector<typename S::Extension*>& extensions,
-		 ostream& os);
 
 // Function to produce a list of PhotoPriors from an input file
 // (for PhotoFit only - has its own source file)
@@ -423,3 +444,5 @@ readPriors(string filename,
 	   const vector<Instrument*>& instruments, 
 	   const vector<Exposure*>& exposures, 
 	   const vector<Photo::Extension*>& extensions);
+
+#endif

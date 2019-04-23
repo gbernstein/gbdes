@@ -40,6 +40,7 @@ namespace photometry {
     const Match* itsMatch;
     const SubMap* map;
     Detection(): itsMatch(nullptr), map(nullptr), isClipped(false) {}
+    double getSigma() const {return sigma;}
   };
   
   class Match {

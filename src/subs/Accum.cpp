@@ -14,8 +14,8 @@ Accum<S>::Accum(): sumxw(0.), sumyw(0.),
 // Specialization for Astro
 template <>
 void 
-Accum<Astro>::add(const typename S::Detection* d,
-		  double xoff, double yoff,
+Accum<Astro>::add(const typename Astro::Detection* d,
+		  double magMean,
 		  double wtot,
 		  double dof) {
   ++ntot;
@@ -52,17 +52,16 @@ Accum<Astro>::add(const typename S::Detection* d,
 template<>
 void 
 Accum<Photo>::add(const Photo::Detection* d,
-		  double xoff, double yoff,
+		  double magMean,
 		  double wtot,
 		  double dof) {
-  // mag comes in as xoff here
   ++ntot;
   if (d->isClipped) {
     ++nclipped;
     return;
   }
   if (wtot <=0. || dof<=0. ) return;  // Can't do anything more with this
-  double dm = d->magOut - xoff;
+  double dm = d->magOut - magMean;
   sum_m += dm;
   sum_mw += dm * d->wt;
   sum_mm += dm * dm;
