@@ -6,8 +6,8 @@
 
 template <class S>
 Accum<S>::Accum(): sumxw(0.), sumyw(0.), 
-		   sumx(0.), sumy(0.), sumwx(0.), sumwy(0.), 
-		   sumxx(0.), sumyy(0.), sumxxw(0.), sumyyw(0.),
+		   sumx(0.), sumy(0.), sumw(0.),
+		   sumxx(0.), sumyy(0.),
 		   sum_m(0.), sum_mw(0.), sum_mm(0.), sum_mmw(0.),
 		   chisq(0.), sumdof(0.), n(0), ntot(0), nclipped(0) {}
 
@@ -23,28 +23,30 @@ Accum<Astro>::add(const typename Astro::Detection* d,
     ++nclipped;
     return;
   }
-  // ??? Change to use chisqExpected insted of wtot, wt ???
-  // ??? And use 5d chisq for PMDetection,
-  // ??? And full prediction for PMMatch
+
+  // Get a rough sigma to use in weighting the centroids
+  double sigma = d->getSigma();
   
-  if (wtot <=0. || dof<=0. ) return;  // Can't do anything more with this
-  double dx = (d->xw-xoff);
-  double dy = (d->yw-yoff);
+  if (sigma <=0. || d->itsMatch->getDOF() <= 0) {
+    // Residual statistics are meaningless if there
+    // is no valid error nor multi-exposure fit
+    return;
+  }
+  double wt = pow(sigma, -2.);
+  
+  auto dxy = d->residWorld();
+  double dx = dxy[0];
+  double dy = dxy[1];
   sumx += dx;
   sumy += dy;
-  sumxw += dx*d->wtx;
-  sumyw += dy*d->wty;
-  sumxxw += dx*dx*d->wtx;
-  sumyyw += dy*dy*d->wty;
+  sumxw += dx*wt;
+  sumyw += dy*wt;
   sumxx += dx*dx;
   sumyy += dy*dy;
-  sumwx += d->wtx;
-  sumwy += d->wty;
-  double wtFrac = 1. - (d->wtx+d->wty)/(2.*wtot);
-  if (wtFrac > 0.001) {
-    chisq += (dx*dx*d->wtx + dy*dy*d->wty) / wtFrac;
-  }
-  sumdof += dof;
+  sumw  += wt;
+
+  chisq += d->trueChisq();
+  sumdof += d->expectedChisq;
   ++n;
 }
 
@@ -93,7 +95,7 @@ Accum<S>::reducedChisq() const {
   if (sumdof==0)
     return 0.;
   else if (S::isAstro)
-    return chisq / (2.* n);
+    return chisq / sumdof;
   else
     return chisq / n;
 }
@@ -110,7 +112,7 @@ Accum<S>::summary() const {
       << "  " << setw(4) << (nclipped*100.)/ntot;
   if (S::isAstro) {
     oss << fixed << setprecision(1)
-	<< " " << setw(6) << rms()*1000.*DEGREE/ARCSEC;
+	<< " " << setw(6) << rms()*DEGREE/MILLIARCSEC;
   } else {
     oss << fixed << setprecision(1)
 	<< " " << setw(6) << rms()*1000.;

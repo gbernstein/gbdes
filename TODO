@@ -1,9 +1,7 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
   * write PMDetection::shiftReferenceEpoch, including refilling base class.
-  * Change WCSFit summary output
   * prepare() should get expected chisq even for clipped detections
   * Work out expectedChisq considering non-unity weights.
-  * Work out new configuration methods for Gaia
   * WCSFoF needs to get Gaia coords with PM.
   * Program-level systematic errors need to work with any already in config files.
   * Change photometric fit / clip to use fitWeight?
@@ -100,3 +98,4 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Change output data to include PM's
   * Check that PMMatch will appropriately skip when too few DOF, no prior
   * Treat PMDetection as single epoch properly if not using PMMatch
+  * Change WCSFit summary output

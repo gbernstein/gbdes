@@ -133,6 +133,11 @@ PMDetection::trueChisq() const {
   return chisq;
 }
 
+void
+PMDetection::shiftReferenceEpoch(double tdbShift)
+{ // ???? write this ???
+}
+
 bool
 Match::isFit(const Detection* e) {
   // A Detection will contribute to fit if it is not clipped,

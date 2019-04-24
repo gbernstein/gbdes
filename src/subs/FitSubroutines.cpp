@@ -1117,7 +1117,7 @@ Astro::fillDetection(Astro::Detection* d,
 
 // This one reads a full 5d stellar solution
 astrometry::PMDetection*
-makePMDetection(astrometry::Detection* d, const Exposure* e,
+Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
 		img::FTable& table, long irow,
 		string xKey, string yKey,
 		string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
@@ -1191,7 +1191,7 @@ makePMDetection(astrometry::Detection* d, const Exposure* e,
 void
 Astro::handlePMDetection(astrometry::PMDetection* pmd, Astro::Detection* d) {
   auto mm = d->itsMatch;
-  if (dynamic_cast<PMMatch*>(mm)) {
+  if (dynamic_cast<astrometry::PMMatch*>(mm)) {
     // If this Detection is being used in a PMMatch,
     // replace plain old Detection with this PMDetection.
     mm->remove(d);
@@ -1888,7 +1888,7 @@ Photo::saveResults(const list<Match*>& matches,
 /***** Astro version ***/
 // Save fitting results (residuals) to output FITS tables.
 void
-Astro::saveResults(const list<typename Astro::Match*>& matches,
+Astro::saveResults(const list<Astro::Match*>& matches,
 		   string outCatalog) {
 
   // Open the output bintable for pure position residuals
@@ -2038,7 +2038,7 @@ Astro::saveResults(const list<typename Astro::Match*>& matches,
       continue;
     
     // Create a pointer to PMMatch if this is one:
-    auto pmm = dynamic_cast<const PMMatch*> (m); 
+    auto pmm = dynamic_cast<const astrometry::PMMatch*> (m); 
 
     astrometry::Vector2 xyMean;    // Match's mean position, in world coords
     if (!pmm)  {
@@ -2355,36 +2355,35 @@ Astro::reportStatistics(const list<typename Astro::Match*>& matches,
     // Make sure match is ready, world coords for all detections done
     mptr->remap(true);
     mptr->solve();
-    int matchDOF = mptr->getDOF();
 
     for (auto dptr : *mptr) {
       // Accumulate statistics for meaningful residuals
       int exposureNumber = extensions[dptr->catalogNumber]->exposure;
       Exposure* expo = exposures[exposureNumber];
-      double magMean=0.; // Dummy variable for accum::add() interface
-      double wtot=0.; // ???
+      double magMean, wtot; // Dummy variables for accum::add() interface
+      int dof;               // dummy also
       if (mptr->getReserved()) {
 	if (expo->instrument==REF_INSTRUMENT ||
 	    expo->instrument==PM_INSTRUMENT) {
-	  refAccReserve.add(dptr, magMean, wtot, matchDOF);
-	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	  refAccReserve.add(dptr, magMean, wtot, dof);
+	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dof);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accReserve.add(dptr, magMean, wtot, matchDOF);
-	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	  accReserve.add(dptr, magMean, wtot, dof);
+	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dof);
 	}
       } else {
 	// Not a reserved object:
 	if (expo->instrument==REF_INSTRUMENT ||
 	    expo->instrument==PM_INSTRUMENT) {
-	  refAccFit.add(dptr, magMean, wtot, matchDOF);
-	  vaccFit[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	  refAccFit.add(dptr, magMean, wtot, dof);
+	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dof);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accFit.add(dptr, magMean, wtot, matchDOF);
-	  vaccFit[exposureNumber].add(dptr, magMean, wtot, matchDOF);
+	  accFit.add(dptr, magMean, wtot, dof);
+	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dof);
 	}
       }
     } // end Detection loop

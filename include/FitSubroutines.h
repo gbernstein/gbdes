@@ -287,7 +287,7 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 // last Boolean is as above.
 vector<Exposure*>
 readExposures(const vector<Instrument*>& instruments,
-	      const vector<double> fieldEpochs,
+	      const vector<double>& fieldEpochs,
 	      vector<int>& exposureColorPriorities,
 	      const list<string>&  useColorList,
 	      string inputTables,

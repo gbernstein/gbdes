@@ -234,8 +234,6 @@ namespace astrometry {
 
     void setParallaxPrior(double p) {parallaxPrior = p;}
 
-    // Remap points to world coords with current map:
-    virtual void remap(bool doAll=true) const;  
     virtual void solve() const;  // Recalculate best-fit PM 
 
     // Increment chisq, beta, and alpha for this match.

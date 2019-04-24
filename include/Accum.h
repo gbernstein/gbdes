@@ -14,12 +14,8 @@ public:
   double sumy;
   double sumxx;
   double sumyy;
-  double sumxxw;
-  double sumyyw;
   double sumxw;
   double sumyw;
-  double sumwx;
-  double sumwy;
   double sumw;
   double sum_m;
   double sum_mw;
