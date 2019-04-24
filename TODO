@@ -1,17 +1,13 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
-  * WCSFit now uses max error in world coordinates, not pixels
+  * write PMDetection::shiftReferenceEpoch, including refilling base class.
   * Change WCSFit summary output
   * prepare() should get expected chisq even for clipped detections
   * Work out expectedChisq considering non-unity weights.
-  * ReadObjects must produce new Detection members.
   * Work out new configuration methods for Gaia
   * WCSFoF needs to get Gaia coords with PM.
-  * Change output data to include PM's
-  * Check that PMMatch will appropriately skip when too few DOF, no prior
-  * Treat PMDetection as single epoch properly if not using PMMatch
   * Program-level systematic errors need to work with any already in config files.
   * Change photometric fit / clip to use fitWeight?
-  * Are sigmas stored as arcsec or radiancs?
+  * Are sigmas stored as arcsec or radians?
   * configure (and config files) need to get 2 weights, epoch, and xObs per exposure and an epoch per field
   * Change python codes to have new PM_INSTRUMENT designations
   * No more sysError in Extension, it's in Exposure
@@ -99,3 +95,8 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Does sigmaClip routine efficiently use remap()?
   * are solve(), predict(), etc. ok when no valid fit for Match (always check dof<0)
   * Insure that positions are calculated even for clipped / non-fit points before output and stats for astrometry
+  * WCSFit now uses max error in world coordinates, not pixels
+  * ReadObjects must produce new Detection members.
+  * Change output data to include PM's
+  * Check that PMMatch will appropriately skip when too few DOF, no prior
+  * Treat PMDetection as single epoch properly if not using PMMatch

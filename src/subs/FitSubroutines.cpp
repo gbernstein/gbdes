@@ -1132,6 +1132,7 @@ makePMDetection(astrometry::Detection* d, const Exposure* e,
   out->xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
   out->ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
 
+  // ?? Are we getting xw, yw in the desired epoch???
   // Get coordinates and transformation matrix
   startWcs->toWorld(out->xpix, out->ypix, out->xw, out->yw);  // no color in startWCS
   auto dwdp = startWcs->dWorlddPix(out->xpix, out->ypix);
@@ -1180,6 +1181,8 @@ makePMDetection(astrometry::Detection* d, const Exposure* e,
   out->invCovPM *= out->fitWeight;
   
   // Shift this PMDetection back to that of the reference epoch for its field.
+  // This will also shift the xpix,ypix,xw,yw and cov matrices in Detection
+  // appropriately to this epoch.
   out->shiftReferenceEpoch(-e->pmTDB);
 
   return out;

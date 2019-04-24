@@ -223,13 +223,14 @@ main(int argc, char *argv[])
 
     // Read the fields table & propagate the info,
     // and discard info as it is not used here.
+    vector<astrometry::SphericalCoords*> fieldProjections;
+    vector<double> fieldEpochs;
     {
       NameIndex fieldNames;
-      vector<astrometry::SphericalCoords*> fieldProjections;
-      vector<double> fieldEpochs;  // dummy, will not use this info
       readFields(inputTables, outCatalog, fieldNames,
 		 fieldProjections, fieldEpochs);
       for (auto ptr : fieldProjections) delete ptr;
+      fieldProjections.clear();
     }
 
     // This flag will be set if we have already opened (and overwritten) the
@@ -252,6 +253,7 @@ main(int argc, char *argv[])
     /**/cerr << "Reading exposures" << endl;
     vector<Exposure*> exposures =
       readExposures(instruments,
+		    fieldEpochs,
 		    exposureColorPriorities,
 		    useColorList,
 		    inputTables,
@@ -436,7 +438,7 @@ main(int argc, char *argv[])
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
-    readObjects<Photo>(extensionTable, exposures, extensions);
+    readObjects<Photo>(extensionTable, exposures, extensions,fieldProjections);
     
     /**/cerr << "Done reading catalogs for magnitudes." << endl;
 
@@ -654,7 +656,7 @@ main(int argc, char *argv[])
     /**/cerr << "Saved results to FITS table" << endl;
     
     // Report summary of residuals to stdout
-    reportStatistics<Photo>(matches, exposures, extensions, cout);
+    Photo::reportStatistics(matches, exposures, extensions, cout);
 
     //////////////////////////////////////
     // Cleanup:
