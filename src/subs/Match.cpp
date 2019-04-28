@@ -31,8 +31,6 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
 			  const Vector3& xObs, // Observatory position, barycentric ICRS, in AU
 			  SphericalCoords* fieldProjection) {
 
-  const double wScale = DEGREE;   // units for the world coordinate system (radians = 1.)
-  
   if (pmProj) {
     pmProj->setZero();
   } else {
@@ -44,10 +42,10 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
 
   // Get the ICRS direction of this detection, and derivative between
   // world coords and ICRS values
-  fieldProjection->setLonLat(xw*wScale,yw*wScale);
+  fieldProjection->setLonLat(xw*WCS_UNIT,yw*WCS_UNIT);
   SphericalICRS icrs(*fieldProjection);  // Convert to ICRS
 
-  Matrix22 dWdICRS;  // Coordinate derivative
+  Matrix22 dWdICRS;  // Coordinate derivative - radian units
   fieldProjection->convertFrom(icrs, dWdICRS);
   // Apply cos(dec) terms to ICRS RA derivatives:
   double ra,dec;
@@ -65,14 +63,14 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
   // Pull out components directed along ICRS E and N:
   Vector2 icrsParallax = cc.getVector().subVector(0,2);
   // Transform into WCS, and from units of PAR (mas) to WCS units
-  Vector2 wcsParallax = (-MILLIARCSEC / wScale) * (dWdICRS * icrsParallax);
+  Vector2 wcsParallax = (-PARALLAX_UNIT / WCS_UNIT) * (dWdICRS * icrsParallax);
   m.col(PAR) = wcsParallax;
   
   // Convert proper motion from ICRS directions to WCS
   Matrix22 pm;
   pm.setToIdentity();
   pm = dWdICRS * pm;
-  pm *= (pmTDB * MILLIARCSEC / wScale);
+  pm *= (pmTDB * PM_UNIT * TDB_UNIT / WCS_UNIT);
   m.subMatrix(0,2,VX,VY+1) = pm;
 }
 
@@ -499,8 +497,8 @@ Match::sigmaClip(double sigThresh,
     cerr << "clipped " << worst->catalogNumber
 	 << " / " << worst->objectNumber 
 	 << " at " << worst->xw << "," << worst->yw 
-	 << " resid " << setw(6) << (worst->xw-xyMean[0])*DEGREE/ARCSEC
-	 << " " << setw(6) << (worst->yw-xyMean[1])*DEGREE/ARCSEC
+	 << " resid " << setw(6) << (worst->xw-xyMean[0])*WCS_UNIT / RESIDUAL_UNIT;
+	 << " " << setw(6) << (worst->yw-xyMean[1])**WCS_UNIT / RESIDUAL_UNIT;
 	 << " resid/sig " << np.sqrt(maxSq)
 	 << endl;
 #endif
@@ -760,8 +758,8 @@ PMMatch::sigmaClip(double sigThresh,
       cerr << "clipped " << worst->catalogNumber
 	   << " / " << worst->objectNumber 
 	   << " at " << worst->xw << "," << worst->yw 
-	   << " resid " << setw(6) << (worst->xw-predict(worst)[0])*DEGREE/ARCSEC
-	   << " " << setw(6) << (worst->yw-predict(worst)[1])*DEGREE/ARCSEC
+	   << " resid " << setw(6) << (worst->xw-predict(worst)[0]) * WCS_UNIT/RESIDUAL_UNIT;
+	   << " " << setw(6) << (worst->yw-predict(worst)[1]) * WCS_UNIT/RESIDUAL_UNIT;
 	   << " resid/sig " << np.sqrt(maxSq) 
 	   << endl;
     }

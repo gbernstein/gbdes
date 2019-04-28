@@ -19,6 +19,8 @@
 using astrometry::PMMatch;
 using astrometry::PMDetection;
 using astrometry::AstrometryError;
+using astrometry::WCS_UNIT;
+using astrometry::RESIDUAL_UNIT;
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -319,7 +321,7 @@ readFields(string inputTables,
   for (int i=0; i<name.size(); i++) {
     spaceReplace(name[i]);
     fieldNames.append(name[i]);
-    astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*DEGREE, dec[i]*DEGREE));
+    astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*WCS_UNIT, dec[i]*WCS_UNIT));
     fieldProjections.push_back( new astrometry::Gnomonic(orient));
   }
   if (ft.hasColumn("Epoch")) {
@@ -540,8 +542,8 @@ readExposures(const vector<Instrument*>& instruments,
 
     if (useThisExposure) {
       // The projection we will use for this exposure:
-      astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
-										dec[i]*DEGREE)));
+      astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*WCS_UNIT,
+										dec[i]*WCS_UNIT)));
       auto expo = new Exposure(names[i],gn);
       expo->field = fieldNumber[i];
       expo->instrument = instrumentNumber[i];
@@ -669,7 +671,7 @@ readExtensions(img::FTable& extensionTable,
       // Create a Wcs that just takes input as RA and Dec in degrees;
       astrometry::IdentityMap identity;
       astrometry::SphericalICRS icrs;
-      extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", DEGREE);
+      extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT);
     } else {
       istringstream iss(s);
       astrometry::PixelMapCollection pmcTemp;
@@ -1138,7 +1140,7 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   auto dwdp = startWcs->dWorlddPix(out->xpix, out->ypix);
   // Add cos(dec) factors, since all error values are assumed for ra*cos(dec).
   // and we are ASSUMING that PM catalogs are in RA/Dec, in degrees
-  dwdp.col(0) /= cos(out->ypix * DEGREE);
+  dwdp.col(0) /= cos(out->ypix * WCS_UNIT);
 
   // Read in the reference solution
   double pmRA, pmDec, parallax;
@@ -1250,6 +1252,7 @@ Photo::fillDetection(Photo::Detection* d,
   if ( isnan(d->magIn) || isinf(d->magIn)) {
     cerr << "** NaN input at row " << irow << endl;
     d->isClipped = true;
+  
     d->magIn = 0.;
   }
   // Map to output and estimate output error
@@ -1329,17 +1332,17 @@ void readObjects(const img::FTable& extensionTable,
       if (!isTag && !pmCatalog) {
 	// See if we have the keys for an error ellipse
 
-	if (extensionTable.hasColumn("errX2Key") &&
-	    extensionTable.hasColumn("errY2Key") &&
+	if (extensionTable.hasColumn("errXXKey") &&
+	    extensionTable.hasColumn("errYYKey") &&
 	    extensionTable.hasColumn("errXYKey")) {
-	  string errX2Key, errY2Key, errXYKey;
-	  extensionTable.readCell(errX2Key, "errX2Key", iext);
-	  extensionTable.readCell(errY2Key, "errY2Key", iext);
+	  string errXXKey, errYYKey, errXYKey;
+	  extensionTable.readCell(errXXKey, "errXXKey", iext);
+	  extensionTable.readCell(errYYKey, "errYYKey", iext);
 	  extensionTable.readCell(errXYKey, "errXYKey", iext);
-	  if (!(errX2Key.empty() || errY2Key.empty() || errXYKey.empty())) {
+	  if (!(errXXKey.empty() || errYYKey.empty() || errXYKey.empty())) {
 	    // We have all the keys for an error ellipse
-	    xyErrKeys.push_back(errX2Key);
-	    xyErrKeys.push_back(errY2Key);
+	    xyErrKeys.push_back(errXXKey);
+	    xyErrKeys.push_back(errYYKey);
 	    xyErrKeys.push_back(errXYKey);
 	  }
 	}
@@ -1463,6 +1466,8 @@ void readObjects(const img::FTable& extensionTable,
 			 startWcs, isTag);
       }
     } // End loop over catalog objects
+
+    if (fieldProjection) delete fieldProjection;
 
     if (!extn.keepers.empty()) {
       cerr << "Did not find all desired objects in catalog " << filename
@@ -2089,8 +2094,8 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       if (pmm)
 	xyMean = pmm->predict(detptr);
 
-      // Put world residuals in milliarcsec
-      astrometry::Vector2 residW = detptr->residWorld() * DEGREE/MILLIARCSEC;
+      // Put world residuals in milliarcsec (decided in Units.h)
+      astrometry::Vector2 residW = detptr->residWorld() * WCS_UNIT/RESIDUAL_UNIT;
       xresw.push_back(residW[0]);
       yresw.push_back(residW[1]);
 
@@ -2102,7 +2107,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       astrometry::Matrix22 cov;
       // Get error covariances, if we have any
       if (detptr->invCovMeas(0,0) > 0.) {
-	cov = detptr->invCovMeas.inverse() * pow(DEGREE/MILLIARCSEC,2.);
+	cov = detptr->invCovMeas.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
 	vector<float> vv(3);
 	vv[0] = cov(0,0);
 	vv[1] = cov(1,1);
@@ -2116,7 +2121,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       // Get error covariances, if we have any
       double chisqThis;
       if (detptr->invCovFit(0,0) > 0.) {
-	cov = detptr->invCovFit.inverse() * pow(DEGREE/MILLIARCSEC,2.);
+	cov = detptr->invCovFit.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
 	cov *= detptr->fitWeight;
 	vector<float> vv(3,0.);
 	vv[0] = cov(0,0);
@@ -2126,7 +2131,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 
 	// Transform back to pixel errors to get circularized pixel error
 	{
-	  cov /= pow(DEGREE/MILLIARCSEC,2.); // Back to degrees 
+	  cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units
 	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1]);
 	  astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
 	  double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);

@@ -108,12 +108,15 @@ main(int argc, char *argv[])
     const int upopen = up | PsetMember::openUpperBound;
 
     parameters.addMemberNoValue("INPUTS");
+
+    // These 3 are assumed to be in RESIDUAL_UNIT from Units.h:
     parameters.addMember("maxError",&maxError, def | lowopen,
-			 "Cut objects with posn uncertainty above this (arcsec)", 0.1, 0.);
+			 "Cut objects with posn uncertainty above this (mas)", 100., 0.);
     parameters.addMember("sysError",&sysError, def | low,
-			 "Fixed systematic error for detections (arcsec)", 0.002, 0.);
+			 "Additional systematic error for detections (mas)", 2., 0.);
     parameters.addMember("referenceSysError",&referenceSysError, def | low,
-			 "Fixed systematic error for non-PM reference objects (arcsec)", 0.003, 0.);
+			 "Additional systematic error for non-PM reference objects (mas)", 2., 0.);
+
     parameters.addMember("freePM",&freePM, def,
 			 "Allow free proper motion and parallax?", true);
     parameters.addMember("pmEpoch",&pmEpoch, def,
@@ -164,9 +167,9 @@ main(int argc, char *argv[])
 			 "Output serialized Wcs systems", "wcsfit.wcs");
   }
 
-  // Positional accuracy (in degrees) demanded of numerical solutions for inversion of 
+  // Positional accuracy demanded of numerical solutions for inversion of 
   // pixel maps: 
-  const double worldTolerance = 0.1*MILLIARCSEC/DEGREE;
+  const double worldTolerance = 0.1*MILLIARCSEC/WCS_UNIT;
   // Fractional reduction in RMS required to continue sigma-clipping:
   const double minimumImprovement=0.02;
 
@@ -176,8 +179,8 @@ main(int argc, char *argv[])
     processParameters(parameters, usage, 1, argc, argv);
     string inputTables = argv[1];
 
-    referenceSysError *= ARCSEC/DEGREE;
-    sysError *= ARCSEC/DEGREE;
+    referenceSysError *= RESIDUAL_UNIT/WCS_UNIT;
+    sysError *= RESIDUAL_UNIT/WCS_UNIT;
 
     /////////////////////////////////////////////////////
     // Parse all the parameters
@@ -271,7 +274,7 @@ main(int argc, char *argv[])
       astrometricCovariance(1,1) = sysError*sysError;
       for (auto e : exposures) {
 	if (e->instrument >= 0)
-	  e->astrometricCovariance = astrometricCovariance;
+	  e->astrometricCovariance += astrometricCovariance;
       }
     }
     if (referenceSysError > 0.) {
@@ -280,7 +283,7 @@ main(int argc, char *argv[])
       astrometricCovariance(1,1) = referenceSysError*referenceSysError;
       for (auto e : exposures) {
 	if (e->instrument == REF_INSTRUMENT)
-	  e->astrometricCovariance = astrometricCovariance;
+	  e->astrometricCovariance += astrometricCovariance;
 	// Note that we are not adding this covariance to PM_INSTRUMENT
 	// since we'll assume these (Gaia!) have treated errors well.
 	// For older catalogs, PM is probably the largest sys error.
@@ -587,7 +590,7 @@ main(int argc, char *argv[])
     /**/cerr << "Purging defective detections and matches" << endl;
 
     // Get rid of Detections with errors too high
-    purgeNoisyDetections<Astro>(maxError*ARCSEC/DEGREE,
+    purgeNoisyDetections<Astro>(maxError*RESIDUAL_UNIT/WCS_UNIT,
 				matches, exposures, extensions);
 			 
     // Get rid of Matches with too few detections

@@ -1,4 +1,9 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
+  * Make new Units.h for single-source convention about angular units.  Replace discrete
+    uses of units throughout code with these, also checking covariance specs.  Done for:
+    Match.h,cpp FitSubroutines MagColor WCSFit
+    
+  * Include parallax when slicing PMDetection down to single-epoch detection??
   * write PMDetection::shiftReferenceEpoch, including refilling base class.
   * prepare() should get expected chisq even for clipped detections
   * Work out expectedChisq considering non-unity weights.
@@ -99,3 +104,28 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Check that PMMatch will appropriately skip when too few DOF, no prior
   * Treat PMDetection as single epoch properly if not using PMMatch
   * Change WCSFit summary output
+
+
+----
+Some notes about inputs and errors for 5d:
+FitSubroutines makePMDetection() takes column names for
+xKey, yKey, for RA/Dec (in WCS_UNIT=DEGREE) [pmRa,pmDec,parallax,pmCov]Key.
+It calls shiftReferenceEpoch, which has the job of filling in xw,yw and 2d sigmas
+in case we are going to slice it.
+readObjects() looks in extension table for attributes named
+  xKey, yKey
+  err[XX,YY,XY]Key -or- errKey for non-PM, giving ellipse or circlular error,
+    which will be in pixel units.  1 or 3 go into xyErrKeys array, in the order XX,YY,XY.
+    Then add the astrometricCovariance from the exposure. invCov->0 for tags.
+  pm[Ra,Dec,Cov]Key,parallaxKey for PM catalogs.  No additional covariance from exposure.
+
+readExposures() is looking for sysAstCov column which is vector<double> type.  Defaults
+  to zero matrix if there are not 3 elements in the exposure's row.
+  WCSFit.h will *add* command-line-specified systematic errors to the ones in table.
+  sysError gets added to all real instruments.  referenceSysError gets added to REFERENCE
+  exposures, but *not* to PM exposures.
+
+Note PM_INSTRUMENTs are always considered references (no free parameters).
+
+Choice of degrees for WCS for reference exposures is made in readExtensions()
+Others are spec'ed in the Astro file.

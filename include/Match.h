@@ -16,6 +16,7 @@ using std::list;
 #include "PixelMap.h"
 #include "PixelMapCollection.h"
 #include "SymmetricUpdater.h"
+#include "Units.h"
 
 namespace astrometry {
 
@@ -25,11 +26,7 @@ namespace astrometry {
   // Some typedefs for proper motion
   typedef linalg::SVector<double, 5> PMSolution;
   typedef linalg::SMatrix<double,5,5> PMCovariance;
-  enum PM {X0, Y0, VX, VY, PAR};  // Standard order of 5d params
-  // Note we will assume that VX, VY are in mas/yr, oriented
-  // toward ICRS E and N, respectively.  PAR will be in
-  // mas.  Both as per Gaia catalog convention.
-  // X0, Y0 are in units of the field's WCS.
+  // See Units.h for conventions of units.
 
   // Projection matrix from 5d PM to 2d position:
   typedef linalg::SMatrix<double,2,5> PMProjector;  

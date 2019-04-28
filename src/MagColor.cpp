@@ -18,6 +18,7 @@
 #include "TemplateMap.h"
 #include "FitsImage.h"
 
+#include "Units.h"  // Specifies angular units used
 #include "FitSubroutines.h"
 
 using namespace std;
@@ -358,8 +359,8 @@ main(int argc, char *argv[])
 	} else {
 	  spaceReplace(names[i]);
 	  // The projection we will use for this exposure:
-	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*DEGREE,
-										    dec[i]*DEGREE)));
+	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*WCS_UNIT,
+									        dec[i]*WCS_UNIT)));
 	  auto expo = new Exposure(names[i],gn);
 	  expo->field = fieldNumber[i];
 	  expo->instrument = instrumentNumber[i];
@@ -447,10 +448,10 @@ main(int argc, char *argv[])
       string s;
       extensionTable.readCell(s, "WCSIN", i);
       if (stringstuff::nocaseEqual(s, "_ICRS")) {
-	// Create a Wcs that just takes input as RA and Dec in degrees;
+	// Create a Wcs that just takes input as RA and Dec in std units;
 	astrometry::IdentityMap identity;
 	astrometry::SphericalICRS icrs;
-	extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", DEGREE);
+	extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT);
       } else {
 	try {
 	  // See if there is a map to use from the astrometric solution files
@@ -843,9 +844,9 @@ main(int argc, char *argv[])
 	  } // End color iteration loop
 	  
 	  if (hasMagnitudes) {
-	    // Get RA & Dec in degrees
-	    double ra = sumwRA / (sumw * DEGREE);
-	    double dec= sumwDec / (sumw * DEGREE);
+	    // Get RA & Dec in std units
+	    double ra = sumwRA / (sumw * WCS_UNIT);
+	    double dec= sumwDec / (sumw * WCS_UNIT);
 	    magTable.writeCell(ra, "RA", magRowCounter);
 	    magTable.writeCell(dec, "Dec", magRowCounter);
 	    // write mags & colors if there are any of use here
