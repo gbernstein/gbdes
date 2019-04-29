@@ -1,24 +1,18 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
-  * Make new Units.h for single-source convention about angular units.  Replace discrete
-    uses of units throughout code with these, also checking covariance specs.  Done for:
-    Match.h,cpp FitSubroutines MagColor WCSFit
-    
+  * Get rid of invCovMeas and take weight factor out of invCovFit->invCov.  clean up where weight
+    factors are needed (sigma clip without them, compare to expectedChisq).  Set up trueChisq at
+    match level.
+  * Signal no fitting with weight->0. - check initialization of fitWeight.
   * Include parallax when slicing PMDetection down to single-epoch detection??
   * write PMDetection::shiftReferenceEpoch, including refilling base class.
   * prepare() should get expected chisq even for clipped detections
   * Work out expectedChisq considering non-unity weights.
-  * WCSFoF needs to get Gaia coords with PM.
-  * Program-level systematic errors need to work with any already in config files.
   * Change photometric fit / clip to use fitWeight?
-  * Are sigmas stored as arcsec or radians?
   * configure (and config files) need to get 2 weights, epoch, and xObs per exposure and an epoch per field
   * Change python codes to have new PM_INSTRUMENT designations
-  * No more sysError in Extension, it's in Exposure
   * make a "key" dictionary for extensions.
-  * insert command-line systematic errors into Exposure objects.
   * document that all PM catalogs are ICRS degrees for RA/Dec, mas for PM/Par
-  * readObjects makes xyErrKeys array
-  * New things for configure.py: get EPOCH for fields, observatory position for exposures somehow; PM_INSTRUMENT flag; 2x2 covariances (possible ERRX2, ERRY2, ERRXY keys); syserrors per exposure;
+  * New things for configure.py: get EPOCH for fields, observatory position for exposures somehow; PM_INSTRUMENT flag; 2x2 covariances (possible ERRX2, ERRY2, ERRXY keys); syserrors per exposure, not extension;
 
 * Allow photmetric reference catalog
 
@@ -104,6 +98,14 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Check that PMMatch will appropriately skip when too few DOF, no prior
   * Treat PMDetection as single epoch properly if not using PMMatch
   * Change WCSFit summary output
+  * Are sigmas stored as arcsec or radians?
+  * Program-level systematic errors need to work with any already in config files.
+  * Make new Units.h for single-source convention about angular units.  Replace discrete
+    uses of units throughout code with these, also checking covariance specs.  Done for:
+    Match.h,cpp FitSubroutines MagColor WCSFit Accum WcsSubs WCSFoF
+  * readObjects makes xyErrKeys array
+  * WCSFoF needs to get Gaia coords with PM (actually just uses xkey, ykey)
+    
 
 
 ----

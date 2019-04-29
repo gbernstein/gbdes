@@ -77,15 +77,18 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
 Vector2
 Detection::residWorld() const {
   Vector2 out;
-  Assert(itsMatch)
+  Assert(itsMatch);
+  itsMatch->solve();
   out[0] = xw;
   out[1] = yw;
   out -= itsMatch->predict(this);
-  return out;
+  return out * WCS_UNIT / RESIDUAL_UNIT;
 }
 
 Vector2
 Detection::residPix() const {
+  Assert(itsMatch);
+  itsMatch->solve();
   Vector2 xyMean = itsMatch->predict(this);
   double xMeanPix=xpix, yMeanPix=ypix;
   Assert(map);
@@ -110,24 +113,26 @@ double
 Detection::trueChisq() const {
   // Calculate chisq relative to best prediction of itsMatch,
   // using full fitting covariance but *before* any weighting factor is applied.
-  auto xyW = residWorld();
-  double chisq = xyW.transpose() * invCovFit * xyW;
-  chisq *= fitWeight;  // Remove the weight factor that was built into invCovFit
+  Assert(itsMatch);
+  itsMatch->solve();
+  Vector2 xyW;
+  xyW[0] = xw;
+  xyW[1] = yw;
+  xyW -= itsMatch->predict(this);
+  double chisq = xyW.transpose() * invCov * xyW;
   return chisq;
 }
 
 double
 PMDetection::trueChisq() const {
   // Get full 5d chisq for a PMDetection
-
   auto pmMatch = dynamic_cast<const PMMatch*> (itsMatch);
   Assert(pmMatch);
   // Have the match solve for best fit if not in that state
   pmMatch->solve();
   // Now get chisq
   PMSolution dpm = pmMean - pmMatch->getPM();
-  double chisq = dpm.transpose() * invCovPM * dpm;
-  chisq *= fitWeight;  // Remove the weight factor that was built into invCovPM
+  double chisq = dpm.transpose() * pmInvCov * dpm;
   return chisq;
 }
 
@@ -140,13 +145,13 @@ bool
 Match::isFit(const Detection* e) {
   // A Detection will contribute to fit if it is not clipped,
   // and if it's either a full PMDetection or has finite position cov
-  return !(e->isClipped) && (dynamic_cast<const PMDetection*> (e) || e->invCovFit(0,0)>0.);
+  return e->fitWeight>0.;
 }
 
 Match::Match(Detection *e): elist(), nFit(0),dof(0),
 			    isReserved(false), isPrepared(false),
 			    isMappedFit(false), isMappedAll(false),
-			    isSolved(false) {
+			    isSolved(false), trivialWeights(false) {
   add(e);
 }
 
@@ -159,7 +164,6 @@ Match::add(Detection *e) {
   isMappedFit = false;
   isMappedAll = false;
   isSolved = false;
-  if ( isFit(e)) nFit++;
 }
 
 void
@@ -168,7 +172,6 @@ Match::remove(Detection* e) {
   isSolved = false;
   elist.remove(e);  
   e->itsMatch = nullptr;
-  if ( isFit(e) ) nFit--;
 }
 
 list<Detection*>::iterator
@@ -176,7 +179,6 @@ Match::erase(list<Detection*>::iterator i,
 	     bool deleteDetection) {
   isPrepared = false;
   isSolved = false;
-  if (isFit(*i)) nFit--;
   if (deleteDetection) delete *i;
   return elist.erase(i);
 }
@@ -200,6 +202,7 @@ Match::clear(bool deleteDetections) {
 
 void
 Match::countFit() {
+  // DEPRECATED.  The count is done as part of prepare()
   nFit = 0;
   for (auto i : elist)
     if (isFit(i)) nFit++;
@@ -208,9 +211,10 @@ Match::countFit() {
 void
 Match::clipAll() {
   isPrepared = false;
+  isSolved = true;  // No such thing as solution anymore.
   for (auto i : elist)
     if (i)
-      i->isClipped = true;
+      i->clip();
   nFit = 0;
 }
 
@@ -222,7 +226,15 @@ Match::prepare() const {
   if (isPrepared) return;
   isSolved = false;   // Change here means centroid solution is invalid
   centroidF.setZero();
+  // centroidF is the matrix used in solution for centroid.
+  // But we will also calculate the actual expected variance
+  // of the centroid, which will differ if the weights are not
+  // all equal (or zero).
+  // Keep in mind that Detection::invCovFit has one power of weight in it already.
+  Matrix22 centroidCov(0.);
   dof = 0;
+  nFit = 0;
+  trivialWeights = true;
   for (auto i : elist) {
     if (dynamic_cast<const PMDetection*> (i)) {
       throw AstrometryError("PMDetection included in a non-PM Match");
@@ -230,39 +242,63 @@ Match::prepare() const {
       // fixed-epoch Detection for a non-PM match.
     }
     if (!isFit(i)) continue;
-    centroidF += i->invCovFit;
     dof += 2;
+    nFit++;
+    if (i->fitWeight != 1.) {
+      trivialWeights = false;  // Need explicit weights in formulae
+      centroidF += i->invCov * i->fitWeight;
+    } else {
+      centroidF += i->invCov;
+    }
+      
   }
   dof -= 2;  // Remove 2 parameters in this fit
 
   if (dof<0) {
     // Degenerate fit, will never yield a solution of interest
     for (auto i : elist)
-      i->expectedChisq = 0.;
+      i->expectedTrueChisq = 0.;
     centroidF.setZero();
+    trueCentroidCov.setZero();
     isPrepared = true;
     nFit = 0;
     return;
   }
 	
-  // ???? Change this calculation to get chisq expected
-  // if errors are true, not what weighted invCov gives ???
-  
-  // Now get expected chisq for each detection
-  // From notes of 25 Mar 2019,
-  // <chisq_i> = 2 - Tr( invCov_i * covMean)
-  // where covMean is cov matrix of the mean posn estimate
-  Matrix22 covMean = centroidF.inverse();
+  Matrix22 invF = centroidF.inverse();
+  // Calculate expected centroid 
+  if (trivialWeights) {
+    trueCentroidCov = invF;
+  } else {
+    // Altered expectation for cov because of weighting
+    // From notes of 28 Apr 2019,
+    Matrix22 tmp(0.);
+    for (auto i : elist) {
+      if (!isFit(i)) continue;
+      tmp += i->invCov * (i->fitWeight*i->fitWeight);
+    }
+    trueCentroidCov = invF * tmp * invF;
+  }
+
+  // Now get expected chisq for each detection, and true centroid cov
+  // From notes of 28 Apr 2019,
+  // <chisq_i> = 2 - 2 * w_i * Tr( invCov_i * invF) + Tr(invCov_i * centroidCov)
+  // where invF is the inverse of centroidF
   for (auto i : elist) {
-    if (isFit(i)) {
-#ifdef USE_EIGEN
-      i->expectedChisq = 2. - (covMean.array() * i->invCovFit.array()).sum();
-#elif USE_TMV
-      i->expectedChisq = 2. - Trace(covMean * i->invCovFit); // Slower
-#endif
+    if (i->invCov(0,0)<=0.) {
+      // No error on this detection so no chisq
+      i->expectedTrueChisq = 0.;
+    } else if (i->fitWeight==0.) {
+      // Has uncertainties but was not included in the fit
+      i->expectedTrueChisq = 2 + traceATB(i->invCov, trueCentroidCov);
+    } else if (trivialWeights) {
+      // included in fit, unit weight gauranteed
+      i->expectedTrueChisq = 2 - traceATB(i->invCov, trueCentroidCov);
     } else {
-      i->expectedChisq = 2.;  // Simple answer if Detection is not part of fit.
-    }    
+      // Include non-trivial weight
+      i->expectedTrueChisq = 2 - (2*i->fitWeight)* traceATB(i->invCov, invF)
+	+ traceATB(i->invCov, trueCentroidCov);
+    }
   }
   // Calculate expected chisq for each Detection:
   isPrepared = true;
@@ -286,7 +322,7 @@ Match::solve() const {
     if (!isFit(i)) continue;
     xy[0] = i->xw;
     xy[1] = i->yw;
-    sumwx += i->invCovFit * xy;
+    sumwx += (i->invCov * xy) * i->fitWeight;
   }
   xyMean = centroidF.inverse() * sumwx;
 }
@@ -338,8 +374,8 @@ Match::accumulateChisq(double& chisq,
 
   prepare();
 
-  // No contributions to fit for degenerate fit
-  if (dof<0) return 0;
+  // No contributions to fit for degenerate/perfect fit
+  if (dof<=0) return 0;
 
   // Update mapping and save derivatives for each detection:
   vector<DMatrix*> dXYdP(elist.size(), nullptr);
@@ -368,18 +404,18 @@ Match::accumulateChisq(double& chisq,
   solve();
   
   DMatrix dxyMean(2,nP, 0.);
-  Matrix22 invCov;
+  Matrix22 invCovW;  // inverse covariance * weight
   Vector2 err;
   map<int, iRange> mapsTouched;
   ipt = 0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
-    invCov = (*i)->invCovFit;
+    invCovW = (*i)->invCov * (*i)->fitWeight;
     err[0] = (*i)->xw;
     err[1] = (*i)->yw;
-    err -= xyMean;
+    err -= xyMean;  
 
-    chisq += err.transpose() * invCov * err; 
+    chisq += err.transpose() * invCovW * err; 
 
     // Accumulate derivatives:
     int istart=0;
@@ -396,16 +432,16 @@ Match::accumulateChisq(double& chisq,
 #elif defined USE_EIGEN
       DMatrix dxy1 = dXYdP[ipt]->block(0,istart,2,np);
 #endif
-      beta.subVector(ip, ip+np) -= dxy1.transpose() * invCov * err;
+      beta.subVector(ip, ip+np) -= dxy1.transpose() * invCovW * err;
 
       // Contribution to derivatives of the mean position:
       // (actually \sum_i C_i^{-1} dx_i/dp)
-      dxyMean.subMatrix(0,2, ip, ip+np) += invCov * dxy1;
+      dxyMean.subMatrix(0,2, ip, ip+np) += invCovW * dxy1;
 
       if (!reuseAlpha) {
 	// Increment the alpha matrix
 	// First the blocks astride the diagonal:
-	updater.update(mapNumber, ip, dxy1, invCov);
+	updater.update(mapNumber, ip, dxy1, invCovW);
 
 	int istart2 = istart+np;
 	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
@@ -420,7 +456,7 @@ Match::accumulateChisq(double& chisq,
 #endif
 	  // Now update below diagonal
 	  updater.update(mapNumber2, ip2, dxy2,
-			 invCov,
+			 invCovW,
 			 mapNumber,  ip,  dxy1);
 	  istart2+=np2;
 	}
@@ -470,7 +506,7 @@ bool
 Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
   solve();  // Recalculate mean position if out of date
-  if (dof<0) return false; // Already degenerate, not fitting
+  if (dof<=0) return false; // Already degenerate, not fitting
 
   // Only clip the worst outlier at most
   double maxSq=0.;
@@ -481,10 +517,9 @@ Match::sigmaClip(double sigThresh,
     err[0] =  i->xw;
     err[1] =  i->yw;
     err -= xyMean;
-    // Calculate deviation per DOF
-    double devSq = (err.transpose() * i->invCovFit * err);
-    devSq /= i->fitWeight;  // When clipping, remove any weight change to invCov
-    devSq /= 2.;
+    // Calculate deviation relative to expected chisq
+    double devSq = (err.transpose() * i->invCov * err);
+    devSq /= i->expectedTrueChisq;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
       worst = i;
@@ -506,11 +541,10 @@ Match::sigmaClip(double sigThresh,
 	elist.remove(worst);
 	delete worst;
       }	else {
-	worst->isClipped = true;
+	worst->clip();
       }
-      nFit--;
       isPrepared = false;
-      isSolved = false;  // Note that world coords still valid
+      isSolved = false;  // Note that world coords are still valid
       return true;
   } else {
     // Nothing to clip
@@ -522,16 +556,16 @@ double
 Match::chisq(int& dofAccum, double& maxDeviateSq) const {
   solve();
   double chi=0.;
-  if (dof<0) return chi; // No info from degenerate fits
+  if (dof<=0) return chi; // No info from degenerate/perfect fits
   Vector2 dxy;
   for (auto i : elist) {
     if (!isFit(i)) continue;
     dxy[0] = i->xw;
     dxy[1] = i->yw;
     dxy -= xyMean;
-    double cc = dxy.transpose() * i->invCovFit * dxy;
-    maxDeviateSq = MAX(cc/2. , maxDeviateSq);
-    chi += cc;
+    double cc = dxy.transpose() * i->invCov * dxy;
+    maxDeviateSq = MAX(cc/i->expectedTrueChisq , maxDeviateSq);
+    chi += cc * i->fitWeight;  // Note returning the fitting chisq
   }
   dofAccum += dof;
   return chi;
@@ -552,9 +586,13 @@ PMMatch::prepare() const {
   // Calculate the total PM Fisher matrix and also
   // the sums over the PMDetection priors
   pmFisher.setZero();
-  priorMean.setZero();
+  pmInvFisher.setZero();
+  pmTrueCov.setZero();
   priorChisq = 0.;
+  priorMean.setZero();
   dof = 0;
+  nFit = 0;
+  trivialWeights = true;
   
   // First put any parallax prior into Fisher
   if (parallaxPrior > 0.) {
@@ -566,15 +604,27 @@ PMMatch::prepare() const {
   for (auto i : elist) {
     if (!isFit(i)) continue;
     m.setZero();
-    if (auto ii = dynamic_cast<const PMDetection*>(i)) {
+    if (auto ii = dynamic_cast<PMDetection*>(i)) {
       // This detection has full PM covariance of its own
-      pmFisher += ii->invCovPM;
       dof += 5;
+      nFit++;
+      if (ii->fitWeight==1.) {
+	pmFisher += ii->pmInvCov;
+      } else {
+	trivialWeights = false;
+	pmFisher += ii->pmInvCov * ii->fitWeight;
+      }
     } else {
       // Regular single-epoch detection
       m = i->getProjector();
-      pmFisher += m.transpose() * i->invCovFit * m;
       dof += 2;
+      nFit++;
+      if (i->fitWeight==1.) {
+	pmFisher += m.transpose() * i->invCov *m;
+      } else {
+	trivialWeights=false;
+	pmFisher += m.transpose() * i->invCov * (i->fitWeight *m);
+      }
     }
   }
   dof -= 5;  // 5 parameter fit here.
@@ -583,62 +633,88 @@ PMMatch::prepare() const {
     // Cannot fit a model to these data.
     // Will not be used for anything
     nFit = 0;
-    pmCov.setZero();
+    pmInvFisher.setZero();
     pmFisher.setZero();
+    pmTrueCov.setZero();
     for (auto i : elist)
-      i->expectedChisq = 0.;
+      i->expectedTrueChisq = 0.;
     isPrepared = true;
     return;
   }
 
-  pmCov = pmFisher.inverse(); // ??? More stable?
+  pmInvFisher = pmFisher.inverse(); // ??? More stable?
   
   // Go through again and accumulate the PMDetection
-  // contributions to chisq
-  PMSolution tmp;  // work vector
-  for (auto i : elist) {
-    if (!isFit(i)) continue;
-    m.setZero();
-    if (auto ii = dynamic_cast<const PMDetection*>(i)) {
-      tmp = ii->invCovPM * ii->pmMean;
-      priorChisq += ii->pmMean.transpose() * tmp;
-      priorMean += tmp;
+  // contributions to chisq that have pmMean in them
+  {
+    PMSolution tmp;  // work vector
+    for (auto i : elist) {
+      if (!isFit(i)) continue;
+      m.setZero();
+      if (auto ii = dynamic_cast<const PMDetection*>(i)) {
+	tmp = ii->pmInvCov * ii->pmMean;
+	tmp *= ii->fitWeight;
+	priorChisq += ii->pmMean.transpose() * tmp;
+	priorMean += tmp;
+      }
     }
+    tmp = pmInvFisher * priorMean;
+    priorChisq -= priorMean.transpose() * tmp;  // Constant term of chisq
+    priorMean = tmp;         // linear term of chisq
   }
-  tmp = pmCov * priorMean;
-  priorChisq -= priorMean.transpose() * tmp;  // Constant term of chisq
-  priorMean = tmp;         // linear term of chisq
+  
+  // Calculate the covariance matrix for fitted PM
+  if (trivialWeights) {
+    pmTrueCov = pmInvFisher;
+  } else {
+    PMCovariance tmp(0.);
+    for (auto i : elist) {
+      if (!isFit(i)) continue;
+      // Follow notes of 28 Apr 2019
+      if (auto ii = dynamic_cast<const PMDetection*>(i)) {
+	// This detection has full PM covariance of its own
+	tmp += ii->pmInvCov * (ii->fitWeight*ii->fitWeight);
+      } else {
+	m = i->getProjector();
+	tmp += m.transpose() * i->invCov * ((i->fitWeight*i->fitWeight) *m);
+      }
+    }
+    pmTrueCov = pmInvFisher * tmp * pmInvFisher;
+  }
 
   // Now get expected chisq for each detection
-  // From notes of 25 Mar 2019,
-  // <chisq_i> = 5 - Tr( invCov_i * pmCov)
-  // for a PMDetection, where pmCov is cov matrix of the mean PM estimate.
-  // For a regular detection with projection matrix m, the answer is
-  // <chisq_i> = 2 - Tr( invCov_i * m * pmCov * m^T)
+  // From notes of 28 Apr 2019
+  // For a PMDetection,
+  // <chisq_i> = 5 - 2*w_i * Tr( pmInvCov_i * pmInvFisher)
+  //             + Tr(pmInvCov_i * pmTrueCov
+  // for a PMDetection, where pmInvFisher is from the fitter process (with weights),
+  // and pmTrueCov is the expected covariance of the fitted PM.
+  // For a regular Detection with projection matrix m, the answer is
+  // <chisq_i> = 2 - 2*w_i Tr( m^T * invCov_i * m * pmInvFisher)
+  //             + Tr(m^T * invCov_i * m * pmTrueCov
   
   Matrix22 covMean = centroidF.inverse();
   for (auto i : elist) {
-    if  (auto ii = dynamic_cast<const PMDetection*>(i)) {
-      if (isFit(i)) {
-#ifdef USE_EIGEN
-      i->expectedChisq = 5. - (pmCov.array() * ii->invCovPM.array()).sum();
-#elif USE_TMV
-      i->expectedChisq = 2. - Trace(pmCov * ii->invCovPM);
-#endif
-      } else {
-	i->expectedChisq = 5.;
-      }
+    if  (auto ii = dynamic_cast<PMDetection*>(i)) {
+      ii->expectedTrueChisq = 5. - 2*ii->fitWeight*traceATB(ii->pmInvCov, pmInvFisher)
+	+ traceATB(ii->pmInvCov, pmTrueCov);
     } else {
       //Plain old Detection needs projection matrix
-      if (isFit(i)) {
-	Matrix22 tmp = i->getProjector() * pmCov * i->getProjector().transpose();
-#ifdef USE_EIGEN
-      i->expectedChisq = 2. - (tmp.array() * i->invCovFit.array()).sum();
-#elif USE_TMV
-      i->expectedChisq = 2. - Trace(tmp * i->invCovFit);
-#endif
+      if (i->invCov(0,0)<=0.) {
+	// No error on this detection so no chisq
+	i->expectedTrueChisq = 0.;
       } else {
-	i->expectedChisq = 2.;
+	PMCovariance tmp = i->getProjector().transpose() * i->invCov * i->getProjector();
+	if (i->fitWeight==0.) {
+	  i->expectedTrueChisq = 2. + traceATB(tmp,pmTrueCov);
+	} else if (trivialWeights) {
+	  // Unity weight
+	  i->expectedTrueChisq = 2. - traceATB(tmp,pmTrueCov);
+	} else {
+	  // Allow non-unity weight
+	  i->expectedTrueChisq = 2. - 2*i->fitWeight*traceATB(tmp,pmInvFisher)
+	    + traceATB(tmp,pmTrueCov);
+	}
       }
     } 
   }
@@ -676,11 +752,11 @@ PMMatch::solve() const {
       m = i->getProjector();
       xy[0] = i->xw;
       xy[1] = i->yw;
-      beta += m.transpose() * (i->invCovFit * xy);
+      beta += i->fitWeight * m.transpose() * (i->invCov * xy);
     }
   }
   // Solve the system now
-  pm = pmCov * beta + priorMean;
+  pm = pmInvFisher * beta + priorMean;
   isSolved = true;
 }
 
@@ -688,7 +764,7 @@ double
 PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
   solve();  // Get best PM for current parameters
   double chi=0.;
-  if (dof<0) return chi; // No info from degenerate fits
+  if (dof<=0) return chi; // No info from degenerate/perfect fits
   PMProjector m;  // (x,y) = m * pm
   Vector2 dxy;
   PMSolution dpm;
@@ -697,18 +773,17 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
     if (!isFit(i)) continue;
     if (auto ii = dynamic_cast<const PMDetection*>(i)) {
       dpm = ii->pmMean - pm;
-      cc = dpm.transpose() * ii->invCovPM * dpm;
-      maxDeviateSq = MAX(cc/5. , maxDeviateSq);
+      cc = dpm.transpose() * ii->pmInvCov * dpm;
     } else {    
       // Regular single-epoch detection
       dxy[0] = i->xw;
       dxy[1] = i->yw;
       m = i->getProjector();
       dxy -= m * pm;
-      cc = dxy.transpose() * i->invCovFit * dxy;
-      maxDeviateSq = MAX(cc/2. , maxDeviateSq);
+      cc = dxy.transpose() * i->invCov * dxy;
     }
-    chi += cc;
+    chi += cc * i->fitWeight;
+    maxDeviateSq = MAX(cc/i->expectedTrueChisq , maxDeviateSq);
   }
   dofAccum += dof;
   return chi;
@@ -718,7 +793,7 @@ bool
 PMMatch::sigmaClip(double sigThresh,
 		   bool deleteDetection) {
   solve();   // Get PM solution
-  if (dof<0) return false; // Already unusable for fitting
+  if (dof<=0) return false; // Already unusable for fitting
 
   // Only clip the worst outlier at most
   double maxSq=0.;
@@ -730,15 +805,14 @@ PMMatch::sigmaClip(double sigThresh,
     if (!isFit(i)) continue;
     if (auto ii = dynamic_cast<const PMDetection*>(i)) {
       dpm = ii->pmMean - pm;
-      devSq = dpm.transpose() * ii->invCovPM * dpm;
-      devSq /= (5. * ii->fitWeight);  // Per DOF; remove any weight from invCov for clips
+      devSq = dpm.transpose() * ii->pmInvCov * dpm;
     } else {
       err[0] =  i->xw;
       err[1] =  i->yw;
       err -= predict(i);
-      double devSq = err.transpose() * i->invCovFit * err;
-      devSq /= (2.*i->fitWeight);     // per DOF; remove any weight from invCov for clips
+      double devSq = err.transpose() * i->invCov * err;
     }
+    devSq /= i->expectedTrueChisq;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
       worst = i;
@@ -768,9 +842,8 @@ PMMatch::sigmaClip(double sigThresh,
 	elist.remove(worst);
 	delete worst;
       }	else {
-	worst->isClipped = true;
+	worst->clip();
       }
-      nFit--;
       isPrepared = false;
       isSolved = false;
       return true;
@@ -803,7 +876,7 @@ PMMatch::predictFisher(const Detection* d)  const {
     return Matrix22(0.);
   }
   PMProjector m = d->getProjector();
-  Matrix22 out = (m * pmCov * m.transpose()).inverse();
+  Matrix22 out = (m * pmTrueCov * m.transpose()).inverse();
   return out;
 }
 
@@ -815,8 +888,8 @@ PMMatch::accumulateChisq(double& chisq,
   int nP = beta.size();
 
   prepare();
-  // No contributions to fit for <2 detections:
-  if (dof<0) return 0; // No contribution for degenerate fits
+
+  if (dof<=0) return 0; // No contribution for degenerate fits
 
   // First loop updates mapping and accumulates derivs.
   // This invalidates the centroid solution
@@ -836,7 +909,7 @@ PMMatch::accumulateChisq(double& chisq,
   int ipt=0;  // Index for detections
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
-    if (dynamic_cast<const PMDetection*>(*i)) continue;
+    if (dynamic_cast<const PMDetection*>(*i)) continue; // No free params in PMDetections
 
     // Regular single-epoch detection
     m = (*i)->getProjector();
@@ -860,12 +933,12 @@ PMMatch::accumulateChisq(double& chisq,
     // For calculating best-fit PM
     xy[0] = (*i)->xw;
     xy[1] = (*i)->yw;
-    beta += m.transpose() * (*i)->invCovFit * xy;
+    beta += m.transpose() * (*i)->invCov * ((*i)->fitWeight *xy);
   }
   isMappedFit = true;  // This is true now if not before.
   
   // Solve the system now
-  pm = pmCov * beta + priorMean;
+  pm = pmInvFisher * beta + priorMean;
   isSolved = true;
   
   // Next loop through detections will
@@ -885,13 +958,15 @@ PMMatch::accumulateChisq(double& chisq,
     if (auto ii = dynamic_cast<const PMDetection*> (*i)) {
       // PMDetection has no parameter dependence, just chisq
       pmErr = ii->pmMean - pm;
-      chisq += pmErr.transpose() * ii->invCovPM * pmErr;
+      double tmp = (pmErr.transpose() * ii->pmInvCov * pmErr);
+      chisq += ii->fitWeight*tmp;
     } else {
       // First calculate chisq contribution
+      Matrix22 invCov = (*i)->invCov * (*i)->fitWeight;
       xyErr[0] = (*i)->xw;
       xyErr[1] = (*i)->yw;
       xyErr -= m * pm;
-      chisq += xyErr.transpose() * (*i)->invCovFit * xyErr; 
+      chisq += xyErr.transpose() * invCov * xyErr; 
 
       // Then contributions to chisq derivs
       int istart=0;  // running index into the Detection's params
@@ -909,7 +984,7 @@ PMMatch::accumulateChisq(double& chisq,
 	DMatrix dxy1 = dXYdP[ipt]->block(0,istart,2,np);
 #endif
 	// Contribution to first derivative of chisq:
-	DMatrix cInvD = (*i)->invCovFit * dxy1;
+	DMatrix cInvD = invCov * dxy1;
 	beta.subVector(ip, ip+np) -= xyErr.transpose() * cInvD;
 
 	// Contribution to derivatives of PM:
@@ -918,7 +993,7 @@ PMMatch::accumulateChisq(double& chisq,
 	if (!reuseAlpha) {
 	  // Increment the alpha matrix
 	  // First the blocks astride the diagonal:
-	  updater.update(mapNumber, ip, dxy1, (*i)->invCovFit);
+	  updater.update(mapNumber, ip, dxy1, invCov);
 
 	  // Then loop through all blocks below diagonal
 	  int istart2 = istart+np;
@@ -934,7 +1009,7 @@ PMMatch::accumulateChisq(double& chisq,
 #endif
 	    // Now update below diagonal
 	    updater.update(mapNumber2, ip2, dxy2,
-			   (*i)->invCovFit,
+			   invCov,
 			   mapNumber,  ip,  dxy1);
 	    istart2+=np2;
 	  }
@@ -948,11 +1023,11 @@ PMMatch::accumulateChisq(double& chisq,
   if (!reuseAlpha) {
     // Subtract terms with derivatives of PM,
     /* but without touching the entire alpha matrix every time:
-       alpha -=  dPMdP^T * pmCov * dPMdP);
+       alpha -=  dPMdP^T * pmInvFisher * dPMdP);
     */
 
     // Do updates parameter block by parameter block
-    PMCovariance negCov = -pmCov;
+    PMCovariance negCov = -pmInvFisher;
     for (auto m1 = mapsTouched.begin();
 	 m1!=mapsTouched.end();
 	 ++m1) {
@@ -1425,9 +1500,8 @@ CoordAlign::count(long int& mcount, long int& dcount,
   mcount = 0;
   dcount = 0;
   for (auto i : mlist) {
-    if ((i->getReserved() ^ doReserved) 
-	|| i->getDOF() < 0
-	|| i->fitSize() < minMatches) {
+    if ( (i->getReserved() ^ doReserved) ||
+	 i->getDOF() < 0 || i->fitSize() < minMatches) {
       continue;
     }
     mcount++;
@@ -1441,9 +1515,8 @@ CoordAlign::count(long int& mcount, long int& dcount,
   mcount = 0;
   dcount = 0;
   for (auto i : mlist) {
-    if ((i->getReserved() ^ doReserved)
-	|| i->getDOF() < 0
-	|| i->fitSize() < minMatches) continue;
+    if ((i->getReserved() ^ doReserved) ||
+	i->getDOF() < 0 || i->fitSize() < minMatches) continue;
 
     int ddcount=0;
     for(auto d : *i) {

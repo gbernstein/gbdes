@@ -4,6 +4,7 @@
 #include "Instrument.h"
 #include "Match.h"
 #include "WcsSubs.h"
+#include "Units.h"
 #include "FitSubroutines.h"
 
 using namespace astrometry;
@@ -73,7 +74,7 @@ fitDefaulted(PixelMapCollection& pmc,
     const int nGridPoints=512;	// Number of test points for map initialization
 
     // "errors" on world coords of test points 
-    const double testPointSigma = 0.01*ARCSEC/DEGREE;
+    const double testPointSigma = 0.01*ARCSEC/WCS_UNIT;
     const double fitWeight = pow(testPointSigma,-2.);
     // Put smaller errors on the "reference" points.  Doesn't really matter.
     const double refWeight = 10. * fitWeight;
@@ -171,7 +172,7 @@ void setupWCS(const vector<SphericalCoords*>& fieldProjections,
 	// If we are the first reference/tag exposure in this field:
 	pmc.defineWcs(extnptr->wcsName, icrs, 
 				extnptr->mapName,
-				DEGREE);
+				WCS_UNIT);
 	auto wcs = pmc.issueWcs(extnptr->wcsName);
 	// And have this Wcs reproject into field coordinates, learn as map
 	wcs->reprojectTo(*fieldProjections[ifield]);
@@ -183,7 +184,7 @@ void setupWCS(const vector<SphericalCoords*>& fieldProjections,
       // Real instrument, WCS goes into its exposure coordinates
       pmc.defineWcs(extnptr->wcsName, *expo.projection,
 			      extnptr->mapName,
-			      DEGREE);
+			      WCS_UNIT);
       extnptr->wcs = pmc.issueWcs(extnptr->wcsName);
 
       // Reproject this Wcs into the field system and get a SubMap including reprojection:

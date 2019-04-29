@@ -2059,7 +2059,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 
     for (auto detptr : *m) {
 
-      // Get a pointer to a PMDetetion if this is one:
+      // Get a pointer to a PMDetection if this is one:
       auto pmDetptr = dynamic_cast<const PMDetection*> (detptr);
 
       if (m->isFit(detptr)) {
@@ -2094,8 +2094,8 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       if (pmm)
 	xyMean = pmm->predict(detptr);
 
-      // Put world residuals in milliarcsec (decided in Units.h)
-      astrometry::Vector2 residW = detptr->residWorld() * WCS_UNIT/RESIDUAL_UNIT;
+      // Get world residuals (returned RESIDUAL_UNIT)
+      astrometry::Vector2 residW = detptr->residWorld();
       xresw.push_back(residW[0]);
       yresw.push_back(residW[1]);
 

@@ -1,6 +1,8 @@
 // Statistics accumulator class
 #include "Accum.h"
 #include "FitSubroutines.h"
+using astrometry::WCS_UNIT;
+using astrometry::RESIDUAL_UNIT;
 
 // Methods of the statistics-accumulator class
 
@@ -34,7 +36,7 @@ Accum<Astro>::add(const typename Astro::Detection* d,
   }
   double wt = pow(sigma, -2.);
   
-  auto dxy = d->residWorld();
+  auto dxy = d->residWorld(); // Returned in RESIDUAL_UNIT
   double dx = dxy[0];
   double dy = dxy[1];
   sumx += dx;
@@ -112,7 +114,7 @@ Accum<S>::summary() const {
       << "  " << setw(4) << (nclipped*100.)/ntot;
   if (S::isAstro) {
     oss << fixed << setprecision(1)
-	<< " " << setw(6) << rms()*DEGREE/MILLIARCSEC;
+	<< " " << setw(6) << rms();
   } else {
     oss << fixed << setprecision(1)
 	<< " " << setw(6) << rms()*1000.;

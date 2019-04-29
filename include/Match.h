@@ -26,10 +26,21 @@ namespace astrometry {
   // Some typedefs for proper motion
   typedef linalg::SVector<double, 5> PMSolution;
   typedef linalg::SMatrix<double,5,5> PMCovariance;
-  // See Units.h for conventions of units.
+  // See Units.h for conventions of units and order of PM elements.
 
   // Projection matrix from 5d PM to 2d position:
   typedef linalg::SMatrix<double,2,5> PMProjector;  
+
+  template<class M>
+  double traceATB(const M& A, const M& B) {
+    // function to return Trace(A^T B)
+#ifdef USE_EIGEN
+    return (A.array()*B.array()).sum();
+#elif  USE_TMV
+    return tmv::ElemProd(A,B).sumElements();
+#endif
+  }
+  
 
   class Detection {
   public:
@@ -46,23 +57,21 @@ namespace astrometry {
     const PMProjector& getProjector() const {return *pmProj;}
     
     // Inverse covariance, in world coords, for fitting.
-    // This will include systematic errors and have been
-    // increased by the weight factor:
-    Matrix22 invCovFit;
-    // This is the initial pure measurement error (before any sys errors or weights)
-    Matrix22 invCovMeas;
-    // This is the weighting factor applied here.  We will un-apply it when
-    // calculating sigma of deviations for sigma clipping.
+    // This will include systematic errors.
+    Matrix22 invCov;
+    // This is the weighting factor applied here.  We will apply it to
+    // invCov when solving for centroid / PM.
     double fitWeight;  
-    // This is the expectation of (dx * invCovFit * dx), taking
+    // This is the expectation of (dx * invCov * dx), taking
     // into account the weight of this measurement in xmean for dx=x-xmean
     // Tends to 2 for many observations (5 for PMDetection)
-    double expectedChisq;
+    double expectedTrueChisq;
     bool isClipped;
     Match* itsMatch;
     const SubMap* map;
 
-    Detection(): color(astrometry::NODATA), pmProj(nullptr),expectedChisq(0.),
+    Detection(): color(astrometry::NODATA), pmProj(nullptr),
+		 fitWeight(1.), expectedTrueChisq(0.),
 		 isClipped(false), itsMatch(nullptr), map(nullptr)  {}
     virtual ~Detection() {if (pmProj) delete pmProj;}
 
@@ -77,15 +86,17 @@ namespace astrometry {
     // for clipped detections.
     virtual double trueChisq() const;
     // Report 2d residual of this Detection to itsMatch prediction in world coordinates
+    // using the RESIDUAL_UNIT from Units.h
     Vector2 residWorld() const;
     // Or the residual mapped back to pixel coordinates
     Vector2 residPix() const;
 
     // Get a rough estimate of a 1-dimensional world-coordinate error
     double getSigma() const {
-      double sigsq = 0.5*(invCovMeas(0,0)+invCovMeas(1,1));
-      return sigsq > 0. ? sqrt(fitWeight/sigsq) : 0.;
+      double sigsq = 0.5*(invCov(0,0)+invCov(1,1));
+      return sigsq > 0. ? 1./sqrt(sigsq) : 0.;
     }
+    void clip() {isClipped=true; fitWeight=0.;}
   };
 
   class PMDetection: public Detection {
@@ -94,7 +105,7 @@ namespace astrometry {
   public:
     EIGEN_NEW
     PMSolution pmMean;
-    PMCovariance invCovPM;
+    PMCovariance pmInvCov;
     // This function sets up the values and covariances to refer to
     // a reference PM epoch shifted by the specified number of years.
     // Also will fill in xw,yw, and covariances in the base class
@@ -112,7 +123,6 @@ namespace astrometry {
     // Class for a set of matched Detections, with no PM or parallax freedom
   protected:
     list<Detection*> elist;
-    mutable int nFit;	// Number of un-clipped points with non-zero weight in fit
     bool isReserved;	// Do not contribute to re-fitting if true
 
     // These flags will let a Match keep track of its internal state and
@@ -130,10 +140,14 @@ namespace astrometry {
     // This flag is set if the best-fit parameters of the Match position/PM
     // are current.  isPrepared && isMappedFit are prereqs for being solved.
     mutable bool isSolved;
+    // This flag is set if all weights are 1 or 0
+    mutable bool trivialWeights;
 
     // Here are cached quantities for the overall solution:
+    mutable int nFit;	// Number of un-clipped points with non-zero weight in fit
     mutable Vector2 xyMean;   // Best-fit centroid (valid if isSolved).
-    mutable Matrix22 centroidF;  // Fisher matrix for centroid (=inverse cov)
+    mutable Matrix22 centroidF;  // pseudo-Fisher matrix for centroid (2nd deriv for fitting)
+    mutable Matrix22 trueCentroidCov; // Expected covariance of centroid after weighted fit.
     mutable int dof;
 
     // Call this to redo the Fisher matrix if needed (=>set isPrepare)
@@ -157,9 +171,9 @@ namespace astrometry {
     // True if a Detection will contribute to chisq:
     static bool isFit(const Detection* e);
     // Number of points that would have nonzero weight in next fit
-    int fitSize() const {return nFit;}
+    int fitSize() const {prepare(); return nFit;}
     // Recount the number of objects contributing to fit (e.g. after
-    // meddling with object weights)
+    // meddling with object weights) **DEPRECATED**
     void countFit();
     int getDOF() const {prepare(); return dof;}
 
@@ -197,6 +211,9 @@ namespace astrometry {
       return centroidF;
     }
 
+    // Get the expected covariance matrix of centroid after weighted fit
+    const Matrix22& getCentroidCov() const {prepare(); return trueCentroidCov;}
+
     // Increment chisq, beta, and alpha for this match.
     // Returned integer is the DOF count.  This *does* remap points
     // but only those used for parameter fitting.
@@ -212,8 +229,9 @@ namespace astrometry {
 			   bool deleteDetection=false); 
     void clipAll(); // Mark all detections as clipped
 
-    // Chisq for this match, and largest-sigma-squared deviation
-    // 2 arguments are updated with info from this match.
+    // Fitting chisq (not true one) for this match, and largest ratio
+    // of true chisq to expected for any detection being fit.
+    // Both arguments are updated with info from this match.
     virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
 
     typedef list<Detection*>::iterator iterator;
@@ -233,7 +251,7 @@ namespace astrometry {
 
     virtual void solve() const;  // Recalculate best-fit PM 
 
-    // Increment chisq, beta, and alpha for this match.
+    // Increment fitting chisq, beta, and alpha for this match.
     // Returned integer is the DOF count.  
     // reuseAlpha=true will skip the incrementing of alpha.
     virtual int accumulateChisq(double& chisq,
@@ -246,13 +264,16 @@ namespace astrometry {
     virtual bool sigmaClip(double sigThresh,
 			   bool deleteDetection=false); 
 
-    // Chisq for this match, and largest-sigma-squared deviation
-    // 2 arguments are updated with info from this match.
+    // Fitting chisq (not true one) for this match, and largest ratio
+    // of true chisq to expected for any detection being fit.
+    // Both arguments are updated with info from this match.
     virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
 
     // 
     const PMSolution& getPM() const {return pm;}
-    const PMCovariance& getInvCovPM() const {prepare(); return pmFisher;}
+    const PMCovariance& getInvCovPM() const {prepare(); return pmFisher;} //??
+    // Return expected covariance matrix of PM, after weight solution.
+    const PMCovariance& getTrueCovPM() const {prepare(); return pmTrueCov;}
     
     // Get predicted position (and inverse covariance) for a Detection.
     // The argument is needed only if there is full PM solution.
@@ -266,8 +287,9 @@ namespace astrometry {
     mutable PMSolution pm;          // Chisq-minimizing position/parallax/pm
 
     virtual void prepare() const;  // Recalculate and cache, if needed:
-    mutable PMCovariance pmFisher;  // Fisher matrix for PM
-    mutable PMCovariance pmCov;     // Inverse of Fisher matrix
+    mutable PMCovariance pmFisher;  // Fisher matrix for PM that includes weights
+    mutable PMCovariance pmInvFisher;     // Inverse of pmFisher
+    mutable PMCovariance pmTrueCov; // Expected cov matrix of PM.
     mutable double priorChisq;      // Chisq term quadratic in PMDetection means
     mutable PMSolution priorMean;   // PM contribution from PMDetection means
   };
@@ -298,7 +320,7 @@ namespace astrometry {
     // only clip non-reserved Matches.
     int sigmaClip(double sigThresh, bool doReserved=false,
 		  bool clipEntireMatch=false);
-    // Calculate total chisq.  doReserved same meaning as above.
+    // Calculate total fitting chisq.  doReserved same meaning as above.
     double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
     void setParams(const DVector& p);
     DVector getParams() const {return pmc.getParams();}

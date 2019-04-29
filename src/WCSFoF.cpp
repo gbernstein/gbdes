@@ -12,6 +12,7 @@
 #include "TPVMap.h"
 #include "TemplateMap.h"
 #include "StringStuff.h"
+#include "Units.h"
 
 #include "FitSubroutines.h"
 
@@ -19,6 +20,8 @@ using namespace std;
 using namespace img;
 using namespace FITS;
 using stringstuff::stripWhite;
+
+using astrometry::WCS_UNIT;  // we will want all WCS's to operate in same units
 
 string usage=
   "Match objects using FoF algorithm on world coordinate system\n"
@@ -128,7 +131,7 @@ public:
     ft.readCell(dec, "Dec", irow);
     ft.readCell(field, "FieldNumber", irow);
     ft.readCell(instrument, "InstrumentNumber", irow);
-    pointing.setRADec(ra*DEGREE, dec*DEGREE);
+    pointing.setRADec(ra*WCS_UNIT, dec*WCS_UNIT);
   }
 };
 
@@ -171,8 +174,8 @@ main(int argc,
   processParameters(parameters, usage, 1, argc, argv);
   string configFile = argv[1];
 
-  // Convert matching radius to our system units for world coords (degrees)
-  matchRadius *= ARCSEC/DEGREE;
+  // Convert matching radius to our system units for world coords
+  matchRadius *= ARCSEC/WCS_UNIT;
 
   try {
     // Teach PixelMapCollection about all types of PixelMaps it might need to deserialize
@@ -202,7 +205,7 @@ main(int argc,
 
       Field* f = new Field;
       f->name = name;
-      astrometry::Orientation orient(astrometry::SphericalICRS(ra*DEGREE, dec*DEGREE));
+      astrometry::Orientation orient(astrometry::SphericalICRS(ra*WCS_UNIT, dec*WCS_UNIT));
       f->projection = new astrometry::Gnomonic(orient);
       f->extent = extent;
       f->matchRadius = matchRadius;
@@ -465,12 +468,13 @@ main(int argc,
 	  wcs->toWorld(xpix, ypix, xw, yw);
 	} else {
 	  // Already have RA, Dec, just project them
-	  fields[fieldNumber]->projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*DEGREE, 
-										 vy[iObj]*DEGREE ));
+	  // Assume they are in our std units (see Units.h)
+	  fields[fieldNumber]->projection->convertFrom(astrometry::SphericalICRS(vx[iObj]*WCS_UNIT, 
+										 vy[iObj]*WCS_UNIT ));
 	  fields[fieldNumber]->projection->getLonLat(xw, yw);
-	  // Matching program will speak degrees, not radians:
-	  xw /= DEGREE;
-	  yw /= DEGREE;
+	  // Matching program will use our std unit (Units.h), not radians:
+	  xw /= WCS_UNIT;
+	  yw /= WCS_UNIT;
 	}
 
 	allPoints.push_back(Point(xw, yw, iextn, vid[iObj], exposureNumber));
