@@ -201,12 +201,8 @@ Match::clear(bool deleteDetections) {
 }
 
 void
-Match::countFit() {
+Match::countFit() {}
   // DEPRECATED.  The count is done as part of prepare()
-  nFit = 0;
-  for (auto i : elist)
-    if (isFit(i)) nFit++;
-}
 
 void
 Match::clipAll() {
@@ -230,7 +226,6 @@ Match::prepare() const {
   // But we will also calculate the actual expected variance
   // of the centroid, which will differ if the weights are not
   // all equal (or zero).
-  // Keep in mind that Detection::invCovFit has one power of weight in it already.
   Matrix22 centroidCov(0.);
   dof = 0;
   nFit = 0;

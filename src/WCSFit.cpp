@@ -658,7 +658,7 @@ main(int argc, char *argv[])
       double max;
       int dof;
       ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
-      double thresh = sqrt(chisq/dof) * clipThresh;
+      double thresh = sqrt(chisq/dof) * clipThresh; // ??? change dof to expectedChisq?
       /**/cerr << "After iteration: chisq " << chisq 
 	       << " / " << dof << " dof, max deviation " << max
 	       << "  new clip threshold at: " << thresh << " sigma"

@@ -27,6 +27,7 @@ using namespace photometry;
 using img::FTable;
 using FITS::FitsTable;
 using photometry::DVector;
+using astrometry::WCS_UNIT;
 
 string usage=
   "MagColor: Merge magnitudes for matched detections to create new\n"
@@ -281,7 +282,9 @@ main(int argc, char *argv[])
     {
       NameIndex fieldNames;
       vector<astrometry::SphericalCoords*> fieldProjections;
-      readFields(inputTables, outputTables, fieldNames, fieldProjections);
+      vector<double> fieldEpochs;
+      readFields(inputTables, outputTables, fieldNames, fieldProjections,
+		 fieldEpochs);
       for (auto ptr : fieldProjections) delete ptr;
     }
 

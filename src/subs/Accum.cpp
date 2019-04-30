@@ -48,7 +48,7 @@ Accum<Astro>::add(const typename Astro::Detection* d,
   sumw  += wt;
 
   chisq += d->trueChisq();
-  sumdof += d->expectedChisq;
+  sumdof += d->expectedTrueChisq;
   ++n;
 }
 

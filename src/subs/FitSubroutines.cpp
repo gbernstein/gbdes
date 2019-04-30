@@ -621,7 +621,7 @@ readExtensions(img::FTable& extensionTable,
   int processed=0;
 
 #ifdef _OPENMP
-  //**#pragma omp parallel for schedule(dynamic,100)
+#pragma omp parallel for schedule(dynamic,100)
 #endif
   for (int i=0; i<extensionTable.nrows(); i++) {
     int iExposure;
@@ -995,7 +995,7 @@ readMatches(img::FTable& table,
 	typename S::Match* m=nullptr;
 	for (int j=0; j<matchExtns.size(); j++) {
 	  if (matchExtns[j]<0) continue;  // Skip detections starved of their color
-	  auto d = new typename S::Detection;  // ?? Need to differentiate PMDetection here
+	  auto d = new typename S::Detection;  
 	  d->catalogNumber = matchExtns[j];
 	  d->objectNumber = matchObjs[j];
 	  extensions[matchExtns[j]]->keepers.insert(std::pair<long,typename S::Detection*>
@@ -1053,11 +1053,6 @@ readMatches(img::FTable& table,
 }
 
 // Subroutine to get what we want from a catalog entry for WCS fitting
-// ??? Amend this and Photo version to read PM catalog properly.
-// ??? Read full cov matrix for positions
-// ??? Clean up addition of "systematic" errors
-// ??? Translate PM reference epoch to field's epoch
-// ??? Save observatory position from exposure
 inline
 void
 Astro::fillDetection(Astro::Detection* d,
@@ -1082,8 +1077,7 @@ Astro::fillDetection(Astro::Detection* d,
   auto dwdp = startWcs->dWorlddPix(d->xpix, d->ypix);
 
   if (isTag) {
-    d->invCovMeas.setZero();
-    d->invCovFit.setZero();
+    d->invCov.setZero();
   } else {
     astrometry::Matrix22 cov(0.);
     if (xyErrKeys.size()==1) {
@@ -1104,9 +1098,8 @@ Astro::fillDetection(Astro::Detection* d,
       throw AstrometryError("Invalid number of xyErrKeys passed to fillDetection");
     }
     cov = dwdp * cov * dwdp.transpose();  // Note this converts to world units (degrees)
-    d->invCovMeas = cov.inverse();
     cov += e->astrometricCovariance; 
-    d->invCovFit = e->weight * cov.inverse();
+    d->invCov = cov.inverse();
     d->fitWeight = e->weight;
   }
 
@@ -1134,12 +1127,11 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   out->xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
   out->ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
 
-  // ?? Are we getting xw, yw in the desired epoch???
-  // Get coordinates and transformation matrix
+  // Get coordinates and transformation matrix, in its own epoch
   startWcs->toWorld(out->xpix, out->ypix, out->xw, out->yw);  // no color in startWCS
   auto dwdp = startWcs->dWorlddPix(out->xpix, out->ypix);
   // Add cos(dec) factors, since all error values are assumed for ra*cos(dec).
-  // and we are ASSUMING that PM catalogs are in RA/Dec, in degrees
+  // and we are assuming that PM catalogs are in RA/Dec, in WCS_UNIT (degrees, see Units.h)
   dwdp.col(0) /= cos(out->ypix * WCS_UNIT);
 
   // Read in the reference solution
@@ -1173,17 +1165,14 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   // Save inverse
 #ifdef USE_EIGEN
   pmCov.setIdentity();
-  out->invCovPM = wCov.ldlt().solve(pmCov);
+  out->pmInvCov = wCov.ldlt().solve(pmCov);
 #else
-  out->invCovPM = wCov.inverse();
+  out->pmInvCov = wCov.inverse();
 #endif
   out->fitWeight = e->weight;
 
-  // Amplify the invCov for the weight
-  out->invCovPM *= out->fitWeight;
-  
   // Shift this PMDetection back to that of the reference epoch for its field.
-  // This will also shift the xpix,ypix,xw,yw and cov matrices in Detection
+  // This will also shift the xw,yw and cov matrices in Detection
   // appropriately to this epoch.
   out->shiftReferenceEpoch(-e->pmTDB);
 
@@ -1206,6 +1195,7 @@ Astro::handlePMDetection(astrometry::PMDetection* pmd, Astro::Detection* d) {
     mm->remove(d);
     delete d;
     mm->add(dd);
+    delete pmd;
   }
 }
  
@@ -1213,7 +1203,7 @@ astrometry::Match*
 Astro::makeNewMatch(Astro::Detection* d, bool usePM, double parallaxPrior) {
   if (usePM) {
     // Make a PMMatch and give it parallax prior
-    auto mpm = new astrometry::PMMatch(dynamic_cast<Astro::Detection*>(d));
+    auto mpm = new astrometry::PMMatch(d);
     if (parallaxPrior>0.) 
       mpm->setParallaxPrior(parallaxPrior);
     return mpm;
@@ -1713,7 +1703,6 @@ freezeMap(string mapName,
 template <class S>
 void
 matchCensus(const list<typename S::Match*>& matches, ostream& os) {
-  // ??? Choice of whether to count reserved??
   long dcount = 0;
   int dof = 0;
   double chi = 0.;
@@ -1752,7 +1741,7 @@ clipReserved(typename S::Align& ca,
 	   << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
 	   << " sigma" << endl;
       
-    double thresh = sqrt(chisq/dof) * clipThresh;
+    double thresh = sqrt(chisq/dof) * clipThresh; // ??? expected chisq instead of dof?
     if (reportToCerr) 
       cerr << "  new clip threshold: " << thresh << " sigma"
 	   << endl;
@@ -1940,13 +1929,11 @@ Astro::saveResults(const list<Astro::Match*>& matches,
   vector<float> yresw;
   outTable.addColumn(yresw, "yresW");
 
-  // Give full error ellipses, meas only and total
-  vector<vector<float>> covMeasW;
-  outTable.addColumn(covMeasW, "covMeasW");
+  // Give full error ellipse
   vector<vector<float>> covTotalW;
-  outTable.addColumn(covMeasW, "covTotalW");
+  outTable.addColumn(covTotalW, "covTotalW");
 
-  // The chisq for this detection, and the expected value
+  // The true chisq for this detection, and the expected value
   vector<float> chisq;
   outTable.addColumn(chisq, "chisq");
   vector<float> chisqExpected;
@@ -2104,25 +2091,11 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       xrespix.push_back(residP[0]);
       yrespix.push_back(residP[1]);
 
-      astrometry::Matrix22 cov;
-      // Get error covariances, if we have any
-      if (detptr->invCovMeas(0,0) > 0.) {
-	cov = detptr->invCovMeas.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
-	vector<float> vv(3);
-	vv[0] = cov(0,0);
-	vv[1] = cov(1,1);
-	vv[2] = cov(0,1);
-	covMeasW.push_back(vv);
-      } else {
-	vector<float> vv(3,0.);
-	covMeasW.push_back(vv);
-      }
-
+      astrometry::Matrix22 cov(0.);
       // Get error covariances, if we have any
       double chisqThis;
-      if (detptr->invCovFit(0,0) > 0.) {
-	cov = detptr->invCovFit.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
-	cov *= detptr->fitWeight;
+      if (detptr->invCov(0,0) > 0.) {
+	cov = detptr->invCov.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
 	vector<float> vv(3,0.);
 	vv[0] = cov(0,0);
 	vv[1] = cov(1,1);
@@ -2140,7 +2113,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 
 	// Chisq and expected
 	chisq.push_back(detptr->trueChisq());
-	chisqExpected.push_back(detptr->expectedChisq);
+	chisqExpected.push_back(detptr->expectedTrueChisq);
       } else {
 	// Did not have a usable error matrix
 	chisqThis = 0.;
@@ -2148,7 +2121,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 	covTotalW.push_back(vv);
 	sigpix.push_back(0.);
 	chisq.push_back(chisqThis);
-	chisqExpected.push_back(detptr->expectedChisq);
+	chisqExpected.push_back(detptr->expectedTrueChisq);
       }	
 
       if (pmDetptr) {
@@ -2166,10 +2139,10 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 	int k=0;
 	for (int i=0; i<5; i++)
 	  for (int j=0; j<5; j++, k++)
-	    vv[k] = pmDetptr->invCovPM(i,j);
+	    vv[k] = pmDetptr->pmInvCov(i,j);
 	pmInvCov.push_back(vv);
 	pmChisq.push_back(detptr->trueChisq());
-	pmChisqExpected.push_back(detptr->expectedChisq);
+	pmChisqExpected.push_back(detptr->expectedTrueChisq);
       }
     } // End detection loop
 
@@ -2245,6 +2218,8 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     starTable.addColumn(starInvCov,"pmInvCov");
   }
 }
+
+// ??? continue
 
 void
 Photo::reportStatistics(const list<typename Photo::Match*>& matches,

@@ -114,11 +114,9 @@ fitDefaulted(PixelMapCollection& pmc,
       // Set up errors and maps for these matched "detections"
       Matrix22 eye(0.);
       eye(0,0) = eye(1,1) = 1.;
-      dfit->invCovFit = eye * fitWeight;
-      dfit->invCovMeas = eye;
+      dfit->invCov = eye;
       dfit->fitWeight = fitWeight;
-      dref->invCovFit = eye * refWeight;
-      dref->invCovMeas = eye;
+      dref->invCov = eye;
       dref->fitWeight = refWeight;
       dref->map = identityMap;
       dfit->map = map;
