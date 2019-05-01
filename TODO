@@ -1,10 +1,7 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
-  * write PMDetection::shiftReferenceEpoch, including refilling base class.
-  * configure (and config files) need to get 2 weights, epoch, and xObs per exposure and an epoch per field
-  * Change python codes to have new PM_INSTRUMENT designations
-  * make a "key" dictionary for extensions.
-  * New things for configure.py: get EPOCH for fields, observatory position for exposures somehow; PM_INSTRUMENT flag; 2x2 covariances (possible ERRX2, ERRY2, ERRXY keys); syserrors per exposure, not extension;
-  * It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
+  * New things for configure.py: get referenceEPOCH for fields, observatory position and tdb for exposures somehow; PM_INSTRUMENT flag; 2x2 covariances (possible ERRX2, ERRY2, ERRXY keys); syserrors per exposure, not extension; 
+
+* It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
 
 * Include parallax when slicing PMDetection down to single-epoch detection??
 
@@ -44,8 +41,6 @@
 * Check for underfit exposure after sigma clipping
 
 * is minMatch being used consistently for #matches total vs in fitted detections?
-
-* Make Match and PhotoMatch from the same code, no PhotoMatch in gbtools
 
 * Investigate color term degeneracy breaking
 
@@ -108,6 +103,7 @@ For py3 branch, upgrading all Python to work with Python 3.x:
     match level.  (check for nFit, invCovFit, pmCov and the like)
   * Signal no fitting with weight->0. - check initialization of fitWeight.
   * document that all PM catalogs are ICRS degrees for RA/Dec, mas for PM/Par    
+  * change 
 
 
 ----

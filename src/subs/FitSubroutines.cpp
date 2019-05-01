@@ -21,6 +21,7 @@ using astrometry::PMDetection;
 using astrometry::AstrometryError;
 using astrometry::WCS_UNIT;
 using astrometry::RESIDUAL_UNIT;
+using astrometry::PM_UNIT;
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -1126,26 +1127,38 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   
   out->xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
   out->ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
-
-  // Get coordinates and transformation matrix, in its own epoch
-  startWcs->toWorld(out->xpix, out->ypix, out->xw, out->yw);  // no color in startWCS
-  auto dwdp = startWcs->dWorlddPix(out->xpix, out->ypix);
-  // Add cos(dec) factors, since all error values are assumed for ra*cos(dec).
-  // and we are assuming that PM catalogs are in RA/Dec, in WCS_UNIT (degrees, see Units.h)
-  dwdp.col(0) /= cos(out->ypix * WCS_UNIT);
-
   // Read in the reference solution
   double pmRA, pmDec, parallax;
   table.readCell(pmRA, pmRaKey, irow);
   table.readCell(pmDec, pmDecKey, irow);
   table.readCell(parallax, parallaxKey, irow);
+
+  // We will want to shift the inputs to move their reference time from
+  // the exposure's (i.e. catalog's) reference to that of the field,
+  // which is defined as 0 here.
+  double epochShift = -e->pmTDB;
+
+  // Shift the RA and Dec according to proper motion, including
+  // factors for unit difference, and cos(dec) on the RA.
+  double cosdec = cos(out->ypix * WCS_UNIT);
+  out->xpix += epochShift * pmRA * PM_UNIT / WCS_UNIT / cosdec;
+  out->ypix += epochShift * pmDec * PM_UNIT / WCS_UNIT;
+
+  // Get coordinates and transformation matrix to world coordinates
+  startWcs->toWorld(out->xpix, out->ypix, out->xw, out->yw);  // no color in startWCS
+  auto dwdp = startWcs->dWorlddPix(out->xpix, out->ypix);
+  // Add cos(dec) factors, since all error values are assumed for ra*cos(dec).
+  // and we are assuming that PM catalogs are in RA/Dec, in WCS_UNIT (degrees, see Units.h)
+  dwdp.col(0) /= cosdec;
+
+  // Fill in the PM central values
   out->pmMean[astrometry::X0] = out->xw;
   out->pmMean[astrometry::Y0] = out->yw;
   out->pmMean[astrometry::VX] = pmRA;
   out->pmMean[astrometry::VY] = pmDec;
   out->pmMean[astrometry::PAR] = parallax;
 
-  // And its covariance matrix
+  // Read the covariance matrix
   vector<double> tmp;
   table.readCell(tmp, pmCovKey, irow);
   astrometry::PMCovariance pmCov;  // Covariance from catalog
@@ -1157,10 +1170,21 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
       pmCov(i,j) = tmp[k];
     }
   }
-  dwdp5.subMatrix(0,2,0,2) = dwdp;
+
+  if (epochShift != 0.) {
+    // Transform covariance matrix for shift in reference time
+    astrometry::PMCovariance shift(0.);
+    for (int i=0; i<5; i++) shift(i,i) = 1.;
+    shift(astrometry::X0, astrometry::VX) = epochShift * PM_UNIT / WCS_UNIT;
+    shift(astrometry::Y0, astrometry::VY) = epochShift * PM_UNIT / WCS_UNIT;
+    pmCov = shift * pmCov * shift.transpose();
+  }
+  
+  // Now apply transformation from RA/Dec to world coordinate system.
   // Subtlety here: X0 and Y0 are in world coords.
   // The proper motion and parallax are kept in ICRS.
   // So only X0, Y0 are altered by spherical projection.
+  dwdp5.subMatrix(0,2,0,2) = dwdp;
   astrometry::PMCovariance wCov = (dwdp5 * pmCov * dwdp5.transpose());
   // Save inverse
 #ifdef USE_EIGEN
@@ -1171,10 +1195,12 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
 #endif
   out->fitWeight = e->weight;
 
-  // Shift this PMDetection back to that of the reference epoch for its field.
-  // This will also shift the xw,yw and cov matrices in Detection
-  // appropriately to this epoch.
-  out->shiftReferenceEpoch(-e->pmTDB);
+  // Now fill in the Detection 2d (inverse) covariance in case we end
+  // up using the as a single observation at the field's reference epoch.
+  astrometry::Matrix22 cov22 = pmCov.subMatrix(0,2,0,2).inverse();
+  // Add any extra covariance associated with reference catalogs.
+  cov22 += e->astrometricCovariance;
+  out->invCov = cov22.inverse();
 
   return out;
 }
@@ -2218,8 +2244,6 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     starTable.addColumn(starInvCov,"pmInvCov");
   }
 }
-
-// ??? continue
 
 void
 Photo::reportStatistics(const list<typename Photo::Match*>& matches,

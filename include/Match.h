@@ -101,18 +101,14 @@ namespace astrometry {
 
   class PMDetection: public Detection {
     // Derive a class which is for Gaia or other measurements that come with full 5d
-    // constraints
+    // constraints.  
+    // When filling in this object, one should also fill in the base class Detection
+    // fields as if this were a single detection at the field epoch, then this
+    // class can be sliced to a Detection and used as such.
   public:
     EIGEN_NEW
     PMSolution pmMean;
     PMCovariance pmInvCov;
-    // This function sets up the values and covariances to refer to
-    // a reference PM epoch shifted by the specified number of years.
-    // Also will fill in xw,yw, and covariances in the base class
-    // members to refer to the (possibly shifted) pmTDB.  Then the
-    // class can be sliced to a Detection and work for fitting without
-    // free PM/parallax.
-    void shiftReferenceEpoch(double tdbShift);
 
     // Calculate full *5d* chisq relative to best prediction of itsMatch,
     // using full fitting covariance but *before* any weighting factor is applied.

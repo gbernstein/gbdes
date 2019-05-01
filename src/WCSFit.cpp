@@ -282,11 +282,13 @@ main(int argc, char *argv[])
       astrometricCovariance(0,0) = referenceSysError*referenceSysError;
       astrometricCovariance(1,1) = referenceSysError*referenceSysError;
       for (auto e : exposures) {
-	if (e->instrument == REF_INSTRUMENT)
+	if (e->instrument == REF_INSTRUMENT || e->instrument== PM_INSTRUMENT)
 	  e->astrometricCovariance += astrometricCovariance;
-	// Note that we are not adding this covariance to PM_INSTRUMENT
-	// since we'll assume these (Gaia!) have treated errors well.
-	// For older catalogs, PM is probably the largest sys error.
+	// Note that code in FitSubroutines::makePMDetection() will
+	// add this systematic error only to the Detection::invCov 2d
+	// covariance, not the full 5d PMDetection::pmInvCov calculation,
+	// since we'll assume these 5d projects (Gaia!) have treated errors well.
+	// For single-epoch reference catalogs, PM is probably the largest sys error.
       }
     }
 		    
