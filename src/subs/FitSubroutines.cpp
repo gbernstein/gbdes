@@ -325,8 +325,8 @@ readFields(string inputTables,
     astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*WCS_UNIT, dec[i]*WCS_UNIT));
     fieldProjections.push_back( new astrometry::Gnomonic(orient));
   }
-  if (ft.hasColumn("Epoch")) {
-    ft.readCells(fieldEpochs, "Epoch");
+  if (ft.hasColumn("PM_EPOCH")) {
+    ft.readCells(fieldEpochs, "PM_EPOCH");
     // Set reference epochs for each field to defaultEpoch if
     // they have a signal value like 0 or -1 
     for (int i=0; i<fieldEpochs.size(); i++) {
@@ -460,6 +460,14 @@ readExposures(const vector<Instrument*>& instruments,
   vector<double> photometricVariance;
   vector<double> weight;
   vector<double> magWeight;
+  vector<double> syserr_mmag;  // Photometric systematic error, mmag
+  vector<double> syserr_mas;   // astrometric sys err, mas (if circular)
+  vector<double> syserr_xx;    // astrometric sys error ellipse (mas^2)
+  vector<double> syserr_yy;
+  vector<double> syserr_xy;
+  vector<double> observatory_x;  // Observatory barycentric ICRS posn (AU)
+  vector<double> observatory_y;
+  vector<double> observatory_z;
 
   ff.readCells(names, "Name");
   ff.readCells(ra, "RA");
@@ -496,18 +504,85 @@ readExposures(const vector<Instrument*>& instruments,
     magWeight.clear();
   }
   try {
-    ff.readCells(photometricVariance, "sysMagVar");
+    ff.readCells(syserr_mmag, "syserrmmag");
+    photometricVariance.resize(syserr_mmag.size());
+    for (int i=0; i<syserr_mmag.size(); i++)
+      photometricVariance[i] = pow(syserr_mmag[i]/1000., 2.);
+    syserr_mmag.clear();
   } catch (img::FTableError& e) {
+    syserr_mmag.clear();
     photometricVariance.clear();
   }
   try {
-    ff.readCells(astrometricCovariance, "sysAstCov");
+    ff.readCells(syserr_mas, "syserrmas");
+    // Convert this syserr to a diagonal matrix
+    vector<double> vv(3);
+    astrometricCovariance.clear();
+    for (int i=0; i<syserr_mas.size(); i++) {
+      double stdev = syserr_mas[i]*astrometry::RESIDUAL_UNIT/astrometry::WCS_UNIT;
+      vv[0] = vv[1] = stdev*stdev;
+      vv[2] = 0.;
+      astrometricCovariance.push_back(vv);
+    }
   } catch (img::FTableError& e) {
     astrometricCovariance.clear();
   }
   try {
-    ff.readCells(observatory, "observatory");
+    ff.readCells(syserr_xx, "syserrxx");
+    ff.readCells(syserr_xx, "syserryy");
+    ff.readCells(syserr_xx, "syserrxy");
+    // If all three columns exist, replace
+    // any existing astrometricCovariance with this one if
+    // it is nonzero.
+    bool fresh = astrometricCovariance.empty();
+    const double factor = pow(astrometry::RESIDUAL_UNIT / astrometry::WCS_UNIT, 2.);
+    vector<double> vv(3);
+    if (fresh) {
+      astrometricCovariance.resize(syserr_xx.size());
+    }
+    for (int i=0; i<syserr_xx.size(); i++) {
+      vv[0] = syserr_xx[i]*factor;
+      vv[1] = syserr_yy[i]*factor;
+      vv[2] = syserr_xy[i]*factor;
+      bool anyInfo = vv[0]>0. || vv[1]>0.;
+      if (anyInfo) {
+	astrometricCovariance[i] = vv;
+      } else if (fresh) {
+	// Place zeros if there was no circular error
+	vv[0]=vv[1]=vv[2]=0.;
+	astrometricCovariance[i] = vv;
+      } else {
+	// Do nothing, keep pre-existing circular error
+      }
+    }
+    syserr_xx.clear();
+    syserr_yy.clear();
+    syserr_xy.clear();
   } catch (img::FTableError& e) {
+    syserr_xx.clear();
+    syserr_yy.clear();
+    syserr_xy.clear();
+  }
+  try {
+    ff.readCells(observatory_x, "obsx");
+    ff.readCells(observatory_y, "obsy");
+    ff.readCells(observatory_z, "obsz");
+    // Have all three columns if we make it here.
+    observatory.resize(observatory_x.size());
+    vector<double> vv(3);
+    for (int i=0; i<observatory_x.size(); i++) {
+      vv[0] = observatory_x[i];
+      vv[1] = observatory_y[i];
+      vv[2] = observatory_z[i];
+      observatory[i] = vv;
+    }
+    observatory_x.clear();
+    observatory_y.clear();
+    observatory_z.clear();
+  } catch (img::FTableError& e) {
+    observatory_x.clear();
+    observatory_y.clear();
+    observatory_z.clear();
     observatory.clear();
   }
 

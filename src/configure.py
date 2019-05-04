@@ -3,9 +3,7 @@ from __future__ import division,print_function
 
 """
 Collect information needed for astrometric and photometric matching of a collection of catalogs.
-Successor to Bob Armstrong's parse3.py that will take YAML input files, and also do all
-collecting of information from the input files' headers, to remove some of the tedium from
-the C++ programs that follow in the pipeline.
+Put this all into various FITS tables that succeeding C++ programs can access easily.
 """
 
 
@@ -19,6 +17,7 @@ Fields:
 - name:
   coords:  
   radius:
+  pmepoch:
 - name:...
 
 Files:
@@ -94,17 +93,44 @@ def getHeader(fits, iextn, filename):
 # These instrument names have special meaning.  "Observations" with these instruments
 # do not require a device name.
 # They have special indices: **** Keep in sync with FitSubroutines.h values! ****
-specialInstruments={'REFERENCE':-1,'TAG':-2,   # backwards-compatible names
-                    '_REFERENCE':-1,'_TAG':-2, # stick with leading _ for special values
-                    }
+specialInstruments={'REFERENCE':-1,'TAG':-3,   # backwards-compatible names
+                    '_REFERENCE':-1,'_PMCAT':-2,'_TAG':-3}
 
 # These are the extension attributes that are processed in some special way before
-# being written to the output table, or belong to Exposure rather than Extension
-# and hence should not be written to Extension table.
-specialAttributes =('FILENAME','EXTENSION','EXPOSURE','INSTRUMENT','FIELD',\
-                    'DEVICE','RA','DEC','AIRMASS','EXPTIME','MJD','WCSIN','BAND',\
-                    'EPOCH','APCORR')
+# being written to the output table.
+specialAttributes =('FILENAME','EXTENSION','EXPOSURE',\
+                    'DEVICE','RA','DEC','WCSIN')
 
+# This list enumerates all of the attributes that we will pull from extensions up to
+# the Exposure table.  The first element of the tuple is the attribute name.
+# Second member is the tolerance for matching of each extension to the Exposure.
+#   Value of None requires an exact match. Mismatches trigger errors.
+# Third member is set to True if we want to retain the attribute in the Extensions,
+#   otherwise it is popped from the extension's dictionary
+# Fourth member is default value if no data given for an Exposure.  If None then
+#   absence of data will generate an error, i.e. required column.
+exposureLevelAttributes = [ ('INSTRUMENT',None,  True,  None),\
+                            ('AIRMASS',   0.001, False, 1.),\
+                            ('BAND',      None,  True,  None),\
+                            ('EXPTIME',   0.0002,False, 1.),\
+                            ('FIELD',     None,  False, None),\
+                            ('MJD',       0.0002,False, 0.),\
+                            ('EPOCH',     None,  False, ""),\
+                            ('WEIGHT',    0.001, False, 1.),\
+                            ('MAGWEIGHT', 0.001, False, 1.),\
+                            ('APCORR',    0.0001,False, 0.),\
+                            ('SYSERRMMAG',0.1,   False, 0.),\
+                            ('SYSERRMAS', 0.1,   False, 0.),\
+                            ('SYSERRXX',  0.001, False, 0.),\
+                            ('SYSERRYY',  0.001, False, 0.),\
+                            ('SYSERRXY',  0.001, False, 0.),\
+                            ('OBSX',      1e-7,  False, 0.),\
+                            ('OBSY',      1e-7,  False, 0.),\
+                            ('OBSZ',      1e-7,  False, 0.) ]
+# SYSERRMMAG is photometric sys error (in mmag), SYSERR[XY][XY] are astrometric error
+# covariances (in mas^2). Alternatively SYSERRMAS is a circular astrometric error (in mas).
+# OBS[XYZ] are observatory position at midpoint time of the exposure, in barycentric ICRS AU
+        
 headerIndicator = "<"
 # Character at start of a attribute value that indicates lookup in header                    
                     
@@ -129,17 +155,8 @@ def py_to_fits(val):
         sys.exit(1)
     
 
-def colForAttribute(extensions, name):
-    """
-    Make a FITS BinTable column out of the value under key=name in every extension
-    """
-    data = []
-    for e in extensions:
-        data.append(e[name])
-    return pf.Column(name=name, format=py_to_fits(data), array=data)
-
 class Field:
-    def __init__(self, name, coords, radius, index=-1):
+    def __init__(self, name, coords, radius, pm_epoch=0., index=-1):
         # Expecting construction from a dictionary
         self.name = name
         if oldAstropy:
@@ -147,11 +164,13 @@ class Field:
         else:
             self.coords = cc.SkyCoord(coords,unit=(u.hourangle,u.degree),frame='icrs')
         self.radius = float(radius)
+        self.pm_epoch = float(pm_epoch)
         self.index = int(index)
         return
 
     def __eq__(self, other):
-        return self.coords==other.coords and self.radius==other.radius
+        return self.coords==other.coords and self.radius==other.radius \
+               and self.pm_epoch==other.pm_epoch
 
     def distance(self,location):
         return getDegree(self.coords.separation(location))
@@ -165,6 +184,7 @@ def buildFieldTable(fields):
     ra  =[]
     dec =[]
     radius = []
+    pmepoch = []
     
     index = 0
     for k,v in fields.items():
@@ -172,6 +192,7 @@ def buildFieldTable(fields):
         ra.append(getDegree(v.coords.ra))
         dec.append(getDegree(v.coords.dec))
         radius.append(v.radius)
+        pmepoch.append(v.pm_epoch)
         v.index = index
         index += 1
         
@@ -179,13 +200,13 @@ def buildFieldTable(fields):
         pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
                      pf.Column(name='RA',format=py_to_fits(ra),array=ra),
                      pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
-                     pf.Column(name='RADIUS',format=py_to_fits(radius),array=radius)]),
+                     pf.Column(name='RADIUS',format=py_to_fits(radius),array=radius),
+                     pf.Column(name='PM_EPOCH',format=py_to_fits(pmepoch),array=pmepoch)]),
                      name = 'Fields')
-#    hdu.header['EXTNAME'] = 'Fields'
     return hdu
 
 class Instrument:
-    def __init__(self, name, index=-3, band=None):
+    def __init__(self, name, index=-4, band=None):
         # Start with an empty dictionary of device names
         self.name = name
         self.band = band
@@ -227,85 +248,123 @@ def buildInstrumentTable(inst):
     #hdu.header['EXTNAME'] = 'Instrument'
     return hdu
 
-class Exposure:
-    def __init__(self, name, coords, field, instrument, exptime=None, \
-                 airmass=None, mjd=None, epoch=None, \
-                 apcorr=None, index=-1, **kwargs):
-        # Note that the constructor may contain arguments not used.
-        self.name = name
-        self.coords = coords
-        self.field = field
-        if exptime is None:
-            self.exptime = 1.
+
+def extractExposureLevelAttributes(extn, expo):
+    '''Extract exposure attributes from an extension, or make sure that extension
+       matches previously assigned attributes, and pop attributes from the extension
+       before returning.  Both arguments are dicts.
+    '''
+    # Process RA & DEC of extension into coordinates
+    if 'RA' in extn:
+        ra = extn.pop['RA']
+    else:
+        ra = None
+    if 'DEC' in extn:
+        dec = extn.pop['DEC']
+    else:
+        dec = None
+    if ra is not None and dec is not None:
+        try:
+            # If ra is valid floating point, assume it's degrees
+            float(ra)
+            coords = cc.SkyCoord(ra=ra,dec=dec,unit=(u.degree,u.degree),\
+                                 frame='icrs')
+        except ValueError:
+            # Otherwise it must be HH:MM:SS.sss style in hours
+            coords = cc.SkyCoord(ra=ra,dec=dec,unit=(u.hourangle,u.degree),\
+                                 frame='icrs')
+        # Check agreement of coordinates with any previous location
+        if 'coords' in expo:
+            if getDegree(expo['coords'].separation(coords)) > 1.:
+                print("ERROR: RA/Dec mismatch at exposure",extn['EXPOSURE'],\
+                          "from file",extn['FILENAME'],
+                          "extension",extn['EXTENSION'])
+                sys.exit(1)
+            else:
+                expo['coords'] = coords
+
+    # Extract all desired fields from extension
+    for key,tolerance,keep,default in exposureLevelAttributes:
+        if key not in extn:
+            continue
+        if key in expo:
+            # Already have a value for this key in the Exposure.  Check for agreement
+            if (tolerance is None and expo[key]!=extn[key]) or \
+               (tolerance is not None and np.abs(expo[key]-extn[key])>tolerance):
+                print("Mismatch between Exposure and Extension values of key",key,\
+                         "at exposure",extn['EXPOSURE'],\
+                         "vs filename",extn['FILENAME'],\
+                         "extension",extn['EXTENSION'])
+                print("Values: ",expo[key],"vs",extn[key])
+                sys.exit(1)
         else:
-            self.exptime = exptime
-        if airmass is None:
-            self.airmass = 1.
-        else:
-            self.airmass = airmass
-        if mjd is None:
-            self.mjd = 0.
-        else:
-            self.mjd = mjd
-        if epoch is None:
-            self.epoch = ""
-        else:
-            self.epoch = epoch
-        if apcorr is None:
-            self.apcorr = 0.
-        else:
-            self.apcorr = apcorr
-        self.instrument = instrument
-        self.index = index
-        return
+            # New key for this Exposure, adopt Extension value
+            expo[key] = extn[key]
+        if not keep:
+            extn.pop(key)
+    return
     
 def buildExposureTable(exposures, fields, instruments):
     """
     Return a FITS BinTableHDU with information on exposures.
-    Also assign indices to each according to their row in the table
+    Also assign indices to each according to their row in the table.
     """
-    name = []
-    ra = []
-    dec= []
-    field= []
-    inst = []
-    airmass = []
-    mjd = []
-    exptime = []
-    epoch = []
-    apcorr = []
-    index = 0
-    for k,e in exposures.items():
-        name.append(e.name)
-        ra.append(getDegree(e.coords.ra))
-        dec.append(getDegree(e.coords.dec))
-        field.append(fields[e.field].index)
-        if e.instrument in specialInstruments:
-            inst.append(specialInstruments[e.instrument])
-        else:
-            inst.append(instruments[e.instrument].index)
-        e.index = index
-        index += 1
 
-        airmass.append(e.airmass)
-        mjd.append(e.mjd)
-        exptime.append(e.exptime)
-        epoch.append(e.epoch)
-        apcorr.append(e.apcorr)
-    hdu = pf.BinTableHDU.from_columns(\
-        pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
-                     pf.Column(name='RA',format=py_to_fits(ra),array=ra),
-                     pf.Column(name='DEC',format=py_to_fits(dec),array=dec),
-                     pf.Column(name='FIELDNUMBER',format=py_to_fits(field),array=field),
-                     pf.Column(name='INSTRUMENTNUMBER',format=py_to_fits(inst),\
-                               array=inst),
-                     pf.Column(name="MJD",format=py_to_fits(mjd),array=mjd),
-                     pf.Column(name="AIRMASS",format=py_to_fits(airmass),array=airmass),
-                     pf.Column(name="EXPTIME",format=py_to_fits(exptime),array=exptime),
-                     pf.Column(name="EPOCH",format=py_to_fits(epoch),array=epoch),
-                     pf.Column(name="APCORR",format=py_to_fits(apcorr),array=apcorr)] ),
-                     name = 'Exposures')
-    # hdu.header['EXTNAME'] = 'Exposures'
+    # First do some processing on some attributes and
+    # Collect union of all attributes of all Exposures
+    index = 0
+    allAttributes = set()
+    for k,e in exposures.items():
+        # Save a name and running index number
+        e['NAME'] = k;
+        e['index'] = index;
+        index = index+1
+
+        # Convert coords to RA and Dec
+        if 'coords' not in e:
+            print("Exposure",k,"does not have coordinates")
+            sys.exit(1)
+        coords = e.pop['coords']
+        e['RA'] = getDegree(coords.ra)
+        e['DEC'] = getDegree(coords.dec)
+        
+        # Convert field name to index number
+        if 'FIELD' not in e:
+            print("Exposure",k,"does not have FIELD")
+            sys.exit(1)
+        f = e.pop['FIELD']
+        e['FIELDNUMBER'] = fields[f].index;
+
+        # Convert instrument to an index number
+        if 'INSTRUMENT' not in e:
+            print("Exposure",k,"does not have INSTRUMENT")
+            sys.exit(1)
+        f = e.pop['INSTRUMENT']
+        e['INSTRUMENTNUMBER'] = instruments[f].index;
+        
+        allAttributes.update(e.keys())
+    
+    # Remove from the list of attributes we are putting into tile
+    allAttributes.discard('index')
+    # Fill in defaults for all exposures, and check for missing required ones
+    for key,tolerance,keep,default in exposureLevelAttributes:
+        if key not in allAttributes:
+            # Don't need to consider an attribute that will not go into output table
+            continue
+        for expName,expo in exposures:
+            if key not in expo:
+                if default is None:
+                    print("Exposure",expName,"is missing required attribute",key)
+                    sys.exit(1)
+                else:
+                    expo[key] = default
+
+    # Make FITS columns for all attributes
+    cols = []
+    for key in allAttributes:
+        data = [expo[key] for k,expo in exposures.items()]
+        cols.append(pf.Column(name=key, format=py_to_fits(data), array=data))
+    hdu = pf.BinTableHDU.from_columns(cols, name = 'Exposures')
     return hdu
 
 class AttributeFinder:
@@ -575,153 +634,68 @@ if __name__=='__main__':
                     extn = {'FILENAME':fitsname,
                             'EXTENSION':iextn}
 
-
-                    # Determine EXPOSURE  for this extension
-                    expo = exposureAttrib(fitsname, primaryHeader=pHeader, extnHeader=eHeader)
-                    if expo==None:
+                    # Determine EXPOSURE  for this extension (required)
+                    expoName = exposureAttrib(fitsname, primaryHeader=pHeader, extnHeader=eHeader)
+                    if expoName==None:
                         print('ERROR: no exposure ID for file',fitsname,'extension',iextn)
                         sys.exit(1)
-                    extn['EXPOSURE']=expo
+                    extn['EXPOSURE']=expoName
 
-                    # Arguments we will use for all of the Attribute calls:
-                    attargs = {'name':expo,
-                               'primaryHeader':pHeader,
-                               'extnHeader':eHeader}
+                    # Read every attribute for this exposure
+                    for k,a in attributes.items():
+                        if k=='APCORR':
+                            # For the APCORR, give priority to the primary header because
+                            # we prefer the median value of all CCDs to any individual one:
+                            value = a(name=expoName, primaryHeader=eHeader, extnHeader=pHeader)
+                        else:
+                            # Normal priority is extension header first.
+                            value = a(name=expoName, primaryHeader=pHeader, extnHeader=eHeader)
+                        if value is not None:
+                            extn[k] = value
 
-                    # Collect exposure-specific information into a dictionary
-                    expoAttr = {}
-                    
-                    # Get INSTRUMENT
-                    expoAttr['instrument'] = attributes['INSTRUMENT'](**attargs)
-                    if expoAttr['instrument']==None:
+                    # Fill in blank device name if needed
+                    if 'INSTRUMENT' not in extn:
                         print("ERROR: Missing Instrument at file",fitsname,"extension",iextn)
                         sys.exit(1)
-                    
-                    # Other exposure-specific quantities:
-                    ra = attributes['RA'](**attargs)
-                    dec = attributes['DEC'](**attargs)
-                    # ??? Check for RA already in degrees?
-                    if ra!=None and dec!=None:
-                        try:
-                            # If ra is valid floating point, assume it's degrees
-                            float(ra)
-                            expoAttr['coords'] = cc.SkyCoord(ra=ra,dec=dec,unit=(u.degree,u.degree),
-                                                             frame='icrs')
-                        except ValueError:
-                            # Otherwise it must be HH:MM:SS.sss style in hours
-                            expoAttr['coords'] = cc.SkyCoord(ra=ra,dec=dec,unit=(u.hourangle,u.degree),
-                                                             frame='icrs')
-                    else:
-                        expoAttr['coords'] = None
-                    expoAttr['airmass'] = attributes['AIRMASS'](**attargs)
-                    expoAttr['band'] = attributes['BAND'](**attargs)
-                    expoAttr['exptime'] = attributes['EXPTIME'](**attargs)
-                    expoAttr['field'] = attributes['FIELD'](**attargs)
-                    expoAttr['mjd'] = attributes['MJD'](**attargs)
-                    expoAttr['epoch'] = attributes['EPOCH'](**attargs)
-                    ## For the APCORR, give priority to the primary header because we prefer
-                    ## the median value of all CCDs to any individual one:
-                    expoAttr['apcorr'] = attributes['APCORR'](name=expo,
-                                                              primaryHeader=eHeader,
-                                                              extnHeader=pHeader)
-
-                    # Apply variable substitution to the exposure attributes
-                    variableSubstitution(expoAttr)
-                    # And pass some info along to the extension too
-                    inst = expoAttr['instrument']
-                    extn['INSTRUMENT'] = inst
-                    extn['BAND'] = expoAttr['band']
-                    
-                    if expo in exposures:
-                        # Already have an exposure with this name, make sure this is basically the same
-                        e = exposures[expo]
-                        if (expoAttr['airmass']!=None and abs(expoAttr['airmass']-e.airmass)>0.002) or \
-                           (expoAttr['exptime']!=None and \
-                            abs(expoAttr['exptime']/e.exptime-1.)>0.0002) or \
-                           (expoAttr['mjd']!=None and abs(expoAttr['mjd'] - e.mjd)>0.0002) or \
-                           (expoAttr['coords']!=None
-                            and getDegree(expoAttr['coords'].separation(e.coords)) > 1.):
-                            print("ERROR: info mismatch at exposure",expo, "file",fitsname, \
-                                  'extension',iextn)
-                            sys.exit(1)
-                        # Also check the field for a match, unless it is _NEAREST
-                        if expoAttr['field'] != '_NEAREST' and expoAttr['field']!=e.field:
-                            print("ERROR: FIELD mismatch for exposure",expo)
-                            print("Exposure has",e.field,"file",fitsname,"extension",iextn, \
-                                  "has",expoAttr['field'])
-                            sys.exit(1)
-                        # Check the instrument for a match
-                        if inst!=e.instrument:
-                            print("ERROR: INSTRUMENT mismatch for exposure",expo)
-                            print("Exposure has",e.instrument,"file",fitsname,"extension",iextn,"has",inst)
-                            sys.exit(1)
-                    else:
-                        # New exposure.  Need coordinates to create it
-                        if expoAttr['coords']==None:
-                            print("ERROR: Missing RA/DEC for new exposure",expo, \
-                              "at file",fitsname,"extension",iextn)
-                            sys.exit(1)
-                        print("Exposure",expo,"at coords",expoAttr['coords']) ###??
-                        if expoAttr['field']==None:
-                            print("ERROR: Missing FIELD for new exposure",expo, \
-                              "at file",fitsname,"extension",iextn)
-                            sys.exit(1)
-                        elif expoAttr['field']=="_NEAREST":
-                            # Finding nearest field center.
-                            expoAttr['field']=None
-                            minDistance = 0.
-                            for k,f in fields.items():
-                                if expoAttr['field']==None or \
-                                  f.distance(expoAttr['coords'])<minDistance:
-                                    expoAttr['field'] = k
-                                    minDistance = f.distance(expoAttr['coords'])
-                        exposures[expo] = Exposure(expo, **expoAttr)
-
-                    # Add new instrument if needed
-                    if inst not in instruments and inst not in specialInstruments:
-                        instruments[inst] = Instrument(inst, band=expoAttr['band'])
-                    # Check that extension BAND matches the instrument's band,
-                    # or set the instrument BAND name if it has been None
-                    if inst not in specialInstruments and expoAttr['band'] is not None:
-                        if instruments[inst].band is None:
-                            instruments[inst].band = expoAttr['band']
-                        elif instruments[inst].band != expoAttr['band']:
-                            print("ERROR: Band",expoAttr['band'],"does not match instrument",\
-                              instruments[inst].name,"band",inst.band,\
-                              "in catalog file",fitsname)
-                            sys.exit(1)
-                        
-                    # Get device name, not needed for special devices
-                    dev  = attributes['DEVICE'](**attargs)
-                    if dev==None:
-                        if inst in specialInstruments:
+                    if 'DEVICE' not in extn:
+                        if extn['INSTRUMENT'] in specialInstruments:
                             # Give a blank device name
-                            dev = ''
+                            extn['DEVICE'] = ''
                         else:
                             print("ERROR: Missing Device at file",fitsname,"exposure",iextn)
                             sys.exit(1)
 
-                    # Record the device for this extension.
-                    extn['DEVICE'] = dev
-                        
-                    # Handle the WCSIN
-                    wcsin = attributes['WCSIN'](**attargs)
-                    if wcsin.strip()=='_HEADER':
+                    # Add new instrument if needed
+                    inst = extn['INSTRUMENT']
+                    if inst not in instruments and inst not in specialInstruments:
+                        instruments[inst] = Instrument(inst, band=extn['BAND'])
+                    # Check that extension BAND matches the instrument's band,
+                    # or set the instrument BAND name if it has been None
+                    if inst not in specialInstruments and extn['BAND'] is not None:
+                        if instruments[inst].band is None:
+                            instruments[inst].band = extn['BAND']
+                        elif instruments[inst].band != extn['BAND']:
+                            print("ERROR: Band",extn['BAND'],"does not match instrument",\
+                                instruments[inst].name,"band",inst.band,\
+                                "in catalog file",fitsname)
+                            sys.exit(1)
+
+                    # Read the WCS if needed
+                    if extn['WCSIN'].strip()=='_HEADER':
                         # Retrieve the header from FITS WCS information in headers
                         wcshdr = gbutil.extractWCS( [pHeader, eHeader])
                         extn['WCSIN'] = wcshdr.tostring(sep='\n',
                                                         padding=False,endcard=True) + '\n'
-                    else:
-                        extn['WCSIN'] = wcsin
-                        
-                    # Now get a value for all other attributes and add to extension's dictionary
-                    for k,a in attributes.items():
-                        if k not in specialAttributes:
-                            extn[k] = a(**attargs)
-
+                            
                     # Do any variable substitutions on the attributes:
                     variableSubstitution(extn)
                     
+                    if extn['EXPOSURE'] not in exposures:
+                        # Create a new exposure dictionary if needed
+                        exposures[extn['EXPOSURE']] = {}
+
+                    extractExposureLevelAttributes(extnDict=extn, expoDict=extn['EXPOSURE'])
+
                     # We are done with this extension.  Clear out the extension header
                     eHeader = None
                     extensions.append(extn)
@@ -730,11 +704,27 @@ if __name__=='__main__':
             fits.close() ## End the reading of this catalog's extensions
 
     # Completed loop through all input files from all globs
+
+    # Assign all exposures to a field
+    for expName,expo in exposures.items():
+        if 'FIELD' not in expo:
+            print("Exposure",expName,"does not have a FIELD attribute")
+            sys.exit(1)
+        if expo['FIELD']=="_NEAREST":
+            # Finding nearest field center.
+            expo['FIELD']=None
+            minDistance = 0.
+            for k,f in fields.items():
+                if expo['FIELD']==None or \
+                        f.distance(expo['coords'])<minDistance:
+                    expo['FIELD'] = k
+                    minDistance = f.distance(expo['coords'])
+    
     # Get rid of fields with only 1 exposure:
     for k in list(fields):
         count = 0
         for e,v in exposures.items():
-            if v.field==k:
+            if v['FIELD']==k:
                 count += 1
                 if count>1:
                     break
@@ -747,7 +737,7 @@ if __name__=='__main__':
     # extensions that are from these exposures
     killedThese = []
     for e,v in list(exposures.items()):
-        if v.field not in fields:
+        if v['FIELD'] not in fields:
             exposures.pop(e)
             killedThese.append(e)
             print("WARNING: Ignoring isolated exposure",e)
@@ -763,17 +753,23 @@ if __name__=='__main__':
     for i in list(instruments):
         used = False
         for e,v in exposures.items():
-            if v.instrument==i:
+            if v['INSTRUMENT']==i:
                 used = True
                 break
         if not used:
             instruments.pop(i)
 
     # Collect device names for all Instruments from remaining extensions
+    # and replace DEVICE field in Extensions with the index number
     for extn in extensions:
-        inst = exposures[extn['EXPOSURE']].instrument
-        if inst not in specialInstruments:
+        inst = exposures[extn['EXPOSURE']]['INSTRUMENT']
+        if inst in specialInstruments:
+            extn['DEVICE'] = -1
+        else:
             instruments[inst].addDevice(extn['DEVICE'])
+            extn['DEVICE'] = instruments[inst].devices[extn['DEVICE']]
+    
+    # ------Now ready to write the output files-------
     
     # Make the output FITS object
     outfits = pf.HDUList([pf.PrimaryHDU()])
@@ -789,27 +785,15 @@ if __name__=='__main__':
     # Write EXPOSURES, assign indices
     outfits.append(buildExposureTable(exposures, fields, instruments))
     
-    # Now build the final (large) table of extensions:
+    # Now build the final (large) table of extensions.
+    
+    # Replace EXPOSURE name with integer index
+    for e in extensions:
+        e['EXPOSURE'] = exposures[e['EXPOSURE']]['index']
+
     cols = []
     cols.append(colForAttribute(extensions, 'FILENAME'))
     cols.append(colForAttribute(extensions, 'EXTENSION'))
-
-    # For EXPOSURE and DEVICE: get the integer indices instead of names
-    data = []
-    for e in extensions:
-        data.append(exposures[e['EXPOSURE']].index)
-    cols.append(pf.Column(name='EXPOSURE',format=py_to_fits(data),array=data))
-
-    # For DEVICE: get integer indices, aware that specialInstruments have none
-    data = []
-    for e in extensions:
-        inst = exposures[e['EXPOSURE']].instrument
-        if inst in specialInstruments:
-            dev = -1
-        else:
-            dev = instruments[inst].devices[e['DEVICE']]
-        data.append(dev)
-    cols.append(pf.Column(name='DEVICE',format=py_to_fits(data),array=data))
 
     # Add the WCSIN column as a variable-length character array
     data = []
@@ -819,16 +803,22 @@ if __name__=='__main__':
 # Astropy Code seems to screw up variable-length arrays, at least in 0.2.4
     cols.append(pf.Column(name='WCSIN',format=py_to_fits(data),array=data))
 
-    # Now create a column for every other attribute we have
-    for k,a in attributes.items():
-        if a.key not in specialAttributes:
-            print("*** Getting",a.key)
-            cols.append(colForAttribute(extensions, a.key))
+    # Collect union of all attributes in all extensions
+    allAttributes = set()
+    for k,e in extensions:
+        allAttributes.update(e.keys())
+    
+    # Now create a column for every attribute we have
+    for a in allAttributes:
+        print("*** Getting",a.key)
+        data = []
+        for e in extensions:
+            data.append(e[a])
+        pf.Column(name=a, format=py_to_fits(data), array=data)
 
     # Add the EXTENSION table as an HDU
     thdu = pf.BinTableHDU.from_columns(pf.ColDefs(cols),
                                       name='Extensions')
-    #thdu.header['EXTNAME'] = 'Extensions'
     outfits.append(thdu)
     
     # Write to FITS file
