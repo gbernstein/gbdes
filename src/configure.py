@@ -256,11 +256,11 @@ def extractExposureLevelAttributes(extn, expo):
     '''
     # Process RA & DEC of extension into coordinates
     if 'RA' in extn:
-        ra = extn.pop['RA']
+        ra = extn.pop('RA')
     else:
         ra = None
     if 'DEC' in extn:
-        dec = extn.pop['DEC']
+        dec = extn.pop('DEC')
     else:
         dec = None
     if ra is not None and dec is not None:
@@ -280,8 +280,8 @@ def extractExposureLevelAttributes(extn, expo):
                           "from file",extn['FILENAME'],
                           "extension",extn['EXTENSION'])
                 sys.exit(1)
-            else:
-                expo['coords'] = coords
+        else:
+            expo['coords'] = coords
 
     # Extract all desired fields from extension
     for key,tolerance,keep,default in exposureLevelAttributes:
@@ -324,7 +324,7 @@ def buildExposureTable(exposures, fields, instruments):
         if 'coords' not in e:
             print("Exposure",k,"does not have coordinates")
             sys.exit(1)
-        coords = e.pop['coords']
+        coords = e.pop('coords')
         e['RA'] = getDegree(coords.ra)
         e['DEC'] = getDegree(coords.dec)
         
@@ -332,15 +332,18 @@ def buildExposureTable(exposures, fields, instruments):
         if 'FIELD' not in e:
             print("Exposure",k,"does not have FIELD")
             sys.exit(1)
-        f = e.pop['FIELD']
+        f = e.pop('FIELD')
         e['FIELDNUMBER'] = fields[f].index;
 
         # Convert instrument to an index number
         if 'INSTRUMENT' not in e:
             print("Exposure",k,"does not have INSTRUMENT")
             sys.exit(1)
-        f = e.pop['INSTRUMENT']
-        e['INSTRUMENTNUMBER'] = instruments[f].index;
+        f = e.pop('INSTRUMENT')
+        if f in specialInstruments:
+            e['INSTRUMENTNUMBER'] = specialInstruments[f]
+        else:
+            e['INSTRUMENTNUMBER'] = instruments[f].index
         
         allAttributes.update(e.keys())
     
@@ -351,7 +354,7 @@ def buildExposureTable(exposures, fields, instruments):
         if key not in allAttributes:
             # Don't need to consider an attribute that will not go into output table
             continue
-        for expName,expo in exposures:
+        for expName,expo in exposures.items():
             if key not in expo:
                 if default is None:
                     print("Exposure",expName,"is missing required attribute",key)
@@ -468,6 +471,13 @@ class Attribute:
             if val != None:
                 return val
         return None   # If no finder worked..
+
+    def nodata(self):
+        # Return a value of appropriate type indicating absence of data
+        if self.seq[0].valueType==str:
+            return 'nodata'
+        else:
+            return self.seq[0].valueType(-999)
 
 def variableSubstitution(d):
     """
@@ -694,7 +704,7 @@ if __name__=='__main__':
                         # Create a new exposure dictionary if needed
                         exposures[extn['EXPOSURE']] = {}
 
-                    extractExposureLevelAttributes(extnDict=extn, expoDict=extn['EXPOSURE'])
+                    extractExposureLevelAttributes(extn=extn, expo=exposures[extn['EXPOSURE']])
 
                     # We are done with this extension.  Clear out the extension header
                     eHeader = None
@@ -792,8 +802,6 @@ if __name__=='__main__':
         e['EXPOSURE'] = exposures[e['EXPOSURE']]['index']
 
     cols = []
-    cols.append(colForAttribute(extensions, 'FILENAME'))
-    cols.append(colForAttribute(extensions, 'EXTENSION'))
 
     # Add the WCSIN column as a variable-length character array
     data = []
@@ -805,15 +813,18 @@ if __name__=='__main__':
 
     # Collect union of all attributes in all extensions
     allAttributes = set()
-    for k,e in extensions:
+    for e in extensions:
         allAttributes.update(e.keys())
     
     # Now create a column for every attribute we have
     for a in allAttributes:
-        print("*** Getting",a.key)
+        print("*** Getting",a)
         data = []
         for e in extensions:
-            data.append(e[a])
+            if a in e:
+                data.append(e[a])
+            else:
+                data.append(attributes[a].nodata())  # Enter a nodata value for the column
         pf.Column(name=a, format=py_to_fits(data), array=data)
 
     # Add the EXTENSION table as an HDU
@@ -822,6 +833,6 @@ if __name__=='__main__':
     outfits.append(thdu)
     
     # Write to FITS file
-    outfits.writeto(outFile, clobber=True)
+    outfits.writeto(outFile, overwrite=True)
     #Done!
     
