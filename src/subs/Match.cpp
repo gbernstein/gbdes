@@ -911,12 +911,10 @@ PMMatch::accumulateChisq(double& chisq,
     if (!isFit(*i)) continue;
     if (dynamic_cast<const PMDetection*>(*i)) continue; // No free params in PMDetections
 
-    /**/cerr << "..detection " << ipt << "\n....getProjector" << endl;
     // Regular single-epoch detection
     m = (*i)->getProjector();
     int npi = (*i)->map->nParams();
     double xw, yw;
-    /**/cerr << "...Get derivs" << endl;
     if (npi>0) {
       dXYdP[ipt] = new DMatrix(2,npi);
       (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
@@ -932,15 +930,14 @@ PMMatch::accumulateChisq(double& chisq,
 			 (*i)->color);
     }
 
-    /**/cerr << "...pmBeta" << endl;
     // For calculating best-fit PM
     xy[0] = (*i)->xw;
     xy[1] = (*i)->yw;
     pmBeta += m.transpose() * (*i)->invCov * ((*i)->fitWeight *xy); 
-    /**/cerr << "Done" << endl;
   }
   isMappedFit = true;  // This is true now if not before.
   
+  /**/cerr << "Solve pm" << endl;
   // Solve the system now
   pm = pmInvFisher * pmBeta + priorMean;
   isSolved = true;
@@ -954,6 +951,7 @@ PMMatch::accumulateChisq(double& chisq,
   PMSolution pmErr;
   PMProjector cInvM;
   
+  /**/cerr << "Accumulate beta" << endl;
   map<int, iRange> mapsTouched;
   ipt = 0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
@@ -1024,6 +1022,7 @@ PMMatch::accumulateChisq(double& chisq,
     } // endif for PMDetections
   } // object loop
 
+  /**/cerr << "Accumulate alpha" << endl;
   if (!reuseAlpha) {
     // Subtract terms with derivatives of PM,
     /* but without touching the entire alpha matrix every time:
@@ -1057,6 +1056,7 @@ PMMatch::accumulateChisq(double& chisq,
     }
   } // Finished putting terms from mean into alpha
 
+  /**/cerr << "Done chisq" << endl;
   return dof;
 }
 
