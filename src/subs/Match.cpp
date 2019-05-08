@@ -327,6 +327,7 @@ Match::remap(bool doAll) const {
   for (auto i : elist) {
     if (isFit(i)) {
       if (!isMappedFit) {
+	/**/ if (!i->map) cerr << "Missing map at " << i->catalogNumber << endl;
 	i->map->toWorld(i->xpix, i->ypix,
 			i->xw, i->yw,
 			i->color);
@@ -589,6 +590,7 @@ PMMatch::prepare() const {
     pmFisher(PAR,PAR) = 1./(parallaxPrior*parallaxPrior);
   }
 
+  /**/cerr << "Getting Fisher" << endl;
   // Now sum Fisher over all Detections
   PMProjector m;  // (x,y) = m * pm
   for (auto i : elist) {
@@ -632,8 +634,10 @@ PMMatch::prepare() const {
     return;
   }
 
+  /**/cerr << "Getting inverse" << endl;
   pmInvFisher = pmFisher.inverse(); // ??? More stable?
   
+  /**/cerr << "Getting pm contributions" << endl;
   // Go through again and accumulate the PMDetection
   // contributions to chisq that have pmMean in them
   {
@@ -653,6 +657,7 @@ PMMatch::prepare() const {
     priorMean = tmp;         // linear term of chisq
   }
   
+  /**/cerr << "Getting fitted cov" << endl;
   // Calculate the covariance matrix for fitted PM
   if (trivialWeights) {
     pmTrueCov = pmInvFisher;
@@ -672,6 +677,8 @@ PMMatch::prepare() const {
     pmTrueCov = pmInvFisher * tmp * pmInvFisher;
   }
 
+  /**/cerr << "Getting expectedChisq" << endl;
+  
   // Now get expected chisq for each detection
   // From notes of 28 Apr 2019
   // For a PMDetection,
@@ -709,6 +716,7 @@ PMMatch::prepare() const {
     } 
   }
 
+  /**/cerr << "Done preparing" << endl;
   isPrepared = true;
 }
 
@@ -877,6 +885,7 @@ PMMatch::accumulateChisq(double& chisq,
 			 bool reuseAlpha) {
   int nP = beta.size();
 
+  /**/cerr << "..Prepare" << endl;
   prepare();
 
   if (dof<=0) return 0; // No contribution for degenerate fits
@@ -897,14 +906,17 @@ PMMatch::accumulateChisq(double& chisq,
   Vector2 xy;
 
   int ipt=0;  // Index for detections
+  PMSolution pmBeta;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
     if (dynamic_cast<const PMDetection*>(*i)) continue; // No free params in PMDetections
 
+    /**/cerr << "..detection " << ipt << "\n....getProjector" << endl;
     // Regular single-epoch detection
     m = (*i)->getProjector();
     int npi = (*i)->map->nParams();
     double xw, yw;
+    /**/cerr << "...Get derivs" << endl;
     if (npi>0) {
       dXYdP[ipt] = new DMatrix(2,npi);
       (*i)->map->toWorldDerivs((*i)->xpix, (*i)->ypix,
@@ -920,15 +932,17 @@ PMMatch::accumulateChisq(double& chisq,
 			 (*i)->color);
     }
 
+    /**/cerr << "...pmBeta" << endl;
     // For calculating best-fit PM
     xy[0] = (*i)->xw;
     xy[1] = (*i)->yw;
-    beta += m.transpose() * (*i)->invCov * ((*i)->fitWeight *xy);
+    pmBeta += m.transpose() * (*i)->invCov * ((*i)->fitWeight *xy); 
+    /**/cerr << "Done" << endl;
   }
   isMappedFit = true;  // This is true now if not before.
   
   // Solve the system now
-  pm = pmInvFisher * beta + priorMean;
+  pm = pmInvFisher * pmBeta + priorMean;
   isSolved = true;
   
   // Next loop through detections will
@@ -1129,7 +1143,9 @@ CoordAlign::operator()(const DVector& p, double& chisq,
     for (int i=0; i<vi.size(); i++) {
       auto m = vi[i];
       if ( m->getReserved() ) continue;	//skip reserved objects
+      /**/cerr << "Calling accumulateChisq for match " << i << "...";
       m->accumulateChisq(newChisq, newBeta, updater, reuseAlpha);
+      /**/cerr << "Done" << endl;
     }
 #pragma omp critical(beta)
     beta += newBeta;

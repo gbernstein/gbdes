@@ -595,16 +595,20 @@ main(int argc, char *argv[])
     purgeNoisyDetections<Astro>(maxError*RESIDUAL_UNIT/WCS_UNIT,
 				matches, exposures, extensions);
 			 
+    /**/cerr << "sparse" << endl;
     // Get rid of Matches with too few detections
     purgeSparseMatches<Astro>(minMatches, matches);
 
+    /**/cerr << "badcolor" << endl;
     // Get rid of Matches with color out of range (note that default color is 0).
     purgeBadColor<Astro>(minColor, maxColor, matches);
     
+    /**/cerr << "reserve" << endl;
     // Reserve desired fraction of matches
     if (reserveFraction>0.) 
       reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);
 
+    /**/cerr << "underpopulated" << endl;
     // Find exposures whose parameters are free but have too few
     // Detections being fit to the exposure model.
     auto badExposures = findUnderpopulatedExposures<Astro>(minFitExposures,
@@ -613,6 +617,7 @@ main(int argc, char *argv[])
 							   extensions,
 							   mapCollection);
 
+    /**/cerr << "freeze" << endl;
     // Freeze parameters of an exposure model and clip all
     // Detections that were going to use it.
     for (auto i : badExposures) {
@@ -623,12 +628,15 @@ main(int argc, char *argv[])
       freezeMap<Astro>(i.first, matches, extensions, mapCollection);
     } 
 
+    /**/cerr << "census" << endl;
     matchCensus<Astro>(matches, cout);
 
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 
     ///////////////////////////////////////////////////////////
 
+    cerr << "Begin fitting process" << endl;
+    
     // make CoordAlign class
     CoordAlign ca(mapCollection, matches);
 

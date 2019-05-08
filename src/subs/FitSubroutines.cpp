@@ -1199,6 +1199,8 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   auto out = new astrometry::PMDetection;
   out->catalogNumber = d->catalogNumber;
   out->objectNumber = d->objectNumber;
+  out->map = d->map;
+  out->itsMatch = d->itsMatch;
   
   out->xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
   out->ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
@@ -1488,6 +1490,8 @@ void readObjects(const img::FTable& extensionTable,
     
     const typename S::SubMap* sm=extn.map;
 
+    /**/if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
+
     astrometry::Wcs* startWcs = extn.startWcs;
 
     if (!startWcs) {
@@ -1672,6 +1676,7 @@ purgeNoisyDetections(double maxError,
 		     const vector<typename S::Extension*>& extensions) {
   for (auto mptr : matches) {
     auto j=mptr->begin(); 
+    int k=0;
     while (j != mptr->end()) {
       auto d = *j; // Yields pointer to each detection
       // Keep it if error is small or if it's from a tag or reference "instrument"
