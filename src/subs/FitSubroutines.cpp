@@ -333,7 +333,7 @@ readFields(string inputTables,
       if (fieldEpochs[i] < MINIMUM_EPOCH && defaultEpoch>MINIMUM_EPOCH) {
 	// Update to reference epoch if it's sensible
 	fieldEpochs[i] = defaultEpoch;
-	ft.writeCell(defaultEpoch, "Epoch", i);
+	ft.writeCell(defaultEpoch, "PM_EPOCH", i);
       }
     }
   } else {
@@ -342,7 +342,7 @@ readFields(string inputTables,
     fieldEpochs.resize(name.size(), defaultEpoch);
     // And save back to output if this is a sensible default
     if (defaultEpoch > MINIMUM_EPOCH) {
-      ft.addColumn(fieldEpochs, "Epoch");
+      ft.addColumn(fieldEpochs, "PM_EPOCH");
     }
   }
 }
@@ -1234,17 +1234,29 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   out->pmMean[astrometry::PAR] = parallax;
 
   // Read the covariance matrix
-  vector<double> tmp;
-  table.readCell(tmp, pmCovKey, irow);
   astrometry::PMCovariance pmCov;  // Covariance from catalog
   astrometry::PMCovariance dwdp5(0.);  // 5d transformation matrix to world coords
-  int k=0;
-  for (int i=0; i<5; i++) {
-    dwdp5(i,i) = 1.;
-    for (int j=0; j<5; j++, k++) {
-      pmCov(i,j) = tmp[k];
+  if (errorColumnIsDouble) {
+    vector<double> tmp;
+    table.readCell(tmp, pmCovKey, irow);
+    int k=0;
+    for (int i=0; i<5; i++) {
+      dwdp5(i,i) = 1.;
+      for (int j=0; j<5; j++, k++) {
+	pmCov(i,j) = tmp[k];
+      }
     }
-  }
+  } else {
+    vector<float> tmp;
+    table.readCell(tmp, pmCovKey, irow);
+    int k=0;
+    for (int i=0; i<5; i++) {
+      dwdp5(i,i) = 1.;
+      for (int j=0; j<5; j++, k++) {
+	pmCov(i,j) = tmp[k];
+      }
+    }
+  }    
 
   if (epochShift != 0.) {
     // Transform covariance matrix for shift in reference time

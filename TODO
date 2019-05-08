@@ -1,10 +1,9 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
-  * Config files need:
-    * Field: PM_EPOCH (actually only need this if want to override Gaia default) DONE
-    * Exposure: observatory position, systematic errors for astrometry
-    * Extension: ERRXX,YY,XYKeys
-    * Need mjd to be Gaia epoch for Gaia files.
-    * WEIGHT, MAGWEIGHT
+    * WEIGHT, MAGWEIGHT required?
+    * AIRMASS, EXPOSURE coming in properly in config.py?
+    * get real ra, dec into coords for the python notebook making fake data
+    * Some Eigen alignment error when reading exposures unless using -std=c++17
+    
 * It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
 
 * Include parallax when slicing PMDetection down to single-epoch detection??
@@ -108,6 +107,11 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * Signal no fitting with weight->0. - check initialization of fitWeight.
   * document that all PM catalogs are ICRS degrees for RA/Dec, mas for PM/Par    
   * check syserr, obs keywords in the cpp programs match those in configure.py
+  * Config files need:
+    * Field: PM_EPOCH (actually only need this if want to override Gaia default) DONE
+    * Exposure: observatory position, systematic errors for astrometry
+    * Extension: ERRXX,YY,XYKeys
+    * Need mjd to be Gaia epoch for Gaia files.
 
 
 ----

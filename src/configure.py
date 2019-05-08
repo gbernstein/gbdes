@@ -815,6 +815,7 @@ if __name__=='__main__':
     allAttributes = set()
     for e in extensions:
         allAttributes.update(e.keys())
+    allAttributes.discard('WCSIN')  # Already did this one above.
     
     # Now create a column for every attribute we have
     for a in allAttributes:
@@ -825,8 +826,11 @@ if __name__=='__main__':
                 data.append(e[a])
             else:
                 data.append(attributes[a].nodata())  # Enter a nodata value for the column
-        pf.Column(name=a, format=py_to_fits(data), array=data)
+        cols.append(pf.Column(name=a, format=py_to_fits(data), array=data))
 
+    tmp = list(allAttributes)
+    tmp.sort()
+    print(tmp) ###
     # Add the EXTENSION table as an HDU
     thdu = pf.BinTableHDU.from_columns(pf.ColDefs(cols),
                                       name='Extensions')
