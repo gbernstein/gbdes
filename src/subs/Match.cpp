@@ -62,15 +62,15 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
   CartesianCustom cc(obs, frame);
   // Pull out components directed along ICRS E and N:
   Vector2 icrsParallax = cc.getVector().subVector(0,2);
-  // Transform into WCS, and from units of PAR (mas) to WCS units
-  Vector2 wcsParallax = (-PARALLAX_UNIT / WCS_UNIT) * (dWdICRS * icrsParallax);
+  // Transform into WCS - parallax is already in WCS_UNIT
+  Vector2 wcsParallax = -(dWdICRS * icrsParallax);
   m.col(PAR) = wcsParallax;
   
   // Convert proper motion from ICRS directions to WCS
   Matrix22 pm;
   pm.setToIdentity();
   pm = dWdICRS * pm;
-  pm *= (pmTDB * PM_UNIT * TDB_UNIT / WCS_UNIT);
+  pm *= pmTDB;  // pm should already be in WCS_UNIT / TDB_UNIT
   m.subMatrix(0,2,VX,VY+1) = pm;
 }
 
@@ -600,6 +600,7 @@ PMMatch::prepare() const {
       dof += 5;
       nFit++;
       if (ii->fitWeight==1.) {
+	//**/cerr << "PMDetection for Fisher:\n" << ii->pmInvCov << endl;
 	pmFisher += ii->pmInvCov;
       } else {
 	trivialWeights = false;
@@ -612,6 +613,7 @@ PMMatch::prepare() const {
       nFit++;
       if (i->fitWeight==1.) {
 	pmFisher += m.transpose() * i->invCov *m;
+	//**/cerr << "Detection for Fisher:\n" << pmFisher << endl;
       } else {
 	trivialWeights=false;
 	pmFisher += m.transpose() * i->invCov * (i->fitWeight *m);
@@ -633,8 +635,20 @@ PMMatch::prepare() const {
     return;
   }
 
+#ifdef USE_EIGEN
+  {
+    auto llt = pmFisher.llt();
+    PMCovariance eye;
+    eye.setIdentity();
+    pmInvFisher = llt.solve(eye);
+  }
+#else
   pmInvFisher = pmFisher.inverse(); // ??? More stable?
-  
+#endif
+  /**cerr << "Total Fisher:\n" << pmFisher << endl;
+  /**cerr << "Inv Fisher:\n" << pmInvFisher << endl;
+  /**PMCovariance xxx = pmInvFisher * pmFisher;
+  /**cerr << "---->Inverse * Fisher = \n" << xxx << endl; */
   // Go through again and accumulate the PMDetection
   // contributions to chisq that have pmMean in them
   {
@@ -1012,36 +1026,40 @@ PMMatch::accumulateChisq(double& chisq,
     } // endif for PMDetections
   } // object loop
 
-  if (!reuseAlpha) {
-    // Subtract terms with derivatives of PM,
-    /* but without touching the entire alpha matrix every time:
-       alpha -=  dPMdP^T * pmInvFisher * dPMdP);
-    */
+  // Subtract terms with derivatives of PM,
+  /* but without touching the entire alpha matrix every time:
+     alpha -=  dPMdP^T * pmInvFisher * dPMdP);
+     beta += pm * dPMdP^T
+  */
 
     // Do updates parameter block by parameter block
-    PMCovariance negCov = -pmInvFisher;
-    for (auto m1 = mapsTouched.begin();
-	 m1!=mapsTouched.end();
-	 ++m1) {
-      int map1 = m1->first;
-      int i1 = m1->second.startIndex;
-      int n1 = m1->second.nParams;
-      if (n1<=0) continue;
-      DMatrix dxy1 = dPMdP.subMatrix(0,5, i1, i1+n1);
-      updater.update(map1, i1, dxy1, negCov);
+  PMCovariance negCov = -pmInvFisher;
+  for (auto m1 = mapsTouched.begin();
+       m1!=mapsTouched.end();
+       ++m1) {
+    int map1 = m1->first;
+    int i1 = m1->second.startIndex;
+    int n1 = m1->second.nParams;
+    if (n1<=0) continue;
+    DMatrix dxy1 = dPMdP.subMatrix(0,5, i1, i1+n1);
+    if (reuseAlpha)
+      continue;
 
-      auto m2 = m1;
-      ++m2;
-      for ( ; m2 != mapsTouched.end(); ++m2) {
-	int map2 = m2->first;
-	int i2 = m2->second.startIndex;
-	int n2 = m2->second.nParams;
-	if (n2<=0) continue;
-	DMatrix dxy2 = dPMdP.subMatrix(0,5,i2, i2+n2);
-	updater.update(map2, i2, dxy2,
-		       negCov,
-		       map1, i1, dxy1);
-      }
+    beta.subVector(i1, i1+n1) += dxy1.transpose() * pm;
+
+    updater.update(map1, i1, dxy1, negCov);
+
+    auto m2 = m1;
+    ++m2;
+    for ( ; m2 != mapsTouched.end(); ++m2) {
+      int map2 = m2->first;
+      int i2 = m2->second.startIndex;
+      int n2 = m2->second.nParams;
+      if (n2<=0) continue;
+      DMatrix dxy2 = dPMdP.subMatrix(0,5,i2, i2+n2);
+      updater.update(map2, i2, dxy2,
+		     negCov,
+		     map1, i1, dxy1);
     }
   } // Finished putting terms from mean into alpha
 

@@ -113,6 +113,10 @@ For py3 branch, upgrading all Python to work with Python 3.x:
     * Exposure: observatory position, systematic errors for astrometry
     * Extension: ERRXX,YY,XYKeys
     * Need mjd to be Gaia epoch for Gaia files.
+  * Shift all internal PM, PAR, covariance data to WCS_UNIT (degrees) to
+    make matrices combining positions and PM/PAR better conditioned.
+  * Alter getGaiaDR2 to use mas in position covariances.
+  * WCSFit puts parallaxPrior into WCS_UNIT from mas.
 
 
 ----

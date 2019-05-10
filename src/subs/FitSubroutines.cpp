@@ -22,6 +22,8 @@ using astrometry::AstrometryError;
 using astrometry::WCS_UNIT;
 using astrometry::RESIDUAL_UNIT;
 using astrometry::PM_UNIT;
+using astrometry::PARALLAX_UNIT;
+using astrometry::TDB_UNIT;
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -1209,6 +1211,10 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   table.readCell(pmRA, pmRaKey, irow);
   table.readCell(pmDec, pmDecKey, irow);
   table.readCell(parallax, parallaxKey, irow);
+  // Convert from I/O units to interal units
+  pmRA *= PM_UNIT / WCS_UNIT;
+  pmDec *= PM_UNIT / WCS_UNIT;
+  parallax *= PARALLAX_UNIT / (WCS_UNIT/TDB_UNIT);
 
   // We will want to shift the inputs to move their reference time from
   // the exposure's (i.e. catalog's) reference to that of the field,
@@ -1218,8 +1224,8 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   // Shift the RA and Dec according to proper motion, including
   // factors for unit difference, and cos(dec) on the RA.
   double cosdec = cos(out->ypix * WCS_UNIT);
-  out->xpix += epochShift * pmRA * PM_UNIT / WCS_UNIT / cosdec;
-  out->ypix += epochShift * pmDec * PM_UNIT / WCS_UNIT;
+  out->xpix += epochShift * pmRA / cosdec;
+  out->ypix += epochShift * pmDec;
 
   // Get coordinates and transformation matrix to world coordinates
   startWcs->toWorld(out->xpix, out->ypix, out->xw, out->yw);  // no color in startWCS
@@ -1260,12 +1266,26 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
     }
   }    
 
+  // Covariances were in I/O units, convert everything to internal WCS_UNIT
+  for (int j=0; j<5; j++) {
+    pmCov(astrometry::X0,j) *= RESIDUAL_UNIT/WCS_UNIT;
+    pmCov(j,astrometry::X0) *= RESIDUAL_UNIT/WCS_UNIT;
+    pmCov(astrometry::Y0,j) *= RESIDUAL_UNIT/WCS_UNIT;
+    pmCov(j,astrometry::Y0) *= RESIDUAL_UNIT/WCS_UNIT;
+    pmCov(astrometry::VX,j) *= PM_UNIT/(WCS_UNIT/TDB_UNIT);
+    pmCov(j,astrometry::VX) *= PM_UNIT/(WCS_UNIT/TDB_UNIT);
+    pmCov(astrometry::VY,j) *= PM_UNIT/(WCS_UNIT/TDB_UNIT);
+    pmCov(j,astrometry::VY) *= PM_UNIT/(WCS_UNIT/TDB_UNIT);
+    pmCov(astrometry::PAR,j) *= PARALLAX_UNIT/WCS_UNIT;
+    pmCov(j,astrometry::PAR) *= PARALLAX_UNIT/WCS_UNIT;
+  }
+  
   if (epochShift != 0.) {
     // Transform covariance matrix for shift in reference time
     astrometry::PMCovariance shift(0.);
     for (int i=0; i<5; i++) shift(i,i) = 1.;
-    shift(astrometry::X0, astrometry::VX) = epochShift * PM_UNIT / WCS_UNIT;
-    shift(astrometry::Y0, astrometry::VY) = epochShift * PM_UNIT / WCS_UNIT;
+    shift(astrometry::X0, astrometry::VX) = epochShift;
+    shift(astrometry::Y0, astrometry::VY) = epochShift;
     pmCov = shift * pmCov * shift.transpose();
   }
   
@@ -2209,6 +2229,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       xrespix.push_back(residP[0]);
       yrespix.push_back(residP[1]);
 
+      // ???? Check conversions to I/O units
       astrometry::Matrix22 cov(0.);
       // Get error covariances, if we have any
       double chisqThis;
@@ -2222,7 +2243,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 
 	// Transform back to pixel errors to get circularized pixel error
 	{
-	  cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units
+	  cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units ???
 	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1]);
 	  astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
 	  double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);

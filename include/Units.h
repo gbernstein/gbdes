@@ -13,11 +13,12 @@ namespace astrometry {
   // standards that are making input WCS's.
   const double WCS_UNIT = DEGREE;
   //
-  // Unit used when outputing astrometric residuals or RMS or 2d covariance
+  // Unit used when inputting/outputing astrometric residuals or RMS or 2d covariance
   const double RESIDUAL_UNIT = MILLIARCSEC;
   //
-  // Units of parallax an proper motion (input, internal, and output)
+  // Units of parallax an proper motion (input and output)
   // Standard is that PM is always oriented in local ICRS (E,N) coordinates.
+  // Internally we will use WCS_UNIT for parallax and PM (per TDB_UNIT).
   const double PARALLAX_UNIT = MILLIARCSEC;
   const double PM_UNIT = MILLIARCSEC/YEAR;
   //

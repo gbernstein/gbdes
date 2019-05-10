@@ -179,8 +179,11 @@ main(int argc, char *argv[])
     processParameters(parameters, usage, 1, argc, argv);
     string inputTables = argv[1];
 
+    // Convert error parameters from I/O units to internal
     referenceSysError *= RESIDUAL_UNIT/WCS_UNIT;
     sysError *= RESIDUAL_UNIT/WCS_UNIT;
+    maxError *= RESIDUAL_UNIT/WCS_UNIT;
+    parallaxPrior *= RESIDUAL_UNIT/WCS_UNIT;
 
     /////////////////////////////////////////////////////
     // Parse all the parameters
@@ -592,7 +595,7 @@ main(int argc, char *argv[])
     /**/cerr << "Purging defective detections and matches" << endl;
 
     // Get rid of Detections with errors too high
-    purgeNoisyDetections<Astro>(maxError*RESIDUAL_UNIT/WCS_UNIT,
+    purgeNoisyDetections<Astro>(maxError,
 				matches, exposures, extensions);
 			 
     /**/cerr << "sparse" << endl;
