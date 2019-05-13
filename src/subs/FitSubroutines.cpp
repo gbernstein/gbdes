@@ -1211,16 +1211,16 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   table.readCell(pmRA, pmRaKey, irow);
   table.readCell(pmDec, pmDecKey, irow);
   table.readCell(parallax, parallaxKey, irow);
-  // Convert from I/O units to interal units
-  pmRA *= PM_UNIT / WCS_UNIT;
-  pmDec *= PM_UNIT / WCS_UNIT;
-  parallax *= PARALLAX_UNIT / (WCS_UNIT/TDB_UNIT);
+  // Convert from I/O units to internal units
+  pmRA *= PM_UNIT / (WCS_UNIT/TDB_UNIT);
+  pmDec *= PM_UNIT / (WCS_UNIT/TDB_UNIT);
+  parallax *= PARALLAX_UNIT / WCS_UNIT;
 
   // We will want to shift the inputs to move their reference time from
   // the exposure's (i.e. catalog's) reference to that of the field,
   // which is defined as 0 here.
   double epochShift = -e->pmTDB;
-
+  
   // Shift the RA and Dec according to proper motion, including
   // factors for unit difference, and cos(dec) on the RA.
   double cosdec = cos(out->ypix * WCS_UNIT);
@@ -1305,8 +1305,8 @@ Astro::makePMDetection(astrometry::Detection* d, const Exposure* e,
   out->fitWeight = e->weight;
 
   // Now fill in the Detection 2d (inverse) covariance in case we end
-  // up using the as a single observation at the field's reference epoch.
-  astrometry::Matrix22 cov22 = pmCov.subMatrix(0,2,0,2).inverse();
+  // up using the PM data as a single observation at the field's reference epoch.
+  astrometry::Matrix22 cov22 = wCov.subMatrix(0,2,0,2);
   // Add any extra covariance associated with reference catalogs.
   cov22 += e->astrometricCovariance;
   out->invCov = cov22.inverse();
@@ -2069,8 +2069,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 
   // Give full error ellipse
   vector<vector<float>> covTotalW;
-  outTable.addColumn(covTotalW, "covTotalW");
-
+  outTable.addColumn(covTotalW, "covTotalW", 3);  // 3-element column
   // The true chisq for this detection, and the expected value
   vector<float> chisq;
   outTable.addColumn(chisq, "chisq");
@@ -2151,6 +2150,14 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       yresw.clear();
       outTable.writeCells(sigpix, "sigPix", pointCount);
       sigpix.clear();
+      outTable.writeCells(hasPM, "hasPM", pointCount);
+      hasPM.clear();
+      outTable.writeCells(covTotalW, "covTotalW", pointCount);
+      covTotalW.clear();
+      outTable.writeCells(chisq, "chisq", pointCount);
+      chisq.clear();
+      outTable.writeCells(chisqExpected, "chisqExpected", pointCount);
+      chisqExpected.clear();
 
       pointCount += nAdded;
     }	// Done flushing the vectors to Table
@@ -2229,11 +2236,11 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       xrespix.push_back(residP[0]);
       yrespix.push_back(residP[1]);
 
-      // ???? Check conversions to I/O units
       astrometry::Matrix22 cov(0.);
       // Get error covariances, if we have any
       double chisqThis;
       if (detptr->invCov(0,0) > 0.) {
+	// Save cov in RESIDUAL_UNIT, it's stored in WCS_UNIT
 	cov = detptr->invCov.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
 	vector<float> vv(3,0.);
 	vv[0] = cov(0,0);
@@ -2243,7 +2250,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 
 	// Transform back to pixel errors to get circularized pixel error
 	{
-	  cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units ???
+	  cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units
 	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1]);
 	  astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
 	  double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);
@@ -2320,6 +2327,17 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     }  // Done adding a row to the star catalog.
   } // end match loop
 
+  /**/cerr << "End match loop, covTotalW.size()=" << covTotalW.size()
+	   << " and first element size is " << covTotalW[0].size()
+	   << endl;
+  {
+    /**/ vector<float> tmp;
+    outTable.readCell(tmp, "covTotalW", 0);
+    /**/cerr << "readback: ";
+    for (auto f : tmp) cerr << f << " ";
+    cerr << endl;
+  }
+    
   if (!pmMatchID.empty()) {
     // Create and fill the PMDetection output table if we have any
     FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, pmTableName);
@@ -2330,8 +2348,8 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     pmDetTable.addColumn(pmObjectNumber, "object");
     pmDetTable.addColumn(pmClip, "clip");
     pmDetTable.addColumn(pmReserve, "reserve");
-    pmDetTable.addColumn(pmMean, "pm");
-    pmDetTable.addColumn(pmInvCov,"pmInvCov");
+    pmDetTable.addColumn(pmMean, "pm", 5); // 5-element fixed-length array
+    pmDetTable.addColumn(pmInvCov,"pmInvCov",25); // 25 elements
     pmDetTable.addColumn(pmChisq, "chisq");
     pmDetTable.addColumn(pmChisqExpected, "chisqExpected");
   }
@@ -2354,7 +2372,7 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     starTable.addColumn(starPMx, "pmX");
     starTable.addColumn(starPMy, "pmY");
     starTable.addColumn(starParallax, "parallax");
-    starTable.addColumn(starInvCov,"pmInvCov");
+    starTable.addColumn(starInvCov,"pmInvCov",25);
   }
 }
 

@@ -1,9 +1,10 @@
 * Implement proper motion and parallax, Gaia DR2 (or other) references
-  * negative alpha eigenvalues on all common-mode shifts during parameter iterations.
   * WEIGHT, MAGWEIGHT required?
   * AIRMASS, EXPOSURE coming in properly in config.py?
   * get real ra, dec into coords for the python notebook making fake data
   * Some Eigen alignment error when reading exposures unless using -std=c++17
+  * DOF changing during Newton iterations
+  * PM solutions diverge badly
     
 * It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
 
