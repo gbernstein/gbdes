@@ -2327,17 +2327,6 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     }  // Done adding a row to the star catalog.
   } // end match loop
 
-  /**/cerr << "End match loop, covTotalW.size()=" << covTotalW.size()
-	   << " and first element size is " << covTotalW[0].size()
-	   << endl;
-  {
-    /**/ vector<float> tmp;
-    outTable.readCell(tmp, "covTotalW", 0);
-    /**/cerr << "readback: ";
-    for (auto f : tmp) cerr << f << " ";
-    cerr << endl;
-  }
-    
   if (!pmMatchID.empty()) {
     // Create and fill the PMDetection output table if we have any
     FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, pmTableName);

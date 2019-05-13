@@ -457,6 +457,8 @@ Match::accumulateChisq(double& chisq,
     if (dXYdP[ipt]) {delete dXYdP[ipt]; dXYdP[ipt]=nullptr;}
   } // object loop
 
+  // ??? Insure derivs of mean get into beta as needed!
+  
   if (!reuseAlpha) {
     // Subtract effects of derivatives on mean
     /*  We want to do this, but without touching the entire alpha matrix every time:
@@ -1457,7 +1459,7 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
   int n = mlist.size();
   vector<Match*> mvec(n);
   std::copy(mlist.begin(), mlist.end(), mvec.begin());
-#pragma omp parallel for schedule(dynamic,chunk) 
+#pragma omp parallel for schedule(dynamic,chunk) reduction(+:nclip)
   for (auto ii=0; ii<n; ++ii) {
     auto i = mvec[ii];
 #else
@@ -1485,12 +1487,12 @@ CoordAlign::chisqDOF(int& dof, double& maxDeviate,
 
 #ifdef _OPENMP
   const int chunk=100;
-  // Make a vector version on mlist since openMP requires
+  // Make a vector version of mlist since openMP requires
   // integers in a for loop.
   int n = mlist.size();
   vector<Match*> mvec(n);
   std::copy(mlist.begin(), mlist.end(), mvec.begin());
-#pragma omp parallel for schedule(dynamic,chunk) 
+#pragma omp parallel for schedule(dynamic,chunk) reduction(+:dof) reduction(+:chisq)
   for (auto ii=0; ii<n; ++ii) {
     auto i = mvec[ii];
 #else

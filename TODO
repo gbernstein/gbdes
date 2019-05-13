@@ -3,7 +3,6 @@
   * AIRMASS, EXPOSURE coming in properly in config.py?
   * get real ra, dec into coords for the python notebook making fake data
   * Some Eigen alignment error when reading exposures unless using -std=c++17
-  * DOF changing during Newton iterations
   * PM solutions diverge badly
     
 * It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
@@ -118,6 +117,7 @@ For py3 branch, upgrading all Python to work with Python 3.x:
     make matrices combining positions and PM/PAR better conditioned.
   * Alter getGaiaDR2 to use mas in position covariances.
   * WCSFit puts parallaxPrior into WCS_UNIT from mas.
+* DOF changing during Newton iterations (needed dof,chisq reductions in chisqDOF)
 
 
 ----
