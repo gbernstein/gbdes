@@ -388,8 +388,8 @@ Match::accumulateChisq(double& chisq,
 			 (*i)->xw, (*i)->yw,
 			 (*i)->color);
     }
-    isMappedFit = true;  // This is now true if it wasn't before.
   }
+  isMappedFit = true;  // This is now true if it wasn't before.
 
   // Get new centroid
   solve();
@@ -405,7 +405,6 @@ Match::accumulateChisq(double& chisq,
     err[0] = (*i)->xw;
     err[1] = (*i)->yw;
     err -= xyMean;  
-
     chisq += err.transpose() * invCovW * err; 
 
     // Accumulate derivatives:
@@ -457,7 +456,6 @@ Match::accumulateChisq(double& chisq,
     if (dXYdP[ipt]) {delete dXYdP[ipt]; dXYdP[ipt]=nullptr;}
   } // object loop
 
-  // ??? Insure derivs of mean get into beta as needed!
   
   if (!reuseAlpha) {
     // Subtract effects of derivatives on mean
@@ -899,13 +897,11 @@ PMMatch::accumulateChisq(double& chisq,
   if (dof<=0) return 0; // No contribution for degenerate fits
 
   // First loop updates mapping and accumulates derivs.
-  // This invalidates the centroid solution
-  isSolved = false;
-  
-  // Save away the derivatives
+  // Save derivatives here
   vector<DMatrix*> dXYdP(elist.size(), nullptr);
 
-  // And accumulate quantity related to deriv of PM
+  // And accumulate a quantity related to deriv of PM
+  // /sum_i (projector_i)^T * invCov_i * dXY_i/dp
   DMatrix dPMdP(5,nP,0.);
 
   // Projector array to use for all points
@@ -913,14 +909,14 @@ PMMatch::accumulateChisq(double& chisq,
   // And a coordinate holder
   Vector2 xy;
 
-  int ipt=0;  // Index for detections
-  PMSolution pmBeta;
+  // Acquire derivatives for all fitted points
+  // (and update mapping for no-free-param cat if not done yet)
+  int ipt=0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
     if (dynamic_cast<const PMDetection*>(*i)) continue; // No free params in PMDetections
 
     // Regular single-epoch detection
-    m = (*i)->getProjector();
     int npi = (*i)->map->nParams();
     double xw, yw;
     if (npi>0) {
@@ -937,17 +933,9 @@ PMMatch::accumulateChisq(double& chisq,
 			 (*i)->xw, (*i)->yw,
 			 (*i)->color);
     }
-
-    // For calculating best-fit PM
-    xy[0] = (*i)->xw;
-    xy[1] = (*i)->yw;
-    pmBeta += m.transpose() * (*i)->invCov * ((*i)->fitWeight *xy); 
   }
-  isMappedFit = true;  // This is true now if not before.
-  
   // Solve the system now
-  pm = pmInvFisher * pmBeta + priorMean;
-  isSolved = true;
+  solve();
   
   // Next loop through detections will
   // accumulate chisq, derivs of PM,
@@ -955,6 +943,7 @@ PMMatch::accumulateChisq(double& chisq,
   // only one detection.
 
   Vector2 xyErr;
+  Matrix22 invCovW;
   PMSolution pmErr;
   PMProjector cInvM;
   
@@ -970,11 +959,12 @@ PMMatch::accumulateChisq(double& chisq,
       chisq += ii->fitWeight*tmp;
     } else {
       // First calculate chisq contribution
-      Matrix22 invCov = (*i)->invCov * (*i)->fitWeight;
+      invCovW = (*i)->invCov * (*i)->fitWeight;
       xyErr[0] = (*i)->xw;
       xyErr[1] = (*i)->yw;
+      m = (*i)->getProjector();
       xyErr -= m * pm;
-      chisq += xyErr.transpose() * invCov * xyErr; 
+      chisq += xyErr.transpose() * invCovW * xyErr; 
 
       // Then contributions to chisq derivs
       int istart=0;  // running index into the Detection's params
@@ -992,7 +982,7 @@ PMMatch::accumulateChisq(double& chisq,
 	DMatrix dxy1 = dXYdP[ipt]->block(0,istart,2,np);
 #endif
 	// Contribution to first derivative of chisq:
-	DMatrix cInvD = invCov * dxy1;
+	DMatrix cInvD = invCovW * dxy1;
 	beta.subVector(ip, ip+np) -= cInvD.transpose() * xyErr;
 
 	// Contribution to derivatives of PM:
@@ -1001,7 +991,7 @@ PMMatch::accumulateChisq(double& chisq,
 	if (!reuseAlpha) {
 	  // Increment the alpha matrix
 	  // First the blocks astride the diagonal:
-	  updater.update(mapNumber, ip, dxy1, invCov);
+	  updater.update(mapNumber, ip, dxy1, invCovW);
 
 	  // Then loop through all blocks below diagonal
 	  int istart2 = istart+np;
@@ -1017,7 +1007,7 @@ PMMatch::accumulateChisq(double& chisq,
 #endif
 	    // Now update below diagonal
 	    updater.update(mapNumber2, ip2, dxy2,
-			   invCov,
+			   invCovW,
 			   mapNumber,  ip,  dxy1);
 	    istart2+=np2;
 	  }
@@ -1028,42 +1018,41 @@ PMMatch::accumulateChisq(double& chisq,
     } // endif for PMDetections
   } // object loop
 
-  // Subtract terms with derivatives of PM,
-  /* but without touching the entire alpha matrix every time:
-     alpha -=  dPMdP^T * pmInvFisher * dPMdP);
-     beta += pm * dPMdP^T
-  */
+  if (!reuseAlpha) {
+    // Subtract terms with derivatives of PM,
+    /* but without touching the entire alpha matrix every time:
+       alpha -=  dPMdP^T * pmInvFisher * dPMdP);
+    */
 
     // Do updates parameter block by parameter block
-  PMCovariance negCov = -pmInvFisher;
-  for (auto m1 = mapsTouched.begin();
-       m1!=mapsTouched.end();
-       ++m1) {
-    int map1 = m1->first;
-    int i1 = m1->second.startIndex;
-    int n1 = m1->second.nParams;
-    if (n1<=0) continue;
-    DMatrix dxy1 = dPMdP.subMatrix(0,5, i1, i1+n1);
-    if (reuseAlpha)
-      continue;
+    PMCovariance negCov = -pmInvFisher;
+    for (auto m1 = mapsTouched.begin();
+	 m1!=mapsTouched.end();
+	 ++m1) {
+      int map1 = m1->first;
+      int i1 = m1->second.startIndex;
+      int n1 = m1->second.nParams;
+      if (n1<=0) continue;
+      DMatrix dxy1 = dPMdP.subMatrix(0,5, i1, i1+n1);
+      if (reuseAlpha)
+	continue;
 
-    beta.subVector(i1, i1+n1) += dxy1.transpose() * pm;
+      updater.update(map1, i1, dxy1, negCov);
 
-    updater.update(map1, i1, dxy1, negCov);
-
-    auto m2 = m1;
-    ++m2;
-    for ( ; m2 != mapsTouched.end(); ++m2) {
-      int map2 = m2->first;
-      int i2 = m2->second.startIndex;
-      int n2 = m2->second.nParams;
-      if (n2<=0) continue;
-      DMatrix dxy2 = dPMdP.subMatrix(0,5,i2, i2+n2);
-      updater.update(map2, i2, dxy2,
-		     negCov,
-		     map1, i1, dxy1);
-    }
-  } // Finished putting terms from mean into alpha
+      auto m2 = m1;
+      ++m2;
+      for ( ; m2 != mapsTouched.end(); ++m2) {
+	int map2 = m2->first;
+	int i2 = m2->second.startIndex;
+	int n2 = m2->second.nParams;
+	if (n2<=0) continue;
+	DMatrix dxy2 = dPMdP.subMatrix(0,5,i2, i2+n2);
+	updater.update(map2, i2, dxy2,
+		       negCov,
+		       map1, i1, dxy1);
+      }
+    } // Finished putting terms from mean into alpha
+  }
 
   return dof;
 }
