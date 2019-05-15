@@ -13,7 +13,8 @@ void
 fitDefaulted(PixelMapCollection& pmc,
 	     set<Extension*> extensions,
 	     const vector<Instrument*>& instruments,
-	     const vector<Exposure*>& exposures) {
+	     const vector<Exposure*>& exposures,
+	     bool logging) {
 
   // Make a new pixel map collection that will hold only the maps
   // involved in this fit.
@@ -44,7 +45,7 @@ fitDefaulted(PixelMapCollection& pmc,
     return;
   
   // If the exposure has any defaulted maps, initialize them
-  /**/if (true) {
+  /**/if (logging) {
     cerr << "Initializing maps " ;
     for (auto name : defaultedAtoms) cerr << name << " ";
     cerr << endl;
@@ -130,7 +131,7 @@ fitDefaulted(PixelMapCollection& pmc,
   // Build CoordAlign object and solve for defaulted parameters
   CoordAlign ca(pmcFit, matches);
   ca.setRelTolerance(0.01);  // weaker tolerance for fit convergence
-  ca.fitOnce(false);
+  ca.fitOnce(logging);
 
   // Copy defaulted parameters back into the parent pmc.
   for (auto mapname : defaultedAtoms) {

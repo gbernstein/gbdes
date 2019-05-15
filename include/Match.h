@@ -315,7 +315,8 @@ namespace astrometry {
     // then only clip reserved Matches.  If =false, then
     // only clip non-reserved Matches.
     int sigmaClip(double sigThresh, bool doReserved=false,
-		  bool clipEntireMatch=false);
+		  bool clipEntireMatch=false,
+		  bool logging=true);
     // Calculate total fitting chisq.  doReserved same meaning as above.
     double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
     void setParams(const DVector& p);

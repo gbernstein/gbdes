@@ -309,7 +309,8 @@ readExtensions(img::FTable& extensionTable,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
-	       astrometry::YAMLCollector& inputYAML);
+	       astrometry::YAMLCollector& inputYAML,
+	       bool logging=true);
 
 // fix all maps in a photo/pixelMapCollection whose names match
 // any regex in the fixMapList.  Also any instrument whose name
@@ -366,14 +367,16 @@ template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
 		 vector<typename S::Extension*>& extensions,
-		 vector<astrometry::SphericalCoords*> fieldProjections);
+		 vector<astrometry::SphericalCoords*> fieldProjections,
+		 bool logging=true); //Give progress updates?
 
 // Read color information from files marked as holding such, insert into
 // relevant Matches.
 template <class S>
 void
 readColors(img::FTable extensionTable,
-	   vector<typename S::ColorExtension*> colorExtensions);
+	   vector<typename S::ColorExtension*> colorExtensions,
+	   bool logging=true); // Progress reports
 
 // Find all matched Detections that exceed allowable error, then
 // delete them from their Match and delete the Detection.

@@ -692,7 +692,8 @@ readExtensions(img::FTable& extensionTable,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
-	       astrometry::YAMLCollector& inputYAML) {
+	       astrometry::YAMLCollector& inputYAML,
+	       bool logging) {
       
   vector<typename S::Extension*> extensions(extensionTable.nrows(), nullptr);
   colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), nullptr);
@@ -733,7 +734,7 @@ readExtensions(img::FTable& extensionTable,
 
     int iDevice;
     extensionTable.readCell(iDevice, "Device", i);
-    if (processed%1000==0) {
+    if (logging && processed%1000==0) {
       cerr << "...Extn " << i << "/" << extensions.size() 
 	   << " " << expo.name << endl;
     }
@@ -859,8 +860,6 @@ findCanonical(Instrument& instr,
     }
   }
 
-  //**/cerr << "Done collecting fixed/free" << endl;
-
   // Now take an inventory of all extensions to see which device
   // solutions are used in coordination with which exposure solutions
   vector<set<int>> exposuresUsingDevice(instr.nDevices);
@@ -886,8 +885,6 @@ findCanonical(Instrument& instr,
       }
     }
   }
-
-  //**/cerr << "Done building exposure/device graph" << endl;
 
   // We have a degeneracy if there is a set of exposures and devices such
   // that
@@ -1399,7 +1396,8 @@ template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
 		 vector<typename S::Extension*>& extensions,
-		 vector<astrometry::SphericalCoords*> fieldProjections) {
+		 vector<astrometry::SphericalCoords*> fieldProjections,
+		 bool logging) {
 
   // Should be safe to multithread this loop as different threads write
   // only to distinct parts of memory.  Protect the FITS table read though.
@@ -1419,11 +1417,12 @@ void readObjects(const img::FTable& extensionTable,
 
     string filename;
     extensionTable.readCell(filename, "Filename", iext);
-    /**/if (iext%50==0) cerr << "# Reading object catalog " << iext
-			     << "/" << extensions.size()
-			     << " from " << filename 
-			     << " seeking " << extn.keepers.size()
-			     << " objects" << endl;
+    if (logging && iext%50==0)
+      cerr << "# Reading object catalog " << iext
+	   << "/" << extensions.size()
+	   << " from " << filename 
+	   << " seeking " << extn.keepers.size()
+	   << " objects" << endl;
     int hduNumber;
     string xKey;
     string yKey;
@@ -1510,7 +1509,7 @@ void readObjects(const img::FTable& extensionTable,
     
     const typename S::SubMap* sm=extn.map;
 
-    /**/if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
+    if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
 
     astrometry::Wcs* startWcs = extn.startWcs;
 
@@ -1528,7 +1527,7 @@ void readObjects(const img::FTable& extensionTable,
       FITS::FitsTable ft(filename, FITS::ReadOnly, hduNumber);
       ff = ft.extract(0, -1, neededColumns);
     }
-    vector<long> id;
+    vector<LONGLONG> id;
     if (useRows) {
       id.resize(ff.nrows());
       for (long i=0; i<id.size(); i++)
@@ -1612,7 +1611,8 @@ void readObjects(const img::FTable& extensionTable,
 template <class S>
 void
 readColors(img::FTable extensionTable,
-	   vector<typename S::ColorExtension*> colorExtensions) {
+	   vector<typename S::ColorExtension*> colorExtensions,
+	   bool logging) {
 
   for (int iext = 0; iext < colorExtensions.size(); iext++) {
     if (!colorExtensions[iext]) continue; // Skip unused 
@@ -1620,9 +1620,10 @@ readColors(img::FTable extensionTable,
     if (extn.keepers.empty()) continue; // Not using any colors from this catalog
     string filename;
     extensionTable.readCell(filename, "Filename", iext);
-    /**/ cerr << "# Reading color catalog " << iext
-	      << "/" << colorExtensions.size()
-	      << " from " << filename << endl;
+    if (logging)
+      cerr << "# Reading color catalog " << iext
+	   << "/" << colorExtensions.size()
+	   << " from " << filename << endl;
     int hduNumber;
     extensionTable.readCell(hduNumber, "extension", iext);
     string idKey;
@@ -2189,6 +2190,14 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     
     double matchColor = astrometry::NODATA;
 
+    // Make vector of units conversions to I/O units
+    vector<float> units(5);
+    units[astrometry::X0] = WCS_UNIT/RESIDUAL_UNIT;
+    units[astrometry::Y0] = WCS_UNIT/RESIDUAL_UNIT;
+    units[astrometry::PAR] = WCS_UNIT/RESIDUAL_UNIT;
+    units[astrometry::VX] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
+    units[astrometry::VY] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
+
     for (auto detptr : *m) {
 
       // Get a pointer to a PMDetection if this is one:
@@ -2279,13 +2288,14 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 	pmReserve.push_back(m->getReserved());
 	vector<float> vv(5);
 	for (int i=0; i<5; i++)
-	  vv[i] = pmDetptr->pmMean[i];
+	  vv[i] = pmDetptr->pmMean[i] * units[i];
+	
 	pmMean.push_back(vv);
 	vv.resize(25);
 	int k=0;
 	for (int i=0; i<5; i++)
 	  for (int j=0; j<5; j++, k++)
-	    vv[k] = pmDetptr->pmInvCov(i,j);
+	    vv[k] = pmDetptr->pmInvCov(i,j) * units[i] * units[j];
 	pmInvCov.push_back(vv);
 	pmChisq.push_back(detptr->trueChisq());
 	pmChisqExpected.push_back(detptr->expectedTrueChisq);
@@ -2308,11 +2318,11 @@ Astro::saveResults(const list<Astro::Match*>& matches,
       {
 	// Save the solution in a table
 	auto pm = pmm->getPM();
-	starX.push_back(pm[astrometry::X0]);
-	starY.push_back(pm[astrometry::Y0]);
-	starPMx.push_back(pm[astrometry::VX]);
-	starPMy.push_back(pm[astrometry::VY]);
-	starParallax.push_back(pm[astrometry::PAR]);
+	starX.push_back(pm[astrometry::X0] * units[astrometry::X0]);
+	starY.push_back(pm[astrometry::Y0] * units[astrometry::Y0]);
+	starPMx.push_back(pm[astrometry::VX]* units[astrometry::VX]);
+	starPMy.push_back(pm[astrometry::VY]* units[astrometry::VY]);
+	starParallax.push_back(pm[astrometry::PAR]* units[astrometry::PAR]);
       }
       {
 	// And the inverse covariance
@@ -2321,10 +2331,11 @@ Astro::saveResults(const list<Astro::Match*>& matches,
 	int k=0;
 	for (int i=0; i<5; i++)
 	  for (int j=0; j<5; j++, k++)
-	    vv[k] = fisher(i,j);
+	    vv[k] = fisher(i,j) / (units[i] * units[j]);
 	starInvCov.push_back(vv);
       }
     }  // Done adding a row to the star catalog.
+
   } // end match loop
 
   if (!pmMatchID.empty()) {
@@ -2358,8 +2369,8 @@ Astro::saveResults(const list<Astro::Match*>& matches,
     starTable.addColumn(starColor,"color");
     starTable.addColumn(starX, "xW");
     starTable.addColumn(starY, "yW");
-    starTable.addColumn(starPMx, "pmX");
-    starTable.addColumn(starPMy, "pmY");
+    starTable.addColumn(starPMx, "pmra");
+    starTable.addColumn(starPMy, "pmdec");
     starTable.addColumn(starParallax, "parallax");
     starTable.addColumn(starInvCov,"pmInvCov",25);
   }
@@ -2561,7 +2572,8 @@ readExtensions<AP> (img::FTable& extensionTable, \
 		    const vector<Exposure*>& exposures,		\
 		    const vector<int>& exposureColorPriorities,	\
 		    vector<AP::ColorExtension*>& colorExtensions,\
-		    astrometry::YAMLCollector& inputYAML);       \
+		    astrometry::YAMLCollector& inputYAML,        \
+		    bool logging);  	 \
 template int \
 findCanonical<AP>(Instrument& instr,	\
 		  int iInst,			\
@@ -2584,7 +2596,8 @@ template void \
 readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<Exposure*>& exposures, \
 		vector<typename AP::Extension*>& extensions, \
-		vector<astrometry::SphericalCoords*> fieldProjections); \
+		vector<astrometry::SphericalCoords*> fieldProjections, \
+                bool logging);	      \
 template void \
 readMatches<AP>(img::FTable& table, \
 		list<typename AP::Match*>& matches, \
@@ -2596,7 +2609,8 @@ readMatches<AP>(img::FTable& table, \
 		double parallaxPrior);  \
 template void \
 readColors<AP>(img::FTable extensionTable, \
-	       vector<AP::ColorExtension*> colorExtensions);  \
+	       vector<AP::ColorExtension*> colorExtensions, \
+	       bool logging);    \
 template void  \
 purgeNoisyDetections<AP>(double maxError,  \
 			 list<AP::Match*>& matches,  \

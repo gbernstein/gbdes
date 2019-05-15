@@ -23,7 +23,8 @@ typedef Astro::ColorExtension ColorExtension;
 void fitDefaulted(astrometry::PixelMapCollection& pmc,
 		  set<Extension*> useThese,
 		  const vector<Instrument*>& instruments,
-		  const vector<Exposure*>& exposures);
+		  const vector<Exposure*>& exposures,
+		  bool logging=true);
 
 // Define and issue WCS for each extension in use, and set projection to
 // field coordinates.

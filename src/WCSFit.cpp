@@ -27,6 +27,8 @@ using namespace astrometry;
 using namespace stringstuff;
 using img::FTable;
 
+#define PROGRESS(val, msg) if (verbose>=val) cerr << "-->" <<  #msg << endl
+
 string usage=
   "WCSFit: Refine coordinate solutions for a matched set of catalogs.\n"
   "usage: WCSFit <match file> [parameter file] [parameter file...]\n"
@@ -98,6 +100,8 @@ main(int argc, char *argv[])
   string colorExposures;
   double minColor;
   double maxColor;
+
+  int verbose;
   
   Pset parameters;
   {
@@ -165,6 +169,8 @@ main(int argc, char *argv[])
 			 "Output FITS binary catalog", "wcscat.fits");
     parameters.addMember("outWcs",&outWcs, def,
 			 "Output serialized Wcs systems", "wcsfit.wcs");
+    parameters.addMember("verbose", &verbose, def,
+			 "stderr detail level", 1);
   }
 
   // Positional accuracy demanded of numerical solutions for inversion of 
@@ -224,8 +230,8 @@ main(int argc, char *argv[])
     // All the names will be stripped of leading/trailing white space, and internal
     // white space replaced with single underscore - this keeps PixelMap parsing functional.
 
-    /**/cerr << "Reading fields" << endl;
-
+    PROGRESS(1,Reading fields);
+      
     // All we care about fields are names and orientations:
     NameIndex fieldNames;
     vector<SphericalCoords*> fieldProjections;
@@ -235,7 +241,7 @@ main(int argc, char *argv[])
 	       fieldEpochs, pmEpoch);
 
 
-    /**/cerr << "Reading instruments" << endl;
+    PROGRESS(1,Reading instruments);
 
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
     vector<int> instrumentHDUs;
@@ -254,7 +260,7 @@ main(int argc, char *argv[])
 		      outputCatalogAlreadyOpen);
 
 
-    /**/cerr << "Reading exposures" << endl;
+    PROGRESS(1,Reading exposures);
 
     // This vector will hold the color-priority value of each exposure.  -1 means an exposure
     // that does not hold color info.
@@ -295,7 +301,7 @@ main(int argc, char *argv[])
       }
     }
 		    
-    /**/cerr << "Reading extensions" << endl;
+    PROGRESS(1,Reading extensions);
 
     // Read info about all Extensions - we will keep the Table around.
     FTable extensionTable;
@@ -312,10 +318,11 @@ main(int argc, char *argv[])
 			    exposures,
 			    exposureColorPriorities,
 			    colorExtensions,
-			    inputYAML);
+			    inputYAML,
+			    verbose>=1);  // Print reading progress?
 
 		    
-    /**/cerr << "Setting reference wcsNames" << endl;
+    PROGRESS(2,Setting reference wcsNames);
 
     // A special loop here to set the wcsname of reference extensions to the
     // name of their field.
@@ -332,7 +339,7 @@ main(int argc, char *argv[])
     //  Create and initialize all maps
     /////////////////////////////////////////////////////
 
-    /**/cerr << "Building initial PixelMapCollection" << endl;
+    PROGRESS(1,Building initial PixelMapCollection);
 
     // Now build a preliminary set of pixel maps from the configured YAML files
     PixelMapCollection* pmcInit = new PixelMapCollection;
@@ -355,7 +362,7 @@ main(int argc, char *argv[])
     /////////////////////////////////////////////////////
     // First sanity check: Check for maps that are defaulted but fixed
     /////////////////////////////////////////////////////
-    /**/cerr << "Checking for fixed+default" << endl;
+    PROGRESS(2,Checking for fixed and defaulted maps);
     {
       bool done = false;
       for (auto iName : pmcInit->allMapNames()) {
@@ -375,7 +382,7 @@ main(int argc, char *argv[])
     // do we have at least one map that is *fixed*?
     /////////////////////////////////////////////////////
 
-    /**/cerr << "Checking for field degeneracy" << endl;
+    PROGRESS(2,Checking for field degeneracy);
 
     {
       vector<bool> fieldHasFree(fieldNames.size(), false);
@@ -408,7 +415,8 @@ main(int argc, char *argv[])
     // such degeneracies.
     /////////////////////////////////////////////////////
 
-    /**/cerr << "Checking for polynomial degeneracies" << endl;
+    PROGRESS(2,Checking for polynomial degeneracies);
+    
     set<string> degenerateTypes={"Poly","Linear","Constant"};
     {
       MapDegeneracies<Astro> degen(extensions,
@@ -440,7 +448,7 @@ main(int argc, char *argv[])
       }
     } // End of poly-degeneracy check/correction
 
-    /**/cerr << "Making final mapCollection" << endl;
+    PROGRESS(1,Making final mapCollection);
 
     // Do not need the preliminary PMC any more.
     delete pmcInit;
@@ -458,7 +466,8 @@ main(int argc, char *argv[])
 
 
     // Add WCS for every extension, and reproject into field coordinates
-    /**/cerr << "Defining all WCS's" << endl;
+    PROGRESS(2,Defining all WCSs);
+
     setupWCS(fieldProjections, instruments, exposures, extensions, mapCollection);
 
     /////////////////////////////////////////////////////
@@ -467,7 +476,7 @@ main(int argc, char *argv[])
     //  starting WCS.  
     /////////////////////////////////////////////////////
 
-    /**/cerr << "Initializing defaulted maps" << endl;
+    PROGRESS(2,Initializing defaulted maps);
 
     // This routine figures out an order in which defaulted maps can
     // be initialized without degeneracies
@@ -492,7 +501,8 @@ main(int argc, char *argv[])
       fitDefaulted(mapCollection,
 		   defaultedExtensions,
 		   instruments,
-		   exposures);
+		   exposures,
+		   verbose>=2);
     }
 
     // Try to fit on every extension not already initialized just to
@@ -507,7 +517,8 @@ main(int argc, char *argv[])
       fitDefaulted(mapCollection,
 		   defaultedExtensions,
 		   instruments,
-		   exposures);
+		   exposures,
+		   verbose>=2);
       initializedExtensions.insert(iextn);
     }
       
@@ -547,7 +558,7 @@ main(int argc, char *argv[])
     // Figure out which extensions' maps require a color entry to function
     whoNeedsColor<Astro>(extensions);
     
-    /**/cerr << "Reprojecting startWcs" << endl;
+    PROGRESS(2,Reprojecting startWcs);
     
     // Before reading objects, we want to set all starting WCS's to go into
     // field coordinates.
@@ -569,7 +580,8 @@ main(int argc, char *argv[])
       ff.getHdrValue("Affinity", affinity);
       stringstuff::stripWhite(affinity);
       
-      /**/cerr << "Parsing catalog field " << dummy1 << " Affinity " << affinity << endl;
+      if (verbose>=2)
+	cerr << "-->Parsing catalog field " << dummy1 << " Affinity " << affinity << endl;
 
       // Set this true if we are going to want to create PMMatches from
       // this extension's matches:
@@ -580,38 +592,38 @@ main(int argc, char *argv[])
       
     } // End loop over input matched catalogs
 
-    /**/cerr << "Total match count: " << matches.size() << endl;
+    if (verbose>=0) cout << "# Total match count: " << matches.size() << endl;
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
-    /**/cerr << "Reading catalogs" << endl;
+    PROGRESS(1,Reading catalogs);
     readObjects<Astro>(extensionTable, exposures, extensions,fieldProjections);
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the Detections they match
-    /**/cerr << "Reading colors" << endl;
+    PROGRESS(1,Reading colors);
     readColors<Astro>(extensionTable, colorExtensions);
 
-    /**/cerr << "Purging defective detections and matches" << endl;
+    PROGRESS(2,Purging defective detections and matches);
 
     // Get rid of Detections with errors too high
     purgeNoisyDetections<Astro>(maxError,
 				matches, exposures, extensions);
 			 
-    /**/cerr << "sparse" << endl;
+    PROGRESS(2,Purging sparse matches);
     // Get rid of Matches with too few detections
     purgeSparseMatches<Astro>(minMatches, matches);
 
-    /**/cerr << "badcolor" << endl;
+    PROGRESS(2,Purging out-of-range colors);
     // Get rid of Matches with color out of range (note that default color is 0).
     purgeBadColor<Astro>(minColor, maxColor, matches);
     
-    /**/cerr << "reserve" << endl;
+    PROGRESS(2,Reserving matches);
     // Reserve desired fraction of matches
     if (reserveFraction>0.) 
       reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);
 
-    /**/cerr << "underpopulated" << endl;
+    PROGRESS(2,Purging underpopulated exposures);
     // Find exposures whose parameters are free but have too few
     // Detections being fit to the exposure model.
     auto badExposures = findUnderpopulatedExposures<Astro>(minFitExposures,
@@ -620,7 +632,7 @@ main(int argc, char *argv[])
 							   extensions,
 							   mapCollection);
 
-    /**/cerr << "freeze" << endl;
+    PROGRESS(2,Purging bad exposure parameters and Detections);
     // Freeze parameters of an exposure model and clip all
     // Detections that were going to use it.
     for (auto i : badExposures) {
@@ -631,14 +643,14 @@ main(int argc, char *argv[])
       freezeMap<Astro>(i.first, matches, extensions, mapCollection);
     } 
 
-    /**/cerr << "census" << endl;
+    PROGRESS(2,"Match census");
     matchCensus<Astro>(matches, cout);
 
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 
     ///////////////////////////////////////////////////////////
 
-    cerr << "Begin fitting process" << endl;
+    PROGRESS(1,Begin fitting process);
     
     // make CoordAlign class
     CoordAlign ca(mapCollection, matches);
@@ -660,35 +672,37 @@ main(int argc, char *argv[])
 	double maxdev=0.;
 	int dof=0;
 	double chi= ca.chisqDOF(dof, maxdev, false);
-	/**/cerr << "Fitting " << mcount << " matches with " << dcount << " detections "
-		 << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
-		 << " sigma" << endl;
+	if (verbose>=1)
+	  cerr << "Fitting " << mcount << " matches with " << dcount << " detections "
+	       << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
+	       << " sigma" << endl;
       }
 
       // Do the fit here!!
-      double chisq = ca.fitOnce(true,divideInPlace);  // save space if selected
+      double chisq = ca.fitOnce(verbose>=1,divideInPlace);  // save space if selected
       // Note that fitOnce() remaps *all* the matches, including reserved ones.
       double max;
       int dof;
       ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
       double thresh = sqrt(chisq/dof) * clipThresh; // ??? change dof to expectedChisq?
-      /**/cerr << "After iteration: chisq " << chisq 
-	       << " / " << dof << " dof, max deviation " << max
-	       << "  new clip threshold at: " << thresh << " sigma"
-	       << endl;
+      if (verbose>=1)
+	cerr << "After iteration: chisq " << chisq 
+	     << " / " << dof << " dof, max deviation " << max
+	     << "  new clip threshold at: " << thresh << " sigma"
+	     << endl;
       if (thresh >= max || (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement)) {
 	// Sigma clipping is no longer doing much.  Quit if we are at full precision,
 	// else require full target precision and initiate another pass.
 	if (coarsePasses) {
 	  coarsePasses = false;
 	  ca.setRelTolerance(chisqTolerance);
-	  /**/cerr << "--Starting strict tolerance passes";
-	  /**/if (clipEntireMatch) cerr << "; clipping full matches";
-	  /**/cerr << endl;
+	  PROGRESS(1,Starting strict tolerance passes);
+	  if (clipEntireMatch && verbose>=1) cerr << "-->clipping full matches" << endl;
 	  oldthresh = thresh;
-	  nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses);
-	  /**/cerr << "Clipped " << nclip
-		   << " matches " << endl;
+	  nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses,
+			       verbose>=1);
+	  if (verbose>=0)
+	    cerr << "# Clipped " << nclip << " matches " << endl;
 	  continue;
 	} else {
 	  // Done!
@@ -697,18 +711,18 @@ main(int argc, char *argv[])
       }
       oldthresh = thresh;
       // Clip entire matches on final passes if clipEntireMatch=true
-      nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses);
+      nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses,
+			   verbose>=1);
       if (nclip==0 && coarsePasses) {
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
 	ca.setRelTolerance(chisqTolerance);
-	/**/cerr << "--Starting strict tolerance passes";
-	/**/if (clipEntireMatch) cerr << "; clipping full matches";
-	/**/cerr << endl;
+	PROGRESS(1,Starting strict tolerance passes);
+	if (clipEntireMatch && verbose>=1) cerr << "-->clipping full matches" << endl;
 	continue;
       }
-      /**/cerr << "Clipped " << nclip
-	       << " matches " << endl;
+      if (verbose>=0)
+	cerr << "# Clipped " << nclip << " matches " << endl;
       
     } while (coarsePasses || nclip>0);
   
@@ -726,21 +740,20 @@ main(int argc, char *argv[])
 
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
-      /**/cerr << "** Clipping reserved matches: " << endl;
+      PROGRESS(0,Clipping reserved matches);
       clipReserved<Astro>(ca, clipThresh, minimumImprovement,
-			  false, true);  //turn on cerr logging
-      //**clipEntireMatch, true);  //turn on cerr logging
+			  false, verbose>=1);  
     }
 	
     //////////////////////////////////////
     // Output data and calculate some statistics
     //////////////////////////////////////
 
+    PROGRESS(2,Saving astrometric fits);
     // Save the pointwise fitting results
     Astro::saveResults(matches, outCatalog);
     
-    /**/cerr << "Saved results to FITS table" << endl;
-    
+    PROGRESS(2,Saving FITS tables);
     // Report summary of residuals to stdout
     Astro::reportStatistics(matches, exposures, extensions, cout);
 
@@ -748,6 +761,7 @@ main(int argc, char *argv[])
     // Cleanup:
     //////////////////////////////////////
 
+    PROGRESS(2,Cleaning up);
     // Get rid of matches:
     for (auto im = matches.begin(); im!=matches.end(); ) {
       (*im)->clear(true);  // deletes detections

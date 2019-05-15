@@ -645,10 +645,6 @@ PMMatch::prepare() const {
 #else
   pmInvFisher = pmFisher.inverse(); // ??? More stable?
 #endif
-  /**cerr << "Total Fisher:\n" << pmFisher << endl;
-  /**cerr << "Inv Fisher:\n" << pmInvFisher << endl;
-  /**PMCovariance xxx = pmInvFisher * pmFisher;
-  /**cerr << "---->Inverse * Fisher = \n" << xxx << endl; */
   // Go through again and accumulate the PMDetection
   // contributions to chisq that have pmMean in them
   {
@@ -867,7 +863,14 @@ PMMatch::predict(const Detection* d) const {
     // No solution possible, return zeros
     return Vector2(0.);
   }
-  Vector2 out = d->getProjector() * pm;
+  Vector2 out;
+  if (auto dd = dynamic_cast<const PMDetection*> (d)) {
+    // Report plain old coords for PMDetection
+    out[0] = d->xw;
+    out[1] = d->yw;
+  } else {
+    out = d->getProjector() * pm;
+  }
   return out;
 }
 
@@ -1389,8 +1392,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
       timer.stop();
-      //**if (reportToCerr) {
-      if (true) {
+      if (reportToCerr) {
 	cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
 	     << " / " << dof 
 	     << " in time " << timer << " sec"
@@ -1434,10 +1436,10 @@ CoordAlign::remap(bool doAll) {
 }
 
 int
-CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
+CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch,
+		      bool logging) {
   int nclip=0;
 
-  cerr << "## Sigma clipping...";
   Stopwatch timer;
   timer.start();
 
@@ -1463,7 +1465,8 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
     }
   }
   timer.stop();
-  cerr << " done in " << timer << " sec" << endl;
+  if (logging)
+    cerr << "-->Sigma clipping done in " << timer << " sec" << endl;
   return nclip;
 }
 
