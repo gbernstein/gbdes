@@ -149,8 +149,9 @@ namespace astrometry {
     // Call this to redo the Fisher matrix if needed (=>set isPrepare)
     virtual void prepare() const;
     // Other state-changing calls are public.
-    
+
   public:
+    EIGEN_NEW
     Match(Detection* e);
 
     // Add and remove automatically update itsMatch of the Detection
@@ -238,9 +239,12 @@ namespace astrometry {
     const_iterator end() const {return elist.end();}
   };
 
+  typedef list<Match*> MCat;
+  
   class PMMatch: public Match {
     // Class for a set of matched Detections, with free PM and parallax
   public:
+    EIGEN_NEW
     PMMatch(Detection* e);
 
     void setParallaxPrior(double p) {parallaxPrior = p;}
@@ -290,21 +294,19 @@ namespace astrometry {
     mutable PMSolution priorMean;   // PM contribution from PMDetection means
   };
 
-  typedef list<Match*> MCat;
-
   // Class that aligns all coordinates
   class CoordAlign {
   private:
-    list<Match*>& mlist;
+    MCat& mlist;
     PixelMapCollection& pmc;
     double relativeTolerance;
     set<int> frozenParameters;  // Keep track of degenerate parameters
     map<string, set<int>> frozenMaps; // Which atoms have which params frozen
   public:
     CoordAlign(PixelMapCollection& pmc_,
-	       list<Match*>& mlist_): mlist(mlist_),
-				      pmc(pmc_), 
-				      relativeTolerance(0.001)  {}
+	       MCat& mlist_): mlist(mlist_),
+			      pmc(pmc_), 
+			      relativeTolerance(0.001)  {}
 
     // Re-map Detections using current params - either all or just those being fit.
     void remap(bool doAll=true); 

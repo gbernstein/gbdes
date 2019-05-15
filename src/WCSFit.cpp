@@ -553,7 +553,7 @@ main(int argc, char *argv[])
     //////////////////////////////////////////////////////////
 
     // List of all Matches - they will hold pointers to all Detections too.
-    list<Match*> matches;
+    MCat matches;
     
     // Figure out which extensions' maps require a color entry to function
     whoNeedsColor<Astro>(extensions);

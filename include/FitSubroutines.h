@@ -54,6 +54,7 @@ struct Astro {
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef astrometry::PixelMapCollection Collection;
   typedef astrometry::CoordAlign Align;
+  typedef astrometry::MCat MCat;
   static void fillDetection(Detection* d, const Exposure* e,
 			    astrometry::SphericalCoords& fieldProjection,
 			    img::FTable& table, long irow,
@@ -74,7 +75,7 @@ struct Astro {
     return d->color;
   }
 
-  static void saveResults(const list<Match*>& matches,
+  static void saveResults(const astrometry::MCat& matches,
 			  string outCatalog);
 
   static void reportStatistics(const list<typename Astro::Match*>& matches,
@@ -105,6 +106,7 @@ struct Astro {
 struct Photo {
   typedef photometry::Detection Detection;
   typedef photometry::Match Match;
+  typedef list<Match*> MCat;
   typedef photometry::SubMap SubMap;
   typedef ExtensionBase<SubMap, Detection> Extension;
   typedef ColorExtensionBase<Match> ColorExtension;
@@ -353,7 +355,7 @@ whoNeedsColor(vector<typename S::Extension*> extensions);
 template <class S>
 void
 readMatches(img::FTable& table,
-	    list<typename S::Match*>& matches,
+	    typename S::MCat& matches,
 	    vector<typename S::Extension*>& extensions,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
@@ -384,7 +386,7 @@ readColors(img::FTable extensionTable,
 template <class S>
 void
 purgeNoisyDetections(double maxError,
-		     list<typename S::Match*>& matches,
+		     typename S::MCat& matches,
 		     const vector<Exposure*>& exposures,
 		     const vector<typename S::Extension*>& extensions);
 
@@ -393,7 +395,7 @@ purgeNoisyDetections(double maxError,
 template <class S>
 void
 purgeSparseMatches(int minMatches,
-		   list<typename S::Match*>& matches);
+		   typename S::MCat& matches);
 
 // Get rid of Matches with color outside of specified range.
 // Color is always ok if it has NODATA value.
@@ -401,18 +403,18 @@ purgeSparseMatches(int minMatches,
 template <class S>
 void
 purgeBadColor(double minColor, double maxColor,
-	      list<typename S::Match*>& matches);
+	      typename S::MCat& matches);
 
 template <class S>
 void
-reserveMatches(list<typename S::Match*>& matches,
+reserveMatches(typename S::MCat& matches,
 	       double reserveFraction,
 	       int randomNumberSeed);
 
 template <class S>
 map<string, long>
 findUnderpopulatedExposures(long minFitExposure,
-			    const list<typename S::Match*> matches,
+			    const typename S::MCat& matches,
 			    const vector<Exposure*> exposures,
 			    const vector<typename S::Extension*> extensions,
 			    const typename S::Collection& pmc);
@@ -422,14 +424,14 @@ findUnderpopulatedExposures(long minFitExposure,
 template <class S>
 void
 freezeMap(string mapName,
-	  const list<typename S::Match*> matches,
+	  const typename S::MCat matches,
 	  const vector<typename S::Extension*> extensions,
 	  typename S::Collection& pmc);
 
 // Report number of unclipped matches and their chisq
 template <class S>
 void
-matchCensus(const list<typename S::Match*>& matches, ostream& os);
+matchCensus(const typename S::MCat& matches, ostream& os);
 
 // Map and clip reserved matches
 template <class S>

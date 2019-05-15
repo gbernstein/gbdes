@@ -68,6 +68,7 @@ public:
   // No copying:
   Exposure(const Exposure& rhs) =delete;
   void operator=(const Exposure& rhs) =delete;
+  EIGEN_NEW
 };
 
 // Class that represents an catalog of objects from a single device on single exposure.

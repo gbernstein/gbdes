@@ -58,7 +58,7 @@ fitDefaulted(PixelMapCollection& pmc,
       
   // Make Matches at a grid of points on each extension's device,
   // matching pix coords to the coordinates derived from startWCS.
-  list<Match*> matches;
+  MCat matches;
   for (auto extnptr : extensions) {
     const Exposure& expo = *exposures[extnptr->exposure];
     // Get projection used for this extension, and set up

@@ -1022,7 +1022,7 @@ whoNeedsColor(vector<typename S::Extension*> extensions) {
 template <class S>
 void
 readMatches(img::FTable& table,
-	    list<typename S::Match*>& matches,
+	    typename S::MCat& matches,
 	    vector<typename S::Extension*>& extensions,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
@@ -1692,7 +1692,7 @@ readColors(img::FTable extensionTable,
 template <class S>
 void
 purgeNoisyDetections(double maxError,
-		     list<typename S::Match*>& matches,
+		     typename S::MCat& matches,
 		     const vector<Exposure*>& exposures,
 		     const vector<typename S::Extension*>& extensions) {
   for (auto mptr : matches) {
@@ -1716,7 +1716,7 @@ purgeNoisyDetections(double maxError,
 template <class S>
 void
 purgeSparseMatches(int minMatches,
-		   list<typename S::Match*>& matches) {
+		   typename S::MCat& matches) {
   auto im = matches.begin();
   while (im != matches.end() ) {
     (*im)->countFit();
@@ -1736,7 +1736,7 @@ purgeSparseMatches(int minMatches,
 template <class S>
 void
 purgeBadColor(double minColor, double maxColor,
-	      list<typename S::Match*>& matches) {
+	      typename S::MCat& matches) {
   auto im = matches.begin();
   while (im != matches.end() ) {
     if ((*im)->size() > 0) {
@@ -1756,7 +1756,7 @@ purgeBadColor(double minColor, double maxColor,
 
 template <class S>
 void
-reserveMatches(list<typename S::Match*>& matches,
+reserveMatches(typename S::MCat& matches,
 	       double reserveFraction,
 	       int randomNumberSeed) {
   ran::UniformDeviate<double> u;
@@ -1772,7 +1772,7 @@ reserveMatches(list<typename S::Match*>& matches,
 template <class S>
 map<string, long>
 findUnderpopulatedExposures(long minFitExposure,
-			    const list<typename S::Match*> matches,
+			    const typename S::MCat& matches,
 			    const vector<Exposure*> exposures,
 			    const vector<typename S::Extension*> extensions,
 			    const typename S::Collection& pmc) {
@@ -1809,7 +1809,7 @@ findUnderpopulatedExposures(long minFitExposure,
 template <class S>
 void
 freezeMap(string mapName,
-	  const list<typename S::Match*> matches,
+	  const typename S::MCat matches,
 	  const vector<typename S::Extension*> extensions,
 	  typename S::Collection& pmc) {
   // Nothing to do if map is already fixed or doesn't exist
@@ -1841,7 +1841,7 @@ freezeMap(string mapName,
   
 template <class S>
 void
-matchCensus(const list<typename S::Match*>& matches, ostream& os) {
+matchCensus(const typename S::MCat& matches, ostream& os) {
   long dcount = 0;
   int dof = 0;
   double chi = 0.;
@@ -2021,7 +2021,7 @@ Photo::saveResults(const list<Match*>& matches,
 /***** Astro version ***/
 // Save fitting results (residuals) to output FITS tables.
 void
-Astro::saveResults(const list<Astro::Match*>& matches,
+Astro::saveResults(const astrometry::MCat& matches,
 		   string outCatalog) {
 
   // Open the output bintable for pure position residuals
@@ -2600,7 +2600,7 @@ readObjects<AP>(const img::FTable& extensionTable, \
                 bool logging);	      \
 template void \
 readMatches<AP>(img::FTable& table, \
-		list<typename AP::Match*>& matches, \
+		typename AP::MCat& matches, \
 		vector<typename AP::Extension*>& extensions, \
 		vector<typename AP::ColorExtension*>& colorExtensions, \
 		const ExtensionObjectSet& skipSet, \
@@ -2613,34 +2613,34 @@ readColors<AP>(img::FTable extensionTable, \
 	       bool logging);    \
 template void  \
 purgeNoisyDetections<AP>(double maxError,  \
-			 list<AP::Match*>& matches,  \
+			 AP::MCat& matches,	\
 			 const vector<Exposure*>& exposures,  \
 			 const vector<AP::Extension*>& extensions);  \
 template void  \
 purgeSparseMatches<AP>(int minMatches,  \
-		       list<AP::Match*>& matches);  \
+		       AP::MCat& matches);  \
 template void  \
 purgeBadColor<AP>(double minColor, double maxColor,  \
-		  list<AP::Match*>& matches);  \
+		  AP::MCat& matches);  \
   \
 template void  \
-reserveMatches<AP>(list<AP::Match*>& matches,  \
+reserveMatches<AP>(AP::MCat& matches,  \
 		   double reserveFraction,  \
 		   int randomNumberSeed);  \
   \
 template map<string, long>  \
 findUnderpopulatedExposures<AP> (long minFitExposure,  \
-				 const list<AP::Match*> matches,  \
+				 const AP::MCat& matches,  \
 				 const vector<Exposure*> exposures,  \
 				 const vector<AP::Extension*> extensions,  \
 				 const AP::Collection& pmc);  \
 template void  \
 freezeMap<AP>(string mapName,  \
-	      const list<AP::Match*> matches,  \
+	      const AP::MCat matches,  \
 	      const vector<AP::Extension*> extensions,  \
 	      AP::Collection& pmc);  \
 template void  \
-matchCensus<AP>(const list<AP::Match*>& matches, ostream& os);	\
+matchCensus<AP>(const AP::MCat& matches, ostream& os);	\
 template void  \
 clipReserved<AP>(AP::Align& ca,  \
 		 double clipThresh,  \
