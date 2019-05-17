@@ -12,7 +12,7 @@
 
 * Allow photmetric reference catalog
 
-* Allow or derive asymmetric errors and excess variance from turbulence
+* Derive asymmetric errors and excess variance from turbulence
 
 * Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat.
 
