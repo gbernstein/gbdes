@@ -471,6 +471,7 @@ readExposures(const vector<Instrument*>& instruments,
   vector<double> observatory_y;
   vector<double> observatory_z;
 
+  /**/cerr << "Read" << endl;
   ff.readCells(names, "Name");
   ff.readCells(ra, "RA");
   ff.readCells(dec, "Dec");
@@ -479,6 +480,7 @@ readExposures(const vector<Instrument*>& instruments,
   ff.readCells(airmass, "Airmass");
   ff.readCells(exptime, "Exptime");
 
+  /**/cerr << "Maybes" << endl;
   // Columns that might not always be present:
   try {
     ff.readCells(mjd, "MJD");
@@ -531,8 +533,8 @@ readExposures(const vector<Instrument*>& instruments,
   }
   try {
     ff.readCells(syserr_xx, "syserrxx");
-    ff.readCells(syserr_xx, "syserryy");
-    ff.readCells(syserr_xx, "syserrxy");
+    ff.readCells(syserr_yy, "syserryy");
+    ff.readCells(syserr_xy, "syserrxy");
     // If all three columns exist, replace
     // any existing astrometricCovariance with this one if
     // it is nonzero.
@@ -588,6 +590,7 @@ readExposures(const vector<Instrument*>& instruments,
     observatory.clear();
   }
 
+  /**/cerr << "loop" << endl;
   // Initialize our output arrays to not-in-use values
   vector<Exposure*> exposures(names.size(), nullptr);
   exposureColorPriorities = vector<int>(names.size(), -1);
@@ -656,6 +659,7 @@ readExposures(const vector<Instrument*>& instruments,
 	expo->photometricVariance = photometricVariance[i];
     }
   } // End exposure loop
+  /**/cerr << "done" << endl;
   return exposures;
 }
 

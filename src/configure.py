@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import division,print_function
+import numpy as np
 
 """
 Collect information needed for astrometric and photometric matching of a collection of catalogs.
@@ -663,6 +664,9 @@ if __name__=='__main__':
                         if value is not None:
                             extn[k] = value
 
+                    # Do any variable substitutions on the attributes:
+                    variableSubstitution(extn)
+
                     # Fill in blank device name if needed
                     if 'INSTRUMENT' not in extn:
                         print("ERROR: Missing Instrument at file",fitsname,"extension",iextn)
@@ -697,8 +701,6 @@ if __name__=='__main__':
                         extn['WCSIN'] = wcshdr.tostring(sep='\n',
                                                         padding=False,endcard=True) + '\n'
                             
-                    # Do any variable substitutions on the attributes:
-                    variableSubstitution(extn)
                     
                     if extn['EXPOSURE'] not in exposures:
                         # Create a new exposure dictionary if needed

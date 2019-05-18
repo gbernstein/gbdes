@@ -426,17 +426,17 @@ main(int argc,
       vector<long> vid;
       extensionTable.readCell(key, "IDKEY", iextn);
       try {
-	/**/cerr << "Trying long read" << endl;
+	//**/cerr << "Trying long read" << endl;
 	ft.readCells(vid, key);
       } catch (FTableError& m) {
 	// Trap for using int column in source file instead of long:
 	vector<LONGLONG> vidint;
-	/**/cerr << "Retrying int" << endl;
+	//**/cerr << "Retrying int" << endl;
 	ft.readCells(vidint, key);
 	vid.reserve(vidint.size());
 	vid.insert(vid.begin(), vidint.begin(), vidint.end());
       }
-      /**/cerr << "Done" << endl;
+      //**/cerr << "Done" << endl;
       vector<bool> isStar(ft.nrows(), true);
       {
 	string starExpression;

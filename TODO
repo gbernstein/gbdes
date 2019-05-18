@@ -13,11 +13,6 @@
 * Allow photmetric reference catalog
 
 * Derive asymmetric errors and excess variance from turbulence
-
-* Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat.
-
-* Fix configure.py to use exposure-level APCORR more gracefully, maybe make more
-  general the option to prefer exposure-level keywords.
   
 * Go through test programs (AUDIT file)
 
@@ -118,6 +113,8 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * WCSFit puts parallaxPrior into WCS_UNIT from mas.
 * DOF changing during Newton iterations (needed dof,chisq reductions in chisqDOF)
 * Some Eigen alignment error - needed EIGEN_NEW in Exposure, Match, PMMatch
+* Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat -
+  get from gbutil.decam now.
 
 
 ----
