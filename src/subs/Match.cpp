@@ -786,6 +786,11 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
     chi += cc * i->fitWeight;
     maxDeviateSq = MAX(cc/i->expectedTrueChisq , maxDeviateSq);
   }
+  // Add parallax prior
+  if (parallaxPrior > 0.) {
+    double tmp = pm[PAR] / parallaxPrior;
+    chi += tmp*tmp;
+  }
   dofAccum += dof;
   return chi;
 }
@@ -811,7 +816,7 @@ PMMatch::sigmaClip(double sigThresh,
       err[0] =  i->xw;
       err[1] =  i->yw;
       err -= predict(i);
-      double devSq = err.transpose() * i->invCov * err;
+      devSq = err.transpose() * i->invCov * err;
     }
     devSq /= i->expectedTrueChisq;
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
@@ -1020,6 +1025,12 @@ PMMatch::accumulateChisq(double& chisq,
       if (dXYdP[ipt]) {delete dXYdP[ipt]; dXYdP[ipt]=nullptr;}
     } // endif for PMDetections
   } // object loop
+
+  // Add parallax prior
+  if (parallaxPrior > 0.) {
+    double tmp = pm[PAR] / parallaxPrior;
+    chisq += tmp*tmp;
+  }
 
   if (!reuseAlpha) {
     // Subtract terms with derivatives of PM,

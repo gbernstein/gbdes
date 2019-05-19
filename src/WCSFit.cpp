@@ -732,6 +732,8 @@ main(int argc, char *argv[])
     } while (coarsePasses || nclip>0);
   
     // The re-fitting is now complete.  Serialize all the fitted coordinate systems
+    PROGRESS(2,Saving astrometric parameters);
+    // Save the pointwise fitting results
     {
       ofstream ofs(outWcs.c_str());
       if (!ofs) {
@@ -754,7 +756,7 @@ main(int argc, char *argv[])
     // Output data and calculate some statistics
     //////////////////////////////////////
 
-    PROGRESS(2,Saving astrometric fits);
+    PROGRESS(2,Saving astrometric residuals);
     // Save the pointwise fitting results
     Astro::saveResults(matches, outCatalog);
     
