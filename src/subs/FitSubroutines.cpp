@@ -471,7 +471,6 @@ readExposures(const vector<Instrument*>& instruments,
   vector<double> observatory_y;
   vector<double> observatory_z;
 
-  /**/cerr << "Read" << endl;
   ff.readCells(names, "Name");
   ff.readCells(ra, "RA");
   ff.readCells(dec, "Dec");
@@ -480,7 +479,6 @@ readExposures(const vector<Instrument*>& instruments,
   ff.readCells(airmass, "Airmass");
   ff.readCells(exptime, "Exptime");
 
-  /**/cerr << "Maybes" << endl;
   // Columns that might not always be present:
   try {
     ff.readCells(mjd, "MJD");
@@ -590,7 +588,6 @@ readExposures(const vector<Instrument*>& instruments,
     observatory.clear();
   }
 
-  /**/cerr << "loop" << endl;
   // Initialize our output arrays to not-in-use values
   vector<Exposure*> exposures(names.size(), nullptr);
   exposureColorPriorities = vector<int>(names.size(), -1);
@@ -659,7 +656,6 @@ readExposures(const vector<Instrument*>& instruments,
 	expo->photometricVariance = photometricVariance[i];
     }
   } // End exposure loop
-  /**/cerr << "done" << endl;
   return exposures;
 }
 
@@ -2171,10 +2167,18 @@ Astro::saveResults(const astrometry::MCat& matches,
 
     const Match* m = *im;
 
+    try { /***/
     // Update all world coords and mean solutions
     m->remap(true);  // include remapping of clipped detections
+    } expect (std::runtime_error& rte) { /**/
+      cerr << "Error when remapping match " << matchCount << endl;
+      cerr << "->" << rte.what() << endl;
+      auto d = *m->begin();
+      cerr << "First detection is extension/catalog "
+	   <<  d->catalogNumber << " / " << d->objectNumber << endl;
+    }
     m->solve();
-
+      
     // Don't report results for matches with no results
     if (m->getDOF() < 0) 
       continue;
@@ -2240,12 +2244,27 @@ Astro::saveResults(const astrometry::MCat& matches,
 	xyMean = pmm->predict(detptr);
 
       // Get world residuals (returned RESIDUAL_UNIT)
-      astrometry::Vector2 residW = detptr->residWorld();
+      try { /***/
+	// Update all world coords and mean solutions
+	astrometry::Vector2 residW = detptr->residWorld();
+      } expect (std::runtime_error& rte) { /**/
+	cerr << "Error when residWorld " << endl;
+	cerr << "->" << rte.what() << endl;
+	cerr << "Extension/catalog "
+	   <<  detptr->catalogNumber << " / " << detptr->objectNumber << endl;
+      }
       xresw.push_back(residW[0]);
       yresw.push_back(residW[1]);
 
       // Get pixel residuals
-      astrometry::Vector2 residP = detptr->residPix();
+      try { /***/
+	astrometry::Vector2 residP = detptr->residPix();
+      } expect (std::runtime_error& rte) { /**/
+	cerr << "Error when residPix " << endl;
+	cerr << "->" << rte.what() << endl;
+	cerr << "Extension/catalog "
+	   <<  detptr->catalogNumber << " / " << detptr->objectNumber << endl;
+      }
       xrespix.push_back(residP[0]);
       yrespix.push_back(residP[1]);
 

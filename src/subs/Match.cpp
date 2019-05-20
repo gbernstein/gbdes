@@ -942,6 +942,7 @@ PMMatch::accumulateChisq(double& chisq,
 			 (*i)->color);
     }
   }
+  isMappedFit = true;  // We have just remapped everything
   // Solve the system now
   solve();
   

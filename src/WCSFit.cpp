@@ -585,12 +585,15 @@ main(int argc, char *argv[])
       ff.getHdrValue("Affinity", affinity);
       stringstuff::stripWhite(affinity);
       
+      // Only use STELLAR affinity for astrometry
+      if (!stringstuff::nocaseEqual(affinity,stellarAffinity))
+	continue;
       if (verbose>=2)
 	cerr << "-->Parsing catalog field " << dummy1 << " Affinity " << affinity << endl;
 
       // Set this true if we are going to want to create PMMatches from
       // this extension's matches:
-      bool usePM = stringstuff::nocaseEqual(affinity,stellarAffinity) && freePM;
+      bool usePM = freePM;
       
       readMatches<Astro>(ff, matches, extensions, colorExtensions, skipSet, minMatches,
 			 usePM, parallaxPrior);
