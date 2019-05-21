@@ -47,7 +47,7 @@ def addObservatory(exposureTable, fitsFile):
         ff[0].header['OBSX'] = observatory[0]
         ff[0].header['OBSY'] = observatory[1]
         ff[0].header['OBSZ'] = observatory[2]
-        ff[0].header['MJD_MID'] = mjd
+        ff[0].header['MJD-MID'] = mjd
 if __name__=="__main__":
     args = parser.parse_args()
     exposures = pf.getdata(args.exposureTable,1)

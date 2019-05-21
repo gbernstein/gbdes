@@ -579,7 +579,6 @@ PMMatch::prepare() const {
   pmFisher.setZero();
   pmInvFisher.setZero();
   pmTrueCov.setZero();
-  priorChisq = 0.;
   priorMean.setZero();
   dof = 0;
   nFit = 0;
@@ -655,13 +654,11 @@ PMMatch::prepare() const {
       if (auto ii = dynamic_cast<const PMDetection*>(i)) {
 	tmp = ii->pmInvCov * ii->pmMean;
 	tmp *= ii->fitWeight;
-	priorChisq += ii->pmMean.transpose() * tmp;
 	priorMean += tmp;
       }
     }
-    tmp = pmInvFisher * priorMean;
-    priorChisq -= priorMean.transpose() * tmp;  // Constant term of chisq
-    priorMean = tmp;         // linear term of chisq
+
+    priorMean = pmInvFisher * priorMean;    // linear term of chisq
   }
   
   // Calculate the covariance matrix for fitted PM

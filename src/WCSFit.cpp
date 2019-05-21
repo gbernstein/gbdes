@@ -277,23 +277,19 @@ main(int argc, char *argv[])
 		    true, // Use reference exposures for astrometry
 		    outputCatalogAlreadyOpen);
 
-    /**/cerr << "back" << endl;
     if (sysError > 0.) {
       Matrix22 astrometricCovariance(0.);
       astrometricCovariance(0,0) = sysError*sysError;
       astrometricCovariance(1,1) = sysError*sysError;
-      /**/cerr << "syserr" << endl;
       for (auto e : exposures) {
 	if (e && e->instrument >= 0)
 	  e->astrometricCovariance += astrometricCovariance;
       }
-      /**/cerr << "done syserr" << endl;
     }
     if (referenceSysError > 0.) {
       Matrix22 astrometricCovariance(0.);
       astrometricCovariance(0,0) = referenceSysError*referenceSysError;
       astrometricCovariance(1,1) = referenceSysError*referenceSysError;
-      /**/cerr << "refsyserr" << endl;
       for (auto e : exposures) {
 	if (e && (e->instrument == REF_INSTRUMENT || e->instrument== PM_INSTRUMENT))
 	  e->astrometricCovariance += astrometricCovariance;
@@ -303,7 +299,6 @@ main(int argc, char *argv[])
 	// since we'll assume these 5d projects (Gaia!) have treated errors well.
 	// For single-epoch reference catalogs, PM is probably the largest sys error.
       }
-      /**/cerr << "done refsyserr" << endl;
     }
 		    
     PROGRESS(1,Reading extensions);
