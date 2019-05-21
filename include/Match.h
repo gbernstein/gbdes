@@ -229,7 +229,8 @@ namespace astrometry {
     // Fitting chisq (not true one) for this match, and largest ratio
     // of true chisq to expected for any detection being fit.
     // Both arguments are updated with info from this match.
-    virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
+    virtual double chisq(int& dofAccum, double& maxDeviateSq,
+			 bool dump=false) const;
 
     typedef list<Detection*>::iterator iterator;
     typedef list<Detection*>::const_iterator const_iterator;
@@ -267,7 +268,8 @@ namespace astrometry {
     // Fitting chisq (not true one) for this match, and largest ratio
     // of true chisq to expected for any detection being fit.
     // Both arguments are updated with info from this match.
-    virtual double chisq(int& dofAccum, double& maxDeviateSq) const;
+    virtual double chisq(int& dofAccum, double& maxDeviateSq,
+			 bool dump=false) const;
 
     // 
     const PMSolution& getPM() const {return pm;}
