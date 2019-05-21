@@ -67,10 +67,8 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
   m.col(PAR) = wcsParallax;
   
   // Convert proper motion from ICRS directions to WCS
-  Matrix22 pm;
-  pm.setToIdentity();
-  pm = dWdICRS * pm;
-  pm *= pmTDB;  // pm should already be in WCS_UNIT / TDB_UNIT
+  Matrix22 pm = dWdICRS * pmTDB;
+ // (pm should already be in WCS_UNIT / TDB_UNIT)
   m.subMatrix(0,2,VX,VY+1) = pm;
 }
 
@@ -544,7 +542,8 @@ Match::sigmaClip(double sigThresh,
 }
 
 double
-Match::chisq(int& dofAccum, double& maxDeviateSq) const {
+Match::chisq(int& dofAccum, double& maxDeviateSq,
+	     bool dump) const {
   solve();
   double chi=0.;
   if (dof<=0) return chi; // No info from degenerate/perfect fits
@@ -567,6 +566,8 @@ Match::chisq(int& dofAccum, double& maxDeviateSq) const {
 // Routines for matches allowing proper motion and parallax
 /////////////////////////////////////////////////////////////////////
 
+const double PM_PRIOR = 100. * RESIDUAL_UNIT / WCS_UNIT; /**/
+
 PMMatch::PMMatch(Detection *e): Match(e), parallaxPrior(0.), pm(0.) {}
 				  
 void
@@ -588,6 +589,10 @@ PMMatch::prepare() const {
   if (parallaxPrior > 0.) {
     pmFisher(PAR,PAR) = 1./(parallaxPrior*parallaxPrior);
   }
+
+  //** Proper-motion prior
+  pmFisher(VX,VX) = 1./ (PM_PRIOR*PM_PRIOR);
+  pmFisher(VY,VY) = 1./ (PM_PRIOR*PM_PRIOR);
 
   // Now sum Fisher over all Detections
   PMProjector m;  // (x,y) = m * pm
@@ -759,7 +764,8 @@ PMMatch::solve() const {
 }
 
 double
-PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
+PMMatch::chisq(int& dofAccum, double& maxDeviateSq,
+	       bool dump) const {
   solve();  // Get best PM for current parameters
   double chi=0.;
   if (dof<=0) return chi; // No info from degenerate/perfect fits
@@ -767,11 +773,15 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
   Vector2 dxy;
   PMSolution dpm;
   double cc;
+  int j=0;
   for (auto i : elist) {
+    if (dump) cerr << " Det " << j << " weight " << i->fitWeight << endl;
+    j++;
     if (!isFit(i)) continue;
     if (auto ii = dynamic_cast<const PMDetection*>(i)) {
       dpm = ii->pmMean - pm;
       cc = dpm.transpose() * ii->pmInvCov * dpm;
+      if (dump) cerr << "   PM cc " << cc << endl;
     } else {    
       // Regular single-epoch detection
       dxy[0] = i->xw;
@@ -779,6 +789,11 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
       m = i->getProjector();
       dxy -= m * pm;
       cc = dxy.transpose() * i->invCov * dxy;
+      if (dump) cerr << "      cc " << cc 
+		     << " dxy " << dxy[0]*WCS_UNIT/RESIDUAL_UNIT
+		     << " " << dxy[1]*WCS_UNIT/RESIDUAL_UNIT
+		     << endl;
+      if (dump) cerr << "m:  " << m << endl;
     }
     chi += cc * i->fitWeight;
     maxDeviateSq = MAX(cc/i->expectedTrueChisq , maxDeviateSq);
@@ -786,6 +801,12 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq) const {
   // Add parallax prior
   if (parallaxPrior > 0.) {
     double tmp = pm[PAR] / parallaxPrior;
+    chi += tmp*tmp;
+    if (dump) cerr << "    par " << tmp*tmp << " on " << pm[PAR]*WCS_UNIT/RESIDUAL_UNIT
+		   << " mas " << endl;
+    /**/ tmp = pm[VX] / PM_PRIOR;
+    chi += tmp*tmp;
+    /**/ tmp = pm[VY] / PM_PRIOR;
     chi += tmp*tmp;
   }
   dofAccum += dof;
@@ -825,31 +846,31 @@ PMMatch::sigmaClip(double sigThresh,
 
   if (worst) {
 #ifdef DEBUG
-    if (auto ii = dynamic_cast<const PMDetection* worst) {
-      cerr << "clipped PM" << worst->catalogNumber
+    if (auto ii = dynamic_cast<const PMDetection*>(worst)) {
+      cerr << "clipped PM " << worst->catalogNumber
 	   << " / " << worst->objectNumber 
 	   << " at " << worst->xw << "," << worst->yw 
-	   << " resid/sig " << np.sqrt(maxSq) 
+	   << " resid/sig " << sqrt(maxSq) 
 	   << endl;
     } else {
       cerr << "clipped " << worst->catalogNumber
 	   << " / " << worst->objectNumber 
 	   << " at " << worst->xw << "," << worst->yw 
-	   << " resid " << setw(6) << (worst->xw-predict(worst)[0]) * WCS_UNIT/RESIDUAL_UNIT;
-	   << " " << setw(6) << (worst->yw-predict(worst)[1]) * WCS_UNIT/RESIDUAL_UNIT;
-	   << " resid/sig " << np.sqrt(maxSq) 
+	   << " resid " << setw(6) << (worst->xw-predict(worst)[0]) * WCS_UNIT/RESIDUAL_UNIT
+	   << " " << setw(6) << (worst->yw-predict(worst)[1]) * WCS_UNIT/RESIDUAL_UNIT
+	   << " resid/sig " << sqrt(maxSq) 
 	   << endl;
     }
 #endif
-      if (deleteDetection) {
-	elist.remove(worst);
-	delete worst;
-      }	else {
-	worst->clip();
-      }
-      isPrepared = false;
-      isSolved = false;
-      return true;
+    if (deleteDetection) {
+      elist.remove(worst);
+      delete worst;
+    } else {
+      worst->clip();
+    }
+    isPrepared = false;
+    isSolved = false;
+    return true;
   } else {
     // Nothing to clip
     return false;
@@ -1027,6 +1048,10 @@ PMMatch::accumulateChisq(double& chisq,
   // Add parallax prior
   if (parallaxPrior > 0.) {
     double tmp = pm[PAR] / parallaxPrior;
+    chisq += tmp*tmp;
+    /**/ tmp = pm[VX] / PM_PRIOR;
+    chisq += tmp*tmp;
+    /**/ tmp = pm[VY] / PM_PRIOR;
     chisq += tmp*tmp;
   }
 

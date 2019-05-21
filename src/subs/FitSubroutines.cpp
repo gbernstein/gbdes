@@ -2114,6 +2114,7 @@ Astro::saveResults(const astrometry::MCat& matches,
   // Write all matches to output catalog, deleting them along the way
   // and accumulating statistics of each exposure.
   //
+
   long matchCount = 0;
   for (auto im = matches.begin(); true; ++im, ++matchCount) {
     // First, write vectors to table if they've gotten big or we're at end
@@ -2167,16 +2168,8 @@ Astro::saveResults(const astrometry::MCat& matches,
 
     const Match* m = *im;
 
-    try { /***/
     // Update all world coords and mean solutions
     m->remap(true);  // include remapping of clipped detections
-    } expect (std::runtime_error& rte) { /**/
-      cerr << "Error when remapping match " << matchCount << endl;
-      cerr << "->" << rte.what() << endl;
-      auto d = *m->begin();
-      cerr << "First detection is extension/catalog "
-	   <<  d->catalogNumber << " / " << d->objectNumber << endl;
-    }
     m->solve();
       
     // Don't report results for matches with no results
@@ -2244,27 +2237,12 @@ Astro::saveResults(const astrometry::MCat& matches,
 	xyMean = pmm->predict(detptr);
 
       // Get world residuals (returned RESIDUAL_UNIT)
-      try { /***/
-	// Update all world coords and mean solutions
-	astrometry::Vector2 residW = detptr->residWorld();
-      } expect (std::runtime_error& rte) { /**/
-	cerr << "Error when residWorld " << endl;
-	cerr << "->" << rte.what() << endl;
-	cerr << "Extension/catalog "
-	   <<  detptr->catalogNumber << " / " << detptr->objectNumber << endl;
-      }
+      astrometry::Vector2 residW = detptr->residWorld();
       xresw.push_back(residW[0]);
       yresw.push_back(residW[1]);
 
       // Get pixel residuals
-      try { /***/
-	astrometry::Vector2 residP = detptr->residPix();
-      } expect (std::runtime_error& rte) { /**/
-	cerr << "Error when residPix " << endl;
-	cerr << "->" << rte.what() << endl;
-	cerr << "Extension/catalog "
-	   <<  detptr->catalogNumber << " / " << detptr->objectNumber << endl;
-      }
+      astrometry::Vector2 residP = detptr->residPix();
       xrespix.push_back(residP[0]);
       yrespix.push_back(residP[1]);
 
@@ -2283,7 +2261,8 @@ Astro::saveResults(const astrometry::MCat& matches,
 	// Transform back to pixel errors to get circularized pixel error
 	{
 	  cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units
-	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1]);
+	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1],
+					      detptr->color);
 	  astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
 	  double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);
 	  sigpix.push_back(detCov>0. ? pow(detCov,0.25) : 0.);

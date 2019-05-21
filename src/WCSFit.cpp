@@ -240,7 +240,6 @@ main(int argc, char *argv[])
     readFields(inputTables, outCatalog, fieldNames, fieldProjections,
 	       fieldEpochs, pmEpoch);
 
-
     PROGRESS(1,Reading instruments);
 
     // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
