@@ -99,7 +99,7 @@ struct Astro {
   static void handlePMDetection(astrometry::PMDetection* pmd, Detection* d);
   
   static Match*
-  makeNewMatch(Detection* d, bool usePM, double parallaxPrior);
+  makeNewMatch(Detection* d, bool usePM);
 
   static const int isAstro = 1;
 };
@@ -153,7 +153,7 @@ struct Photo {
 				Detection* d) {};   // This is a no-op for photo
 
   static Match*
-  makeNewMatch(Detection* d, bool usePM, double parallaxPrior) {
+  makeNewMatch(Detection* d, bool usePM) {
     return new Match(d);
   }
   static const int isAstro = 0;
@@ -360,8 +360,7 @@ readMatches(img::FTable& table,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
-	    bool usePM=false,        // If true, create PMMatches
-	    double parallaxPrior=0.);   // And use this to set parallax prior
+	    bool usePM=false);        // If true, create PMMatches
 
 // Read each Extension's objects' data from it FITS catalog
 // and place into Detection structures.

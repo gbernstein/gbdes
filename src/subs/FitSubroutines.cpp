@@ -1027,8 +1027,7 @@ readMatches(img::FTable& table,
 	    vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
-	    bool usePM,
-	    double parallaxPrior) {
+	    bool usePM) {
 
   vector<int> seq;
   vector<LONGLONG> extn;
@@ -1079,9 +1078,8 @@ readMatches(img::FTable& table,
 	    m->add(d);
 	  else {
 	    // Make a new Match object from this detection.
-	    // It might be a PMMatch if this is an appropriate catalog,
-	    // in which case it will get the parallaxPrior too.
-	    m = S::makeNewMatch(d, usePM, parallaxPrior);
+	    // It might be a PMMatch if this is an appropriate catalog.
+	    m = S::makeNewMatch(d, usePM);
 	  }
 	}
 	matches.push_back(m);
@@ -1332,13 +1330,10 @@ Astro::handlePMDetection(astrometry::PMDetection* pmd, Astro::Detection* d) {
 }
  
 astrometry::Match*
-Astro::makeNewMatch(Astro::Detection* d, bool usePM, double parallaxPrior) {
+Astro::makeNewMatch(Astro::Detection* d, bool usePM) {
   if (usePM) {
-    // Make a PMMatch and give it parallax prior
-    auto mpm = new astrometry::PMMatch(d);
-    if (parallaxPrior>0.) 
-      mpm->setParallaxPrior(parallaxPrior);
-    return mpm;
+    // Make a PMMatch
+    return new astrometry::PMMatch(d);
   } else {
     // Plain old Match
     return new Match(d);
@@ -2607,8 +2602,7 @@ readMatches<AP>(img::FTable& table, \
 		vector<typename AP::ColorExtension*>& colorExtensions, \
 		const ExtensionObjectSet& skipSet, \
 		int minMatches, \
-		bool usePM, \
-		double parallaxPrior);  \
+		bool usePM);  \
 template void \
 readColors<AP>(img::FTable extensionTable, \
 	       vector<AP::ColorExtension*> colorExtensions, \

@@ -248,7 +248,8 @@ namespace astrometry {
     EIGEN_NEW
     PMMatch(Detection* e);
 
-    void setParallaxPrior(double p) {parallaxPrior = p;}
+    // Set the prior applied to all PMMatches - given in the I/O units
+    static void setPrior(double pmPrior, double parallaxPrior);
 
     virtual void solve() const;  // Recalculate best-fit PM 
 
@@ -284,6 +285,8 @@ namespace astrometry {
 
   protected:
   private:
+    static PMSolution priorFisher;  // A diagonal prior on the PM solution for every PMMatch
+    
     double parallaxPrior;   // sigma for prior on parallax (radians)
 
     mutable PMSolution pm;          // Chisq-minimizing position/parallax/pm
@@ -292,7 +295,6 @@ namespace astrometry {
     mutable PMCovariance pmFisher;  // Fisher matrix for PM that includes weights
     mutable PMCovariance pmInvFisher;     // Inverse of pmFisher
     mutable PMCovariance pmTrueCov; // Expected cov matrix of PM.
-    mutable double priorChisq;      // Chisq term quadratic in PMDetection means
     mutable PMSolution priorMean;   // PM contribution from PMDetection means
   };
 

@@ -25,6 +25,16 @@ using std::set;
 
 using namespace astrometry;
 
+// Static member of the PMMatch object:
+PMSolution PMMatch::priorFisher(0.);
+
+// And its setter
+void PMMatch::setPrior(double pmPrior, double parallaxPrior) {
+  priorFisher.setZero();
+  priorFisher[PM::VX] = priorFisher[PM::VY] = pow(pmPrior*PM_UNIT/(WCS_UNIT/TDB_UNIT), -2.);
+  priorFisher[PM::PAR] = pow(parallaxPrior*PARALLAX_UNIT / WCS_UNIT, -2.);
+}
+
 
 void
 Detection::buildProjector(double pmTDB,	       // Time in years from PM reference epoch
@@ -568,7 +578,7 @@ Match::chisq(int& dofAccum, double& maxDeviateSq,
 
 const double PM_PRIOR = 100. * RESIDUAL_UNIT / WCS_UNIT; /**/
 
-PMMatch::PMMatch(Detection *e): Match(e), parallaxPrior(0.), pm(0.) {}
+PMMatch::PMMatch(Detection *e): Match(e), pm(0.) {}
 				  
 void
 PMMatch::prepare() const {
@@ -585,14 +595,8 @@ PMMatch::prepare() const {
   nFit = 0;
   trivialWeights = true;
   
-  // First put any parallax prior into Fisher
-  if (parallaxPrior > 0.) {
-    pmFisher(PAR,PAR) = 1./(parallaxPrior*parallaxPrior);
-  }
-
-  //** Proper-motion prior
-  pmFisher(VX,VX) = 1./ (PM_PRIOR*PM_PRIOR);
-  pmFisher(VY,VY) = 1./ (PM_PRIOR*PM_PRIOR);
+  // First put any prior into Fisher
+  pmFisher.diagonal() = priorFisher;
 
   // Now sum Fisher over all Detections
   PMProjector m;  // (x,y) = m * pm
@@ -799,16 +803,8 @@ PMMatch::chisq(int& dofAccum, double& maxDeviateSq,
     maxDeviateSq = MAX(cc/i->expectedTrueChisq , maxDeviateSq);
   }
   // Add parallax prior
-  if (parallaxPrior > 0.) {
-    double tmp = pm[PAR] / parallaxPrior;
-    chi += tmp*tmp;
-    if (dump) cerr << "    par " << tmp*tmp << " on " << pm[PAR]*WCS_UNIT/RESIDUAL_UNIT
-		   << " mas " << endl;
-    /**/ tmp = pm[VX] / PM_PRIOR;
-    chi += tmp*tmp;
-    /**/ tmp = pm[VY] / PM_PRIOR;
-    chi += tmp*tmp;
-  }
+  chi += pm.cwiseProduct(pm).dot(priorFisher);
+
   dofAccum += dof;
   return chi;
 }
@@ -1046,14 +1042,7 @@ PMMatch::accumulateChisq(double& chisq,
   } // object loop
 
   // Add parallax prior
-  if (parallaxPrior > 0.) {
-    double tmp = pm[PAR] / parallaxPrior;
-    chisq += tmp*tmp;
-    /**/ tmp = pm[VX] / PM_PRIOR;
-    chisq += tmp*tmp;
-    /**/ tmp = pm[VY] / PM_PRIOR;
-    chisq += tmp*tmp;
-  }
+  chisq += pm.cwiseProduct(pm).dot(priorFisher);
 
   if (!reuseAlpha) {
     // Subtract terms with derivatives of PM,

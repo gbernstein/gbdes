@@ -1,8 +1,10 @@
 * Check on int/long/LONGLONG for id's
+* Fix conflict between AstronomicalConstants SECOND and an MKL routine of same name.
 * Implement proper motion and parallax, Gaia DR2 (or other) references
   * WEIGHT, MAGWEIGHT required?
   * AIRMASS, EXPOSURE coming in properly in config.py?
   * get real ra, dec into coords for the python notebook making fake data
+  * output RA, Dec for stars / output in degrees, not mas for [xy]W
     
 * It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
 
@@ -111,6 +113,7 @@ For py3 branch, upgrading all Python to work with Python 3.x:
     make matrices combining positions and PM/PAR better conditioned.
   * Alter getGaiaDR2 to use mas in position covariances.
   * WCSFit puts parallaxPrior into WCS_UNIT from mas.
+  * move parallax/PM priors into static variables of PMDetection
 * DOF changing during Newton iterations (needed dof,chisq reductions in chisqDOF)
 * Some Eigen alignment error - needed EIGEN_NEW in Exposure, Match, PMMatch
 * Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat -

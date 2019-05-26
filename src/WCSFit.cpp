@@ -82,6 +82,7 @@ main(int argc, char *argv[])
   bool   freePM; 
   double pmEpoch;
   double parallaxPrior;
+  double pmPrior;
 
   int minMatches;
   int minFitExposures;
@@ -127,6 +128,8 @@ main(int argc, char *argv[])
 			 "Time origin for proper motion (2015.5)", 2015.5);
     parameters.addMember("parallaxPrior",&parallaxPrior, def | low,
 			 "Prior on parallax for each star (mas)", 10., 0.);
+    parameters.addMember("pmPrior",&pmPrior, def | low,
+			 "Prior on proper motion per axis for each star (mas/yr)", 100., 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "Minimum number of detections for usable match", 2, 2);
     parameters.addMember("minFitExposures",&minFitExposures, def | low,
@@ -189,7 +192,9 @@ main(int argc, char *argv[])
     referenceSysError *= RESIDUAL_UNIT/WCS_UNIT;
     sysError *= RESIDUAL_UNIT/WCS_UNIT;
     maxError *= RESIDUAL_UNIT/WCS_UNIT;
-    parallaxPrior *= RESIDUAL_UNIT/WCS_UNIT;
+
+    PMMatch::setPrior(pmPrior, parallaxPrior);
+
 
     /////////////////////////////////////////////////////
     // Parse all the parameters
@@ -590,7 +595,7 @@ main(int argc, char *argv[])
       bool usePM = freePM;
       
       readMatches<Astro>(ff, matches, extensions, colorExtensions, skipSet, minMatches,
-			 usePM, parallaxPrior);
+			 usePM);
       
     } // End loop over input matched catalogs
 
@@ -753,7 +758,7 @@ main(int argc, char *argv[])
     // Output data and calculate some statistics
     //////////////////////////////////////
 
-    PROGRESS(2,Saving astrometric residuals);
+    PROGRESS(1,Saving astrometric residuals);
     // Save the pointwise fitting results
     Astro::saveResults(matches, outCatalog);
     
