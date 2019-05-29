@@ -1291,14 +1291,19 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       choleskyFails=true;
     }
 #elif defined USE_EIGEN
-    if (inPlace)
-      throw AstrometryError("Do not currently support in-place Cholesky for Eigen");
-    // The difficulty is that the type of an in-place LLT is different from
-    // the type for a "normal" LLT.  I can't figure out how to allow both
-    // possibilities without making two branches of the whole iteration code.
-    auto llt = alpha.llt();
-    if (llt.info()==Eigen::NumericalIssue)
-      choleskyFails = true;
+    typedef Eigen::LLT<Eigen::Ref<typename DMatrix::Base>,Eigen::Lower> InplaceLLT;
+    typedef Eigen::LLT<typename DMatrix::Base,Eigen::Lower> LLT;
+    InplaceLLT* inplaceLLT = nullptr;
+    LLT* llt = nullptr;
+    if (inPlace) {
+      inplaceLLT = new InplaceLLT(alpha);
+      if (inplaceLLT->info()==Eigen::NumericalIssue)
+	choleskyFails = true;
+    } else {
+      llt = new LLT(alpha);
+      if (llt->info()==Eigen::NumericalIssue)
+	choleskyFails = true;
+    }
 #endif
     
     // If the Cholesky decomposition failed for non-pos-def matrix, then
@@ -1398,7 +1403,10 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       beta /= symAlpha;
 	
 #elif defined USE_EIGEN
-      beta = llt.solve(beta);
+      if (inPlace)
+	beta = inplaceLLT->solve(beta);
+      else
+	beta = llt->solve(beta);
 #endif
       if (precondition) {
 	beta = ElemProd(beta,ss);
@@ -1428,6 +1436,8 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       if (newChisq > oldChisq * 1.0001) break;
       else if ((oldChisq - newChisq) < oldChisq * relativeTolerance) {
 	// Newton has converged, so we're done.
+	if (llt) delete llt;
+	if (inplaceLLT) delete inplaceLLT;
 	return newChisq;
       }
       // Want another Newton iteration, but keep alpha as before
@@ -1436,12 +1446,14 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     }
     // If we reach this place, Newton is going backwards or nowhere, slowly.
     // So just give it up.
+    if (llt) delete llt;
+    if (inplaceLLT) delete inplaceLLT;
   }
 
   // ??? Signal that alpha should be fixed for all iterations of Marquardt?
   Marquardt<CoordAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
-  marq.setSaveMemory();
+  marq.setSaveMemory();  
   double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
   setParams(p);
   {
