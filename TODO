@@ -12,6 +12,8 @@
 
 * Change photometric fit / clip to use fitWeight, other parallel state maintenance to Astro.
 
+* Add in-place Cholesky to photometric solver for Eigen
+
 * Allow photmetric reference catalog
 
 * Derive asymmetric errors and excess variance from turbulence
