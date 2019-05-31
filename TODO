@@ -6,6 +6,8 @@
   * get real ra, dec into coords for the python notebook making fake data
   * output RA, Dec for stars / output in degrees, not mas for [xy]W
     
+* Residual calculation should be multiprocessed, and reduce FITS I/O, separate files for 2 other cats
+
 * It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
 
 * Include parallax when slicing PMDetection down to single-epoch detection??

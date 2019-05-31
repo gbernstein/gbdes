@@ -241,7 +241,8 @@ def select(fits, instrument=None, device=None, exposure=None,
     if reserve is not None:
         use = np.logical_and(use, (objTab['RESERVE']>0)==reserve)
     if wtFracMax is not None:
-        use = np.logical_and(use, objTab['WTFRAC']<=wtFracMax)
+        use = np.logical_and(use, objTab['chisqExpected']/2.>=1.-wtFracMax)
+    #        use = np.logical_and(use, objTab['WTFRAC']<=wtFracMax)
 
     ## print('Select',np.count_nonzero(use), '/',len(use))
                 
@@ -321,17 +322,20 @@ def residInPixels(fits, binpix=64, scaleFudge=1.,
     if pixCoords:
         x = tab['xPix']
         y = tab['yPix']
-        residx = tab['xresPix'] * pixScale/(1-tab['wtfrac'])
-        residy = tab['yresPix'] * pixScale/(1-tab['wtfrac'])
-        sig = tab['sigW']  # Already in mas
+        residx = tab['xresPix'] * pixScale/(tab['chisqExpected']/2.)
+        residy = tab['yresPix'] * pixScale/(tab['chisqExpected']/2.)
+        sigW = tab['covTotalW']
+        sig = np.hypot(sigW[:,0],sigW[:,1]) / np.sqrt(2.)
         xyBuffer = 50   # 50 pixels around edges
         cellSize = binpix
     else:
         x = tab['xW']  ### Problem is these are not relative to array center!!
         y = tab['yW']
-        residx = tab['xresW']/(1-tab['wtfrac'])
-        residy = tab['yresW']/(1-tab['wtfrac'])
-        sig = tab['sigW']
+        residx = tab['xresW']/(tab['chisqExpected']/2.)
+        residy = tab['yresW']/(tab['chisqExpected']/2.)
+        sigW = tab['covTotalW']
+        sig = np.hypot(sigW[:,0],sigW[:,1]) / np.sqrt(2.)
+        #sig = tab['sigW']
         xyBuffer = 0.05   # buffer in degrees
         cellSize = binpix * pixScale / (1000.*3600.)
 
