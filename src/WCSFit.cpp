@@ -773,9 +773,8 @@ main(int argc, char *argv[])
 	  continue;
 	int iField = exposures[iExposure]->field;
 	extensionProjections[i] = fieldProjections[iField];
-      
-	Astro::saveResults(matches, outCatalog, starCatalog,extensionProjections);
       }
+      Astro::saveResults(matches, outCatalog, starCatalog,extensionProjections);
     }
     
     PROGRESS(2,Saving FITS tables);
