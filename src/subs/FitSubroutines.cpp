@@ -2257,6 +2257,7 @@ Astro::saveResults(const astrometry::MCat& matches,
 
   } // Close scope of the WCSOut table
   
+  /**/cerr << "Done WCSOut table" << endl;
   {
     // Now write an extension to the output table for quality of PM detections
     // These are quantities we will want for PMDetections
@@ -2293,7 +2294,7 @@ Astro::saveResults(const astrometry::MCat& matches,
       int k=0;
       for (int i=0; i<5; i++)
 	for (int j=0; j<5; j++, k++)
-	  vv[k] = pmDetPtr->pmInvCov(i,j) * units[i] * units[j];
+	  vv[k] = pmDetPtr->pmInvCov(i,j) / (units[i] * units[j]);
       pmInvCov[i] = vv;
       pmChisq[i] = pmDetPtr->trueChisq();
       pmChisqExpected[i] = pmDetPtr->expectedTrueChisq;
@@ -2315,6 +2316,8 @@ Astro::saveResults(const astrometry::MCat& matches,
       pmDetTable.addColumn(pmChisqExpected, "chisqExpected");
     }
   } // End scope of PMDetection table info
+
+  /**/cerr << "Done with PMOut table" << endl;
 
   if (!starCatalog.empty()) {
     // Write a fresh FITS file holding the stellar catalog info for all PM matches
@@ -2373,7 +2376,7 @@ Astro::saveResults(const astrometry::MCat& matches,
 
       } // End detection loop
 
-	// Add this object to the PM output catalog
+      // Add this object to the PM output catalog
       starMatchID.push_back(iMatch);
       starReserve.push_back(pmm->getReserved());
       starColor.push_back(matchColor);
@@ -2389,15 +2392,25 @@ Astro::saveResults(const astrometry::MCat& matches,
 	// Save the solution in a table
 	auto pm = pmm->getPM();
 	// Convert xW, yW to RA/Dec for this table, in WCS_UNITS
-	int extension = (*m->begin())->catalogNumber;
-	auto projection = catalogProjections[extension];
-	projection->setLonLat(pm[astrometry::X0]*WCS_UNIT,
-			      pm[astrometry::Y0]*WCS_UNIT);
-	double ra,dec;
-	astrometry::SphericalICRS icrs(*projection);
-	icrs.getRADec(ra,dec);
-	starX.push_back(ra / WCS_UNIT);
-	starY.push_back(dec / WCS_UNIT);
+	astrometry::SphericalCoords* projection;
+	for (auto detptr : *m) {
+	  projection = catalogProjections[detptr->catalogNumber];
+	  if (projection) break;
+	}
+	if (projection) {
+	  projection->setLonLat(pm[astrometry::X0]*WCS_UNIT,
+				pm[astrometry::Y0]*WCS_UNIT);
+	  double ra,dec;
+	  astrometry::SphericalICRS icrs(*projection);
+	  icrs.getRADec(ra,dec);
+	  starX.push_back(ra / WCS_UNIT);
+	  starY.push_back(dec / WCS_UNIT);
+	} else {
+	  cerr << "WARNING:  No projection available for matchID "
+	       << iMatch << endl;
+          starX.push_back(pm[astrometry::X0] / WCS_UNIT);
+          starY.push_back(pm[astrometry::Y0] / WCS_UNIT);
+	}
 	starPMx.push_back(pm[astrometry::VX]* units[astrometry::VX]);
 	starPMy.push_back(pm[astrometry::VY]* units[astrometry::VY]);
 	starParallax.push_back(pm[astrometry::PAR]* units[astrometry::PAR]);
