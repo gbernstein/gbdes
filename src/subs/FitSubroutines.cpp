@@ -2017,291 +2017,364 @@ Photo::saveResults(const list<Match*>& matches,
 // Save fitting results (residuals) to output FITS tables.
 void
 Astro::saveResults(const astrometry::MCat& matches,
-		   string outCatalog) {
+		   string outCatalog,
+		   string starCatalog,
+		   vector<astrometry::SphericalCoords*> catalogProjections) {
 
   // Open the output bintable for pure position residuals
   string tableName = "WCSOut";
   string pmTableName = "PMOut";
   string starTableName = "StarCat";
-  FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tableName);
-  img::FTable outTable = ft.use();;
 
   // pmTable and starTable will be created after gathering all data
 
-  // Create vectors that will be put into output tables
-  vector<long> matchID;
-  outTable.addColumn(matchID, "matchID");
-  vector<long> catalogNumber;
-  outTable.addColumn(catalogNumber, "extension");
-  vector<long> objectNumber;
-  outTable.addColumn(objectNumber, "object");
-  vector<bool> clip;
-  outTable.addColumn(clip, "clip");
-  vector<bool> reserve;
-  outTable.addColumn(reserve, "reserve");
-  vector<bool> hasPM;  // Was this input a full PM estimate?
-  outTable.addColumn(hasPM, "hasPM");
-  vector<float> color;
-  outTable.addColumn(color, "color");
+  // Make a vector of match pointers so we can use OpenMP
+  vector<Match*> vmatches;
+  vmatches.reserve(matches.size());
+  for (auto m : matches)
+    vmatches.push_back(m);
 
-  vector<float> xpix;
-  outTable.addColumn(xpix, "xPix");
-  vector<float> ypix;
-  outTable.addColumn(ypix, "yPix");
-  vector<float> sigpix;  // Circularized total error in pixels
-  outTable.addColumn(sigpix, "sigPix");
-  vector<float> xrespix;
-  outTable.addColumn(xrespix, "xresPix");
-  vector<float> yrespix;
-  outTable.addColumn(yrespix, "yresPix");
-  vector<float> xworld;
-  outTable.addColumn(xworld, "xW");
-  vector<float> yworld;
-  outTable.addColumn(yworld, "yW");
-  vector<float> xresw;
-  outTable.addColumn(xresw, "xresW");
-  vector<float> yresw;
-  outTable.addColumn(yresw, "yresW");
+  // Make a global of PMDetections to output
+  vector<const PMDetection*> pmdets;
+  // And the id's of matches they belong to
+  vector<int> pmDetMatchID;
 
-  // Give full error ellipse
-  vector<vector<float>> covTotalW;
-  outTable.addColumn(covTotalW, "covTotalW", 3);  // 3-element column
-  // The true chisq for this detection, and the expected value
-  vector<float> chisq;
-  outTable.addColumn(chisq, "chisq");
-  vector<float> chisqExpected;
-  outTable.addColumn(chisqExpected, "chisqExpected");
+  // Make vector of units conversions to I/O units
+  vector<float> units(5);
+  units[astrometry::X0] = WCS_UNIT/RESIDUAL_UNIT;
+  units[astrometry::Y0] = WCS_UNIT/RESIDUAL_UNIT;
+  units[astrometry::PAR] = WCS_UNIT/RESIDUAL_UNIT;
+  units[astrometry::VX] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
+  units[astrometry::VY] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
 
-  // These are quantities we will want for PMDetections
-  vector<long> pmMatchID;
-  vector<long> pmCatalogNumber;
-  vector<long> pmObjectNumber;
-  vector<bool> pmClip;
-  vector<bool> pmReserve;
-  vector<vector<float>> pmMean;
-  vector<vector<float>> pmInvCov;
-  vector<float> pmChisq;
-  vector<float> pmChisqExpected;
-  // (Not putting residuals here since PM's will be findable
-  //  by matchID in the star table)
+  {
+    // Open a scope for existence of the WCSOut table
+    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tableName);
+    img::FTable outTable = ft.use();
 
-  // These are quantities we will want to put into our output PM catalog
-  vector<long> starMatchID;
-  vector<bool> starReserve;  // Is this star reserved from fit?
-  vector<float> starColor;    // Color for this star
-  vector<int> starPMCount;   // How many PMDetections in it were fit?
-  vector<int> starDetCount;  // How many non-PM Detections in it were fit?
-  vector<int> starClipCount; // How many detections were clipped?
-  vector<int> starDOF;       // Number of DOF in PM fit
-  vector<float> starChisq;   // Total chisq
-  vector<float> starX;       // The solution
-  vector<float> starY;
-  vector<float> starPMx;
-  vector<float> starPMy;
-  vector<float> starParallax;
-  vector<vector<float>> starInvCov;  // flattened Fisher matrix of PM
+    {
+      // Create vectors to help type each new column
+      vector<int> vint;
+      vector<long> vlong;
+      vector<bool> vbool;
+      vector<float> vfloat;
+      vector<vector<float>> vvfloat;
+      outTable.addColumn(vint, "matchID");
+      outTable.addColumn(vlong, "extension");
+      outTable.addColumn(vlong, "object");
+      outTable.addColumn(vbool, "clip");
+      outTable.addColumn(vbool, "reserve");
+      outTable.addColumn(vbool, "hasPM");
+      outTable.addColumn(vfloat, "color");
+      outTable.addColumn(vfloat, "xPix");
+      outTable.addColumn(vfloat, "yPix");
+      outTable.addColumn(vfloat, "xresPix");
+      outTable.addColumn(vfloat, "yresPix");
+      outTable.addColumn(vfloat, "sigPix");
+      outTable.addColumn(vfloat, "xW");
+      outTable.addColumn(vfloat, "yW");
+      outTable.addColumn(vfloat, "xresW");
+      outTable.addColumn(vfloat, "yresW");
+      outTable.addColumn(vvfloat, "covTotalW", 3);  // 3-element column
+      outTable.addColumn(vfloat, "chisq");
+      outTable.addColumn(vfloat, "chisqExpected");
+    }  
 
-  // Cumulative counter for rows written to table:
-  long pointCount = 0;
-  // Write vectors to table when this many rows accumulate:
-  const long WriteChunk = 100000;
+    /** Now create a team of threads to refit all matches **/
+    // Write residual vectors to table this many at a time
+    const int MATCH_CHUNK=10000;  // Matches to process at a time
+    // Cumulative counter for rows written to table so far:
+    long pointCount = 0;
 
-  // Write all matches to output catalog, deleting them along the way
-  // and accumulating statistics of each exposure.
-  //
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+    for (int iChunk=0; iChunk <= (vmatches.size()+MATCH_CHUNK-1)/MATCH_CHUNK; iChunk++) {
+      vector<int> matchID;
+      vector<long> catalogNumber;
+      vector<long> objectNumber;
+      vector<bool> clip;
+      vector<bool> reserve;
+      vector<bool> hasPM;  // Was this input a full PM estimate?
+      vector<float> color;
 
-  long matchCount = 0;
-  for (auto im = matches.begin(); true; ++im, ++matchCount) {
-    // First, write vectors to table if they've gotten big or we're at end
-    if ( matchID.size() >= WriteChunk || im==matches.end()) {
-      long nAdded = matchID.size();
+      vector<float> xresw;
+      vector<float> yresw;
+      vector<float> xpix;
+      vector<float> ypix;
+      vector<float> sigpix;  // Circularized total error in pixels
+      vector<float> xrespix;
+      vector<float> yrespix;
+      vector<float> xworld;
+      vector<float> yworld;
 
-      outTable.writeCells(matchID, "matchID", pointCount);
-      matchID.clear();
-      outTable.writeCells(catalogNumber, "extension", pointCount);
-      catalogNumber.clear();
-      outTable.writeCells(objectNumber, "object", pointCount);
-      objectNumber.clear();
-      outTable.writeCells(clip, "clip", pointCount);
-      clip.clear();
-      outTable.writeCells(reserve, "reserve", pointCount);
-      reserve.clear();
-      outTable.writeCells(xpix, "xPix", pointCount);
-      xpix.clear();
-      outTable.writeCells(ypix, "yPix", pointCount);
-      ypix.clear();
-      outTable.writeCells(color, "color", pointCount);
-      color.clear();
+      // The full error ellipse
+      vector<vector<float>> covTotalW;
+      // The true chisq for this detection, and the expected value
+      vector<float> chisq;
+      vector<float> chisqExpected;
 
-      outTable.writeCells(xrespix, "xresPix", pointCount);
-      xrespix.clear();
-      outTable.writeCells(yrespix, "yresPix", pointCount);
-      yrespix.clear();
-      outTable.writeCells(xworld, "xW", pointCount);
-      xworld.clear();
-      outTable.writeCells(yworld, "yW", pointCount);
-      yworld.clear();
-      outTable.writeCells(xresw, "xresW", pointCount);
-      xresw.clear();
-      outTable.writeCells(yresw, "yresW", pointCount);
-      yresw.clear();
-      outTable.writeCells(sigpix, "sigPix", pointCount);
-      sigpix.clear();
-      outTable.writeCells(hasPM, "hasPM", pointCount);
-      hasPM.clear();
-      outTable.writeCells(covTotalW, "covTotalW", pointCount);
-      covTotalW.clear();
-      outTable.writeCells(chisq, "chisq", pointCount);
-      chisq.clear();
-      outTable.writeCells(chisqExpected, "chisqExpected", pointCount);
-      chisqExpected.clear();
+      for (int iMatch = iChunk*MATCH_CHUNK;
+	   iMatch < vmatches.size() && iMatch<(iChunk+1)*MATCH_CHUNK;
+	   iMatch++) {
 
-      pointCount += nAdded;
-    }	// Done flushing the vectors to Table
+	const Match* m = vmatches[iMatch];
 
-    if (im==matches.end()) break;
-
-    const Match* m = *im;
-
-    // Update all world coords and mean solutions
-    m->remap(true);  // include remapping of clipped detections
-    m->solve();
+	// Update all world coords and mean solutions
+	m->remap(true);  // include remapping of clipped detections
+	m->solve();
       
-    // Don't report results for matches with no results
-    if (m->getDOF() < 0) 
-      continue;
+	// Don't report results for matches with no results
+	if (m->getDOF() < 0) 
+	  continue;
     
-    // Create a pointer to PMMatch if this is one:
-    auto pmm = dynamic_cast<const astrometry::PMMatch*> (m); 
+	// Create a pointer to PMMatch if this is one:
+	auto pmm = dynamic_cast<const astrometry::PMMatch*> (m); 
 
-    astrometry::Vector2 xyMean;    // Match's mean position, in world coords
-    if (!pmm)  {
-      // We can use the same best-fit position for all detections
-      xyMean = m->predict();
+	astrometry::Vector2 xyMean;    // Match's mean position, in world coords
+	if (!pmm)  {
+	  // We can use the same best-fit position for all detections
+	  xyMean = m->predict();
+	}
+    
+	double matchColor = astrometry::NODATA;
+
+	for (auto detptr : *m) {
+
+	  // Get a pointer to a PMDetection if this is one:
+	  auto pmDetPtr = dynamic_cast<const PMDetection*> (detptr);
+	  if (pmDetPtr) {
+#ifdef _OPENMP
+#pragma omp critical(pmdet)
+#endif
+	    {
+	      pmdets.push_back(pmDetPtr);
+	      pmDetMatchID.push_back(iMatch);
+	    }
+	  }
+	
+	  // Set color if this is the first detection to have one
+	  if (matchColor!= astrometry::NODATA &&
+	      detptr->color != astrometry::NODATA)
+	    matchColor = detptr->color;
+
+	  // Save some basics:
+	  matchID.push_back(iMatch);
+	  catalogNumber.push_back(detptr->catalogNumber);
+	  objectNumber.push_back(detptr->objectNumber);
+	  clip.push_back(detptr->isClipped);
+	  reserve.push_back(m->getReserved());
+	  hasPM.push_back( bool(pmDetPtr));
+	  color.push_back(detptr->color);
+	  xpix.push_back(detptr->xpix);
+	  ypix.push_back(detptr->ypix);
+	  xworld.push_back(detptr->xw);
+	  yworld.push_back(detptr->yw);
+
+	  // Let's get the model prediction
+	  if (pmm)
+	    xyMean = pmm->predict(detptr);
+
+	  // Get world residuals (returned RESIDUAL_UNIT)
+	  astrometry::Vector2 residW = detptr->residWorld();
+	  xresw.push_back(residW[0]);
+	  yresw.push_back(residW[1]);
+
+	  // Get pixel residuals
+	  astrometry::Vector2 residP = detptr->residPix();
+	  xrespix.push_back(residP[0]);
+	  yrespix.push_back(residP[1]);
+
+	  astrometry::Matrix22 cov(0.);
+	  // Get error covariances, if we have any
+	  double chisqThis;
+	  if (detptr->invCov(0,0) > 0.) {
+	    // Save cov in RESIDUAL_UNIT, it's stored in WCS_UNIT
+	    cov = detptr->invCov.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
+	    vector<float> vv(3,0.);
+	    vv[0] = cov(0,0);
+	    vv[1] = cov(1,1);
+	    vv[2] = cov(0,1);
+	    covTotalW.push_back(vv);
+
+	    // Transform back to pixel errors to get circularized pixel error
+	    {
+	      cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units
+	      auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1],
+						  detptr->color);
+	      astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
+	      double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);
+	      sigpix.push_back(detCov>0. ? pow(detCov,0.25) : 0.);
+	    }
+
+	    // Chisq and expected
+	    chisq.push_back(detptr->trueChisq());
+	    chisqExpected.push_back(detptr->expectedTrueChisq);
+	  } else {
+	    // Did not have a usable error matrix
+	    chisqThis = 0.;
+	    vector<float> vv(3,0.);
+	    covTotalW.push_back(vv);
+	    sigpix.push_back(0.);
+	    chisq.push_back(chisqThis);
+	    chisqExpected.push_back(detptr->expectedTrueChisq);
+	  }	
+	} // End detection loop
+      } // End match loop
+
+      // At end of each chunk, write new rows to the table.
+      // Only one thread at a time writes to the table
+#ifdef _OPENMP
+#pragma omp critical(fits)
+#endif
+      {
+	long nAdded = matchID.size();
+	outTable.writeCells(matchID, "matchID", pointCount);
+	outTable.writeCells(catalogNumber, "extension", pointCount);
+	outTable.writeCells(objectNumber, "object", pointCount);
+	outTable.writeCells(clip, "clip", pointCount);
+	outTable.writeCells(reserve, "reserve", pointCount);
+	outTable.writeCells(xpix, "xPix", pointCount);
+	outTable.writeCells(ypix, "yPix", pointCount);
+	outTable.writeCells(color, "color", pointCount);
+
+	outTable.writeCells(xrespix, "xresPix", pointCount);
+	outTable.writeCells(yrespix, "yresPix", pointCount);
+	outTable.writeCells(xworld, "xW", pointCount);
+	outTable.writeCells(yworld, "yW", pointCount);
+	outTable.writeCells(xresw, "xresW", pointCount);
+	outTable.writeCells(yresw, "yresW", pointCount);
+	outTable.writeCells(sigpix, "sigPix", pointCount);
+	outTable.writeCells(hasPM, "hasPM", pointCount);
+	outTable.writeCells(covTotalW, "covTotalW", pointCount);
+	outTable.writeCells(chisq, "chisq", pointCount);
+	outTable.writeCells(chisqExpected, "chisqExpected", pointCount);
+
+	pointCount += nAdded;
+      }	// Done flushing the vectors to Table
+
+    } // End outer chunk loop and multithreaded region
+
+  } // Close scope of the WCSOut table
+  
+  {
+    // Now write an extension to the output table for quality of PM detections
+    // These are quantities we will want for PMDetections
+    Assert(pmdets.size() == pmDetMatchID.size());
+    vector<int> pmMatchID(pmdets.size());
+    vector<long> pmCatalogNumber(pmdets.size());
+    vector<long> pmObjectNumber(pmdets.size());
+    vector<bool> pmClip(pmdets.size());
+    vector<bool> pmReserve(pmdets.size());
+    vector<vector<float>> pmMean(pmdets.size());
+    vector<vector<float>> pmInvCov(pmdets.size());
+    vector<float> pmChisq(pmdets.size());
+    vector<float> pmChisqExpected(pmdets.size());
+
+    // (Not putting residuals here since PM's will be findable
+    //  by matchID in the star table)
+    for (int i=0; i<pmdets.size(); i++) {
+      auto pmDetPtr = pmdets[i];
+      pmMatchID[i] = pmDetMatchID[i];
+      pmCatalogNumber[i] = pmDetPtr->catalogNumber;
+      pmObjectNumber[i] = pmDetPtr->objectNumber;
+      pmClip[i] = pmDetPtr->isClipped;
+      pmReserve[i] = pmDetPtr->itsMatch->getReserved();
+      vector<float> vv(5);
+      for (int i=0; i<5; i++)
+	vv[i] = pmDetPtr->pmMean[i];
+      // Keep position in WCS_UNITS (degrees), put others into RESIDUAL_UNITS
+      vv[astrometry::VX] *= units[i];
+      vv[astrometry::VY] *= units[i];
+      vv[astrometry::PAR] *= units[i];
+	
+      pmMean[i] = vv;
+      vv.resize(25);
+      int k=0;
+      for (int i=0; i<5; i++)
+	for (int j=0; j<5; j++, k++)
+	  vv[k] = pmDetPtr->pmInvCov(i,j) * units[i] * units[j];
+      pmInvCov[i] = vv;
+      pmChisq[i] = pmDetPtr->trueChisq();
+      pmChisqExpected[i] = pmDetPtr->expectedTrueChisq;
+    } // End PMDetection loop
+
+    if (!pmMatchID.empty()) {
+      // Create and fill the PMDetection output table if we have any
+      FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, pmTableName);
+      auto pmDetTable = ft.use();
+
+      pmDetTable.addColumn(pmMatchID,"matchID");
+      pmDetTable.addColumn(pmCatalogNumber, "extension");
+      pmDetTable.addColumn(pmObjectNumber, "object");
+      pmDetTable.addColumn(pmClip, "clip");
+      pmDetTable.addColumn(pmReserve, "reserve");
+      pmDetTable.addColumn(pmMean, "pm", 5); // 5-element fixed-length array
+      pmDetTable.addColumn(pmInvCov,"pmInvCov",25); // 25 elements
+      pmDetTable.addColumn(pmChisq, "chisq");
+      pmDetTable.addColumn(pmChisqExpected, "chisqExpected");
     }
-    
-    int detCount=0;
-    int pmDetCount = 0;
-    int clipCount = 0;
-    
-    double matchColor = astrometry::NODATA;
+  } // End scope of PMDetection table info
 
-    // Make vector of units conversions to I/O units
-    vector<float> units(5);
-    units[astrometry::X0] = WCS_UNIT/RESIDUAL_UNIT;
-    units[astrometry::Y0] = WCS_UNIT/RESIDUAL_UNIT;
-    units[astrometry::PAR] = WCS_UNIT/RESIDUAL_UNIT;
-    units[astrometry::VX] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
-    units[astrometry::VY] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
+  if (!starCatalog.empty()) {
+    // Write a fresh FITS file holding the stellar catalog info for all PM matches
+    // Sweep through all matches recording info for the PM ones.
+    // These are quantities we will want to put into our output PM catalog
+    vector<int> starMatchID;
+    vector<bool> starReserve;  // Is this star reserved from fit?
+    vector<float> starColor;    // Color for this star
+    vector<int> starPMCount;   // How many PMDetections in it were fit?
+    vector<int> starDetCount;  // How many non-PM Detections in it were fit?
+    vector<int> starClipCount; // How many detections were clipped?
+    vector<int> starDOF;       // Number of DOF in PM fit
+    vector<float> starChisq;   // Total chisq
+    vector<float> starX;       // The solution
+    vector<float> starY;
+    vector<float> starPMx;
+    vector<float> starPMy;
+    vector<float> starParallax;
+    vector<vector<float>> starInvCov;  // flattened Fisher matrix of PM
 
-    for (auto detptr : *m) {
+    for (int iMatch=0; iMatch<vmatches.size(); iMatch++) {
+      const Match* m = vmatches[iMatch];
+      
+      // Every match has already been remapped and solved.
+      // Don't report results for matches with no results
+      if (m->getDOF() < 0) 
+	continue;
+      // Create a pointer to PMMatch if this is one:
+      auto pmm = dynamic_cast<const astrometry::PMMatch*> (m);
+      if (!pmm) continue;
 
-      // Get a pointer to a PMDetection if this is one:
-      auto pmDetptr = dynamic_cast<const PMDetection*> (detptr);
+      // Make an entry.  First count types of data going in
+      int detCount=0;
+      int pmDetCount = 0;
+      int clipCount = 0;
+      double matchColor = astrometry::NODATA;
 
-      if (m->isFit(detptr)) {
-	if (pmDetptr) {
-	  pmDetCount++;
+      for (auto detptr : *m) {
+	// Get a pointer to a PMDetection if this is one:
+	auto pmDetPtr = dynamic_cast<const PMDetection*> (detptr);
+
+	if (m->isFit(detptr)) {
+	  if (pmDetPtr) {
+	    pmDetCount++;
+	  } else {
+	    detCount++;
+	  }
 	} else {
-	  detCount++;
-	}
-      } else {
-	clipCount++;
-      }
-	
-      // Set color if this is the first detection to have one
-      if (matchColor!= astrometry::NODATA &&
-	  detptr->color != astrometry::NODATA)
-	matchColor = detptr->color;
-
-      // Save some basics:
-      matchID.push_back(matchCount);
-      catalogNumber.push_back(detptr->catalogNumber);
-      objectNumber.push_back(detptr->objectNumber);
-      clip.push_back(detptr->isClipped);
-      reserve.push_back(m->getReserved());
-      hasPM.push_back( bool(pmDetptr));
-      color.push_back(detptr->color);
-      xpix.push_back(detptr->xpix);
-      ypix.push_back(detptr->ypix);
-      xworld.push_back(detptr->xw);
-      yworld.push_back(detptr->yw);
-
-      // Let's get the model prediction
-      if (pmm)
-	xyMean = pmm->predict(detptr);
-
-      // Get world residuals (returned RESIDUAL_UNIT)
-      astrometry::Vector2 residW = detptr->residWorld();
-      xresw.push_back(residW[0]);
-      yresw.push_back(residW[1]);
-
-      // Get pixel residuals
-      astrometry::Vector2 residP = detptr->residPix();
-      xrespix.push_back(residP[0]);
-      yrespix.push_back(residP[1]);
-
-      astrometry::Matrix22 cov(0.);
-      // Get error covariances, if we have any
-      double chisqThis;
-      if (detptr->invCov(0,0) > 0.) {
-	// Save cov in RESIDUAL_UNIT, it's stored in WCS_UNIT
-	cov = detptr->invCov.inverse() * pow(WCS_UNIT/RESIDUAL_UNIT,2.);
-	vector<float> vv(3,0.);
-	vv[0] = cov(0,0);
-	vv[1] = cov(1,1);
-	vv[2] = cov(0,1);
-	covTotalW.push_back(vv);
-
-	// Transform back to pixel errors to get circularized pixel error
-	{
-	  cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units
-	  auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1],
-					      detptr->color);
-	  astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
-	  double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);
-	  sigpix.push_back(detCov>0. ? pow(detCov,0.25) : 0.);
+	  clipCount++;
 	}
 
-	// Chisq and expected
-	chisq.push_back(detptr->trueChisq());
-	chisqExpected.push_back(detptr->expectedTrueChisq);
-      } else {
-	// Did not have a usable error matrix
-	chisqThis = 0.;
-	vector<float> vv(3,0.);
-	covTotalW.push_back(vv);
-	sigpix.push_back(0.);
-	chisq.push_back(chisqThis);
-	chisqExpected.push_back(detptr->expectedTrueChisq);
-      }	
+	// Set color if this is the first detection to have one
+	if (matchColor!= astrometry::NODATA &&
+	    detptr->color != astrometry::NODATA)
+	  matchColor = detptr->color;
 
-      if (pmDetptr) {
-	// Add this object to PM output list
-	pmMatchID.push_back(matchCount);
-	pmCatalogNumber.push_back(detptr->catalogNumber);
-	pmObjectNumber.push_back(detptr->objectNumber);
-	pmClip.push_back(detptr->isClipped);
-	pmReserve.push_back(m->getReserved());
-	vector<float> vv(5);
-	for (int i=0; i<5; i++)
-	  vv[i] = pmDetptr->pmMean[i] * units[i];
-	
-	pmMean.push_back(vv);
-	vv.resize(25);
-	int k=0;
-	for (int i=0; i<5; i++)
-	  for (int j=0; j<5; j++, k++)
-	    vv[k] = pmDetptr->pmInvCov(i,j) * units[i] * units[j];
-	pmInvCov.push_back(vv);
-	pmChisq.push_back(detptr->trueChisq());
-	pmChisqExpected.push_back(detptr->expectedTrueChisq);
-      }
-    } // End detection loop
+      } // End detection loop
 
-    if (pmm) {
-      // Add this object to the PM output catalog
-      starMatchID.push_back(matchCount);
+	// Add this object to the PM output catalog
+      starMatchID.push_back(iMatch);
       starReserve.push_back(pmm->getReserved());
       starColor.push_back(matchColor);
       starPMCount.push_back(pmDetCount);
@@ -2315,8 +2388,16 @@ Astro::saveResults(const astrometry::MCat& matches,
       {
 	// Save the solution in a table
 	auto pm = pmm->getPM();
-	starX.push_back(pm[astrometry::X0] * units[astrometry::X0]);
-	starY.push_back(pm[astrometry::Y0] * units[astrometry::Y0]);
+	// Convert xW, yW to RA/Dec for this table, in WCS_UNITS
+	int extension = (*m->begin())->catalogNumber;
+	auto projection = catalogProjections[extension];
+	projection->setLonLat(pm[astrometry::X0]*WCS_UNIT,
+			      pm[astrometry::Y0]*WCS_UNIT);
+	double ra,dec;
+	astrometry::SphericalICRS icrs(*projection);
+	icrs.getRADec(ra,dec);
+	starX.push_back(ra / WCS_UNIT);
+	starY.push_back(dec / WCS_UNIT);
 	starPMx.push_back(pm[astrometry::VX]* units[astrometry::VX]);
 	starPMy.push_back(pm[astrometry::VY]* units[astrometry::VY]);
 	starParallax.push_back(pm[astrometry::PAR]* units[astrometry::PAR]);
@@ -2331,47 +2412,33 @@ Astro::saveResults(const astrometry::MCat& matches,
 	    vv[k] = fisher(i,j) / (units[i] * units[j]);
 	starInvCov.push_back(vv);
       }
-    }  // Done adding a row to the star catalog.
-
-  } // end match loop
-
-  if (!pmMatchID.empty()) {
-    // Create and fill the PMDetection output table if we have any
-    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, pmTableName);
-    auto pmDetTable = ft.use();
-
-    pmDetTable.addColumn(pmMatchID,"matchID");
-    pmDetTable.addColumn(pmCatalogNumber, "extension");
-    pmDetTable.addColumn(pmObjectNumber, "object");
-    pmDetTable.addColumn(pmClip, "clip");
-    pmDetTable.addColumn(pmReserve, "reserve");
-    pmDetTable.addColumn(pmMean, "pm", 5); // 5-element fixed-length array
-    pmDetTable.addColumn(pmInvCov,"pmInvCov",25); // 25 elements
-    pmDetTable.addColumn(pmChisq, "chisq");
-    pmDetTable.addColumn(pmChisqExpected, "chisqExpected");
-  }
+    }  // end of match loop for the star catalog.
     
-  if (!starMatchID.empty()) {
-    // Create and fill the star catalog table in the output file
-    FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, starTableName);
-    auto starTable = ft.use();
+    if (!starMatchID.empty()) {
+      // Create and fill the star catalog table in the output file
+      FITS::FitsTable ft(starCatalog, FITS::ReadWrite + FITS::Create + FITS::OverwriteFile,
+			 starTableName);
+      auto starTable = ft.use();
 
-    starTable.addColumn(starMatchID,"matchID");
-    starTable.addColumn(starReserve, "reserve");
-    starTable.addColumn(starPMCount, "pmCount");
-    starTable.addColumn(starDetCount, "detCount");
-    starTable.addColumn(starClipCount, "clipCount");
-    starTable.addColumn(starChisq, "chisq");
-    starTable.addColumn(starDOF, "dof");
-    starTable.addColumn(starColor,"color");
-    starTable.addColumn(starX, "xW");
-    starTable.addColumn(starY, "yW");
-    starTable.addColumn(starPMx, "pmra");
-    starTable.addColumn(starPMy, "pmdec");
-    starTable.addColumn(starParallax, "parallax");
-    starTable.addColumn(starInvCov,"pmInvCov",25);
-  }
+      starTable.addColumn(starMatchID,"matchID");
+      starTable.addColumn(starReserve, "reserve");
+      starTable.addColumn(starPMCount, "pmCount");
+      starTable.addColumn(starDetCount, "detCount");
+      starTable.addColumn(starClipCount, "clipCount");
+      starTable.addColumn(starChisq, "chisq");
+      starTable.addColumn(starDOF, "dof");
+      starTable.addColumn(starColor,"color");
+      starTable.addColumn(starX, "xW");
+      starTable.addColumn(starY, "yW");
+      starTable.addColumn(starPMx, "pmra");
+      starTable.addColumn(starPMy, "pmdec");
+      starTable.addColumn(starParallax, "parallax");
+      starTable.addColumn(starInvCov,"pmInvCov",25);
+    } // End scope of starCatalog
+  } // End starCatalog making
+
 }
+
 
 void
 Photo::reportStatistics(const list<typename Photo::Match*>& matches,
