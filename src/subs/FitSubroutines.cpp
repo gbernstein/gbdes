@@ -2090,6 +2090,12 @@ Astro::saveResults(const astrometry::MCat& matches,
 #pragma omp parallel for
 #endif
     for (int iChunk=0; iChunk <= (vmatches.size()+MATCH_CHUNK-1)/MATCH_CHUNK; iChunk++) {
+
+#ifdef _OPENMP
+#pragma omp critical(io)
+#endif
+      /**/cerr << "Starting chunk " << iChunk << endl;
+
       vector<int> matchID;
       vector<long> catalogNumber;
       vector<long> objectNumber;
@@ -2228,6 +2234,7 @@ Astro::saveResults(const astrometry::MCat& matches,
 #pragma omp critical(fits)
 #endif
       {
+	/**/cerr << "Saving chunk " << iChunk << " at " << pointCount << endl;
 	long nAdded = matchID.size();
 	outTable.writeCells(matchID, "matchID", pointCount);
 	outTable.writeCells(catalogNumber, "extension", pointCount);
