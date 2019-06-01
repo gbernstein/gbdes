@@ -75,8 +75,12 @@ struct Astro {
     return d->color;
   }
 
+  // saving results wants an array giving the field projection to use for each catalog.
   static void saveResults(const astrometry::MCat& matches,
-			  string outCatalog);
+			  string outCatalog,
+			  string starCatalog,
+			  vector<astrometry::SphericalCoords*> catalogProjections);
+
 
   static void reportStatistics(const list<typename Astro::Match*>& matches,
 			       const vector<Exposure*>& exposures,

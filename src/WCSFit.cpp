@@ -97,6 +97,7 @@ main(int argc, char *argv[])
 
   string outCatalog;
   string outWcs;
+  string starCatalog;
 
   string colorExposures;
   double minColor;
@@ -168,10 +169,12 @@ main(int argc, char *argv[])
 			 "maximum value of color to be used",+10.);
 
     parameters.addMemberNoValue("OUTPUTS");
-    parameters.addMember("outCatalog",&outCatalog, def,
-			 "Output FITS binary catalog", "wcscat.fits");
     parameters.addMember("outWcs",&outWcs, def,
 			 "Output serialized Wcs systems", "wcsfit.wcs");
+    parameters.addMember("outCatalog",&outCatalog, def,
+			 "Output FITS binary catalog", "wcscat.fits");
+    parameters.addMember("starCatalog",&starCatalog, def,
+			 "Output stellar PM catalog", "starcat.fits");
     parameters.addMember("verbose", &verbose, def,
 			 "stderr detail level", 1);
   }
@@ -760,7 +763,20 @@ main(int argc, char *argv[])
 
     PROGRESS(1,Saving astrometric residuals);
     // Save the pointwise fitting results
-    Astro::saveResults(matches, outCatalog);
+    {
+      // This routine needs an array of field projections for each extension
+      vector<SphericalCoords*> extensionProjections(extensions.size(),
+							nullptr);
+      for (int i=0; i<extensions.size(); i++) {
+	int iExposure = extensions[i]->exposure;
+	if (iExposure<0)
+	  continue;
+	int iField = exposures[iExposure]->field;
+	extensionProjections[i] = fieldProjections[iField];
+      
+	Astro::saveResults(matches, outCatalog, starCatalog,extensionProjections);
+      }
+    }
     
     PROGRESS(2,Saving FITS tables);
     // Report summary of residuals to stdout
