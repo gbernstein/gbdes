@@ -40,7 +40,7 @@ def addObservatory(exposureTable, fitsFile):
         observatory = exposureTable['observatory'][row]
         while len(observatory) == 1:
             observatory = observatory[0]
-        mjd = exposureTable[row]['mjd_mid'][0]
+        mjd = exposureTable[row]['mjd-mid'][0]
         if len(observatory)!=3:
             print("ERROR: observatory entry in exposure table is not 3 elements")
             sys.exit(1)

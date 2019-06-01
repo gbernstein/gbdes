@@ -297,7 +297,8 @@ def extractExposureLevelAttributes(extn, expo):
                          "vs filename",extn['FILENAME'],\
                          "extension",extn['EXTENSION'])
                 print("Values: ",expo[key],"vs",extn[key])
-                sys.exit(1)
+                expo[key] = extn[key] ###
+                ### sys.exit(1)
         else:
             # New key for this Exposure, adopt Extension value
             expo[key] = extn[key]
