@@ -400,6 +400,12 @@ main(int argc,
 	if (!selectionExpression.empty())
 	  ft.filterRows(selectionExpression);
       }
+
+      if (ft.nrows()<=0) {
+	// No data to use in this extension.  Don't read anything.
+	continue;
+      }
+      
       vector<double> vx;
       string key;
       extensionTable.readCell(key, "XKEY", iextn);

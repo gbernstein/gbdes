@@ -403,7 +403,7 @@ class AttributeFinder:
                 rr = translation.split('=')
                 if len(rr)!=2:
                     print("ERROR: Attribute translator is not of form <regex>=<replace>: ",\
-                      initdict['Translation'])
+                      translation)
                     sys.exit(1)
                 self.translation = (re.compile(rr[0]),rr[1])
         else:
