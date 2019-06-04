@@ -768,12 +768,15 @@ main(int argc, char *argv[])
       vector<SphericalCoords*> extensionProjections(extensions.size(),
 							nullptr);
       for (int i=0; i<extensions.size(); i++) {
+	if (!extensions[i])
+	  continue;
 	int iExposure = extensions[i]->exposure;
-	if (iExposure<0)
+	if (iExposure<0 || !exposures[iExposure])
 	  continue;
 	int iField = exposures[iExposure]->field;
 	extensionProjections[i] = fieldProjections[iField];
       }
+      PROGRESS(2, extensionProjections completed);
       Astro::saveResults(matches, outCatalog, starCatalog,extensionProjections);
     }
     
