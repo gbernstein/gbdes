@@ -793,6 +793,9 @@ readExtensions(img::FTable& extensionTable,
       else
 	extn->mapName = extn->wcsName;
 	
+#ifdef _OPENMP
+#pragma omp critical
+#endif
       if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
@@ -1737,8 +1740,11 @@ purgeBadColor(double minColor, double maxColor,
     if ((*im)->size() > 0) {
       // See if color is in range, using color from first Detection (they should
       // all have the same color).
+      // Also kills things with NaN / inf colors
       double color = S::getColor(*(*im)->begin());
-      if (color != astrometry::NODATA && (color < minColor || color > maxColor)) {
+      if ( (color != astrometry::NODATA 
+            && (color < minColor || color > maxColor) )
+	   || !isfinite(color) ) {
 	// Remove entire match if it's too small, and kill its Detections too
 	(*im)->clear(true);
 	im = matches.erase(im);
@@ -2091,11 +2097,6 @@ Astro::saveResults(const astrometry::MCat& matches,
 #endif
     for (int iChunk=0; iChunk <= (vmatches.size()+MATCH_CHUNK-1)/MATCH_CHUNK; iChunk++) {
 
-#ifdef _OPENMP
-#pragma omp critical(io)
-#endif
-      /**/cerr << "Starting chunk " << iChunk << endl;
-
       vector<int> matchID;
       vector<long> catalogNumber;
       vector<long> objectNumber;
@@ -2234,7 +2235,6 @@ Astro::saveResults(const astrometry::MCat& matches,
 #pragma omp critical(fits)
 #endif
       {
-	/**/cerr << "Saving chunk " << iChunk << " at " << pointCount << endl;
 	long nAdded = matchID.size();
 	outTable.writeCells(matchID, "matchID", pointCount);
 	outTable.writeCells(catalogNumber, "extension", pointCount);
