@@ -653,7 +653,7 @@ main(int argc, char *argv[])
       freezeMap<Astro>(i.first, matches, extensions, mapCollection);
     } 
 
-    PROGRESS(2,"Match census");
+    PROGRESS(2,Match census);
     matchCensus<Astro>(matches, cout);
 
     ///////////////////////////////////////////////////////////
