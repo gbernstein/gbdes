@@ -793,9 +793,9 @@ readExtensions(img::FTable& extensionTable,
       else
 	extn->mapName = extn->wcsName;
 	
-#ifdef _OPENMP
-#pragma omp critical(addmap)
-#endif
+      /**#ifdef _OPENMP
+	 #pragma omp critical(addmap)
+	 #endif**/
       if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
@@ -977,7 +977,11 @@ createMapCollection(const vector<Instrument*>& instruments,
 		    const vector<typename S::Extension*> extensions,
 		    astrometry::YAMLCollector& inputYAML,
 		    typename S::Collection& pmc) {
-  for (auto extnptr : extensions) {
+#ifdef _OPENMP
+#pragma omp for schedule(dynamic,chunk) 
+#endif
+  for (int i=0; i<extensions.size(); i++) {
+    auto extnptr = extensions[i];
     if (!extnptr) continue;  // Not in use.
     auto& expo = *exposures[extnptr->exposure];
     // Extract the map specifications for this extension from the input
