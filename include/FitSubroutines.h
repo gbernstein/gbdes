@@ -338,8 +338,9 @@ findCanonical(Instrument& instr,
 // Add every extension's map to the YAMLCollector and then emit the
 // YAML and read into the MapCollection.
 // The names of all maps are already in the extension list.
+// Returns time spent in critical regions of the addMap() routine.
 template <class S>
-void
+double
 createMapCollection(const vector<Instrument*>& instruments,
 		    const vector<Exposure*>& exposures,
 		    const vector<typename S::Extension*> extensions,

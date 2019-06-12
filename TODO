@@ -1,9 +1,10 @@
 * Check on int/long/LONGLONG for id's
-* Fix conflict between AstronomicalConstants SECOND and an MKL routine of same name.
 * Implement proper motion and parallax, Gaia DR2 (or other) references
   * WEIGHT, MAGWEIGHT required?
   * AIRMASS, EXPOSURE coming in properly in config.py?
   * get real ra, dec into coords for the python notebook making fake data
+
+* Pass initial guess xypix into dPixdWorld
 
 * It's possible that passing fieldProjections into readObjects and fillDetection is superfluous because it is already the projection in use by the WCS.
 
@@ -121,6 +122,7 @@ For py3 branch, upgrading all Python to work with Python 3.x:
 * Remove duplicate parallactic in decamDCR.py, dup EpochFinder stuff in compresscat -
   get from gbutil.decam now.
 * Residual calculation should be multiprocessed, and reduce FITS I/O, separate files for 2 other cats
+* Fix conflict between AstronomicalConstants SECOND and an MKL routine of same name.
 
 
 ----

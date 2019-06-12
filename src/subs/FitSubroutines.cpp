@@ -793,9 +793,6 @@ readExtensions(img::FTable& extensionTable,
       else
 	extn->mapName = extn->wcsName;
 	
-      /**#ifdef _OPENMP
-	 #pragma omp critical(addmap)
-	 #endif**/
       if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
@@ -970,15 +967,18 @@ findCanonical(Instrument& instr,
 // Add every extension's map to the YAMLCollector and then emit the
 // YAML and read into the MapCollection.
 // The names of all maps are already in the extension list.
+// !! Returns the number of seconds spent in critical loop parts of addMap
 template <class S>
-void
+double
 createMapCollection(const vector<Instrument*>& instruments,
 		    const vector<Exposure*>& exposures,
 		    const vector<typename S::Extension*> extensions,
 		    astrometry::YAMLCollector& inputYAML,
 		    typename S::Collection& pmc) {
+
+  double criticalTime=0.;
 #ifdef _OPENMP
-#pragma omp for schedule(dynamic,chunk) 
+#pragma omp parallel for schedule(dynamic,50) reduction(+:criticalTime)
 #endif
   for (int i=0; i<extensions.size(); i++) {
     auto extnptr = extensions[i];
@@ -997,20 +997,28 @@ createMapCollection(const vector<Instrument*>& instruments,
       if (!expo.epoch.empty())
 	d["EPOCH"] = expo.epoch;
       }
-      if (!inputYAML.addMap(extnptr->mapName,d)) {
+    if (!inputYAML.addMap(extnptr->mapName,d, &criticalTime)) {
 	cerr << "Input YAML files do not have complete information for map "
 	     << extnptr->mapName
 	     << endl;
 	exit(1);
       }
   }  // End extension loop
-      
+  cout << "**Time in addMap critical regions:" << criticalTime << endl;
   {
+    Stopwatch timer;
+    timer.start();
     istringstream iss(inputYAML.dump());
+    timer.stop();
+    cout << "Dumping time: " << timer << endl;
+    timer.reset();
+    timer.start();
     if (!pmc.read(iss)) {
       cerr << "Failure parsing the final YAML map specs" << endl;
       exit(1);
     }
+    timer.stop();
+    cout << "Loading time: " << timer << endl;
   }
 }
 
@@ -2198,6 +2206,9 @@ Astro::saveResults(const astrometry::MCat& matches,
 	  } catch (AstrometryError& e) {
 	    // Do not want program to crash if an inverse fails.
 	    // Just move along
+#ifdef _OPENMP
+#pragma omp critical(io)
+#endif	    
 	    cerr << "WARNING: Astrometry failure for catalog "
 		 << detptr->catalogNumber
 		 << " object " << detptr->objectNumber
@@ -2223,14 +2234,27 @@ Astro::saveResults(const astrometry::MCat& matches,
 	    covTotalW.push_back(vv);
 
 	    // Transform back to pixel errors to get circularized pixel error
-	    {
+	    double sig=0.;
+	    try {
 	      cov /= pow(WCS_UNIT/RESIDUAL_UNIT,2.); // Back to wcs units
 	      auto dpdw = detptr->map->dPixdWorld(xyMean[0],xyMean[1],
 						  detptr->color);
 	      astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
 	      double detCov = covPix(0,0)*covPix(1,1)-covPix(1,0)*covPix(0,1);
-	      sigpix.push_back(detCov>0. ? pow(detCov,0.25) : 0.);
+	      sig = detCov>0. ? pow(detCov,0.25) : 0.;
+	    } catch (AstrometryError& e) {
+	      // Problem here getting toPix to work in dPixdWorld
+#ifdef _OPENMP
+#pragma omp critical(io)
+#endif	    
+	      cerr << "WARNING: Astrometry failure for catalog "
+		   << detptr->catalogNumber
+		   << " object " << detptr->objectNumber
+		   << " world " << detptr->xw << "," << detptr->yw
+		   << " pix " << detptr->xpix << "," << detptr->ypix
+		   << endl;
 	    }
+	    sigpix.push_back(sig);
 
 	    // Chisq and expected
 	    chisq.push_back(detptr->trueChisq());
@@ -2686,7 +2710,7 @@ template void \
 fixMapComponents<AP>(AP::Collection&, \
 		     const list<string>&, \
 		     const vector<Instrument*>&); \
-template void \
+template double \
 createMapCollection<AP>(const vector<Instrument*>& instruments, \
 			const vector<Exposure*>& exposures, \
 			const vector<AP::Extension*> extensions, \
