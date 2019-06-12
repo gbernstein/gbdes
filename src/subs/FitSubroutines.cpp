@@ -794,7 +794,7 @@ readExtensions(img::FTable& extensionTable,
 	extn->mapName = extn->wcsName;
 	
 #ifdef _OPENMP
-#pragma omp critical
+#pragma omp critical(addmap)
 #endif
       if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "

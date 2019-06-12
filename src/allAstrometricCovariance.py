@@ -107,6 +107,7 @@ def minEigenvalue(sysTable,minSigma):
     eigenvalue is less than minSigma**2.  In particular, enforces
     pos-def ellipses.
     '''
+    print("**minSigma: ",minSigma)###
     mm = np.array( ( (sysTable['syserrxx'],sysTable['syserrxy']),
                      (sysTable['syserrxy'],sysTable['syserryy']) ) )
     mm = np.moveaxis(mm,2,0)  # Now is Nx2x2 array
@@ -186,6 +187,11 @@ def updateDB(amendFile, sysTable, defaultSigma=10., clear=False):
                                               header = hdu.header,
                                               name='Exposures')
         ff['Exposures'] = new_hdu
+
+    ff['Exposures'].data['syserrxx'] = xxdata
+    ff['Exposures'].data['syserrxy'] = xydata
+    ff['Exposures'].data['syserryy'] = yydata
+    ff['Exposures'].data['syserrwarn'] = warndata
     ff.close()
 
 if __name__=='__main__':
@@ -210,7 +216,7 @@ if __name__=='__main__':
                         type=int, default=300)
     parser.add_argument('--minSigma',
                         help='Floor to place on error ellipse axes',
-                        type=float, default=0.)
+                        type=float, default=5.)
     parser.add_argument('--clear',help='Erase all existing syserr entries' + \
                         ' in amend file?', action='store_true')
     parser.add_argument('--defaultSigma',
