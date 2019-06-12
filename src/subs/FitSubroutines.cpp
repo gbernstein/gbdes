@@ -2188,7 +2188,21 @@ Astro::saveResults(const astrometry::MCat& matches,
 	  yresw.push_back(residW[1]);
 
 	  // Get pixel residuals
-	  astrometry::Vector2 residP = detptr->residPix();
+	  astrometry::Vector2 residP;
+	  try {
+	    residP = detptr->residPix();
+	  } catch (AstrometryError& e) {
+	    // Do not want program to crash if an inverse fails.
+	    // Just move along
+	    cerr << "WARNING: Astrometry failure for catalog "
+		 << detptr->catalogNumber
+		 << " object " << detptr->objectNumber
+		 << " world " << detptr->xw << "," << detptr->yw
+		 << " pix " << detptr->xpix << "," << detptr->ypix
+		 << endl;
+	    residP[0] = astrometry::NODATA;
+	    residP[1] = astrometry::NODATA;
+	  }
 	  xrespix.push_back(residP[0]);
 	  yrespix.push_back(residP[1]);
 

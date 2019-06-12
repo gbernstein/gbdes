@@ -88,6 +88,8 @@ $(if $(or $(TMV_DIR),$(EIGEN_DIR)), , $(error Need either TMV_DIR or EIGEN_DIR))
 
 ifdef MKL_DIR
 INCLUDES += -I $(MKL_DIR)/include -D USE_MKL
+LIBS += -L$(MKL_DIR)/lib/intel64 -Wl,--no-as-needed -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lgomp -lpthread -lm -ldl
+CXXFLAGS += -m64
 endif
 
 # Object files found in external packages:
