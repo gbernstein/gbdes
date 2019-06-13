@@ -42,6 +42,10 @@ else
 $(error Require CFITSIO_DIR in environment)
 endif
 
+ifneq ($(origin CFITSIO_NEEDS_CURL),undefined)
+LIBS += -lcurl
+endif
+
 ifdef GBUTIL_DIR
 INCLUDES += -I $(GBUTIL_DIR)/include
 EXTDIRS += $(GBUTIL_DIR)

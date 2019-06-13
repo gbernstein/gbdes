@@ -95,6 +95,7 @@ main(int argc, char *argv[])
   string useInstruments;
   string skipExposures;
 
+  bool   purgeOutput;
   string outCatalog;
   string outPhotFile;
   string outPriorFile;
@@ -156,6 +157,8 @@ main(int argc, char *argv[])
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
     parameters.addMemberNoValue("OUTPUTS");
+    parameters.addMember("purgeOutput",&purgeOutput, def,
+			 "Purge un-fittable maps from output", false);
     parameters.addMember("outCatalog",&outCatalog, def,
 			 "Output FITS binary catalog", "photo.fits");
     parameters.addMember("outPhotFile",&outPhotFile, def,
@@ -515,6 +518,10 @@ main(int argc, char *argv[])
       }
     }
 
+    if (purgeOutput) {
+      cerr << "-->Purging unfittable maps" << endl;
+      mapCollection.purgeInvalid();
+    }
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 
     ///////////////////////////////////////////////////////////

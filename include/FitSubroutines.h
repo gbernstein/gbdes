@@ -340,7 +340,7 @@ findCanonical(Instrument& instr,
 // The names of all maps are already in the extension list.
 // Returns time spent in critical regions of the addMap() routine.
 template <class S>
-double
+void
 createMapCollection(const vector<Instrument*>& instruments,
 		    const vector<Exposure*>& exposures,
 		    const vector<typename S::Extension*> extensions,
@@ -429,7 +429,7 @@ template <class S>
 void
 freezeMap(string mapName,
 	  const typename S::MCat matches,
-	  const vector<typename S::Extension*> extensions,
+	  vector<typename S::Extension*> extensions,
 	  typename S::Collection& pmc);
 
 // Report number of unclipped matches and their chisq

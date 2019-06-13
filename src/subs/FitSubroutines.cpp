@@ -969,7 +969,7 @@ findCanonical(Instrument& instr,
 // The names of all maps are already in the extension list.
 // !! Returns the number of seconds spent in critical loop parts of addMap
 template <class S>
-double
+void
 createMapCollection(const vector<Instrument*>& instruments,
 		    const vector<Exposure*>& exposures,
 		    const vector<typename S::Extension*> extensions,
@@ -1817,13 +1817,13 @@ findUnderpopulatedExposures(long minFitExposure,
 }
     
 
-// Fix the parameters of a map, and mark all Detections making
+// Fix the parameters of a map, and delete all Detections making
 // use of it as clipped so they will not be used in fitting
 template <class S>
 void
 freezeMap(string mapName,
 	  const typename S::MCat matches,
-	  const vector<typename S::Extension*> extensions,
+	  vector<typename S::Extension*> extensions,
 	  typename S::Collection& pmc) {
   // Nothing to do if map is already fixed or doesn't exist
   if (!pmc.mapExists(mapName) || pmc.getFixed(mapName)) return;
@@ -1838,18 +1838,29 @@ freezeMap(string mapName,
   // Now freeze the relevant map
   pmc.setFixed(mapName);
 
-  // And now clip all of the affected Detections
+  // And now delete all of the affected Detections
   if (badExtensions.empty()) return;  // nothing to do
-  for (auto mptr : matches)
-    if (!mptr->getReserved()) {
-      bool recount = false;
-      for (auto dptr : *mptr)
-	if (badExtensions.count(dptr->catalogNumber)>0) {
-	  dptr->isClipped = true;
-	  recount = true;
-	}
-      if (recount) mptr->countFit();
-    }
+  for (auto mptr : matches) {
+    bool recount = false;
+    for (auto dptr = mptr->begin(); dptr!=mptr->end(); ++dptr)
+      if (badExtensions.count((*dptr)->catalogNumber)>0) {
+	dptr = mptr->erase(dptr, true);
+	recount = true;
+      }
+    if (recount)
+      mptr->countFit();  // deprecated, get rid of this when photofit is fixed.
+  }
+
+  // And the bad extensions too while we're at it
+  for (auto extn : badExtensions) {
+    // Mark the extension's map as invalid for possible purging.
+    if (S::isAstro)
+      pmc.invalidate(extensions[extn]->wcsName);
+    else
+      pmc.invalidate(extensions[extn]->mapName);
+    delete extensions[extn];
+    extensions[extn] = nullptr;
+  }
 }
   
 template <class S>
@@ -2576,6 +2587,9 @@ Photo::reportStatistics(const list<typename Photo::Match*>& matches,
   os << "#   Exposure           | " << Accum<Photo>::header() << endl;
   for (int i=0; i<ii.size(); i++) {
     int iexp = ii[i];
+    if (vaccFit[iexp].ntot==0 && vaccReserve[iexp].ntot==0)
+      // Do not report statistics if there are no detections
+      continue;
     os << setw(3) << iexp
        << " " << setw(10) << exposures[iexp]->name
        << " Fit     | " << vaccFit[iexp].summary()
@@ -2661,6 +2675,9 @@ Astro::reportStatistics(const list<typename Astro::Match*>& matches,
   os << "#   Exposure           | " << Accum<Astro>::header() << endl;
   for (int i=0; i<ii.size(); i++) {
     int iexp = ii[i];
+    if (vaccFit[iexp].ntot==0 && vaccReserve[iexp].ntot==0)
+      // Do not report statistics if there are no detections
+      continue;
     os << setw(3) << iexp
        << " " << setw(10) << exposures[iexp]->name
        << " Fit     | " << vaccFit[iexp].summary()
@@ -2710,7 +2727,7 @@ template void \
 fixMapComponents<AP>(AP::Collection&, \
 		     const list<string>&, \
 		     const vector<Instrument*>&); \
-template double \
+template void \
 createMapCollection<AP>(const vector<Instrument*>& instruments, \
 			const vector<Exposure*>& exposures, \
 			const vector<AP::Extension*> extensions, \
@@ -2762,7 +2779,7 @@ findUnderpopulatedExposures<AP> (long minFitExposure,  \
 template void  \
 freezeMap<AP>(string mapName,  \
 	      const AP::MCat matches,  \
-	      const vector<AP::Extension*> extensions,  \
+	      vector<AP::Extension*> extensions,  \
 	      AP::Collection& pmc);  \
 template void  \
 matchCensus<AP>(const AP::MCat& matches, ostream& os);	\

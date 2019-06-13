@@ -89,6 +89,7 @@ main(int argc, char *argv[])
   bool clipEntireMatch;
   double chisqTolerance;
   bool divideInPlace;
+  bool purgeOutput;
 
   string inputMaps;
   string fixMaps;
@@ -169,6 +170,8 @@ main(int argc, char *argv[])
 			 "maximum value of color to be used",+10.);
 
     parameters.addMemberNoValue("OUTPUTS");
+    parameters.addMember("purgeOutput",&purgeOutput, def,
+			 "Purge un-fittable maps from output", false);
     parameters.addMember("outWcs",&outWcs, def,
 			 "Output serialized Wcs systems", "wcsfit.wcs");
     parameters.addMember("outCatalog",&outCatalog, def,
@@ -651,7 +654,12 @@ main(int argc, char *argv[])
 	   << " fitted detections "
 	   << endl;
       freezeMap<Astro>(i.first, matches, extensions, mapCollection);
-    } 
+    }
+
+    if (purgeOutput) {
+      PROGRESS(2,Purging unfittable maps);
+      mapCollection.purgeInvalid();
+    }
 
     PROGRESS(2,Match census);
     matchCensus<Astro>(matches, cout);

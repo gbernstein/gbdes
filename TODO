@@ -1,4 +1,5 @@
 * Check on int/long/LONGLONG for id's
+* Document CFITSIO_NEEDS_CURL
 * Implement proper motion and parallax, Gaia DR2 (or other) references
   * WEIGHT, MAGWEIGHT required?
   * AIRMASS, EXPOSURE coming in properly in config.py?
