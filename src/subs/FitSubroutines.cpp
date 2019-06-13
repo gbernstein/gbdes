@@ -1822,8 +1822,8 @@ findUnderpopulatedExposures(long minFitExposure,
 template <class S>
 void
 freezeMap(string mapName,
-	  const typename S::MCat matches,
-	  vector<typename S::Extension*> extensions,
+	  typename S::MCat& matches,
+	  vector<typename S::Extension*>& extensions,
 	  typename S::Collection& pmc) {
   // Nothing to do if map is already fixed or doesn't exist
   if (!pmc.mapExists(mapName) || pmc.getFixed(mapName)) return;
@@ -2778,8 +2778,8 @@ findUnderpopulatedExposures<AP> (long minFitExposure,  \
 				 const AP::Collection& pmc);  \
 template void  \
 freezeMap<AP>(string mapName,  \
-	      const AP::MCat matches,  \
-	      vector<AP::Extension*> extensions,  \
+	      AP::MCat& matches,  \
+	      vector<AP::Extension*>& extensions,  \
 	      AP::Collection& pmc);  \
 template void  \
 matchCensus<AP>(const AP::MCat& matches, ostream& os);	\

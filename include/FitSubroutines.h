@@ -428,8 +428,8 @@ findUnderpopulatedExposures(long minFitExposure,
 template <class S>
 void
 freezeMap(string mapName,
-	  const typename S::MCat matches,
-	  vector<typename S::Extension*> extensions,
+	  typename S::MCat& matches,
+	  vector<typename S::Extension*>& extensions,
 	  typename S::Collection& pmc);
 
 // Report number of unclipped matches and their chisq
