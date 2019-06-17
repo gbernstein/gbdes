@@ -29,26 +29,72 @@ namespace photometry {
     long catalogNumber;
     long objectNumber;
     double magIn;
-    double sigma;	// Uncertainty, in mag
     photometry::PhotoArguments args;
     double magOut;
+    // Inverse covariance for fitting.
+    // This will include systematic errors.
+    double invVar;
+    // This is the weighting factor applied here.  We will apply it to
+    // invCov when solving for centroid
+    double fitWeight;  
+    // This is the expectation of (dx * invCov * dx), taking
+    // into account the weight of this measurement in xmean for dx=x-xmean
+    // Tends to 1 for many observations
+    double expectedTrueChisq;
+    bool isClipped;
+    const Match* itsMatch;
+    const SubMap* map;
+    Detection(): isClipped(false),
+		 fitWeight(1.), expectedTrueChisq(0.),
+		 itsMatch(nullptr), map(nullptr) {}
+    // Get total error on magnitude:
+    double getSigma() const {return 1./sqrt(invVar);}
+    // Get chisq using total error but no weighting factor
+    double trueChisq() const;
+
+    double residMag() const;  // Get mag error after fit
+    void clip() {isClipped=true; fitWeight=0.;}
+  };
+  
+  /*** Old quantities ???
+    double sigma;	// Uncertainty, in mag
     // weight, nominally inverse sigma squared of output mag
     double wt;
     // Inverse square of the sigma used for sig-clipping:
     double clipsq;
-    bool isClipped;
-    const Match* itsMatch;
-    const SubMap* map;
-    Detection(): itsMatch(nullptr), map(nullptr), isClipped(false) {}
-    double getSigma() const {return sigma;}
-  };
-  
+  ***/
   class Match {
   private:
     list<Detection*> elist;
-    int nFit;	// Number of un-clipped points with non-zero weight in fit
     bool isReserved;	// Do not contribute to re-fitting if true
-    static bool isFit(const Detection* e);
+
+    /* State maintenance */
+    // First flag is set if the Fisher "matrix", dof, and expected chisq's are
+    // current, and the solution matrices for mean.  These only change if
+    // a Detection is added or removed from the set being fit.
+    mutable bool isPrepared;  
+    // These flags are set if the magOuts of Detections are valid
+    // They need to be reset whenever the maps' parameters change
+    mutable bool isMappedFit;  // Detections involved in Fit are current
+    mutable bool isMappedAll;  // All detections (incl. clipped) are current
+    // This flag is set if the best-fit centroid is current.
+    // isPrepared && isMappedFit are prereqs for being solved.
+    mutable bool isSolved;
+    // This flag is set if all weights are 1 or 0
+    mutable bool trivialWeights;
+
+    // Here are cached quantities for the overall solution:
+    mutable int nFit;	// Number of un-clipped points with non-zero weight in fit
+    mutable double meanMag;   // Best-fit magnitude (valid if isSolved).
+    mutable double meanF;  // pseudo-inverse-var for centroid (2nd deriv of weighted chisq)
+    // The expected variance of the mean (accounting for weighting):
+    mutable double trueMeanVar; 
+    mutable int dof;
+
+    // Call this to redo the centroid variance if needed (=>set isPrepare)
+    virtual void prepare() const;
+    // Other state-changing calls are public.
+    
   public:
     Match(Detection* e);
     // Add and remove automatically update itsMatch of the Detection
@@ -62,20 +108,40 @@ namespace photometry {
     // then empty the list:
     void clear(bool deleteDetections=false);
 
-    int size() const {return elist.size();}
-    // Number of points that would have nonzero weight in next fit
-    int fitSize() const {return nFit;}
-    // Update and return count of above:
-    void countFit(); 
-
-    void remap();  // Remap each point, i.e. make new magOut
-    // Mean of un-clipped output mags, optionally with total weight - no remapping done
-    void getMean(double& mag) const;
-    void getMean(double& mag, double& wt) const;
+    // True if a Detection will contribute to chisq:
+    static bool isFit(const Detection* e);
 
     // Is this object to be reserved from re-fitting?
     bool getReserved() const {return isReserved;}
     void setReserved(bool b) {isReserved = b;}
+
+    // Number of points that would have nonzero weight in next fit
+    int fitSize() const {prepare(); return nFit;}
+    // Return DOF in the fit
+    int getDOF() const {prepare(); return dof;}
+    
+    // State-changing routines
+    void mapsHaveChanged() const {
+      // magOut of Detections no longer valid
+      isMappedFit = false;
+      isMappedAll = false;
+      isSolved = false;
+    }
+    void forceRecalculation() const {
+      // Mark everything as invalid
+      mapsHaveChanged();
+      isPrepared = false;
+    }
+
+    // Remap Detections to magOut current map, either all or just
+    // the ones involved in fitting
+    virtual void remap(bool doAll = true) const;  
+    // Recalculate best-fit centroid
+    virtual void solve() const;     
+
+    // Mean mag and its inverse variance under weighted fit
+    double getMean() const {solve(); return meanMag;}
+    double getMeanFisher() {prepare(); return meanF;}
 
     // Returned integer is the DOF count
     int accumulateChisq(double& chisq,
@@ -90,7 +156,7 @@ namespace photometry {
 
     // Chisq for this match, and largest-sigma-squared deviation
     // 2 arguments are updated with info from this match.
-    double chisq(int& dof, double& maxDeviateSq) const;
+    double chisq(int& dofAccum, double& maxDeviateSq) const;
 
     typedef list<Detection*>::iterator iterator;
     typedef list<Detection*>::const_iterator const_iterator;
@@ -108,12 +174,13 @@ namespace photometry {
     string exposureName;
     string deviceName;
     double magIn;  // Magnitude assigned to 1 count per second.
-    double magOut;	// Mag after mapping.
+    mutable double magOut;	// Mag after mapping.
     PhotoArguments args;
     double airmass;
     double apcorr;
     const SubMap* map;	// Photometric map applying to this reference point
     bool isClipped;
+    void clip() {isClipped = true;}
   };
 
   // Class that manifests some prior constraint on the agreement of zeropoints of different
@@ -136,7 +203,9 @@ namespace photometry {
     DVector getParams() const;
     void setParams(const DVector& p);
     // If this call is true, prior cannot be used for fitting:
-    bool isDegenerate() const {return nFit < nFree;}
+    bool isDegenerate() const {prepare(); return dof<0;}  // ??? get rid of this?
+    int getDOF() const {prepare(); return dof;}
+    
 
     string getName() const {return name;}
     double getSigma() const {return sigma;}
@@ -153,8 +222,9 @@ namespace photometry {
     int startIndex() const {return globalStartIndex;}
     int mapNumber() const {return globalMapNumber;}
 
-    // Recalculate *all* the reference points with current parameters
-    void remap();
+    // Set this when underlying data change (parameters of exposure's maps)
+    void needsRemapping() const {isMapped = false;}
+
     // Recalculate the fittable points and increment chisq and fitting vector/matrix
     int accumulateChisq(double& chisq,
 			DVector& beta,
@@ -165,7 +235,7 @@ namespace photometry {
     // Mark all of this prior as clipped (will no longer be fit)
     void clipAll();
     // Chisq for this match, also updates dof for free parameters - no recalculation
-    double chisq(int& dof) const;
+    double chisq(int& dofAccum) const;
     
     // For a printed report to the stated stream:
     static void reportHeader(ostream& os);
@@ -175,21 +245,26 @@ namespace photometry {
     double sigma;	// strength of prior (mags) at each reference point
     list<PhotoPriorReferencePoint> points;
     string name;
-    int nFree;	// Count of number of free parameters among m, a, b.
     friend class PhotoAlign;	// PhotoAlign can change the global indices
     int globalStartIndex;	// Index of m/a/b in PhotoMapCollection param vector
     int globalMapNumber;	// map number for resource locking
-    bool mIsFree;
-    bool aIsFree;
-    bool bIsFree;
-    bool cIsFree;
     double m;	// Mag zeropoint
     double a;	// X-1 airmass coefficient
     double b;	// color coefficient
     double c;	// aperture correction coefficient
+    bool mIsFree;
+    bool aIsFree;
+    bool bIsFree;
+    bool cIsFree;
 
-    int nFit;	// Number of reference points being fit
-    void countFit();	// Update the above number
+    // State maintenance / cached quantities
+    mutable bool isPrepared;  // Calculated DOF and such?
+    mutable bool isMapped;    // dm's for reference points are current
+    void prepare() const;           // Recalc DOF and such
+    void remap() const;       // Recalc dm's
+    mutable int nFit;	// Number of reference points being fit
+    int nFree;	        // Count of number of free parameters among m, a, b.
+    mutable int dof;
   };
 
   // Class that fits to make magnitudes agree
@@ -212,32 +287,43 @@ namespace photometry {
 					    priors(priors_),
 					    relativeTolerance(0.001)  {countPriorParams();}
 
+    // Re-map all Detections and Priors using current params, either all or just
+    // those being fit.
+    void remap(bool doAll=true) const;	
+
+    // Fit parameters. Returns chisq of previous fit, updates params.
+    double fitOnce(bool reportToCerr=true,
+		   bool inPlace=false);	 // Set inPlace to save space, less debug
+
     // Conduct one round of sigma-clipping.  If doReserved=true, 
     // then only clip reserved Matches.  If =false, then
     // only clip non-reserved Matches.
     int sigmaClip(double sigThresh, bool doReserved=false,
-		  bool clipEntireMatch=false);
+		  bool clipEntireMatch=false,
+		  bool logging=true);
+
     // Clip the priors to eliminate non-photometric exposures.  Set the flag to
     // eliminate all use of a prior that has any outliers (one bad exposure means full night
     // is assumed non-photometric).  Returns number of priors with a clip.
     int sigmaClipPrior(double sigThresh, bool clipEntirePrior=false);
 
     // Calculate total chisq.  doReserved same meaning as above.
+    double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
+
+    // Get/set parameters
     void setParams(const DVector& p);
     DVector getParams() const;
     int nParams() const {return pmc.nParams() + nPriorParams;}
 
-    void remap();	// Re-map all Detections and Priors using current params
-    // Returns chisq of previous fit, updates params.
-    double fitOnce(bool reportToCerr=true,
-		   bool inPlace=false);	 // Set inPlace to save space, less debug
-    double chisqDOF(int& dof, double& maxDeviate, bool doReserved=false) const;
-    // This is the () operator that is called by Marquardt to try a fit with new params
+    // This is the calculation of normal equation components used in Marquardt fitting.
+    // reuseAlpha=true will leave alpha unchanged, way faster.
     void operator()(const DVector& params, double& chisq,
 		    DVector& beta, DMatrix& alpha,
 		    bool reuseAlpha=false);
 
+    // Set tolerance for fit convergence
     void setRelTolerance(double tol) {relativeTolerance=tol;}
+
     // Return count of useful (un-clipped) Matches & Detections.
     // Count either reserved or non-reserved objects, and require minMatches useful
     // Detections for a valid match:

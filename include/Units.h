@@ -30,4 +30,10 @@ namespace astrometry {
   // Observatory positions assumed to be in ICRS AU.
 
 } // end namespace astrometry
+
+namespace photometry {
+  // Unit to be used for all residuals and errors I/O:
+  const double MMAG = 0.001;
+  // (Internal unit for everything is magnitudes)
+}
 #endif

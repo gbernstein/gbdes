@@ -204,10 +204,6 @@ Match::clear(bool deleteDetections) {
 }
 
 void
-Match::countFit() {}
-  // DEPRECATED.  The count is done as part of prepare()
-
-void
 Match::clipAll() {
   isPrepared = false;
   isSolved = true;  // No such thing as solution anymore.
@@ -1407,7 +1403,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	beta = inplaceLLT->solve(beta);
       else
 	beta = llt->solve(beta);
-#endif
+n#endif
       if (precondition) {
 	beta = ElemProd(beta,ss);
       }
@@ -1436,8 +1432,10 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       if (newChisq > oldChisq * 1.0001) break;
       else if ((oldChisq - newChisq) < oldChisq * relativeTolerance) {
 	// Newton has converged, so we're done.
+#ifdef USE_EIGEN
 	if (llt) delete llt;
 	if (inplaceLLT) delete inplaceLLT;
+#endif
 	return newChisq;
       }
       // Want another Newton iteration, but keep alpha as before
@@ -1446,8 +1444,10 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     }
     // If we reach this place, Newton is going backwards or nowhere, slowly.
     // So just give it up.
+#ifdef USE_EIGEN
     if (llt) delete llt;
     if (inplaceLLT) delete inplaceLLT;
+#endif
   }
 
   // ??? Signal that alpha should be fixed for all iterations of Marquardt?

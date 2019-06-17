@@ -19,7 +19,6 @@ PhotoPrior::PhotoPrior(list<PhotoPriorReferencePoint> points_,
 		       bool freeApcorr): sigma(sigma_),
 					 points(points_),
 					 name(name_),
-					 nFree(0),
 					 globalStartIndex(-1),
 					 globalMapNumber(-1),
 					 m(zeropoint),
@@ -29,13 +28,18 @@ PhotoPrior::PhotoPrior(list<PhotoPriorReferencePoint> points_,
 					 mIsFree(freeZeropoint),
 					 aIsFree(freeAirmass),
 					 bIsFree(freeColor),
-					 cIsFree(freeApcorr)
+					 cIsFree(freeApcorr),
+					 nFit(0),
+					 nFree(0),
+					 dof(0),
+					 isPrepared(false),
+					 isMapped(false)
+					 
 {
   if (mIsFree) nFree++;
   if (aIsFree) nFree++;
   if (bIsFree) nFree++;
   if (cIsFree) nFree++;
-  countFit();
 }
 
 DVector
@@ -52,6 +56,7 @@ PhotoPrior::getParams() const {
 
 void
 PhotoPrior::setParams(const DVector& p) {
+  isMapped = false;
   Assert(p.size() == nFree);
   if (nFree==0) return;
   int index=0;
@@ -62,17 +67,23 @@ PhotoPrior::setParams(const DVector& p) {
 }
 
 void
-PhotoPrior::countFit() {
+PhotoPrior::prepare() const {
+  if (isPrepared) return;
   nFit = 0;
   for (auto& i : points) {
     if (!(i.isClipped)) nFit++;
   }
+  dof = nFit - nFree;
+  isPrepared = true;
+  isMapped = false;
 }
 
 double
-PhotoPrior::chisq(int& dof) const {
-  // We are not going to use the prior in chisq if it would be degenerate:
-  if (isDegenerate()) return 0.;
+PhotoPrior::chisq(int& dofAccum) const {
+  remap();
+  // We are not going to use the prior in chisq if it would be degenerate
+  // or an exact fit.
+  if (dof<=0) return 0.;
 
   double chi = 0.;
   for (auto& i : points) {
@@ -83,14 +94,17 @@ PhotoPrior::chisq(int& dof) const {
       - c*i.apcorr;
     chi += dm * dm;
   }
-  dof += nFit - nFree;
+  dofAccum += dof;
   return chi / (sigma*sigma);
 }
 
 void
-PhotoPrior::remap() {
+PhotoPrior::remap() const {
+  prepare();
+  if (isMapped) return;
   for (auto& i : points) 
     i.magOut = i.map->forward(i.magIn, i.args);
+  isMapped = true;
 }
   
 int
@@ -98,7 +112,8 @@ PhotoPrior::accumulateChisq(double& chisq,
 			    DVector& beta,
 			    SymmetricUpdater& updater,
 			    bool reuseAlpha) {
-  if (isDegenerate()) return 0; // Can't use this Prior if it's degenerate.
+  if (dof<0) return 0; // Can't use this Prior if it's degenerate.
+  remap();
 
   int nP = beta.size();
   double wt = 1./(sigma*sigma);
@@ -178,11 +193,12 @@ PhotoPrior::accumulateChisq(double& chisq,
     }
   } // reference point loop
 
-  return nFit - nFree;
+  return dof;
 }
 
 bool
 PhotoPrior::sigmaClip(double sigThresh) {
+  remap();
   auto worst=points.end();
   double maxDev = sigThresh*sigma;
   for (auto i = points.begin(); i!=points.end(); ++i) {
@@ -200,8 +216,8 @@ PhotoPrior::sigmaClip(double sigThresh) {
   if (worst == points.end()) return false;
 
   // Have one to clip:
-  worst->isClipped = true;
-  nFit--;
+  worst->clip();
+  isPrepared = false;
   // Will also clip other Points from the same exposure (different color)
   for (auto i=points.begin(); i!=points.end(); ++i) {
     if (i==worst || i->isClipped) continue;
@@ -209,8 +225,7 @@ PhotoPrior::sigmaClip(double sigThresh) {
       /**/cerr << "Clipping prior at " << worst->exposureName 
 	       << " maxDev " << maxDev << endl;
       /**/cerr << " m a b c " << m << " " << a << " " << b << " " << c << endl;
-      i->isClipped = true;
-      nFit--;
+      i->clip();
     }  
   }
   return true;
@@ -219,8 +234,8 @@ PhotoPrior::sigmaClip(double sigThresh) {
 void
 PhotoPrior::clipAll() {
   for (auto& i : points) 
-    i.isClipped = true;
-  nFit = 0;
+    i.clip();
+  isPrepared = false;
 }
 
 void
@@ -238,9 +253,10 @@ PhotoPrior::report(ostream& os) const {
 
   double chi = 0.;
   int dof=0;
-
-  if (isDegenerate()) {
-    dof = nFit - nFree;
+  remap();
+  
+  if (dof<0) {
+    dof = nFit - nFree; // Display negative dof's
   } else {
     chi = chisq(dof);
   }

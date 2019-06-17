@@ -10,6 +10,12 @@ using std::set;
 #include "AstronomicalConstants.h"
 #include <algorithm>
 #include "Stopwatch.h"
+#include "Units.h"
+
+// Need Eigenvalue routines
+#ifdef USE_EIGEN
+#include "Eigen/Eigenvalues"
+#endif
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -20,45 +26,65 @@ using std::set;
 
 using namespace photometry;
 
-/////////////////////////////////////////////////////////////
-///// Class that regulates rank-one updates to small portions of
-///// the giant alpha symmetric matrix, allowing finer-grained locking
-/////////////////////////////////////////////////////////////
+double
+Detection::residMag() const {
+  Assert(itsMatch);
+  itsMatch->solve();
+  return (magOut - itsMatch->getMean()) / MMAG;
+}
+
+double
+Detection::trueChisq() const {
+  Assert(itsMatch);  
+  itsMatch->solve();
+  double resid = magOut - itsMatch->getMean();
+  return resid * resid * invVar;
+}
+
 bool
 Match::isFit(const Detection* e) {
   // A Detection will contribute to fit if it has nonzero weight and is not clipped.
-  return !(e->isClipped) && e->wt>0.;
+  return e->fitWeight>0.;
 }
 
-Match::Match(Detection *e): elist(), nFit(0), isReserved(false) {
+Match::Match(Detection *e): elist(), nFit(0), dof(0),
+			    isReserved(false), isPrepared(false),
+			    isMappedFit(false), isMappedAll(false),
+			    isSolved(false), trivialWeights(true) {
   add(e);
 }
 
 void
 Match::add(Detection *e) {
+  isPrepared = false;
   elist.push_back(e);
   e->itsMatch = this;
   e->isClipped = false;
-  if ( isFit(e)) nFit++;
+  isMappedFit = false;
+  isMappedAll = false;
+  isSolved = false;
 }
 
 void
 Match::remove(Detection* e) {
+  isPrepared = false;
+  isSolved = false;
   elist.remove(e);  
   e->itsMatch = nullptr;
-  if ( isFit(e) ) nFit--;
 }
 
 list<Detection*>::iterator 
 Match::erase(list<Detection*>::iterator i,
 	     bool deleteDetection) {
-  if (isFit(*i)) nFit--;
+  isPrepared = false;
+  isSolved = false;
   if (deleteDetection) delete *i;
   return elist.erase(i);
 }
 
 void
 Match::clear(bool deleteDetections) {
+  isPrepared = false;
   for (auto i : elist) {
     if (deleteDetections)
       delete i;
@@ -67,52 +93,136 @@ Match::clear(bool deleteDetections) {
   }
   elist.clear();
   nFit = 0;
-}
-
-void
-Match::countFit() {
-  nFit = 0;
-  for (auto i : elist)
-    if (isFit(i)) nFit++;
+  isMappedFit = true;
+  isMappedAll = true;
+  isSolved = false;
 }
 
 void
 Match::clipAll() {
+  isPrepared = false;
   for (auto i : elist)
     if (i)
-      i->isClipped = true;
+      i->clip();
   nFit = 0;
 }
 
 void
-Match::getMean(double& m) const {
-  double wt;
-  getMean(m,wt);
-}
+Match::prepare() const {
+  // Recalculate, if needed, quantities that do not depend on the
+  // detection position values - namely the (inverse) variance of
+  // the centroid.
+  if (isPrepared) return;
+  isSolved = false;   // Change here means centroid solution is invalid
+  meanF = 0.;
+  trueMeanVar = 0.;
+  dof = 0;
+  nFit = 0;
+  trivialWeights = true;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    dof += 1;
+    nFit++;
+    if (i->fitWeight != 1.) {
+      trivialWeights = false;  // Need explicit weights in formulae
+      meanF += i->invVar * i->fitWeight;
+    } else {
+      meanF += i->invVar;
+    }
+      
+  }
+  dof -= 1;  // Remove 1 DOF for freedom in mean
 
-void
-Match::getMean(double& m, double& wt) const {
-  if (nFit<1) {
-    wt=m=0.;
+  if (dof<0) {
+    // Degenerate fit, will never yield a solution of interest
+    for (auto i : elist)
+      i->expectedTrueChisq = 0.;
+    meanF = 0.;
+    trueMeanVar = 0.;
+    isPrepared = true;
+    nFit = 0;
     return;
   }
-  double sum_mw=0.;
-  double sum_w =0.;
-  for (auto i : elist) {
-    if (i->isClipped) continue;
-    double m = i->magOut;
-    double w = i->wt;
-    sum_mw += m*w;
-    sum_w += w;
+	
+  double invF = 1./meanF;
+  // Calculate expected centroid 
+  if (trivialWeights) {
+    trueMeanVar = invF;
+  } else {
+    // Altered expectation for cov because of weighting
+    // From notes of 28 Apr 2019,
+    double tmp = 0.;
+    for (auto i : elist) {
+      if (!isFit(i)) continue;
+      tmp += i->invVar * (i->fitWeight*i->fitWeight);
+    }
+    trueMeanVar = invF * tmp * invF;
   }
-  m = sum_mw/sum_w;
-  wt = sum_w;
+
+  // Now get expected chisq for each detection, accounting for weighting
+  // From notes of 28 Apr 2019,
+  // where invF is the inverse of centroidF
+  for (auto i : elist) {
+    if (i->invVar<=0.) {
+      // No error on this detection so no chisq
+      i->expectedTrueChisq = 0.;
+    } else if (i->fitWeight==0.) {
+      // Has uncertainties but was not included in the fit
+      i->expectedTrueChisq = 1. + i->invVar * trueMeanVar;
+    } else if (trivialWeights) {
+      // included in fit, unit weight gauranteed
+      i->expectedTrueChisq = 1. - i->invVar * trueMeanVar;
+    } else {
+      // Include non-trivial weight
+      i->expectedTrueChisq = 1 - 2.*i->fitWeight*i->invVar*invF
+	+ i->invVar*trueMeanVar;
+    }
+  }
+  // Calculate expected chisq for each Detection:
+  isPrepared = true;
 }
 
 void
-Match::remap() {
-  for (auto i : elist) 
-    i->magOut = i->map->forward(i->magIn, i->args);
+Match::remap(bool doAll) const { 
+  // No need to do anything if all is current
+  if (isMappedAll) return;
+  // Or if Fit are current and we only need them
+  if (!doAll && isMappedFit) return;
+  
+  for (auto i : elist) {
+    if (isFit(i)) {
+      if (!isMappedFit) {
+	i->magOut = i->map->forward(i->magIn, i->args);
+	isSolved = false;  // Solution has changed
+      }
+    } else if (doAll) {
+      // Only remap non-fits if requested
+      i->magOut = i->map->forward(i->magIn, i->args);
+    }
+  }
+  // Update state
+  isMappedFit = true;
+  if (doAll) isMappedAll = true;
+}
+
+void
+Match::solve() const {
+  // Recalculate the mean, if needed.
+  prepare();     // Make sure Fisher matrices are current
+  remap(false);  // Make sure world coords of fitted Detections are current
+  if (isSolved) return;
+  isSolved = true;
+  if (dof<0) {
+    // Do not execute degenerate fit
+    meanMag = 0.;
+    return;
+  }
+  double sumwm = 0.;
+  for (auto i : elist) {
+    if (!isFit(i)) continue;
+    sumwm += i->invVar * i->magOut * i->fitWeight;
+  }
+  meanMag = meanF * sumwm;
 }
 
 ///////////////////////////////////////////////////////////
@@ -131,12 +241,12 @@ Match::accumulateChisq(double& chisq,
 		       DVector& beta,
 		       SymmetricUpdater& updater,
 		       bool reuseAlpha) {
-  double mean;
-  double wt;
   int nP = beta.size();
 
+  prepare();
+  
   // No contributions to fit for <2 detections:
-  if (nFit<=1) return 0;
+  if (dof<=0) return 0;
 
   // Update mapping and save derivatives for each detection:
   vector<DVector*> di(elist.size());
@@ -148,22 +258,29 @@ Match::accumulateChisq(double& chisq,
       di[ipt] = new DVector(npi);
       (*i)->magOut = (*i)->map->forwardDerivs((*i)->magIn, (*i)->args,
 					      *di[ipt]);
-    } else {
+    } else if (!isMappedFit) {
+      // If there are no free parameters, we only
+      // need to remap if the maps have changed.
       (*i)->magOut = (*i)->map->forward((*i)->magIn, (*i)->args);
     }
   }
+  isMappedFit = true;  // This is now true if it wasn't before.
 
-  getMean(mean,wt);
-  DVector dmean(nP, 0.);
+  // Get new mean mag
+  solve();
+  
+  DVector dMean(nP, 0.); // Derive of mean wrt parameters
+  // Places to put mag resid and invVar * weight for each Detection
+  double resid;
+  double invVarW;  
 
   map<int, iRange> mapsTouched;
   ipt = 0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
     if (!isFit(*i)) continue;
-    double wti=(*i)->wt;
-    double mi=(*i)->magOut;
-
-    chisq += (mi-mean)*(mi-mean)*wti;
+    invVarW = (*i)->invVar * (*i)->fitWeight;
+    resid = (*i)->magOut - meanMag;
+    chisq += resid*resid*invVarW;
 
     // Accumulate derivatives:
     int istart=0;
@@ -174,19 +291,18 @@ Match::accumulateChisq(double& chisq,
       int mapNumber = (*i)->map->mapNumber(iMap);
       // Keep track of parameter ranges we've messed with:
       mapsTouched[mapNumber] = iRange(ip,np);
-      DVector dm=di[ipt]->subVector(istart,istart+np);
-      beta.subVector(ip, ip+np) -= (wti*(mi-mean))*dm;
+      DVector dm1=di[ipt]->subVector(istart,istart+np);
+      beta.subVector(ip, ip+np) -= (invVarW * resid)*dm1;
 
       // Derivatives of the mean position:
-      dmean.subVector(ip, ip+np) += wti*dm;
+      dMean.subVector(ip, ip+np) += invVarW*dm1;
 
       if (!reuseAlpha) {
 	// Increment the alpha matrix
 	// First the blocks astride the diagonal:
-	updater.rankOneUpdate(mapNumber, ip, dm, wti);
+	updater.rankOneUpdate(mapNumber, ip, dm1, invVarW);
 
 	// Put the wti factor into dm:
-	dm *= wti;
 	int istart2 = istart+np;
 	for (int iMap2=iMap+1; iMap2<(*i)->map->nMaps(); iMap2++) {
 	  int ip2=(*i)->map->startIndex(iMap2);
@@ -195,8 +311,9 @@ Match::accumulateChisq(double& chisq,
 	  if (np2==0) continue;
 	  DVector dm2=di[ipt]->subVector(istart2,istart2+np2);
 	  // Update below the diagonal:
-	  updater.rankOneUpdate(mapNumber2, ip2, dm2, 
-				mapNumber,  ip,  dm);
+	  updater.rankOneUpdate(mapNumber2, ip2, dm2,
+				mapNumber,  ip,  dm1,
+				invVarW);
 	  istart2+=np2;
 	}
 	istart+=np;
@@ -209,10 +326,11 @@ Match::accumulateChisq(double& chisq,
   if (!reuseAlpha) {
     // Subtract effects of derivatives on mean
     /*  We want to do this, but without touching the entire alpha matrix every time:
-	alpha -=  (dmean ^ dmean)/wt;
+	alpha -=  (dMean ^ dMean)/wt;
     */
 
     // Do updates parameter block by parameter block
+    double negVarMean = -1./meanF;
     for (auto m1=mapsTouched.begin();
 	 m1 != mapsTouched.end();
 	 ++m1) {
@@ -220,11 +338,10 @@ Match::accumulateChisq(double& chisq,
       int i1 = m1->second.startIndex;
       int n1 = m1->second.nParams;
       if (n1<=0) continue;
-      DVector dm1 = dmean.subVector(i1, i1+n1);
-      // Update astride diagona;:
-      updater.rankOneUpdate(map1, i1, dm1, -1./wt);
-      // Put the weight factor into dm1:
-      dm1 *= -1./wt;
+      DVector dm1 = dMean.subVector(i1, i1+n1);
+      // Update astride diagonal:
+      updater.rankOneUpdate(map1, i1, dm1, negVarMean);
+
       auto m2 = m1;
       ++m2;
       for (; m2 != mapsTouched.end(); ++m2) {
@@ -232,29 +349,33 @@ Match::accumulateChisq(double& chisq,
 	int i2 = m2->second.startIndex;
 	int n2 = m2->second.nParams;
 	if (n2<=0) continue;
-	DVector dm2 = dmean.subVector(i2, i2+n2);
+	DVector dm2 = dMean.subVector(i2, i2+n2);
 	updater.rankOneUpdate(map2, i2, dm2,
-			      map1, i1, dm1);
+			      map1, i1, dm1,
+			      negVarMean);
       }
     }
   }
-  return nFit-1;
+  return dof;
 }
 
 bool
 Match::sigmaClip(double sigThresh,
 		 bool deleteDetection) {
+  solve();  // Recalculate mean position if out of date
+  if (dof<=0) return false; // Already degenerate, not fitting
+
   // Only clip the worst outlier at most
-  double mean;
-  if (nFit<=1) return false;
   double maxSq=0.;
   Detection* worst=nullptr;
-  getMean(mean);
+
   for (auto i : elist) {
     if (!isFit(i)) continue;
-    double mi = i->magOut;
-    double clipsq = i->clipsq;
-    double devSq = (mi-mean)*(mi-mean)*clipsq;
+    double resid = i->magOut - meanMag;
+    double devSq = resid*resid*i->invVar;
+    // Calculate deviation relative to expected chisq
+    devSq /= i->expectedTrueChisq;
+    
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
       worst = i;
@@ -267,8 +388,8 @@ Match::sigmaClip(double sigThresh,
     cerr << "clipped " << worst->catalogNumber
 	 << " / " << worst->objectNumber 
 	 << " at " << worst->magOut
-	 << " resid " << setw(6) << (worst->magOut-mean)
-	 << " sigma " << 1./sqrt(worst->clipsqx)
+	 << " resid " << setw(6) << (worst->magOut-meanMag)
+	 << " sigma " << 1./sqrt(worst->invVar)
 	 << endl;
 #endif
       if (deleteDetection) {
@@ -277,7 +398,8 @@ Match::sigmaClip(double sigThresh,
       }	else {
 	worst->isClipped = true;
       }
-      nFit--;
+      isPrepared = false;
+      isSolved = false;  // Note that magOut's are still valid
       return true;
   } else {
     // Nothing to clip
@@ -286,21 +408,52 @@ Match::sigmaClip(double sigThresh,
 }
 
 double
-Match::chisq(int& dof, double& maxDeviateSq) const {
-  double mean;
+Match::chisq(int& dofAccum, double& maxDeviateSq) const {
+  solve();
   double chi=0.;
-  if (nFit<=1) return chi;
-  getMean(mean);
+  if (dof<=0) return chi;
   for (auto i : elist) {
     if (!isFit(i)) continue;
-    double mi = i->magOut;
-    double wti = i->wt;
-    double cc = (mi-mean)*(mi-mean)*wti;
-    maxDeviateSq = MAX(cc , maxDeviateSq);
-    chi += cc;
+    double resid = i->magOut - meanMag;
+    double cc = resid * resid * i->invVar;
+    maxDeviateSq = MAX(cc/i->expectedTrueChisq, maxDeviateSq);
+    chi += cc * i->fitWeight;  // Returning the fitting chisq here
   }
-  dof += nFit-1;
+  dofAccum += dof;
   return chi;
+}
+
+/////////////////////////////////////////////////////////////////////
+// Parameter adjustment operations
+/////////////////////////////////////////////////////////////////////
+
+void
+PhotoAlign::setParams(const DVector& p) {
+  // First, change parameters in the map collection
+  pmc.setParams(p.subVector(0,pmc.nParams()));
+  // Then alert all Matches that their world coordinates are crap
+  for (auto m : mlist)
+    m->mapsHaveChanged();
+  int startIndex = pmc.nParams();
+  for (auto i : priors) {
+    if (i->isDegenerate()) continue;
+    i->setParams(p.subVector(startIndex, startIndex + i->nParams()));
+    startIndex += i->nParams();
+    // ?? set some state flags in priors?
+  }
+}
+
+DVector
+PhotoAlign::getParams() const {
+  DVector p(nParams(), -888.);
+  p.subVector(0,pmc.nParams()) = pmc.getParams();
+  int startIndex = pmc.nParams();
+  for (auto i : priors) {
+    if (i->isDegenerate()) continue;
+    p.subVector(startIndex, startIndex + i->nParams()) = i->getParams();
+    startIndex += i->nParams();
+  }
+  return p;
 }
 
 void
@@ -521,14 +674,19 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
       choleskyFails=true;
     }
 #elif defined USE_EIGEN
-    if (inPlace)
-      throw PhotometryError("Do not currently support in-place Cholesky for Eigen");
-    // The difficulty is that the type of an in-place LLT is different from
-    // the type for a "normal" LLT.  I can't figure out how to allow both
-    // possibilities without making two branches of the whole iteration code.
-    auto llt = alpha.llt();
-    if (llt.info()==Eigen::NumericalIssue)
-      choleskyFails = true;
+    typedef Eigen::LLT<Eigen::Ref<typename DMatrix::Base>,Eigen::Lower> InplaceLLT;
+    typedef Eigen::LLT<typename DMatrix::Base,Eigen::Lower> LLT;
+    InplaceLLT* inplaceLLT = nullptr;
+    LLT* llt = nullptr;
+    if (inPlace) {
+      inplaceLLT = new InplaceLLT(alpha);
+      if (inplaceLLT->info()==Eigen::NumericalIssue)
+	choleskyFails = true;
+    } else {
+      llt = new LLT(alpha);
+      if (llt->info()==Eigen::NumericalIssue)
+	choleskyFails = true;
+    }
 #endif
     
     // If the Cholesky decomposition failed for non-pos-def matrix, then
@@ -632,7 +790,10 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
 #ifdef USE_TMV
       beta /= symAlpha; 
 #elif defined USE_EIGEN
-      beta = llt.solve(beta);
+      if (inPlace)
+	beta = inplaceLLT->solve(beta);
+      else
+	beta = llt->solve(beta);
 #endif
       if (precondition) {
 	beta = ElemProd(beta,ss);
@@ -645,13 +806,11 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
       DVector newP = p + beta;
       setParams(newP);
       // Get chisq at the new parameters
-      remap();
       int dof;
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
       timer.stop();
-      //**if (reportToCerr) {
-      if (true) {
+      if (reportToCerr) {
 	cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
 	     << " / " << dof 
 	     << " in time " << timer << " sec"
@@ -664,6 +823,10 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
       if (newChisq > oldChisq * 1.0001) break;
       else if ((oldChisq - newChisq) < oldChisq * relativeTolerance) {
 	// Newton has converged, so we're done.
+#ifdef USE_EIGEN
+	if (llt) delete llt;
+	if (inplaceLLT) delete inplaceLLT;
+#endif
 	return newChisq;
       }
       // Want another Newton iteration, but keep alpha as before
@@ -672,6 +835,10 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
     }
     // If we reach this place, Newton is going backwards or nowhere, slowly.
     // So just give it up.
+#ifdef USE_EIGEN
+    if (llt) delete llt;
+    if (inplaceLLT) delete inplaceLLT;
+#endif
   }
   
   Marquardt<PhotoAlign> marq(*this);
@@ -679,28 +846,45 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
   marq.setSaveMemory();
   double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
   setParams(p);
-  remap();
+  {
+    int dof;
+    double maxDev;
+    chisq = chisqDOF(dof, maxDev);
+  }
   return chisq;
 }
 
 void
-PhotoAlign::remap() {
+PhotoAlign::remap(bool doAll) const {
+  /**??? Fix up with state tracking? **/
   for (auto i : mlist)
-    i->remap();
+    i->remap(doAll);
 
   for (auto i : priors) 
     i->remap();
 }
 
 int
-PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
+PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch,
+		      bool logging) {
   int nclip=0;
-  // ??? parallelize this loop!
-  cerr << "## Sigma clipping...";
+
   Stopwatch timer;
   timer.start();
 
-  for (auto i : mlist) {
+#ifdef _OPENMP
+  const int chunk=100;
+  // Make a vector version on mlist since openMP requires
+  // integers in a for loop.
+  int n = mlist.size();
+  vector<Match*> mvec(n);
+  std::copy(mlist.begin(), mlist.end(), mvec.begin());
+#pragma omp parallel for schedule(dynamic,chunk) reduction(+:nclip)
+  for (auto ii=0; ii<n; ++ii) {
+    auto i = mvec[ii];
+#else
+    for (auto i : mlist) {
+#endif
     // Skip this one if it's reserved and doReserved=false,
     // or vice-versa
     if (doReserved ^ i->getReserved()) continue;
@@ -710,7 +894,8 @@ PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch) {
     }
   }
   timer.stop();
-  cerr << " done in " << timer << " sec" << endl;
+  if (logging)
+    cerr << "-->Sigma clipping done in " << timer << " sec" << endl;
   return nclip;
 }
 
@@ -729,13 +914,24 @@ PhotoAlign::sigmaClipPrior(double sigThresh, bool clipEntirePrior) {
 double
 PhotoAlign::chisqDOF(int& dof, double& maxDeviate, 
 		     bool doReserved) const {
+  remap();  // ?? Have this done in chisq() calls
   dof=0;
   maxDeviate=0.;
   double chisq=0.;
-  // ??? parallelize this loop!
+  
+#ifdef _OPENMP
+  const int chunk=100;
+  // Make a vector version of mlist since openMP requires
+  // integers in a for loop.
+  int n = mlist.size();
+  vector<Match*> mvec(n);
+  std::copy(mlist.begin(), mlist.end(), mvec.begin());
+#pragma omp parallel for schedule(dynamic,chunk) reduction(+:dof) reduction(+:chisq)
+  for (auto ii=0; ii<n; ++ii) {
+    auto i = mvec[ii];
+#else
   for (auto i : mlist) {
-    // Skip this one if it's reserved and doReserved=false,
-    // or vice-versa
+#endif
     if (doReserved ^ i->getReserved()) continue;
     chisq += i->chisq(dof, maxDeviate);
   }
@@ -756,7 +952,7 @@ PhotoAlign::count(long int& mcount, long int& dcount,
   dcount = 0;
   for (auto i : mlist) {
     if ((i->getReserved() ^ doReserved) 
-	|| i->fitSize() < minMatches) continue;
+	|| i->getDOF()<0 || i->fitSize() < minMatches) continue;
     mcount++;
     dcount+=i->fitSize();
   }
@@ -768,8 +964,8 @@ PhotoAlign::count(long int& mcount, long int& dcount,
   mcount = 0;
   dcount = 0;
   for (auto i : mlist) {
-    if ((i->getReserved() ^ doReserved)
-        || i->fitSize() < minMatches) continue;
+    if ((i->getReserved() ^ doReserved) ||
+        i->getDOF() < 0 || i->fitSize() < minMatches) continue;
 
     int ddcount=0;
     for(auto d : *i) {
@@ -800,26 +996,3 @@ PhotoAlign::countPriorParams() {
   maxMapNumber = mapNumber;
 }
 
-void
-PhotoAlign::setParams(const DVector& p) {
-  pmc.setParams(p.subVector(0,pmc.nParams()));
-  int startIndex = pmc.nParams();
-  for (auto i : priors) {
-    if (i->isDegenerate()) continue;
-    i->setParams(p.subVector(startIndex, startIndex + i->nParams()));
-    startIndex += i->nParams();
-  }
-}
-
-DVector
-PhotoAlign::getParams() const {
-  DVector p(nParams(), -888.);
-  p.subVector(0,pmc.nParams()) = pmc.getParams();
-  int startIndex = pmc.nParams();
-  for (auto i : priors) {
-    if (i->isDegenerate()) continue;
-    p.subVector(startIndex, startIndex + i->nParams()) = i->getParams();
-    startIndex += i->nParams();
-  }
-  return p;
-}

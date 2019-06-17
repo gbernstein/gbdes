@@ -12,8 +12,12 @@
 * Include parallax when slicing PMDetection down to single-epoch detection??
 
 * Change photometric fit / clip to use fitWeight, other parallel state maintenance to Astro.
-
-* Add in-place Cholesky to photometric solver for Eigen
+  * change weight / invVar usage
+  * self-maintenance of state
+  * write getTrueChisq(), expectedChisq
+  * get rid of countFit() usages
+  * logging in sigmaClip
+  * get rid of remap() calls for photoprior, photo/coordAlign, in favor of states.
 
 * Allow photmetric reference catalog
 
@@ -22,6 +26,8 @@
 * Go through test programs (AUDIT file)
 
 * Occasional segfault in ReadExtensions, something to do with multithreading??
+  (Looked through this and all of the places needing critical() segments seem to have them.
+  Rarer crashes now?)
 
 * Use individual systematic errors per extension in MagColor
 
@@ -124,6 +130,8 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   get from gbutil.decam now.
 * Residual calculation should be multiprocessed, and reduce FITS I/O, separate files for 2 other cats
 * Fix conflict between AstronomicalConstants SECOND and an MKL routine of same name.
+* Add in-place Cholesky to photometric solver for Eigen
+
 
 
 ----
