@@ -164,6 +164,7 @@ namespace photometry {
     iterator end() {return elist.end();}
     const_iterator begin() const {return elist.begin();}
     const_iterator end() const {return elist.end();}
+    int size() const {return elist.size();}
   };
 
   // A prior on zeropoints of exposures will be forcing reference points into agreement.
@@ -223,7 +224,7 @@ namespace photometry {
     int mapNumber() const {return globalMapNumber;}
 
     // Set this when underlying data change (parameters of exposure's maps)
-    void needsRemapping() const {isMapped = false;}
+    void mapsHaveChanged() const {isMapped = false;}
 
     // Recalculate the fittable points and increment chisq and fitting vector/matrix
     int accumulateChisq(double& chisq,
@@ -289,7 +290,7 @@ namespace photometry {
 
     // Re-map all Detections and Priors using current params, either all or just
     // those being fit.
-    void remap(bool doAll=true) const;	
+    void remap(bool doAll=true) const;	// ??? Need this ???
 
     // Fit parameters. Returns chisq of previous fit, updates params.
     double fitOnce(bool reportToCerr=true,

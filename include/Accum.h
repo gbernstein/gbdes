@@ -17,10 +17,6 @@ public:
   double sumxw;
   double sumyw;
   double sumw;
-  double sum_m;
-  double sum_mw;
-  double sum_mm;
-  double sum_mmw;
   int n; // Number of points with meaningful residuals
   int ntot; // total number of points
   int nclipped; // Points that were clipped
@@ -30,8 +26,7 @@ public:
   // Add to statistics this detection, with Match mean having
   // value of (xoff, yoff) with inverse variance wtot.
   // dof is fraction of a degree of freedom to assign for each xoff, yoff.
-  void add(const typename S::Detection* d, double magMean,
-	   double wtot, double dof=1.);
+  void add(const typename S::Detection* d);
   double rms() const;
   double reducedChisq() const;
   string summary() const;

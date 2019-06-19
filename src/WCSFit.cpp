@@ -272,8 +272,8 @@ main(int argc, char *argv[])
 
     PROGRESS(1,Reading exposures);
 
-    // This vector will hold the color-priority value of each exposure.  -1 means an exposure
-    // that does not hold color info.
+    // This vector will hold the color-priority value of each exposure.
+    // -1 means an exposure that does not hold color info.
     vector<int> exposureColorPriorities;
     // Read in the table of exposures
     vector<Exposure*> exposures =
@@ -760,7 +760,7 @@ main(int argc, char *argv[])
 
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
-      PROGRESS(0,Clipping reserved matches);
+      PROGRESS(1,Clipping reserved matches);
       clipReserved<Astro>(ca, clipThresh, minimumImprovement,
 			  false, verbose>=1);  
     }

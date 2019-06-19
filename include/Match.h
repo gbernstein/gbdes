@@ -164,14 +164,10 @@ namespace astrometry {
     // Mark all members of match as unmatched, or optionally delete them,
     // then empty the list:
     void clear(bool deleteDetections=false);
-    int size() const {return elist.size();}
     // True if a Detection will contribute to chisq:
     static bool isFit(const Detection* e);
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {prepare(); return nFit;}
-    // Recount the number of objects contributing to fit (e.g. after
-    // meddling with object weights) **DEPRECATED**
-    void countFit();
     int getDOF() const {prepare(); return dof;}
 
     // Is this object to be reserved from re-fitting?
@@ -238,6 +234,7 @@ namespace astrometry {
     iterator end() {return elist.end();}
     const_iterator begin() const {return elist.begin();}
     const_iterator end() const {return elist.end();}
+    int size() const {return elist.size();}
   };
 
   typedef list<Match*> MCat;

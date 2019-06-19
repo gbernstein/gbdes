@@ -3,23 +3,20 @@
 #include "FitSubroutines.h"
 using astrometry::WCS_UNIT;
 using astrometry::RESIDUAL_UNIT;
+using photometry::MMAG;
 
 // Methods of the statistics-accumulator class
 
 template <class S>
-Accum<S>::Accum(): sumxw(0.), sumyw(0.), 
-		   sumx(0.), sumy(0.), sumw(0.),
+Accum<S>::Accum(): sumxw(0.), sumyw(0.), sumw(0.),
+		   sumx(0.), sumy(0.),
 		   sumxx(0.), sumyy(0.),
-		   sum_m(0.), sum_mw(0.), sum_mm(0.), sum_mmw(0.),
 		   chisq(0.), sumdof(0.), n(0), ntot(0), nclipped(0) {}
 
 // Specialization for Astro
 template <>
 void 
-Accum<Astro>::add(const typename Astro::Detection* d,
-		  double magMean,
-		  double wtot,
-		  double dof) {
+Accum<Astro>::add(const typename Astro::Detection* d) {
   ++ntot;
   if (d->isClipped) {
     ++nclipped;
@@ -45,7 +42,6 @@ Accum<Astro>::add(const typename Astro::Detection* d,
   sumyw += dy*wt;
   sumxx += dx*dx;
   sumyy += dy*dy;
-  sumw  += wt;
 
   chisq += d->trueChisq();
   sumdof += d->expectedTrueChisq;
@@ -55,29 +51,30 @@ Accum<Astro>::add(const typename Astro::Detection* d,
 // Specialization for Photo
 template<>
 void 
-Accum<Photo>::add(const Photo::Detection* d,
-		  double magMean,
-		  double wtot,
-		  double dof) {
+Accum<Photo>::add(const Photo::Detection* d) {
   ++ntot;
   if (d->isClipped) {
     ++nclipped;
     return;
   }
-  if (wtot <=0. || dof<=0. ) return;  // Can't do anything more with this
-  double dm = d->magOut - magMean;
-  sum_m += dm;
-  sum_mw += dm * d->wt;
-  sum_mm += dm * dm;
-  sum_mmw += dm * dm *d->wt;
-  sumw += d->wt;
-  double wtFrac = 1. - d->wt/wtot;
-  if (wtFrac > 0.001) {
-    chisq += dm * dm * d->wt / wtFrac;
+
+  // Get a rough sigma to use in weighting the centroids
+  double sigma = d->getSigma();
+  
+  if (sigma <=0. || d->itsMatch->getDOF() <= 0) {
+    // Residual statistics are meaningless if there
+    // is no valid error nor multi-exposure fit
+    return;
   }
-  sumx += d->args.xExposure;
-  sumy += d->args.yExposure;
-  sumdof += dof;
+  double wt = pow(sigma, -2.);
+  
+  double dm = d->residMag();
+  sumx += dm;
+  sumxx += dm * dm;
+  sumw += wt;
+
+  chisq += d->trueChisq();
+  sumdof += d->expectedTrueChisq;
   ++n;
 }
 
@@ -89,8 +86,9 @@ Accum<S>::rms() const {
   else if (S::isAstro)
     return sqrt( (sumxx+sumyy)/(2.*n));
   else
-    return sqrt( sum_mm / n);
+    return sqrt( sumxx / n);
 }
+
 template <class S>
 double
 Accum<S>::reducedChisq() const {
@@ -101,6 +99,7 @@ Accum<S>::reducedChisq() const {
   else
     return chisq / n;
 }
+
 template <class S>
 string 
 Accum<S>::summary() const {
@@ -117,12 +116,13 @@ Accum<S>::summary() const {
 	<< " " << setw(6) << rms();
   } else {
     oss << fixed << setprecision(1)
-	<< " " << setw(6) << rms()*1000.;
+	<< " " << setw(6) << rms()/MMAG;
   }
   oss << fixed << setprecision(2) 
       << "  " << setw(6) << reducedChisq();
   return oss.str();
 }
+
 template <class S>
 string
 Accum<S>::header() {

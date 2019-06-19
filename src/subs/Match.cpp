@@ -1403,7 +1403,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	beta = inplaceLLT->solve(beta);
       else
 	beta = llt->solve(beta);
-n#endif
+#endif
       if (precondition) {
 	beta = ElemProd(beta,ss);
       }

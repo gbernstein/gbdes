@@ -14,6 +14,7 @@
 #include "PhotoMatch.h"
 #include "PhotoMapCollection.h"
 #include "Instrument.h"
+#include "Units.h"
 
 #include "FitSubroutines.h"
 #include "MapDegeneracies.h"
@@ -27,6 +28,7 @@ using img::FTable;
 typedef Photo::ColorExtension ColorExtension;
 typedef Photo::Extension Extension;
 
+#define PROGRESS(val, msg) if (verbose>=val) cerr << "-->" <<  #msg << endl
 
 string usage=
   "PhotoFit: Refine photometric solutions for a matched set of catalogs.\n"
@@ -88,6 +90,8 @@ main(int argc, char *argv[])
   bool clipEntireMatch;
   double priorClipThresh;
   double chisqTolerance;
+  bool divideInPlace;
+  bool purgeOutput;
 
   string inputMaps;
   string fixMaps;
@@ -95,7 +99,6 @@ main(int argc, char *argv[])
   string useInstruments;
   string skipExposures;
 
-  bool   purgeOutput;
   string outCatalog;
   string outPhotFile;
   string outPriorFile;
@@ -104,6 +107,8 @@ main(int argc, char *argv[])
   double minColor;
   double maxColor;
 
+  int verbose;
+  
   Pset parameters;
   {
     const int def=PsetMember::hasDefault;
@@ -114,9 +119,10 @@ main(int argc, char *argv[])
 
     parameters.addMemberNoValue("INPUTS");
     parameters.addMember("maxMagError",&maxMagError, def | lowopen,
-			 "cut objects with magnitude uncertainty above this", 0.05, 0.);
+			 "cut objects with magnitude uncertainty above this (mmag)",
+			 0.05, 0.);
     parameters.addMember("sysError",&sysError, def | low,
-			 "systematic error to add to exposures (mag RMS)", 0.002, 0.);
+			 "systematic error to add to exposures (mmag)", 2., 0.);
     parameters.addMember("minMatch",&minMatches, def | low,
 			 "minimum number of detections for usable match", 2, 2);
     parameters.addMember("minFitExposures",&minFitExposures, def | low,
@@ -156,6 +162,8 @@ main(int argc, char *argv[])
 			 "list of YAML files specifying maps","");
     parameters.addMember("fixMaps",&fixMaps, def,
 			 "list of map components or instruments to hold fixed","");
+    parameters.addMember("divideInPlace",&divideInPlace, def,
+			 "use in-place Cholesky to save memory but lose debug of degeneracies",false);
     parameters.addMemberNoValue("OUTPUTS");
     parameters.addMember("purgeOutput",&purgeOutput, def,
 			 "Purge un-fittable maps from output", false);
@@ -165,6 +173,8 @@ main(int argc, char *argv[])
 			 "Output serialized photometric solutions", "photfit.phot");
     parameters.addMember("outPriorFile",&outPriorFile, def,
 			 "Output listing of zeropoints etc of exposures tied by priors","");
+    parameters.addMember("verbose", &verbose, def,
+			 "stderr detail level", 1);
 }
 
   // Fractional reduction in RMS required to continue sigma-clipping:
@@ -176,6 +186,9 @@ main(int argc, char *argv[])
     processParameters(parameters, usage, 1, argc, argv);
     string inputTables = argv[1];
 
+    sysError *= MMAG;
+    maxMagError *= MMAG;
+    
     /////////////////////////////////////////////////////
     // Parse all the parameters 
     /////////////////////////////////////////////////////
@@ -216,13 +229,8 @@ main(int argc, char *argv[])
     // All the names will be stripped of leading/trailing white space, and internal
     // white space replaced with single underscore - this keeps PhotoMap parsing functional.
 
-    // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
-    vector<int> instrumentHDUs;
-    vector<int> catalogHDUs;
-    inventoryFitsTables(inputTables, instrumentHDUs, catalogHDUs);
-    
-    /**/cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
-	     << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
+
+    PROGRESS(1,Reading fields);
 
     // Read the fields table & propagate the info,
     // and discard info as it is not used here.
@@ -241,19 +249,30 @@ main(int argc, char *argv[])
     
     bool outputCatalogAlreadyOpen = true;
 
+    // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
+    vector<int> instrumentHDUs;
+    vector<int> catalogHDUs;
+    inventoryFitsTables(inputTables, instrumentHDUs, catalogHDUs);
+    
+    if (verbose>=1)
+      cerr << "Found " << instrumentHDUs.size() << " instrument HDUs" 
+	   << " and " << catalogHDUs.size() << " catalog HDUs" << endl;
+
+
+    PROGRESS(1,Reading instruments);
+
     // Read in all the instrument extensions and their device info from input
     // FITS file, save useful ones and write to output FITS file.
-    /**/cerr << "Reading instruments" << endl;
     vector<Instrument*> instruments =
       readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
 		      outputCatalogAlreadyOpen);
     
+    PROGRESS(1,Reading exposures);
 
-    // This vector will hold the color-priority value of each exposure.  -1 means an exposure
-    // that does not hold color info.
+    // This vector will hold the color-priority value of each exposure.
+    // -1 means an exposure that does not hold color info.
     vector<int> exposureColorPriorities;
     // Read in the table of exposures
-    /**/cerr << "Reading exposures" << endl;
     vector<Exposure*> exposures =
       readExposures(instruments,
 		    fieldEpochs,
@@ -266,15 +285,16 @@ main(int argc, char *argv[])
 		    outputCatalogAlreadyOpen);
 
     if (sysError > 0.) {
-      // Override systematic-error values in exposuress
+      // Add global systematic error to exposuress
       double photometricVariance = sysError*sysError;
       for (auto e : exposures) {
-	e->photometricVariance = photometricVariance;
+	e->photometricVariance += photometricVariance;
       }
     }
 
+    PROGRESS(1,Reading extensions);
+
     // Read info about all Extensions - we will keep the Table around.
-    /**/cerr << "Reading extensions" << endl;
     FTable extensionTable;
     {
       FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
@@ -297,7 +317,7 @@ main(int argc, char *argv[])
     //  Create and initialize all magnitude maps
     /////////////////////////////////////////////////////
 
-    /**/cerr << "Building initial PhotoMapCollection" << endl;
+    PROGRESS(1, Building initial PhotoMapCollection);
     // Now build a preliminary set of photo maps from the configured YAML files
     PhotoMapCollection* pmcInit = new PhotoMapCollection;
     pmcInit->learnMap(IdentityMap(), false, false);
@@ -321,7 +341,7 @@ main(int argc, char *argv[])
 			    fixMapList,
 			    instruments);
 
-    /**/cerr << "Checking for polynomial degeneracies" << endl;
+    PROGRESS(2,Checking for polynomial degeneracies);
     set<string> degenerateTypes={"Poly","Linear","Constant"};
     {
       MapDegeneracies<Photo> degen(extensions,
@@ -353,8 +373,8 @@ main(int argc, char *argv[])
       }
     } // End of poly-degeneracy check/correction
 
-    /**/cerr << "Making final mapCollection" << endl;
-    
+    PROGRESS(1,Making final mapCollection);
+
     // Do not need the preliminary PMC any more.
     delete pmcInit;
     pmcInit = 0;
@@ -369,14 +389,14 @@ main(int argc, char *argv[])
 			       inputYAML,
 			       mapCollection);
 
-    /**/cerr << "Defining all maps" << endl;
+    PROGRESS(2, Defining all maps);
 
     // Now construct a SubMap for every extension
     for (auto extnptr : extensions) {
       if (!extnptr) continue;  // not in use.
       Exposure& expo = *exposures[extnptr->exposure];
       if ( expo.instrument < 0) {
-	// Reference exposures have no instruments, but possible color term per exposure
+	// Reference exposures have no instruments, shouldn't be here
 	cerr << "Trying to make PhotoMap for reference exposure "
 	     << expo.name
 	     << endl;
@@ -394,9 +414,9 @@ main(int argc, char *argv[])
     // Recalculate all parameter indices - maps are ready to roll!
     mapCollection.rebuildParameterVector();
     
-    /**/cerr << "Total number of free map elements " << mapCollection.nFreeMaps()
-	     << " with " << mapCollection.nParams() << " free parameters."
-	     << endl;
+    cout << "Total number of free map elements " << mapCollection.nFreeMaps()
+	 << " with " << mapCollection.nParams() << " free parameters."
+	 << endl;
 
 
     //////////////////////////////////////////////////////////
@@ -431,43 +451,43 @@ main(int argc, char *argv[])
       string dummy1, dummy2;
       ff.getHdrValue("Field", dummy1);
       ff.getHdrValue("Affinity", dummy2);
-      /**/cerr << "Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
+      if (verbose>=2)
+	cerr << "-->Parsing catalog field " << dummy1 << " Affinity " << dummy2 << endl;
       
       readMatches<Photo>(ff, matches, extensions, colorExtensions, skipSet, minMatches);
       
     } // End loop over input matched catalogs
 
-    /**/cerr << "Total match count: " << matches.size() << endl;
+    if (verbose>=0) cerr << "Total match count: " << matches.size() << endl;
 
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
+    PROGRESS(1,Reading catalogs);
     readObjects<Photo>(extensionTable, exposures, extensions,fieldProjections);
     
-    /**/cerr << "Done reading catalogs for magnitudes." << endl;
-
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the PhotoArguments for Detections they match
+    PROGRESS(1,Reading colors);
     readColors<Photo>(extensionTable, colorExtensions);
 
-    cerr << "Done reading catalogs for colors." << endl;
-
-    /**/cerr << "Done reading catalogs." << endl;
-
+    PROGRESS(2,Purging defective detections and matches);
     // Get rid of Detections with errors too high or already clipped
     purgeNoisyDetections<Photo>(maxMagError, matches, exposures, extensions);
 			 
+    PROGRESS(2,Purging sparse matches);
     // Get rid of Matches with too few detections
     purgeSparseMatches<Photo>(minMatches, matches);
 
+    PROGRESS(2,Purging out-of-range colors);
     // Get rid of Matches with color out of range (NODATA are kept)
     purgeBadColor<Photo>(minColor, maxColor, matches); 
     
-    /**/cerr << "Done purging defective detections and matches" << endl;
-
+    PROGRESS(2, Reserving matches);
     // Reserve desired fraction of matches
     if (reserveFraction>0.) 
       reserveMatches<Photo>(matches, reserveFraction, randomNumberSeed);
 
+    PROGRESS(2,Purging underpopulated exposures);
     // Find exposures whose parameters are free but have too few
     // Detections being fit to the exposure model.
     auto badExposures = findUnderpopulatedExposures<Photo>(minFitExposures,
@@ -476,6 +496,7 @@ main(int argc, char *argv[])
 							   extensions,
 							   mapCollection);
 
+    PROGRESS(2,Purging bad exposure parameters and Detections);
     // Freeze parameters of an exposure model and clip all
     // Detections that were going to use it.
     for (auto i : badExposures) {
@@ -486,12 +507,19 @@ main(int argc, char *argv[])
       freezeMap<Photo>(i.first, matches, extensions, mapCollection);
     } 
 
+    if (purgeOutput) {
+      PROGRESS(2,Purging unfittable maps);
+      mapCollection.purgeInvalid();
+    }
+
+    PROGRESS(2,Match census);
     matchCensus<Photo>(matches, cout);
 
     ///////////////////////////////////////////////////////////
     // Construct priors
     ///////////////////////////////////////////////////////////
 
+    PROGRESS(2,Constructing priors);
     list<PhotoPrior*> priors;
     {
       // List of the files to use 
@@ -518,14 +546,12 @@ main(int argc, char *argv[])
       }
     }
 
-    if (purgeOutput) {
-      cerr << "-->Purging unfittable maps" << endl;
-      mapCollection.purgeInvalid();
-    }
     ///////////////////////////////////////////////////////////
     // Now do the re-fitting 
     ///////////////////////////////////////////////////////////
 
+    PROGRESS(1,Begin fitting process);
+    
     // make CoordAlign class
     PhotoAlign ca(mapCollection, matches, priors);
 
@@ -546,22 +572,24 @@ main(int argc, char *argv[])
 	double maxdev=0.;
 	int dof=0;
 	double chi= ca.chisqDOF(dof, maxdev, false);
-	cout << "Fitting " << mcount << " matches with " << dcount << " detections "
-	     << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
-	     << " sigma" << endl;
+	if (verbose>=1)
+	  cout << "Fitting " << mcount << " matches with " << dcount << " detections "
+	       << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
+	       << " sigma" << endl;
       }
 
       // Do the fit here!!
-      double chisq = ca.fitOnce();
+      double chisq = ca.fitOnce(verbose>=1, divideInPlace);
       // Note that fitOnce() remaps *all* the matches, including reserved ones.
       double max;
       int dof;
       ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
       double thresh = sqrt(chisq/dof) * clipThresh;
-      cout << "After fit: chisq " << chisq 
-	   << " / " << dof << " dof, max deviation " << max
-	   << "  new clip threshold at: " << thresh << " sigma"
-	   << endl;
+      if (verbose>=1)
+	cout << "After fit: chisq " << chisq 
+	     << " / " << dof << " dof, max deviation " << max
+	     << "  new clip threshold at: " << thresh << " sigma"
+	     << endl;
       if (thresh >= max || (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement)) {
 	// Sigma clipping is no longer doing much.  Quit if we are at full precision,
 	// else require full target precision and initiate another pass.
@@ -570,26 +598,27 @@ main(int argc, char *argv[])
 	  // This is the point at which we will clip aberrant exposures from the priors,
 	  // after coarse passes are done, before we do fine passes.
 	  nclip = 0;
+	  PROGRESS(1,Starting prior clipping);
 	  do {
 	    if (nclip > 0) {
 	      // Refit the data after clipping priors
-	      ca.fitOnce();
-	      cout << "After prior clip: chisq " << chisq 
-		   << " / " << dof << " dof, max deviation " << max
-		   << endl;
+	      ca.fitOnce(verbose>=1, divideInPlace);
+	      if (verbose>=1)
+		cout << "After prior clip: chisq " << chisq 
+		     << " / " << dof << " dof, max deviation " << max
+		     << endl;
 	    }
 	    // Clip up to one exposure per prior
 	    nclip = ca.sigmaClipPrior(priorClipThresh, false);
 	    cout << "Clipped " << nclip << " prior reference points" << endl;
 	  } while (nclip > 0);
 	  ca.setRelTolerance(chisqTolerance);
-	  /**/cerr << "--Starting strict tolerance passes";
-	  /**/if (clipEntireMatch) cerr << "; clipping full matches";
-	  /**/cerr << endl;
+	  PROGRESS(1,Starting strict tolerance passes);
 	  oldthresh = thresh;
 	  nclip = ca.sigmaClip(thresh, false, true);
-	  cout << "Clipped " << nclip
-	       << " matches " << endl;
+	  if (verbose>=0)
+	    cout << "Clipped " << nclip
+		 << " matches " << endl;
 	  continue;
 	} else {
 	  // Done!
@@ -597,24 +626,23 @@ main(int argc, char *argv[])
 	}
       }
       oldthresh = thresh;
-      nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses);
+      nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses,
+			   verbose>=1);
       if (nclip==0 && coarsePasses) {
 	// Nothing being clipped; tighten tolerances and re-fit
 	coarsePasses = false;
 	ca.setRelTolerance(chisqTolerance);
-	/**/cerr << "--Starting strict tolerance passes";
-	/**/if (clipEntireMatch) cerr << "; clipping full matches";
-	/**/cerr << endl;
+	PROGRESS(1,Starting strict tolerance passes);
 	continue;
       }
-      cout << "Clipped " << nclip
-	   << " matches " << endl;
-      long int dcount=0;
-      long int mcount=0;
+      if (verbose>=0) 
+	cout << "# Clipped " << nclip
+	     << " matches " << endl;
       
     } while (coarsePasses || nclip>0);
   
     // The re-fitting is now complete.  Serialize all the fitted magnitude solutions
+    PROGRESS(1,Saving solution);
     {
       ofstream ofs(outPhotFile.c_str());
       if (!ofs) {
@@ -628,16 +656,17 @@ main(int argc, char *argv[])
 
     // If there are reserved Matches, run sigma-clipping on them now.
     if (reserveFraction > 0.) {
-      cout << "** Clipping reserved matches: " << endl;
+      PROGRESS(1,Clipping reserved matches);
       //turn on cerr logging, no entire-match clipping
       clipReserved<Photo>(ca, clipThresh, minimumImprovement,
-			  false, true);  
+			  false, verbose>=1);  
     }
 
     //////////////////////////////////////
     // Output report on priors
     //////////////////////////////////////
     if (!outPriorFile.empty()) {
+      PROGRESS(1,Saving prior results);
       ofstream ofs(outPriorFile.c_str());
       if (!ofs) {
 	cerr << "Error trying to open output file for prior report: " << outPriorFile << endl;
@@ -650,17 +679,15 @@ main(int argc, char *argv[])
 	  (*i)->report(ofs);
 	}
       }
-      /**/cerr << "Wrote prior results to " << outPriorFile << endl;
     }
 
     //////////////////////////////////////
     // Output data and calculate some statistics
     //////////////////////////////////////
 
+    PROGRESS(1,Saving photometric residuals);
     // Save the pointwise fitting results
     Photo::saveResults(matches, outCatalog);
-    
-    /**/cerr << "Saved results to FITS table" << endl;
     
     // Report summary of residuals to stdout
     Photo::reportStatistics(matches, exposures, extensions, cout);
@@ -669,6 +696,8 @@ main(int argc, char *argv[])
     // Cleanup:
     //////////////////////////////////////
 
+    PROGRESS(2,Cleaning up);
+    
     // Get rid of matches:
     for (auto im = matches.begin(); im!=matches.end(); ) {
       (*im)->clear(true);  // deletes detections

@@ -24,6 +24,7 @@ using astrometry::RESIDUAL_UNIT;
 using astrometry::PM_UNIT;
 using astrometry::PARALLAX_UNIT;
 using astrometry::TDB_UNIT;
+using photometry::MMAG;
 
 // A helper function that strips white space from front/back of a string and replaces
 // internal white space with underscores:
@@ -509,7 +510,7 @@ readExposures(const vector<Instrument*>& instruments,
     ff.readCells(syserr_mmag, "syserrmmag");
     photometricVariance.resize(syserr_mmag.size());
     for (int i=0; i<syserr_mmag.size(); i++)
-      photometricVariance[i] = pow(syserr_mmag[i]/1000., 2.);
+      photometricVariance[i] = pow(syserr_mmag[i]*MMAG, 2.);
     syserr_mmag.clear();
   } catch (img::FTableError& e) {
     syserr_mmag.clear();
@@ -1379,25 +1380,26 @@ Photo::fillDetection(Photo::Detection* d,
   // Get the mag input and its error
   d->magIn = getTableDouble(table, magKey, magKeyElement, magColumnIsDouble,irow)
     + magshift;
-  double sigma = getTableDouble(table, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
+  double sigma = getTableDouble(table,
+				magErrKey, magErrKeyElement, magErrColumnIsDouble,
+				irow);
 
   if ( isnan(d->magIn) || isinf(d->magIn)) {
     cerr << "** NaN input at row " << irow << endl;
     d->isClipped = true;
-  
     d->magIn = 0.;
   }
   // Map to output and estimate output error
   d->magOut = d->map->forward(d->magIn, d->args);
 
-  sigma = std::sqrt(e->photometricVariance + sigma*sigma);
-  d->sigma = sigma;
-  sigma *= d->map->derivative(d->magIn, d->args);
+  d->invVar = 1. /(e->photometricVariance + sigma*sigma);
+  // Don't bother, all unity: sigma *= d->map->derivative(d->magIn, d->args);
 
-  // no clips on tags
-  double wt = isTag ? 0. : pow(sigma,-2.);
-  d->clipsq = wt;
-  d->wt = wt * e->magWeight;
+  if (isTag) {
+    d->fitWeight = 0.;
+  } else {
+    d->fitWeight = e->magWeight;
+  }
 }
 
 // Read each Extension's objects' data from it FITS catalog
@@ -1729,7 +1731,6 @@ purgeSparseMatches(int minMatches,
 		   typename S::MCat& matches) {
   auto im = matches.begin();
   while (im != matches.end() ) {
-    (*im)->countFit();
     if ( (*im)->fitSize() < minMatches) {
       // Remove entire match if it's too small, and kill its Detections too
       (*im)->clear(true);
@@ -1847,8 +1848,6 @@ freezeMap(string mapName,
 	dptr = mptr->erase(dptr, true);
 	recount = true;
       }
-    if (recount)
-      mptr->countFit();  // deprecated, get rid of this when photofit is fixed.
   }
 
   // And the bad extensions too while we're at it
@@ -1871,7 +1870,6 @@ matchCensus(const typename S::MCat& matches, ostream& os) {
   double chi = 0.;
   double maxdev = 0.;
   for (auto mptr : matches) {
-    mptr->countFit();
     dcount += mptr->fitSize();
     chi += mptr->chisq(dof, maxdev);
   }
@@ -1927,119 +1925,130 @@ Photo::saveResults(const list<Match*>& matches,
   FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tablename);
   img::FTable outTable = ft.use();;
 
-  // Create vectors that will be put into output table
-  // (create union of photo and astro columns)
-  vector<int> sequence;
-  outTable.addColumn(sequence, "sequenceNumber");
-  vector<long> catalogNumber;
-  outTable.addColumn(catalogNumber, "extension");
-  vector<long> objectNumber;
-  outTable.addColumn(objectNumber, "object");
-  vector<bool> clip;
-  outTable.addColumn(clip, "clip");
-  vector<bool> reserve;
-  outTable.addColumn(reserve, "reserve");
-  vector<float> xpix;
-  outTable.addColumn(xpix, "xPix");
-  vector<float> ypix;
-  outTable.addColumn(ypix, "yPix");
-  vector<float> wtFrac;
-  outTable.addColumn(wtFrac, "wtFrac");
-  vector<float> color;
-  outTable.addColumn(color, "color");
+  // Make a vector of match pointers so we can use OpenMP
+  vector<Match*> vmatches;
+  vmatches.reserve(matches.size());
+  for (auto m : matches)
+    vmatches.push_back(m);
+  
+  {
+    // Create vectors to help type each new column
+    vector<int> vint;
+    vector<long> vlong;
+    vector<bool> vbool;
+    vector<float> vfloat;
+    vector<vector<float>> vvfloat;
+    outTable.addColumn(vint, "matchID");
+    outTable.addColumn(vlong, "extension");
+    outTable.addColumn(vlong, "object");
+    outTable.addColumn(vbool, "clip");
+    outTable.addColumn(vbool, "reserve");
+    outTable.addColumn(vfloat, "xPix");
+    outTable.addColumn(vfloat, "yPix");
+    outTable.addColumn(vfloat, "xExpo");
+    outTable.addColumn(vfloat, "yExpo");
+    outTable.addColumn(vfloat, "color");
+    outTable.addColumn(vfloat, "magOut");
+    outTable.addColumn(vfloat, "magRes");
+    outTable.addColumn(vfloat, "magSigma");  // Total magnitude error, incl. sys
+    outTable.addColumn(vfloat, "chisq");
+    outTable.addColumn(vfloat, "chisqExpected");
+  }
 
-  vector<float> xExposure;
-  outTable.addColumn(xExposure, "xExpo");
-  vector<float> yExposure;
-  outTable.addColumn(yExposure, "yExpo");
-  vector<float> magOut;
-  outTable.addColumn(magOut, "magOut");
-  vector<float> sigMag;
-  outTable.addColumn(sigMag, "sigMag");
-  vector<float> magRes;
-  outTable.addColumn(magRes, "magRes");
 
-  // Cumulative counter for rows written to table:
+  /** Now create a team of threads to refit all matches **/
+  // Write residual vectors to table this many at a time
+  const int MATCH_CHUNK=10000;  // Matches to process at a time
+  // Cumulative counter for rows written to table so far:
   long pointCount = 0;
-  // Write vectors to table when this many rows accumulate:
-  const long WriteChunk = 100000;
 
-  // Write all matches to output catalog, deleting them along the way
-  // and accumulating statistics of each exposure.
-  // 
-  for (auto im = matches.begin(); true; ++im) {
-    // First, write vectors to table if they've gotten big or we're at end
-    if ( sequence.size() >= WriteChunk || im==matches.end()) {
-      long nAdded = sequence.size();
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+  for (int iChunk=0; iChunk <= (vmatches.size()+MATCH_CHUNK-1)/MATCH_CHUNK; iChunk++) {
 
-      outTable.writeCells(sequence, "sequenceNumber", pointCount);
-      sequence.clear();
+    // Create vectors that will be put into output table
+    vector<int> matchID;
+    vector<long> catalogNumber;
+    vector<long> objectNumber;
+    vector<bool> clip;
+    vector<bool> reserve;
+    vector<float> xpix;
+    vector<float> ypix;
+    vector<float> xExposure;
+    vector<float> yExposure;
+    vector<float> color;
+
+    vector<float> magOut;
+    vector<float> magRes;
+    vector<float> sigMag;
+    vector<float> chisq;
+    vector<float> chisqExpected;
+
+    for (int iMatch = iChunk*MATCH_CHUNK;
+	 iMatch < vmatches.size() && iMatch<(iChunk+1)*MATCH_CHUNK;
+	 iMatch++) {
+
+      const Match* m = vmatches[iMatch];
+
+      // Update all world coords and mean solutions
+      m->remap(true);  // include remapping of clipped detections
+      m->solve();
+      
+      // Don't report results for matches with no results
+      if (m->getDOF() < 0) 
+	continue;
+
+      double meanMag = m->getMean();
+
+      for (auto detptr : *m) {
+	// Save some basics:
+	matchID.push_back(iMatch);
+	catalogNumber.push_back(detptr->catalogNumber);
+	objectNumber.push_back(detptr->objectNumber);
+	clip.push_back(detptr->isClipped);
+	reserve.push_back(m->getReserved());
+	color.push_back(detptr->args.color);
+
+	// Photometry quantities:
+	xpix.push_back(detptr->args.xDevice);
+	ypix.push_back(detptr->args.yDevice);
+	xExposure.push_back(detptr->args.xExposure);
+	yExposure.push_back(detptr->args.yExposure);
+	magOut.push_back(detptr->magOut);
+	magRes.push_back(detptr->residMag());
+	sigMag.push_back(detptr->getSigma());
+	chisq.push_back(detptr->trueChisq());
+	chisqExpected.push_back(detptr->expectedTrueChisq);
+      } // End detection loop
+    } // End match loop
+
+      // At end of each chunk, write new rows to the table.
+      // Only one thread at a time writes to the table
+#ifdef _OPENMP
+#pragma omp critical(fits)
+#endif
+    {
+      long nAdded = matchID.size();
+      outTable.writeCells(matchID, "matchID", pointCount);
       outTable.writeCells(catalogNumber, "extension", pointCount);
-      catalogNumber.clear();
       outTable.writeCells(objectNumber, "object", pointCount);
-      objectNumber.clear();
       outTable.writeCells(clip, "clip", pointCount);
-      clip.clear();
       outTable.writeCells(reserve, "reserve", pointCount);
-      reserve.clear();
       outTable.writeCells(xpix, "xPix", pointCount);
-      xpix.clear();
       outTable.writeCells(ypix, "yPix", pointCount);
-      ypix.clear();
-      outTable.writeCells(wtFrac, "wtFrac", pointCount);
-      wtFrac.clear();
-      outTable.writeCells(color, "color", pointCount);
-      color.clear();
-
       outTable.writeCells(xExposure, "xExpo", pointCount);
-      xExposure.clear();
       outTable.writeCells(yExposure, "yExpo", pointCount);
-      yExposure.clear();
-      outTable.writeCells(magOut, "magOut", pointCount);
-      magOut.clear();
-      outTable.writeCells(magRes, "magRes", pointCount);
-      magRes.clear();
-      outTable.writeCells(sigMag, "sigMag", pointCount);
-      sigMag.clear();
-
+      outTable.writeCells(color, "color", pointCount);
+      outTable.writeCells(magOut,"magOut",pointCount);
+      outTable.writeCells(magRes,"magRes",pointCount);
+      outTable.writeCells(sigMag,"magSigma",pointCount);
+      outTable.writeCells(chisq,"chisq",pointCount);
+      outTable.writeCells(chisqExpected,"chisqExpected",pointCount);
       pointCount += nAdded;
     }	// Done flushing the vectors to Table
 
-    if (im==matches.end()) break;
-
-    const Match& m = **im;
-    
-    // Get mean mag and weights for the whole match
-    double mmag, wtot;
-    m.getMean(mmag,wtot);
-
-    // Calculate number of DOF per Detection coordinate after
-    // allowing for fit to centroid:
-	    
-    int detcount=0;
-    for (auto detptr : m) {
-      // Save common quantities
-      sequence.push_back(detcount);
-      ++detcount;
-      catalogNumber.push_back(detptr->catalogNumber);
-      objectNumber.push_back(detptr->objectNumber);
-      clip.push_back(detptr->isClipped);
-      reserve.push_back(m.getReserved());
-      color.push_back(detptr->args.color);
-
-      // Photometry quantities:
-      xpix.push_back(detptr->args.xDevice);
-      ypix.push_back(detptr->args.yDevice);
-      xExposure.push_back(detptr->args.xExposure);
-      yExposure.push_back(detptr->args.yExposure);
-      magOut.push_back(detptr->magOut);
-      magRes.push_back(mmag==0. ? 0. : detptr->magOut - mmag);
-      double sigma = detptr->clipsq;
-      sigma = sigma>0. ? 1./sqrt(sigma) : 0.;
-      sigMag.push_back(sigma);
-      wtFrac.push_back(detptr->wt/wtot);
-    } // End detection loop
-  } // end match loop
+  } // End outer chunk loop and multithreaded region
 }
 
 /***** Astro version ***/
@@ -2531,17 +2540,8 @@ Photo::reportStatistics(const list<typename Photo::Match*>& matches,
 
   // Accumulate stats over all detections.
   for (auto mptr : matches) {
-
-    // Get mean values and weights for the whole match
-    // (generic call that gets both mag & position)
-    double magMean;
-    double wtot;
-    mptr->getMean(magMean, wtot);
-    
-    // Calculate number of DOF per Detection coordinate after
-    // allowing for fit to centroid:
-    int nFit = mptr->fitSize();
-    double dofPerPt = (nFit > 1) ? 1. - 1./nFit : 0.;
+    mptr->remap(true);
+    mptr->solve();
 
     for (auto dptr : *mptr) {
       // Accumulate statistics for meaningful residuals
@@ -2551,26 +2551,26 @@ Photo::reportStatistics(const list<typename Photo::Match*>& matches,
 	if (expo->instrument==REF_INSTRUMENT ||
 	    expo->instrument==PM_INSTRUMENT) {
 	  // Treat PM like reference for photometry
-	  refAccReserve.add(dptr, magMean, wtot, dofPerPt);
-	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
+	  refAccReserve.add(dptr);
+	  vaccReserve[exposureNumber].add(dptr);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accReserve.add(dptr, magMean, wtot, dofPerPt);
-	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
+	  accReserve.add(dptr);
+	  vaccReserve[exposureNumber].add(dptr);
 	}
       } else {
 	// Not a reserved object:
 	if (expo->instrument==REF_INSTRUMENT ||
 	    expo->instrument==PM_INSTRUMENT) {
 	  // Treat PM like reference for photometry
-	  refAccFit.add(dptr, magMean, wtot, dofPerPt);
-	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
+	  refAccFit.add(dptr);
+	  vaccFit[exposureNumber].add(dptr);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accFit.add(dptr, magMean, wtot, dofPerPt);
-	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dofPerPt);
+	  accFit.add(dptr);
+	  vaccFit[exposureNumber].add(dptr);
 	}
       }
     } // end Detection loop
@@ -2635,30 +2635,28 @@ Astro::reportStatistics(const list<typename Astro::Match*>& matches,
       // Accumulate statistics for meaningful residuals
       int exposureNumber = extensions[dptr->catalogNumber]->exposure;
       Exposure* expo = exposures[exposureNumber];
-      double magMean, wtot; // Dummy variables for accum::add() interface
-      int dof;               // dummy also
       if (mptr->getReserved()) {
 	if (expo->instrument==REF_INSTRUMENT ||
 	    expo->instrument==PM_INSTRUMENT) {
-	  refAccReserve.add(dptr, magMean, wtot, dof);
-	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dof);
+	  refAccReserve.add(dptr);
+	  vaccReserve[exposureNumber].add(dptr);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accReserve.add(dptr, magMean, wtot, dof);
-	  vaccReserve[exposureNumber].add(dptr, magMean, wtot, dof);
+	  accReserve.add(dptr);
+	  vaccReserve[exposureNumber].add(dptr);
 	}
       } else {
 	// Not a reserved object:
 	if (expo->instrument==REF_INSTRUMENT ||
 	    expo->instrument==PM_INSTRUMENT) {
-	  refAccFit.add(dptr, magMean, wtot, dof);
-	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dof);
+	  refAccFit.add(dptr);
+	  vaccFit[exposureNumber].add(dptr);
 	} else if (expo->instrument==TAG_INSTRUMENT) {
 	  // do nothing
 	} else {
-	  accFit.add(dptr, magMean, wtot, dof);
-	  vaccFit[exposureNumber].add(dptr, magMean, wtot, dof);
+	  accFit.add(dptr);
+	  vaccFit[exposureNumber].add(dptr);
 	}
       }
     } // end Detection loop

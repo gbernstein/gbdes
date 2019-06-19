@@ -436,10 +436,10 @@ PhotoAlign::setParams(const DVector& p) {
     m->mapsHaveChanged();
   int startIndex = pmc.nParams();
   for (auto i : priors) {
+    i->mapsHaveChanged();
     if (i->isDegenerate()) continue;
     i->setParams(p.subVector(startIndex, startIndex + i->nParams()));
     startIndex += i->nParams();
-    // ?? set some state flags in priors?
   }
 }
 
@@ -854,15 +854,16 @@ PhotoAlign::fitOnce(bool reportToCerr, bool inPlace) {
   return chisq;
 }
 
+/**
 void
 PhotoAlign::remap(bool doAll) const {
-  /**??? Fix up with state tracking? **/
   for (auto i : mlist)
     i->remap(doAll);
 
   for (auto i : priors) 
     i->remap();
 }
+**/
 
 int
 PhotoAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch,
@@ -914,7 +915,6 @@ PhotoAlign::sigmaClipPrior(double sigThresh, bool clipEntirePrior) {
 double
 PhotoAlign::chisqDOF(int& dof, double& maxDeviate, 
 		     bool doReserved) const {
-  remap();  // ?? Have this done in chisq() calls
   dof=0;
   maxDeviate=0.;
   double chisq=0.;
