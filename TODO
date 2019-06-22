@@ -1,5 +1,11 @@
 * Check on int/long/LONGLONG for id's
+
+* "bad conversion" happening during/after Final MapCollection in WCSFit - some multithreading bug.  Check protection of YAMLCollector against threads.
 * Document CFITSIO_NEEDS_CURL
+* Document: syserrmmag for per-exposure syserrs. 
+* Update documentation: PixelMap.tex and the fitting classes.
+* Document PhotoFit, MagColor and all their parameters.
+
 * Implement proper motion and parallax, Gaia DR2 (or other) references
   * WEIGHT, MAGWEIGHT required?
   * AIRMASS, EXPOSURE coming in properly in config.py?
@@ -21,8 +27,6 @@
   (Looked through this and all of the places needing critical() segments seem to have them.
   Rarer crashes now?)
 
-* Use individual systematic errors per extension in MagColor
-
 * Read data (and reject short-count exposures) before degeneracy checks
 
 * Why is final mapCollection slow?
@@ -32,12 +36,7 @@
 * New nightwise priors using time structure functions
 * Atmospheric parameters for nightly priors?
 
-* Update documentation: PixelMap.tex and the fitting classes.
-* Document PhotoFit, MagColor and all their parameters.
-
-* Roll back alpha while clipping instead of recalculating full matrix again
-
-* Reduce chunk size in WCSFit
+* Roll back alpha while clipping instead of recalculating full matrix
 
 * Check for underfit exposure after sigma clipping
 
@@ -130,10 +129,8 @@ For py3 branch, upgrading all Python to work with Python 3.x:
   * get rid of countFit() usages DONE
   * logging in sigmaClip 
   * get rid of remap() calls for photoprior, photo/coordAlign, in favor of states. DONE
-  * Document: syserrmmag for per-exposure syserrs. 
   
-
-
+* Use individual systematic errors per extension in MagColor
 
 ----
 Some notes about inputs and errors for 5d:

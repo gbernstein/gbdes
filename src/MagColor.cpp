@@ -103,7 +103,7 @@ public:
 // Routine to return clipped mean & uncertainty in mag for single band, with sigma clipping at threshold.
 // Also accumulate weighted sums of ra, dec for un-clipped points.
 void clipMeanAndError(vector<MagPoint>& vmp, double color,
-		      double threshold, double sysError,
+		      double threshold, 
 		      double& mag, double& magErr,
 		      double& sumwRA, double& sumwDec, double& sumw);
 
@@ -112,7 +112,7 @@ main(int argc, char *argv[])
 {
   double clipThresh;
   double maxMagError;
-  double sysError;
+  double globalSysError;
   string useInstruments;
   string bandspec;
   string colors;
@@ -128,9 +128,9 @@ main(int argc, char *argv[])
     const int upopen = up | PsetMember::openUpperBound;
 
     parameters.addMember("maxMagError",&maxMagError, def | lowopen,
-			 "Only output mags with errors below this level", 0.05, 0.);
-    parameters.addMember("sysError",&sysError, def | lowopen,
-			 "Systematic added in quadrature to mag error", 0.001, 0.);
+			 "Only output mags with errors below this level (mmag)", 50., 0.);
+    parameters.addMember("globalSysError",&globalSysError, def | lowopen,
+			 "Systematic added in quadrature to mag error (mmag)", 1., 0.);
     parameters.addMember("clipThresh",&clipThresh, def | low,
 			 "Magnitude clipping threshold (sigma)", 5., 2.);
     parameters.addMember("skipFile",&skipFile, def,
@@ -154,6 +154,9 @@ main(int argc, char *argv[])
     string outputTables = argv[2];
     string magOutFile = argv[3];
 
+    maxMagError *= MMAG;
+    globalSysError *= MMAG;
+    
     /////////////////////////////////////////////////////
     // Parse all the parameters describing maps etc. 
     /////////////////////////////////////////////////////
@@ -324,6 +327,7 @@ main(int argc, char *argv[])
       // May have MJD and Epoch columns too
       vector<double> mjd;
       vector<string> epoch;
+      vector<double> sysvar;  // Systematic error variance per exposure
 
       ff.readCells(names, "Name");
       /* Here I need to get rid of this column and then re-add it, because the
@@ -355,6 +359,17 @@ main(int argc, char *argv[])
 	haveMJD = false;
       }
 
+      try {
+	ff.readCells(sysvar, "syserrmmag");
+	for (int i=0; i<sysvar.size(); i++)
+	  sysvar[i] = pow(sysvar[i]*MMAG, 2.) + globalSysError*globalSysError;
+      } catch (img::FTableError& e) {
+	// No per-exposure systematic errors, just use global one.
+	sysvar.resize(ra.size());
+	for (int i=0; i<sysvar.size(); i++)
+	  sysvar[i] = globalSysError*globalSysError;
+      }
+
       for (int i=0; i<names.size(); i++) {
 	// Only create an Exposure if this exposure contains useful mag info.
 	if (instrumentNumber[i]<0 || !instruments[instrumentNumber[i]] ) {
@@ -371,7 +386,7 @@ main(int argc, char *argv[])
 	  expo->exptime = exptime[i];
 	  if (haveMJD) expo->mjd = mjd[i];
 	  if (haveEpoch) expo->epoch = epoch[i];
-
+	  expo->photometricVariance = sysvar[i];
 	  exposures.push_back(expo);
 	}
       }
@@ -718,6 +733,8 @@ main(int argc, char *argv[])
 	mp.magIn = getTableDouble(ff, magKey, magKeyElement, magColumnIsDouble,irow)
 	  + extn.magshift;
 	mp.magErr = getTableDouble(ff, magErrKey, magErrKeyElement, magErrColumnIsDouble,irow);
+	mp.magErr = sqrt(mp.magErr*mp.magErr + expo.photometricVariance);
+	// Add exposure systematic error in quadrature
 	mp.photomap = photomap;
 
 	// If we have any inf or nan magnitudes, do not propagate this point
@@ -838,7 +855,7 @@ main(int argc, char *argv[])
 	    sumwRA = sumwDec = sumw = 0.;  // clear these accumulators
 	    // Calculate mean and error on mag in each band, and accumulate RA/Dec
 	    for (int i=0; i<mags.size(); i++) {
-	      clipMeanAndError(bandPoints[i], matchColor, clipThresh, sysError,
+	      clipMeanAndError(bandPoints[i], matchColor, clipThresh,
 			       mags[i], magErrors[i],
 			       sumwRA, sumwDec, sumw);
 	      magValid[i] = magErrors[i]>0. && magErrors[i] <= maxMagError;
@@ -948,7 +965,7 @@ main(int argc, char *argv[])
 
 void 
 clipMeanAndError(vector<MagPoint>& vmp, double color,
-		 double threshold, double sysError,
+		 double threshold,
 		 double& mag, double& magErr,
 		 double& sumwRA, double& sumwDec, double& sumwradec) {
 
@@ -960,11 +977,10 @@ clipMeanAndError(vector<MagPoint>& vmp, double color,
     mp.args.color = color;
     x[i] = mp.photomap->forward(mp.magIn, mp.args);
     double e = mp.magErr * abs(mp.photomap->derivative(mp.magIn, mp.args));
-    w[i] = 1./(e*e + sysError*sysError);
+    w[i] = 1./(e*e);
   }
 
   bool anyclip = true;
-  //**const int MaxIterations = 10;
   const int MaxIterations = MAX(int(x.size()/3),3);
   int iteration = 0;
   double sumw, sumxw;
