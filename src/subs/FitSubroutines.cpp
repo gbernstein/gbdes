@@ -2193,7 +2193,7 @@ Astro::saveResults(const astrometry::MCat& matches,
 	  }
 	
 	  // Set color if this is the first detection to have one
-	  if (matchColor!= astrometry::NODATA &&
+	  if (matchColor== astrometry::NODATA &&
 	      detptr->color != astrometry::NODATA)
 	    matchColor = detptr->color;
 
@@ -2439,7 +2439,7 @@ Astro::saveResults(const astrometry::MCat& matches,
 	}
 
 	// Set color if this is the first detection to have one
-	if (matchColor!= astrometry::NODATA &&
+	if (matchColor== astrometry::NODATA &&
 	    detptr->color != astrometry::NODATA)
 	  matchColor = detptr->color;
 
