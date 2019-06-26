@@ -13,7 +13,8 @@ import astropy.io.fits as pf
 import argparse
 from gbutil.decam import parallactic,dcr
 
-dcrConstant = {'g':45.0, 'r':8.4}  # DCR amplitude in mas/mag/tan(z)
+# DCR amplitude in mas/mag/tan(z)
+dcrConstant = {'g':45.0, 'r':8.4, 'i':3.2, 'z':1.4, 'Y':1.1}  
 latitude = -30.1716  # Observatory latitude, degrees
 referenceColor = 0.61  # zeropoint for color terms
 # Extinction coeffs from https://cdcvs.fnal.gov/redmine/projects/descalibration/wiki
