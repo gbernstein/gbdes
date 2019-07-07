@@ -5,13 +5,17 @@ import sys
 import argparse
 import astropy.io.fits as pf
 import numpy as np
+from gbutil.decam import EpochFinder
 
 parser = argparse.ArgumentParser(description=\
             'Add observatory position and mjd-mid to headers of FITS catalog files')
 parser.add_argument("exposureTable", help='filename of FITS table of exposure info', type=str)
 parser.add_argument("catalog", help='Catalogs to update',type=str,nargs="+")
+parser.add_argument("--fix_epoch", help='Fix up CALEPOCH as well', action='store_true')
 
-def addObservatory(exposureTable, fitsFile):
+ef = EpochFinder()
+
+def addObservatory(exposureTable, fitsFile, fix_epoch=False):
     ''' Find first extension having an EXPNUM keyword. Use it to find observatory posn
     and add this to the primary header.
     '''
@@ -40,7 +44,7 @@ def addObservatory(exposureTable, fitsFile):
         observatory = exposureTable['observatory'][row]
         while len(observatory) == 1:
             observatory = observatory[0]
-        mjd = exposureTable[row]['mjd-mid'][0]
+        mjd = exposureTable[row]['MJD_MID'][0]
         if len(observatory)!=3:
             print("ERROR: observatory entry in exposure table is not 3 elements")
             sys.exit(1)
@@ -48,10 +52,14 @@ def addObservatory(exposureTable, fitsFile):
         ff[0].header['OBSY'] = observatory[1]
         ff[0].header['OBSZ'] = observatory[2]
         ff[0].header['MJD-MID'] = mjd
+
+        if fix_epoch:
+            ff[0].header['CALEPOCH'] = ef(mjd)
+            print('CALEPOCH now',ff[0].header['CALEPOCH'])
 if __name__=="__main__":
     args = parser.parse_args()
     exposures = pf.getdata(args.exposureTable,1)
     for n in args.catalog:
         print(n)
-        addObservatory(exposures, n)
+        addObservatory(exposures, n, fix_epoch=args.fix_epoch)
     sys.exit(0)

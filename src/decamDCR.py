@@ -7,6 +7,7 @@ angle into columns of the EXPOSURE table in the FOF file.
 from __future__ import division,print_function
 import numpy as np
 import yaml
+import re
 from gbutil import dmsToDegrees
 import sys
 import astropy.io.fits as pf
@@ -26,6 +27,8 @@ if __name__=='__main__':
     parser.add_argument("fof", help='Filename of FOF file to update', type=str)
     parser.add_argument("dcr", help='Filename of output YAML DCR specs', type=str)
     parser.add_argument("gradient", help='Filename of output YAML extinction gradients', type=str)
+    parser.add_argument("-o", "--observatory", help='File with observatory positions', \
+                        type=str)
     parser.add_argument('--no_update',help='Do not update FOF file airmasses',
                         action='store_true')
 
@@ -39,6 +42,8 @@ if __name__=='__main__':
     pixmaps['PixelMapCollection'] = ' '.join(sys.argv)
     photomaps['PhotoMapCollection'] = ' '.join(sys.argv)
     
+    if args.observatory:
+        observatoryTable = pf.getdata(args.observatory, 1)
     if args.no_update:
         ff = pf.open(fits)
     else:
@@ -53,6 +58,8 @@ if __name__=='__main__':
     exposures = ff['exposures'].data
     extns = ff['extensions'].data
     
+    expnum_re = re.compile(r'^D(\d+)')
+
     # Read exposure table
     for i,expo in enumerate(exposures['name']):
         iinst = exposures['instrumentnumber'][i]
@@ -72,6 +79,30 @@ if __name__=='__main__':
         airmass, p = parallactic(dec, ha, lat = latitude)
         # replace airmass in table
         exposures['airmass'][i] = airmass
+
+        # Add observatory position, if we've been given the info
+        if observatoryTable is not None:
+            # Find this expnum in the exposure catalog
+            expnum = int(expnum_re.match(name).group(1))
+            row = np.where(observatoryTable['EXPNUM']==expnum)[0]
+            observatory = np.zeros(3,dtype=float)
+            if len(row)<1:
+                print("WARNING: exposure number",expnum,
+                      "has no entry in exposure table.",row)
+            elif len(row)>1:
+                print("WARNING: exposure number",expnum,
+                    "has multiple entries in exposure table.",row)
+            else:
+                observatory = observatoryTable['observatory'][row]
+                #Read the observatory info and add to primary header
+                while len(observatory) == 1:
+                    observatory = observatory[0]
+                if len(observatory)!=3:
+                    print("ERROR: observatory entry in exposure table is not 3 elements")
+                    sys.exit(1)
+            ff['exposures'].data['OBSX'][i] = observatory[0]
+            ff['exposures'].data['OBSY'][i] = observatory[1]
+            ff['exposures'].data['OBSZ'][i] = observatory[2]
 
         # Write DCR to pixmaps
         b = bands[iinst]
