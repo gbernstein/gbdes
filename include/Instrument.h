@@ -1,6 +1,7 @@
 #ifndef INSTRUMENT_H
 #define INSTRUMENT_H
 #include <map>
+#include <memory>
 #include "Std.h"
 #include "Bounds.h"
 #include "Astrometry.h"
@@ -49,9 +50,9 @@ public:
   name(name_), projection(coords.duplicate()), airmass(1.), exptime(1.),  mjd(0.),
   apcorr(0.), weight(1.), magWeight(1.), pmTDB(0.), observatory(0.),
   astrometricCovariance(0.), photometricVariance(0.) {}
-  ~Exposure() {delete projection;}
+  ~Exposure() = default;
   string name;   // The exposure map will have this name too.
-  astrometry::SphericalCoords* projection;	// Projection relating world coords to sky for exposure
+  std::unique_ptr<astrometry::SphericalCoords> projection;	// Projection relating world coords to sky for exposure
   int  field;
   int  instrument;
   double airmass;
