@@ -153,7 +153,7 @@ fitDefaulted(PixelMapCollection& pmc,
 
 // Define and issue WCS for each extension in use, and set projection to
 // field coordinates.
-void setupWCS(const vector<SphericalCoords*>& fieldProjections,
+void setupWCS(const vector<unique_ptr<SphericalCoords>>& fieldProjections,
 	      const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<Exposure*>& exposures,
 	      vector<Extension*>& extensions,

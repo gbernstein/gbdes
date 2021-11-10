@@ -245,7 +245,7 @@ main(int argc, char *argv[])
       
     // All we care about fields are names and orientations:
     NameIndex fieldNames;
-    vector<SphericalCoords*> fieldProjections;
+    vector<unique_ptr<SphericalCoords>> fieldProjections;
     vector<double> fieldEpochs;
     // Read the Fields table from input, copy to a new output FITS file, extract needed info
     readFields(inputTables, outCatalog, fieldNames, fieldProjections,
@@ -773,8 +773,7 @@ main(int argc, char *argv[])
     // Save the pointwise fitting results
     {
       // This routine needs an array of field projections for each extension
-      vector<SphericalCoords*> extensionProjections(extensions.size(),
-							nullptr);
+      vector<SphericalCoords*> extensionProjections(extensions.size());
       for (int i=0; i<extensions.size(); i++) {
 	if (!extensions[i])
 	  continue;
@@ -782,10 +781,10 @@ main(int argc, char *argv[])
 	if (iExposure<0 || !exposures[iExposure])
 	  continue;
 	int iField = exposures[iExposure]->field;
-	extensionProjections[i] = fieldProjections[iField];
+	extensionProjections[i] = fieldProjections[iField].get();
       }
       PROGRESS(2, extensionProjections completed);
-      Astro::saveResults(matches, outCatalog, starCatalog,extensionProjections);
+      Astro::saveResults(matches, outCatalog, starCatalog, extensionProjections);
     }
     
     PROGRESS(2,Saving FITS tables);
@@ -803,9 +802,6 @@ main(int argc, char *argv[])
       // And get rid of match itself.
       im = matches.erase(im);
     }
-    // Get rid of the coordinate systems for each field:
-    for (int i=0; i<fieldProjections.size(); i++)
-      delete fieldProjections[i];
     // Get rid of extensions
     for (int i=0; i<extensions.size(); i++)
       if (extensions[i]) delete extensions[i];

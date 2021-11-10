@@ -271,7 +271,7 @@ void
 readFields(string inputTables,
 	   string outCatalog,
 	   NameIndex& fieldNames,
-	   vector<astrometry::SphericalCoords*>& fieldProjections,
+	   vector<std::unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 	   vector<double>& fieldEpochs,
 	   double defaultEpoch=0.);
 
@@ -374,7 +374,7 @@ template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
 		 const vector<typename S::Extension*>& extensions,
-		 const vector<astrometry::SphericalCoords*>& fieldProjections,
+		 const vector<std::unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 		 bool logging=true); //Give progress updates?
 
 // Read color information from files marked as holding such, insert into

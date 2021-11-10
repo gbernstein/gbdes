@@ -305,7 +305,7 @@ void
 readFields(string inputTables,
 	   string outCatalog,
 	   NameIndex& fieldNames,
-	   vector<astrometry::SphericalCoords*>& fieldProjections,
+	   vector<std::unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 	   vector<double>& fieldEpochs,
 	   double defaultEpoch) {
   const double MINIMUM_EPOCH=1900.;
@@ -326,7 +326,7 @@ readFields(string inputTables,
     spaceReplace(name[i]);
     fieldNames.append(name[i]);
     astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*WCS_UNIT, dec[i]*WCS_UNIT));
-    fieldProjections.push_back( new astrometry::Gnomonic(orient));
+    fieldProjections.emplace_back( new astrometry::Gnomonic(orient));
   }
   if (ft.hasColumn("PM_EPOCH")) {
     ft.readCells(fieldEpochs, "PM_EPOCH");
@@ -1409,7 +1409,7 @@ template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
 		 const vector<typename S::Extension*>& extensions,
-		 const vector<astrometry::SphericalCoords*>& fieldProjections,
+		 const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 		 bool logging) {
 
   // Should be safe to multithread this loop as different threads write
@@ -2738,7 +2738,7 @@ template void \
 readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<Exposure*>& exposures, \
 		const vector<typename AP::Extension*>& extensions, \
-		const vector<astrometry::SphericalCoords*>& fieldProjections, \
+		const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections, \
                 bool logging);	      \
 template void \
 readMatches<AP>(img::FTable& table, \

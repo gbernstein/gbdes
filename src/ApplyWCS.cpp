@@ -43,7 +43,7 @@ main(int argc, char *argv[])
 
     int iarg=1;
     vector<Wcs*> wcs(2, (Wcs*) 0);
-    vector<SphericalCoords*> projection(2, (SphericalCoords*) 0);
+    vector<unique_ptr<SphericalCoords>> projection(2);
     vector<bool> useNative(2,false);
 
     // Save pmc to avoid reading it twice if it's repeated
@@ -75,11 +75,11 @@ main(int argc, char *argv[])
 	  exit(1);
 	}
 	Orientation orient(pole);
-	projection[i] = new Gnomonic(orient);
+	projection[i] = unique_ptr<SphericalCoords>(new Gnomonic(orient));
       } else if (stringstuff::nocaseEqual(wcsfile, "icrs")) {
-	projection[i] = new SphericalICRS;
+	projection[i] = unique_ptr<SphericalCoords>(new SphericalICRS);
       } else if (stringstuff::nocaseEqual(wcsfile, "ecliptic")) {
-	projection[i] = new SphericalEcliptic;
+	projection[i] = unique_ptr<SphericalCoords>(new SphericalEcliptic);
       } else if (wcsfile=="-") {
 	useNative[i] = true;
       } else if (wcsfile.find('@')!=string::npos) {
@@ -192,7 +192,6 @@ main(int argc, char *argv[])
     // Clean up
     for (int i=0; i<2; i++) {
       if (wcs[i]) delete wcs[i];
-      if (projection[i]) delete projection[i];
     }
   } catch (std::runtime_error &m) {
     quit(m,1);

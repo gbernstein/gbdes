@@ -284,11 +284,10 @@ main(int argc, char *argv[])
     // and discard info as it is not used here.
     {
       NameIndex fieldNames;
-      vector<astrometry::SphericalCoords*> fieldProjections;
+      vector<std::unique_ptr<astrometry::SphericalCoords>> fieldProjections;
       vector<double> fieldEpochs;
       readFields(inputTables, outputTables, fieldNames, fieldProjections,
 		 fieldEpochs);
-      for (auto ptr : fieldProjections) delete ptr;
     }
 
     // We've already opened (and overwritten) the output file:

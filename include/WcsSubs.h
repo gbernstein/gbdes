@@ -28,7 +28,7 @@ void fitDefaulted(astrometry::PixelMapCollection& pmc,
 
 // Define and issue WCS for each extension in use, and set projection to
 // field coordinates.
-void setupWCS(const vector<astrometry::SphericalCoords*>& fieldProjections,
+void setupWCS(const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 	      const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<Exposure*>& exposures,
 	      vector<Extension*>& extensions,

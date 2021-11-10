@@ -232,15 +232,13 @@ main(int argc, char *argv[])
 
     PROGRESS(1,Reading fields);
 
+    vector<double> fieldEpochs;
+    vector<std::unique_ptr<astrometry::SphericalCoords>> fieldProjections;
     // Read the fields table & propagate the info,
     // and discard info as it is not used here.
-    vector<astrometry::SphericalCoords*> fieldProjections;
-    vector<double> fieldEpochs;
     {
       NameIndex fieldNames;
-      readFields(inputTables, outCatalog, fieldNames,
-		 fieldProjections, fieldEpochs);
-      for (auto ptr : fieldProjections) delete ptr;
+      readFields(inputTables, outCatalog, fieldNames, fieldProjections, fieldEpochs);
       fieldProjections.clear();
     }
 
@@ -463,7 +461,7 @@ main(int argc, char *argv[])
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
     PROGRESS(1,Reading catalogs);
-    readObjects<Photo>(extensionTable, exposures, extensions,fieldProjections);
+    readObjects<Photo>(extensionTable, exposures, extensions, fieldProjections);
     
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the PhotoArguments for Detections they match
