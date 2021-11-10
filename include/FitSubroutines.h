@@ -361,8 +361,8 @@ template <class S>
 void
 readMatches(img::FTable& table,
 	    typename S::MCat& matches,
-	    vector<typename S::Extension*>& extensions,
-	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const vector<typename S::Extension*>& extensions,
+	    const vector<typename S::ColorExtension*>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
 	    bool usePM=false);        // If true, create PMMatches
@@ -372,8 +372,8 @@ readMatches(img::FTable& table,
 template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<Exposure*>& exposures,
-		 vector<typename S::Extension*>& extensions,
-		 vector<astrometry::SphericalCoords*> fieldProjections,
+		 const vector<typename S::Extension*>& extensions,
+		 const vector<astrometry::SphericalCoords*>& fieldProjections,
 		 bool logging=true); //Give progress updates?
 
 // Read color information from files marked as holding such, insert into
@@ -381,7 +381,7 @@ void readObjects(const img::FTable& extensionTable,
 template <class S>
 void
 readColors(img::FTable extensionTable,
-	   vector<typename S::ColorExtension*> colorExtensions,
+	   const vector<typename S::ColorExtension*>& colorExtensions,
 	   bool logging=true); // Progress reports
 
 // Find all matched Detections that exceed allowable error, then
