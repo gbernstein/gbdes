@@ -84,7 +84,7 @@ struct Astro {
 
 
   static void reportStatistics(const list<typename Astro::Match*>& matches,
-			       const vector<Exposure*>& exposures,
+			       const vector<unique_ptr<Exposure>>& exposures,
 			       const vector<typename Astro::Extension*>& extensions,
 			       ostream& os);
 
@@ -140,7 +140,7 @@ struct Photo {
 			  string outCatalog);
 
   static void reportStatistics(const list<typename Photo::Match*>& matches,
-			       const vector<Exposure*>& exposures,
+			       const vector<unique_ptr<Exposure>>& exposures,
 			       const vector<typename Photo::Extension*>& extensions,
 			       ostream& os);
 
@@ -238,13 +238,13 @@ double getTableDouble(img::FTable f, string key, int elementNumber, bool isDoubl
 template <class T>
 class NameSorter {
 public:
-  NameSorter(const vector<T*>& exposures): ve(exposures) {}
+  NameSorter(const vector<unique_ptr<T>>& exposures): ve(exposures) {}
   bool operator()(int i1, int i2) const {
     LessNoCase lnc;
     return lnc(ve[i1]->name, ve[i2]->name);
   }
 private:
-  const vector<T*>& ve;
+  const vector<unique_ptr<T>>& ve;
 };
 
 // This function is used to find degeneracies between exposures and device maps.
@@ -292,7 +292,7 @@ vector<unique_ptr<Instrument>> readInstruments(vector<int>& instrumentHDUs,
 // list of regexes to establish priority order.
 // useReference exposures is set if we want to use exposures from REFERENCE instrument.
 // last Boolean is as above.
-vector<Exposure*>
+vector<unique_ptr<Exposure>>
 readExposures(const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<double>& fieldEpochs,
 	      vector<int>& exposureColorPriorities,
@@ -313,7 +313,7 @@ template <class S>
 vector<typename S::Extension*>
 readExtensions(img::FTable& extensionTable,
 	       const vector<unique_ptr<Instrument>>& instruments,
-	       const vector<Exposure*>& exposures,
+	       const vector<unique_ptr<Exposure>>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
 	       astrometry::YAMLCollector& inputYAML,
@@ -332,7 +332,7 @@ template <class S>
 int
 findCanonical(Instrument& instr,
 	      int iInst,
-	      vector<Exposure*>& exposures,
+	      vector<unique_ptr<Exposure>>& exposures,
 	      vector<typename S::Extension*>& extensions,
 	      typename S::Collection& pmc);
 
@@ -343,7 +343,7 @@ findCanonical(Instrument& instr,
 template <class S>
 void
 createMapCollection(const vector<unique_ptr<Instrument>>& instruments,
-		    const vector<Exposure*>& exposures,
+		    const vector<unique_ptr<Exposure>>& exposures,
 		    const vector<typename S::Extension*> extensions,
 		    astrometry::YAMLCollector& inputYAML,
 		    typename S::Collection& pmc);
@@ -372,7 +372,7 @@ readMatches(img::FTable& table,
 // and place into Detection structures.
 template <class S>
 void readObjects(const img::FTable& extensionTable,
-		 const vector<Exposure*>& exposures,
+		 const vector<unique_ptr<Exposure>>& exposures,
 		 const vector<typename S::Extension*>& extensions,
 		 const vector<std::unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 		 bool logging=true); //Give progress updates?
@@ -392,7 +392,7 @@ template <class S>
 void
 purgeNoisyDetections(double maxError,
 		     typename S::MCat& matches,
-		     const vector<Exposure*>& exposures,
+		     const vector<unique_ptr<Exposure>>& exposures,
 		     const vector<typename S::Extension*>& extensions);
 
 // Get rid of Matches with too few Detections being fit: delete
@@ -420,7 +420,7 @@ template <class S>
 map<string, long>
 findUnderpopulatedExposures(long minFitExposure,
 			    const typename S::MCat& matches,
-			    const vector<Exposure*> exposures,
+			    const vector<unique_ptr<Exposure>> & exposures,
 			    const vector<typename S::Extension*> extensions,
 			    const typename S::Collection& pmc);
 
@@ -452,7 +452,7 @@ clipReserved(typename S::Align& ca,
 list<photometry::PhotoPrior*>
 readPriors(string filename, 
 	   const vector<unique_ptr<Instrument>>& instruments, 
-	   const vector<Exposure*>& exposures, 
+	   const vector<unique_ptr<Exposure>>& exposures, 
 	   const vector<Photo::Extension*>& extensions);
 
 #endif

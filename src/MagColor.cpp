@@ -309,7 +309,7 @@ main(int argc, char *argv[])
     // Read in the table of exposures.  Will not use FitSubroutines readExposures()
     // because we need to alter this table to add entries for the mag catalog
     // and color catalogs.
-    vector<Exposure*> exposures;
+    vector<unique_ptr<Exposure>> exposures;
     int magTableExposureNumber = -1;	// This will be the exposure # of the mag catalog
 
     {
@@ -377,7 +377,7 @@ main(int argc, char *argv[])
 	  // The projection we will use for this exposure:
 	  astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(ra[i]*WCS_UNIT,
 									        dec[i]*WCS_UNIT)));
-	  auto expo = new Exposure(names[i],gn);
+	  unique_ptr<Exposure> expo(new Exposure(names[i],gn));
 	  expo->field = fieldNumber[i];
 	  expo->instrument = instrumentNumber[i];
 	  expo->airmass = airmass[i];
@@ -385,7 +385,7 @@ main(int argc, char *argv[])
 	  if (haveMJD) expo->mjd = mjd[i];
 	  if (haveEpoch) expo->epoch = epoch[i];
 	  expo->photometricVariance = sysvar[i];
-	  exposures.push_back(expo);
+	  exposures.push_back(std::move(expo));
 	}
       }
 
@@ -953,8 +953,6 @@ main(int argc, char *argv[])
 
     // Get rid of extensions
     for (auto i : extensions) delete i;
-    // Get rid of exposures
-    for (auto i : exposures) delete i;
 
   } catch (std::runtime_error& m) {
     quit(m,1);

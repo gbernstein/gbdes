@@ -13,7 +13,7 @@ void
 fitDefaulted(PixelMapCollection& pmc,
 	     set<Extension*> extensions,
 	     const vector<unique_ptr<Instrument>>& instruments,
-	     const vector<Exposure*>& exposures,
+	     const vector<unique_ptr<Exposure>>& exposures,
 	     bool logging) {
 
   // Make a new pixel map collection that will hold only the maps
@@ -155,7 +155,7 @@ fitDefaulted(PixelMapCollection& pmc,
 // field coordinates.
 void setupWCS(const vector<unique_ptr<SphericalCoords>>& fieldProjections,
 	      const vector<unique_ptr<Instrument>>& instruments,
-	      const vector<Exposure*>& exposures,
+	      const vector<unique_ptr<Exposure>>& exposures,
 	      vector<Extension*>& extensions,
 	      PixelMapCollection& pmc) {
   for (auto extnptr : extensions) {
@@ -196,7 +196,7 @@ void setupWCS(const vector<unique_ptr<SphericalCoords>>& fieldProjections,
 
 list<int>
 pickExposuresToInitialize(const vector<unique_ptr<Instrument>>& instruments,
-			  const vector<Exposure*>& exposures,
+			  const vector<unique_ptr<Exposure>>& exposures,
 			  const vector<Extension*>& extensions,
 			  PixelMapCollection& pmc) {
   list<int> exposuresToInitialize;

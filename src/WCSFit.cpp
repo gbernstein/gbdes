@@ -276,7 +276,7 @@ main(int argc, char *argv[])
     // -1 means an exposure that does not hold color info.
     vector<int> exposureColorPriorities;
     // Read in the table of exposures
-    vector<Exposure*> exposures =
+    vector<unique_ptr<Exposure>> exposures =
       readExposures(instruments,
 		    fieldEpochs,
 		    exposureColorPriorities,
@@ -291,7 +291,7 @@ main(int argc, char *argv[])
       Matrix22 astrometricCovariance(0.);
       astrometricCovariance(0,0) = sysError*sysError;
       astrometricCovariance(1,1) = sysError*sysError;
-      for (auto e : exposures) {
+      for (auto const & e : exposures) {
 	if (e && e->instrument >= 0)
 	  e->astrometricCovariance += astrometricCovariance;
       }
@@ -300,7 +300,7 @@ main(int argc, char *argv[])
       Matrix22 astrometricCovariance(0.);
       astrometricCovariance(0,0) = referenceSysError*referenceSysError;
       astrometricCovariance(1,1) = referenceSysError*referenceSysError;
-      for (auto e : exposures) {
+      for (auto const & e : exposures) {
 	if (e && (e->instrument == REF_INSTRUMENT || e->instrument== PM_INSTRUMENT))
 	  e->astrometricCovariance += astrometricCovariance;
 	// Note that code in FitSubroutines::makePMDetection() will
@@ -436,7 +436,7 @@ main(int argc, char *argv[])
       // All exposure maps are candidates for setting to Identity
       // (the code will ignore those which already are Identity)
       set<string> exposureMapNames;
-      for (auto expoPtr : exposures) {
+      for (auto const & expoPtr : exposures) {
 	if (expoPtr && !expoPtr->name.empty())
 	  exposureMapNames.insert(expoPtr->name);
       }
@@ -805,9 +805,6 @@ main(int argc, char *argv[])
     // Get rid of extensions
     for (int i=0; i<extensions.size(); i++)
       if (extensions[i]) delete extensions[i];
-    // Get rid of exposures
-    for (int i=0; i<exposures.size(); i++)
-      if (exposures[i]) delete exposures[i];
 
   } catch (std::runtime_error& m) {
     quit(m,1);
