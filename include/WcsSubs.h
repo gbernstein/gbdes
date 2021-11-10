@@ -22,14 +22,14 @@ typedef Astro::ColorExtension ColorExtension;
 // initialized parameters back into the PMC and clear the defaulted flag.
 void fitDefaulted(astrometry::PixelMapCollection& pmc,
 		  set<Extension*> useThese,
-		  const vector<Instrument*>& instruments,
+		  const vector<unique_ptr<Instrument>>& instruments,
 		  const vector<Exposure*>& exposures,
 		  bool logging=true);
 
 // Define and issue WCS for each extension in use, and set projection to
 // field coordinates.
 void setupWCS(const vector<astrometry::SphericalCoords*>& fieldProjections,
-	      const vector<Instrument*>& instruments,
+	      const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<Exposure*>& exposures,
 	      vector<Extension*>& extensions,
 	      astrometry::PixelMapCollection& pmc);
@@ -37,7 +37,7 @@ void setupWCS(const vector<astrometry::SphericalCoords*>& fieldProjections,
 // Analyze the PixelMap to find list of exposures that we can
 // initialize first to set up all defaulted device maps.
 list<int>
-pickExposuresToInitialize(const vector<Instrument*>& instruments,
+pickExposuresToInitialize(const vector<unique_ptr<Instrument>>& instruments,
 			  const vector<Exposure*>& exposures,
 			  const vector<Extension*>& extensions,
 			  astrometry::PixelMapCollection& pmc);

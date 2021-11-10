@@ -12,7 +12,7 @@ using namespace astrometry;
 void
 fitDefaulted(PixelMapCollection& pmc,
 	     set<Extension*> extensions,
-	     const vector<Instrument*>& instruments,
+	     const vector<unique_ptr<Instrument>>& instruments,
 	     const vector<Exposure*>& exposures,
 	     bool logging) {
 
@@ -154,7 +154,7 @@ fitDefaulted(PixelMapCollection& pmc,
 // Define and issue WCS for each extension in use, and set projection to
 // field coordinates.
 void setupWCS(const vector<SphericalCoords*>& fieldProjections,
-	      const vector<Instrument*>& instruments,
+	      const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<Exposure*>& exposures,
 	      vector<Extension*>& extensions,
 	      PixelMapCollection& pmc) {
@@ -195,7 +195,7 @@ void setupWCS(const vector<SphericalCoords*>& fieldProjections,
 }
 
 list<int>
-pickExposuresToInitialize(const vector<Instrument*>& instruments,
+pickExposuresToInitialize(const vector<unique_ptr<Instrument>>& instruments,
 			  const vector<Exposure*>& exposures,
 			  const vector<Extension*>& extensions,
 			  PixelMapCollection& pmc) {

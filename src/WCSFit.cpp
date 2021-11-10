@@ -265,7 +265,7 @@ main(int argc, char *argv[])
 
     // Read in all the instrument extensions and their device info from input
     // FITS file, save useful ones and write to output FITS file.
-    vector<Instrument*> instruments =
+    vector<unique_ptr<Instrument>> instruments =
       readInstruments(instrumentHDUs, useInstrumentList, inputTables, outCatalog,
 		      outputCatalogAlreadyOpen);
 
@@ -812,9 +812,6 @@ main(int argc, char *argv[])
     // Get rid of exposures
     for (int i=0; i<exposures.size(); i++)
       if (exposures[i]) delete exposures[i];
-    // Get rid of instruments
-    for (int i=0; i<instruments.size(); i++)
-      if (instruments[i]) delete instruments[i];
 
   } catch (std::runtime_error& m) {
     quit(m,1);

@@ -355,12 +355,12 @@ readFields(string inputTables,
 // The useInstrumentList entries are regexes, empty means use all.
 // The final bool argument is set true if we have already created
 // the outCatalog FITS file.
-vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
+vector<unique_ptr<Instrument>> readInstruments(vector<int>& instrumentHDUs,
 				    list<string>& useInstrumentList,
 				    string inputTables,
 				    string outCatalog,
 				    bool& outputCatalogAlreadyOpen) {
-  vector<Instrument*> instruments;
+  vector<unique_ptr<Instrument>> instruments;
   for (int iextn : instrumentHDUs) {
     FITS::FitsTable ft(inputTables, FITS::ReadOnly, iextn);
     Assert( stringstuff::nocaseEqual(ft.getName(), "Instrument"));
@@ -393,14 +393,13 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 
     if (regexMatchAny(useInstrumentList, instrumentName))  {
       // This is an instrument we will use.  Make an Instrument instance
-      Instrument* instptr = new Instrument(instrumentName);
-      instruments[instrumentNumber] = instptr;
+      auto instptr = unique_ptr<Instrument>(new Instrument(instrumentName));
       string band;
       if (!ff.header()->getValue("Band",band)) {
-	instptr->band = instptr->name;  // Use instrument name for BAND if not found
+	      instptr->band = instptr->name;  // Use instrument name for BAND if not found
       } else {
-	spaceReplace(band);
-	instptr->band = band;
+	      spaceReplace(band);
+	      instptr->band = band;
       }
       
       vector<string> devnames;
@@ -414,11 +413,11 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
       ff.readCells(vymin, "YMin");
       ff.readCells(vymax, "YMax");
       for (int j=0; j<devnames.size(); j++) {
-	spaceReplace(devnames[j]);
-	instptr->addDevice( devnames[j],
+	      spaceReplace(devnames[j]);
+	      instptr->addDevice( devnames[j],
 			    Bounds<double>( vxmin[j], vxmax[j], vymin[j], vymax[j]));
       }
-      instruments[instrumentNumber] = instptr;
+      instruments[instrumentNumber] = std::move(instptr);
     } // Done reading an instrument.
   }
 
@@ -427,7 +426,7 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 
 // Read the Exposure table into an array.
 vector<Exposure*>
-readExposures(const vector<Instrument*>& instruments,
+readExposures(const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<double>& fieldEpochs,
 	      vector<int>& exposureColorPriorities,
 	      const list<string>&  useColorList,
@@ -664,14 +663,14 @@ template <class S>
 void
 fixMapComponents(typename S::Collection& pmc,
 		 const list<string>& fixMapList,
-		 const vector<Instrument*>& instruments) {
+		 const vector<unique_ptr<Instrument>>& instruments) {
   set<string> fixTheseMaps;
   for (auto iName : pmc.allMapNames()) {
     if (stringstuff::regexMatchAny(fixMapList, iName))
       fixTheseMaps.insert(iName);
   }
   // Add names of all devices of instruments on the fixMapList
-  for (auto instptr : instruments) {
+  for (auto const & instptr : instruments) {
     if (!instptr) continue; // Not in use
     if (stringstuff::regexMatchAny(fixMapList, instptr->name)) {
       // Loop through all devices
@@ -689,7 +688,7 @@ fixMapComponents(typename S::Collection& pmc,
 template <class S>
 vector<typename S::Extension*>
 readExtensions(img::FTable& extensionTable,
-	       const vector<Instrument*>& instruments,
+	       const vector<unique_ptr<Instrument>>& instruments,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
@@ -973,7 +972,7 @@ findCanonical(Instrument& instr,
 // !! Returns the number of seconds spent in critical loop parts of addMap
 template <class S>
 void
-createMapCollection(const vector<Instrument*>& instruments,
+createMapCollection(const vector<unique_ptr<Instrument>>& instruments,
 		    const vector<Exposure*>& exposures,
 		    const vector<typename S::Extension*> extensions,
 		    astrometry::YAMLCollector& inputYAML,
@@ -2711,7 +2710,7 @@ Astro::reportStatistics(const list<typename Astro::Match*>& matches,
 template \
 vector<AP::Extension*> \
 readExtensions<AP> (img::FTable& extensionTable, \
-		    const vector<Instrument*>& instruments,	\
+		    const vector<unique_ptr<Instrument>>& instruments,	\
 		    const vector<Exposure*>& exposures,		\
 		    const vector<int>& exposureColorPriorities,	\
 		    vector<AP::ColorExtension*>& colorExtensions,\
@@ -2726,9 +2725,9 @@ findCanonical<AP>(Instrument& instr,	\
 template void \
 fixMapComponents<AP>(AP::Collection&, \
 		     const list<string>&, \
-		     const vector<Instrument*>&); \
+		     const vector<unique_ptr<Instrument>>&); \
 template void \
-createMapCollection<AP>(const vector<Instrument*>& instruments, \
+createMapCollection<AP>(const vector<unique_ptr<Instrument>>& instruments, \
 			const vector<Exposure*>& exposures, \
 			const vector<AP::Extension*> extensions, \
 			astrometry::YAMLCollector& inputYAML,	 \

@@ -296,15 +296,14 @@ main(int argc, char *argv[])
     
     // Read in all the instrument extensions and their device info from input
     // FITS file, save useful ones and write to output FITS file.
-    vector<Instrument*> instruments =
+    vector<unique_ptr<Instrument>> instruments =
       readInstruments(instrumentHDUs, useInstrumentList, inputTables, outputTables,
 		      outputCatalogAlreadyOpen);
     
     // Now we're going to get rid of instruments that are not in a desired band.
     for (auto& iptr : instruments) {
       if (iptr && bands.count(iptr->band)==0) {
-	delete iptr;
-	iptr = nullptr;
+	      iptr = nullptr;
       }
     }
 
@@ -957,8 +956,6 @@ main(int argc, char *argv[])
     for (auto i : extensions) delete i;
     // Get rid of exposures
     for (auto i : exposures) delete i;
-    // Get rid of instruments
-    for (auto i : instruments) delete i;
 
   } catch (std::runtime_error& m) {
     quit(m,1);

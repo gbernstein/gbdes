@@ -8,6 +8,7 @@
 #define CATALOG_THREADS 4
 
 #include <list>
+#include <memory>
 #include <set>
 #include "StringStuff.h"
 
@@ -279,7 +280,7 @@ readFields(string inputTables,
 // The useInstrumentList entries are regexes, empty means use all.
 // The final bool argument is set true if we have already created
 // the outCatalog FITS file.
-vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
+vector<unique_ptr<Instrument>> readInstruments(vector<int>& instrumentHDUs,
 				    list<string>& useInstrumentList,
 				    string inputTables,
 				    string outCatalog,
@@ -292,7 +293,7 @@ vector<Instrument*> readInstruments(vector<int>& instrumentHDUs,
 // useReference exposures is set if we want to use exposures from REFERENCE instrument.
 // last Boolean is as above.
 vector<Exposure*>
-readExposures(const vector<Instrument*>& instruments,
+readExposures(const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<double>& fieldEpochs,
 	      vector<int>& exposureColorPriorities,
 	      const list<string>&  useColorList,
@@ -311,7 +312,7 @@ readExposures(const vector<Instrument*>& instruments,
 template <class S>
 vector<typename S::Extension*>
 readExtensions(img::FTable& extensionTable,
-	       const vector<Instrument*>& instruments,
+	       const vector<unique_ptr<Instrument>>& instruments,
 	       const vector<Exposure*>& exposures,
 	       const vector<int>& exposureColorPriorities,
 	       vector<typename S::ColorExtension*>& colorExtensions,
@@ -325,7 +326,7 @@ template <class S>
 void
 fixMapComponents(typename S::Collection& pmc,
 		 const list<string>& fixMapList,
-		 const vector<Instrument*>& instruments);
+		 const vector<unique_ptr<Instrument>>& instruments);
 
 template <class S>
 int
@@ -341,7 +342,7 @@ findCanonical(Instrument& instr,
 // Returns time spent in critical regions of the addMap() routine.
 template <class S>
 void
-createMapCollection(const vector<Instrument*>& instruments,
+createMapCollection(const vector<unique_ptr<Instrument>>& instruments,
 		    const vector<Exposure*>& exposures,
 		    const vector<typename S::Extension*> extensions,
 		    astrometry::YAMLCollector& inputYAML,
@@ -450,7 +451,7 @@ clipReserved(typename S::Align& ca,
 // (for PhotoFit only - has its own source file)
 list<photometry::PhotoPrior*>
 readPriors(string filename, 
-	   const vector<Instrument*>& instruments, 
+	   const vector<unique_ptr<Instrument>>& instruments, 
 	   const vector<Exposure*>& exposures, 
 	   const vector<Photo::Extension*>& extensions);
 

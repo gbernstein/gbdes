@@ -53,7 +53,7 @@ void formatError(string filename, string line) {
 
 list<PhotoPrior*>
 readPriors(string filename, 
-	   const vector<Instrument*>& instruments, 
+	   const vector<unique_ptr<Instrument>>& instruments, 
 	   const vector<Exposure*>& exposures, 
 	   const vector<Photo::Extension*>& extensions ) {
 
