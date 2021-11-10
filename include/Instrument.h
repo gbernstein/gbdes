@@ -89,13 +89,11 @@ public:
   string mapName;      // Name of photometry map or astrometric map into exposure coords
   T1* map;	       // The map from pixel coordinates to field coordinates.
   astrometry::Wcs* wcs;       // Wcs from pixel coordinates to sky coordinates = basemap + field projection
-  astrometry::Wcs* startWcs;  // Input Wcs for this extension (owned by this class)
+  std::unique_ptr<astrometry::Wcs> startWcs;  // Input Wcs for this extension (owned by this class)
   bool needsColor;	// Save info on whether map requires color information.
 
   std::map<long, T2*> keepers; // The objects from this Extension catalog that we will use
-  ~ExtensionBase() {
-    if (startWcs) delete startWcs;
-  }
+  ~ExtensionBase() = default;
 };
 
 // Class that represents an catalog of objects from a single device on single exposure

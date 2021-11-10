@@ -469,12 +469,14 @@ main(int argc, char *argv[])
 	// Create a Wcs that just takes input as RA and Dec in std units;
 	astrometry::IdentityMap identity;
 	astrometry::SphericalICRS icrs;
-	extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT);
+	extn->startWcs = std::unique_ptr<astrometry::Wcs>(
+    new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT)
+  );
       } else {
 	try {
 	  // See if there is a map to use from the astrometric solution files
 	  // Note we are cloning instead of issuing since Extension expects to own the startWcs.
-	  extn->startWcs = astromaps.cloneWcs(mapName);
+	  extn->startWcs = std::unique_ptr<astrometry::Wcs>(astromaps.cloneWcs(mapName));
 	} catch (astrometry::AstrometryError& m) {
 	  // else we read from the input file's starting WCS
 	  istringstream iss(s);
@@ -484,7 +486,7 @@ main(int argc, char *argv[])
 	    exit(1);
 	  }
 	  string wcsName = pmcTemp.allWcsNames().front();
-	  extn->startWcs = pmcTemp.cloneWcs(wcsName);
+	  extn->startWcs = std::unique_ptr<astrometry::Wcs>(pmcTemp.cloneWcs(wcsName));
 	}
       }
       // destination projection is the Exposure projection, whose coords used for any
@@ -663,7 +665,7 @@ main(int argc, char *argv[])
       double weight;
       extensionTable.readCell(weight, "MAGWEIGHT", iext);
 
-      astrometry::Wcs* startWcs = extn.startWcs;
+      astrometry::Wcs* startWcs = extn.startWcs.get();
       photometry::SubMap* photomap = extn.map;
 
       if (!startWcs) {

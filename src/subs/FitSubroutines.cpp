@@ -751,7 +751,9 @@ readExtensions(img::FTable& extensionTable,
       // Create a Wcs that just takes input as RA and Dec in degrees;
       astrometry::IdentityMap identity;
       astrometry::SphericalICRS icrs;
-      extn->startWcs = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT);
+      extn->startWcs = std::unique_ptr<astrometry::Wcs>(
+        new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT)
+      );
     } else {
       istringstream iss(s);
       astrometry::PixelMapCollection pmcTemp;
@@ -760,7 +762,7 @@ readExtensions(img::FTable& extensionTable,
 	exit(1);
       }
       string wcsName = pmcTemp.allWcsNames().front();
-      extn->startWcs = pmcTemp.cloneWcs(wcsName);
+      extn->startWcs = std::unique_ptr<astrometry::Wcs>(pmcTemp.cloneWcs(wcsName));
     }
 
     // destination projection for startWCS is the Exposure projection,
@@ -1523,7 +1525,7 @@ void readObjects(const img::FTable& extensionTable,
 
     if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
 
-    astrometry::Wcs* startWcs = extn.startWcs;
+    astrometry::Wcs * startWcs = extn.startWcs.get();
 
     if (!startWcs) {
       cerr << "Failed to find initial Wcs for exposure " << expo.name
