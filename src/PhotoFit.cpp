@@ -301,7 +301,7 @@ main(int argc, char *argv[])
       out.copy(extensionTable);
     }
 
-    vector<ColorExtension*> colorExtensions;
+    vector<unique_ptr<ColorExtension>> colorExtensions;
     vector<Extension*> extensions =
       readExtensions<Photo>(extensionTable,
 			    instruments,

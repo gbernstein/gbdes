@@ -321,7 +321,7 @@ main(int argc, char *argv[])
       FITS::FitsTable out(outCatalog, FITS::ReadWrite+FITS::Create, "Extensions");
       out.copy(extensionTable);
     }
-    vector<ColorExtension*> colorExtensions;
+    vector<unique_ptr<ColorExtension>> colorExtensions;
     vector<Extension*> extensions =
       readExtensions<Astro>(extensionTable,
 			    instruments,

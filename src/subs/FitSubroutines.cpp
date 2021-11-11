@@ -691,12 +691,12 @@ readExtensions(img::FTable& extensionTable,
 	       const vector<unique_ptr<Instrument>>& instruments,
 	       const vector<unique_ptr<Exposure>>& exposures,
 	       const vector<int>& exposureColorPriorities,
-	       vector<typename S::ColorExtension*>& colorExtensions,
+	       vector<unique_ptr<typename S::ColorExtension>>& colorExtensions,
 	       astrometry::YAMLCollector& inputYAML,
 	       bool logging) {
       
   vector<typename S::Extension*> extensions(extensionTable.nrows(), nullptr);
-  colorExtensions = vector<typename S::ColorExtension*>(extensionTable.nrows(), nullptr);
+  colorExtensions = vector<unique_ptr<typename S::ColorExtension>>(extensionTable.nrows());
   int processed=0;
 
 #ifdef _OPENMP
@@ -714,9 +714,9 @@ readExtensions(img::FTable& extensionTable,
     // Determine whether this extension might be used to provide colors
     int colorPriority = exposureColorPriorities[iExposure];
     if (colorPriority >= 0) {
-      auto* ce = new typename S::ColorExtension;
+      unique_ptr<typename S::ColorExtension> ce(new typename S::ColorExtension);
       ce->priority = colorPriority;
-      colorExtensions[i] = ce;
+      colorExtensions[i] = std::move(ce);
     }
 	
     if (!exposures[iExposure]) continue;
@@ -1041,7 +1041,7 @@ void
 readMatches(img::FTable& table,
 	    typename S::MCat& matches,
 	    const vector<typename S::Extension*>& extensions,
-	    const vector<typename S::ColorExtension*>& colorExtensions,
+	    const vector<unique_ptr<typename S::ColorExtension>>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
 	    bool usePM) {
@@ -1624,7 +1624,7 @@ void readObjects(const img::FTable& extensionTable,
 template <class S>
 void
 readColors(img::FTable extensionTable,
-	   const vector<typename S::ColorExtension*> & colorExtensions,
+	   const vector<unique_ptr<typename S::ColorExtension>> & colorExtensions,
 	   bool logging) {
 
   for (int iext = 0; iext < colorExtensions.size(); iext++) {
@@ -2713,7 +2713,7 @@ readExtensions<AP> (img::FTable& extensionTable, \
 		    const vector<unique_ptr<Instrument>>& instruments,	\
 		    const vector<unique_ptr<Exposure>>& exposures,		\
 		    const vector<int>& exposureColorPriorities,	\
-		    vector<AP::ColorExtension*>& colorExtensions,\
+		    vector<unique_ptr<AP::ColorExtension>>& colorExtensions,\
 		    astrometry::YAMLCollector& inputYAML,        \
 		    bool logging);  	 \
 template int \
@@ -2744,13 +2744,13 @@ template void \
 readMatches<AP>(img::FTable& table, \
 		typename AP::MCat& matches, \
 		const vector<typename AP::Extension*>& extensions, \
-		const vector<typename AP::ColorExtension*>& colorExtensions, \
+		const vector<unique_ptr<AP::ColorExtension>>& colorExtensions, \
 		const ExtensionObjectSet& skipSet, \
 		int minMatches, \
 		bool usePM);  \
 template void \
 readColors<AP>(img::FTable extensionTable, \
-	       const vector<AP::ColorExtension*> & colorExtensions, \
+	       const vector<unique_ptr<AP::ColorExtension>> & colorExtensions, \
 	       bool logging);    \
 template void  \
 purgeNoisyDetections<AP>(double maxError,  \
