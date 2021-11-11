@@ -322,7 +322,7 @@ main(int argc, char *argv[])
       out.copy(extensionTable);
     }
     vector<unique_ptr<ColorExtension>> colorExtensions;
-    vector<Extension*> extensions =
+    vector<unique_ptr<Extension>> extensions =
       readExtensions<Astro>(extensionTable,
 			    instruments,
 			    exposures,
@@ -336,7 +336,7 @@ main(int argc, char *argv[])
 
     // A special loop here to set the wcsname of reference extensions to the
     // name of their field.
-    for (auto extnptr : extensions) {
+    for (auto const & extnptr : extensions) {
       if (!extnptr) continue;
       const Exposure& expo = *exposures[extnptr->exposure];
       if ( expo.instrument >= 0) continue;
@@ -397,7 +397,7 @@ main(int argc, char *argv[])
     {
       vector<bool> fieldHasFree(fieldNames.size(), false);
       vector<bool> fieldHasFixed(fieldNames.size(), false);
-      for (auto extnptr : extensions) {
+      for (auto const & extnptr : extensions) {
 	if (!extnptr) continue; // Not in use
 	int field = exposures[extnptr->exposure]->field;
 	if (pmcInit->getFixed(extnptr->mapName))
@@ -505,7 +505,7 @@ main(int argc, char *argv[])
       // Fit set of extensions to initialize defaulted map(s)
       set<Extension*> defaultedExtensions;
       for (auto iextn : extnSet) {
-	defaultedExtensions.insert(extensions[iextn]);
+	defaultedExtensions.insert(extensions[iextn].get());
 	initializedExtensions.insert(iextn);
       }
       fitDefaulted(mapCollection,
@@ -523,7 +523,7 @@ main(int argc, char *argv[])
       // Skip extensions that don't exist or are already initialized
       if (!extensions[iextn] || initializedExtensions.count(iextn))
 	continue;
-      set<Extension*> defaultedExtensions = {extensions[iextn]};
+      set<Extension*> defaultedExtensions = {extensions[iextn].get()};
       fitDefaulted(mapCollection,
 		   defaultedExtensions,
 		   instruments,
@@ -572,7 +572,7 @@ main(int argc, char *argv[])
     
     // Before reading objects, we want to set all starting WCS's to go into
     // field coordinates.
-    for (auto extnptr : extensions) {
+    for (auto const & extnptr : extensions) {
       if (!extnptr) continue;
       if (extnptr->exposure < 0) continue;
       int ifield = exposures[extnptr->exposure]->field;
@@ -802,9 +802,6 @@ main(int argc, char *argv[])
       // And get rid of match itself.
       im = matches.erase(im);
     }
-    // Get rid of extensions
-    for (int i=0; i<extensions.size(); i++)
-      if (extensions[i]) delete extensions[i];
 
   } catch (std::runtime_error& m) {
     quit(m,1);

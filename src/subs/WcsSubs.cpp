@@ -156,9 +156,9 @@ fitDefaulted(PixelMapCollection& pmc,
 void setupWCS(const vector<unique_ptr<SphericalCoords>>& fieldProjections,
 	      const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<unique_ptr<Exposure>>& exposures,
-	      vector<Extension*>& extensions,
+	      vector<unique_ptr<Extension>>& extensions,
 	      PixelMapCollection& pmc) {
-  for (auto extnptr : extensions) {
+  for (auto const & extnptr : extensions) {
     if (!extnptr) continue; // Not in use
     Exposure& expo = *exposures[extnptr->exposure];
     int ifield = expo.field;
@@ -197,7 +197,7 @@ void setupWCS(const vector<unique_ptr<SphericalCoords>>& fieldProjections,
 list<int>
 pickExposuresToInitialize(const vector<unique_ptr<Instrument>>& instruments,
 			  const vector<unique_ptr<Exposure>>& exposures,
-			  const vector<Extension*>& extensions,
+			  const vector<unique_ptr<Extension>>& extensions,
 			  PixelMapCollection& pmc) {
   list<int> exposuresToInitialize;
   for (int iInst=0; iInst < instruments.size(); iInst++) {
@@ -252,7 +252,7 @@ pickExposuresToInitialize(const vector<unique_ptr<Instrument>>& instruments,
     // Now take an inventory of all extensions to see which device
     // solutions are used in coordination with which exposure solutions
     vector<set<int>> exposuresUsingDevice(instr.nDevices);
-    for (auto extnptr : extensions) {
+    for (auto const & extnptr : extensions) {
       if (!extnptr) continue; // Not in use
       int iExpo = extnptr->exposure;
       if (itsExposures.count(iExpo)>0) {

@@ -55,7 +55,7 @@ list<PhotoPrior*>
 readPriors(string filename, 
 	   const vector<unique_ptr<Instrument>>& instruments, 
 	   const vector<unique_ptr<Exposure>>& exposures, 
-	   const vector<Photo::Extension*>& extensions ) {
+	   const vector<unique_ptr<Photo::Extension>>& extensions ) {
 
   ifstream ifs(filename.c_str());
   if (!ifs) {

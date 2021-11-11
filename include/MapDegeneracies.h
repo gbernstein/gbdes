@@ -18,7 +18,7 @@ public:
   // examining only those with defaulted parameters.
   // The list specifies which types of maps are potentially degenerate
   // with each other. If the list is empty, all maps are considered.
-  MapDegeneracies(const vector<typename S::Extension*>& extensions_,
+  MapDegeneracies(const vector<unique_ptr<typename S::Extension>>& extensions_,
 		  const typename S::Collection& mapCollection,
 		  const set<string>& mapTypes_,
 		  bool defaulted=false);
@@ -45,7 +45,7 @@ private:
   // All the extensions, each with all the maps that use them
   map<int, set<string>> extns;
   // The extension table (extn numbers are index into this vector)
-  const vector<typename S::Extension*>& extensions;
+  const vector<unique_ptr<typename S::Extension>>& extensions;
 };
 
 

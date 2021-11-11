@@ -302,7 +302,7 @@ main(int argc, char *argv[])
     }
 
     vector<unique_ptr<ColorExtension>> colorExtensions;
-    vector<Extension*> extensions =
+    vector<unique_ptr<Extension>> extensions =
       readExtensions<Photo>(extensionTable,
 			    instruments,
 			    exposures,
@@ -390,7 +390,7 @@ main(int argc, char *argv[])
     PROGRESS(2, Defining all maps);
 
     // Now construct a SubMap for every extension
-    for (auto extnptr : extensions) {
+    for (auto const & extnptr : extensions) {
       if (!extnptr) continue;  // not in use.
       Exposure& expo = *exposures[extnptr->exposure];
       if ( expo.instrument < 0) {
@@ -702,9 +702,6 @@ main(int argc, char *argv[])
       // And get rid of match itself.
       im = matches.erase(im);
     }
-    // Get rid of extensions
-    for (int i=0; i<extensions.size(); i++)
-      if (extensions[i]) delete extensions[i];
 
   } catch (std::runtime_error& m) {
     quit(m,1);

@@ -31,7 +31,7 @@ void fitDefaulted(astrometry::PixelMapCollection& pmc,
 void setupWCS(const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 	      const vector<unique_ptr<Instrument>>& instruments,
 	      const vector<unique_ptr<Exposure>>& exposures,
-	      vector<Extension*>& extensions,
+	      vector<unique_ptr<Extension>>& extensions,
 	      astrometry::PixelMapCollection& pmc);
 
 // Analyze the PixelMap to find list of exposures that we can
@@ -39,7 +39,7 @@ void setupWCS(const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjec
 list<int>
 pickExposuresToInitialize(const vector<unique_ptr<Instrument>>& instruments,
 			  const vector<unique_ptr<Exposure>>& exposures,
-			  const vector<Extension*>& extensions,
+			  const vector<unique_ptr<Extension>>& extensions,
 			  astrometry::PixelMapCollection& pmc);
 
 #endif

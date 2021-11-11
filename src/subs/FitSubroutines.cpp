@@ -686,7 +686,7 @@ fixMapComponents(typename S::Collection& pmc,
 }
 
 template <class S>
-vector<typename S::Extension*>
+vector<unique_ptr<typename S::Extension>>
 readExtensions(img::FTable& extensionTable,
 	       const vector<unique_ptr<Instrument>>& instruments,
 	       const vector<unique_ptr<Exposure>>& exposures,
@@ -695,7 +695,7 @@ readExtensions(img::FTable& extensionTable,
 	       astrometry::YAMLCollector& inputYAML,
 	       bool logging) {
       
-  vector<typename S::Extension*> extensions(extensionTable.nrows(), nullptr);
+  vector<unique_ptr<typename S::Extension>> extensions(extensionTable.nrows());
   colorExtensions = vector<unique_ptr<typename S::ColorExtension>>(extensionTable.nrows());
   int processed=0;
 
@@ -725,7 +725,7 @@ readExtensions(img::FTable& extensionTable,
 #pragma omp critical(processed)
 #endif
     ++processed; 
-    typename S::Extension* extn = new typename S::Extension;
+    unique_ptr<typename S::Extension> extn(new typename S::Extension);
     extn->exposure = iExposure;
     const Exposure& expo = *exposures[iExposure];
 
@@ -802,7 +802,7 @@ readExtensions(img::FTable& extensionTable,
 	exit(1);
       }
     }
-    extensions[i] = extn;
+    extensions[i] = std::move(extn);
   }  // End extension loop
   return extensions;
 }
@@ -819,7 +819,7 @@ int
 findCanonical(Instrument& instr,
 	      int iInst,
 	      vector<unique_ptr<Exposure>>& exposures,
-	      vector<typename S::Extension*>& extensions,
+	      vector<unique_ptr<typename S::Extension>>& extensions,
 	      typename S::Collection& pmc)
 {
   // Classify the device maps for this instrument
@@ -865,7 +865,7 @@ findCanonical(Instrument& instr,
   // Now take an inventory of all extensions to see which device
   // solutions are used in coordination with which exposure solutions
   vector<set<int>> exposuresUsingDevice(instr.nDevices);
-  for (auto extnptr : extensions) {
+  for (auto const & extnptr : extensions) {
     if (!extnptr) continue; // Extension not in use.
     int iExpo = extnptr->exposure;
     if (itsExposures.count(iExpo)>0) {
@@ -974,7 +974,7 @@ template <class S>
 void
 createMapCollection(const vector<unique_ptr<Instrument>>& instruments,
 		    const vector<unique_ptr<Exposure>>& exposures,
-		    const vector<typename S::Extension*> extensions,
+		    const vector<unique_ptr<typename S::Extension>> & extensions,
 		    astrometry::YAMLCollector& inputYAML,
 		    typename S::Collection& pmc) {
 
@@ -983,7 +983,7 @@ createMapCollection(const vector<unique_ptr<Instrument>>& instruments,
 #pragma omp parallel for schedule(dynamic,50) reduction(+:criticalTime)
 #endif
   for (int i=0; i<extensions.size(); i++) {
-    auto extnptr = extensions[i];
+    auto const & extnptr = extensions[i];
     if (!extnptr) continue;  // Not in use.
     auto& expo = *exposures[extnptr->exposure];
     // Extract the map specifications for this extension from the input
@@ -1026,8 +1026,8 @@ createMapCollection(const vector<unique_ptr<Instrument>>& instruments,
 
 template <class S>
 void
-whoNeedsColor(vector<typename S::Extension*> extensions) {
-  for (auto extnptr : extensions) {
+whoNeedsColor(const vector<unique_ptr<typename S::Extension>> & extensions) {
+  for (auto const & extnptr : extensions) {
     if (extnptr) {
       extnptr->needsColor = extnptr->map->needsColor();
     }
@@ -1040,7 +1040,7 @@ template <class S>
 void
 readMatches(img::FTable& table,
 	    typename S::MCat& matches,
-	    const vector<typename S::Extension*>& extensions,
+	    const vector<unique_ptr<typename S::Extension>>& extensions,
 	    const vector<unique_ptr<typename S::ColorExtension>>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
@@ -1408,7 +1408,7 @@ Photo::fillDetection(Photo::Detection* d,
 template <class S>
 void readObjects(const img::FTable& extensionTable,
 		 const vector<unique_ptr<Exposure>>& exposures,
-		 const vector<typename S::Extension*>& extensions,
+		 const vector<unique_ptr<typename S::Extension>>& extensions,
 		 const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 		 bool logging) {
 
@@ -1707,7 +1707,7 @@ void
 purgeNoisyDetections(double maxError,
 		     typename S::MCat& matches,
 		     const vector<unique_ptr<Exposure>>& exposures,
-		     const vector<typename S::Extension*>& extensions) {
+		     const vector<unique_ptr<typename S::Extension>>& extensions) {
   for (auto mptr : matches) {
     auto j=mptr->begin(); 
     int k=0;
@@ -1789,7 +1789,7 @@ map<string, long>
 findUnderpopulatedExposures(long minFitExposure,
 			    const typename S::MCat& matches,
 			    const vector<unique_ptr<Exposure>> & exposures,
-			    const vector<typename S::Extension*> extensions,
+			    const vector<unique_ptr<typename S::Extension>> & extensions,
 			    const typename S::Collection& pmc) {
   // First count up useful Detections in each extension:
   vector<long> extnCounts(extensions.size(), 0);
@@ -1825,7 +1825,7 @@ template <class S>
 void
 freezeMap(string mapName,
 	  typename S::MCat& matches,
-	  vector<typename S::Extension*>& extensions,
+	  vector<unique_ptr<typename S::Extension>>& extensions,
 	  typename S::Collection& pmc) {
   // Nothing to do if map is already fixed or doesn't exist
   if (!pmc.mapExists(mapName) || pmc.getFixed(mapName)) return;
@@ -1858,7 +1858,6 @@ freezeMap(string mapName,
       pmc.invalidate(extensions[extn]->wcsName);
     else
       pmc.invalidate(extensions[extn]->mapName);
-    delete extensions[extn];
     extensions[extn] = nullptr;
   }
 }
@@ -2526,7 +2525,7 @@ Astro::saveResults(const astrometry::MCat& matches,
 void
 Photo::reportStatistics(const list<typename Photo::Match*>& matches,
 			const vector<unique_ptr<Exposure>>& exposures,
-			const vector<typename Photo::Extension*>& extensions,
+			const vector<unique_ptr<Photo::Extension>>& extensions,
 			ostream& os) {
   // Create Accum instances for fitted and reserved Detections on every
   // exposure, plus total accumulator for all reference
@@ -2612,7 +2611,7 @@ Photo::reportStatistics(const list<typename Photo::Match*>& matches,
 void
 Astro::reportStatistics(const list<typename Astro::Match*>& matches,
 			const vector<unique_ptr<Exposure>>& exposures,
-			const vector<typename Astro::Extension*>& extensions,
+			const vector<unique_ptr<typename Astro::Extension>>& extensions,
 			ostream& os) {
   // Create Accum instances for fitted and reserved Detections on every
   // exposure, plus total accumulator for all reference
@@ -2708,7 +2707,7 @@ Astro::reportStatistics(const list<typename Astro::Match*>& matches,
 
 #define INSTANTIATE(AP) \
 template \
-vector<AP::Extension*> \
+vector<unique_ptr<AP::Extension>> \
 readExtensions<AP> (img::FTable& extensionTable, \
 		    const vector<unique_ptr<Instrument>>& instruments,	\
 		    const vector<unique_ptr<Exposure>>& exposures,		\
@@ -2720,7 +2719,7 @@ template int \
 findCanonical<AP>(Instrument& instr,	\
 		  int iInst,			\
 		  vector<unique_ptr<Exposure>>& exposures,	  \
-		  vector<AP::Extension*>& extensions,	\
+		  vector<unique_ptr<AP::Extension>>& extensions,	\
 		  AP::Collection& pmc); \
 template void \
 fixMapComponents<AP>(AP::Collection&, \
@@ -2729,21 +2728,21 @@ fixMapComponents<AP>(AP::Collection&, \
 template void \
 createMapCollection<AP>(const vector<unique_ptr<Instrument>>& instruments, \
 			const vector<unique_ptr<Exposure>>& exposures, \
-			const vector<AP::Extension*> extensions, \
+			const vector<unique_ptr<AP::Extension>> & extensions, \
 			astrometry::YAMLCollector& inputYAML,	 \
 			AP::Collection& pmc); \
 template void							\
-whoNeedsColor<AP>(vector<AP::Extension*> extensions); \
+whoNeedsColor<AP>(const vector<unique_ptr<AP::Extension>> & extensions); \
 template void \
 readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<unique_ptr<Exposure>>& exposures, \
-		const vector<typename AP::Extension*>& extensions, \
+		const vector<unique_ptr<AP::Extension>>& extensions, \
 		const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections, \
                 bool logging);	      \
 template void \
 readMatches<AP>(img::FTable& table, \
 		typename AP::MCat& matches, \
-		const vector<typename AP::Extension*>& extensions, \
+		const vector<unique_ptr<AP::Extension>>& extensions, \
 		const vector<unique_ptr<AP::ColorExtension>>& colorExtensions, \
 		const ExtensionObjectSet& skipSet, \
 		int minMatches, \
@@ -2756,7 +2755,7 @@ template void  \
 purgeNoisyDetections<AP>(double maxError,  \
 			 AP::MCat& matches,	\
 			 const vector<unique_ptr<Exposure>>& exposures,  \
-			 const vector<AP::Extension*>& extensions);  \
+			 const vector<unique_ptr<AP::Extension>>& extensions);  \
 template void  \
 purgeSparseMatches<AP>(int minMatches,  \
 		       AP::MCat& matches);  \
@@ -2773,12 +2772,12 @@ template map<string, long>  \
 findUnderpopulatedExposures<AP> (long minFitExposure,  \
 				 const AP::MCat& matches,  \
 				 const vector<unique_ptr<Exposure>> & exposures,  \
-				 const vector<AP::Extension*> extensions,  \
+				 const vector<unique_ptr<AP::Extension>> & extensions,  \
 				 const AP::Collection& pmc);  \
 template void  \
 freezeMap<AP>(string mapName,  \
 	      AP::MCat& matches,  \
-	      vector<AP::Extension*>& extensions,  \
+	      vector<unique_ptr<AP::Extension>>& extensions,  \
 	      AP::Collection& pmc);  \
 template void  \
 matchCensus<AP>(const AP::MCat& matches, ostream& os);	\

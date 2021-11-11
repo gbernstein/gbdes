@@ -3,7 +3,7 @@
 #include "MapDegeneracies.h"
 
 template <class S>
-MapDegeneracies<S>::MapDegeneracies(const vector<typename S::Extension*>& extensions_,
+MapDegeneracies<S>::MapDegeneracies(const vector<unique_ptr<typename S::Extension>>& extensions_,
 				    const typename S::Collection& mapCollection,
 				    const set<string>& mapTypes,
 				    bool defaulted):    extensions(extensions_) {
@@ -25,7 +25,7 @@ MapDegeneracies<S>::MapDegeneracies(const vector<typename S::Extension*>& extens
   
   // Find all extensions using a relevant map
   for (int iextn=0; iextn<extensions.size(); iextn++) {
-    auto extptr = extensions[iextn];
+    auto extptr = extensions[iextn].get();
     if (!extptr) continue;
     for (auto dependent : mapCollection.dependencies(extptr->mapName)) {
       if (maps.count(dependent)) {
