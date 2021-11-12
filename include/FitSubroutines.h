@@ -347,6 +347,9 @@ readExposures(const vector<unique_ptr<Instrument>>& instruments,
 	      bool useReferenceExposures,
 	      bool& outputCatalogAlreadyOpen);
 
+vector<astrometry::Wcs*>
+readWCSs(img::FTable& extensionTable);
+
 // Read extensions from the table.
 // colorExtensions will get filled with ColorExtension objects for color data
 // inputYAML is set to produce YAML for all extensions being fit.

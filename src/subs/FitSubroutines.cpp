@@ -696,6 +696,39 @@ fixMapComponents(typename S::Collection& pmc,
   pmc.setFixed(fixTheseMaps);
 }
 
+vector<astrometry::Wcs*>
+readWCSs(img::FTable& extensionTable) {
+  //cerr << inputTables << endl;
+  //FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
+  //cerr << "rW 1" << endl;
+  //img::FTable extensionTable = ft.extract();
+  vector<astrometry::Wcs*> WCSs(extensionTable.nrows());
+
+  for (int i=0; i<extensionTable.nrows(); i++) {
+    // Create the starting WCS for the exposure
+    string s;
+    extensionTable.readCell(s, "WCSIn", i);
+    if (stringstuff::nocaseEqual(s, "_ICRS")) {
+      // Create a Wcs that just takes input as RA and Dec in degrees;
+      astrometry::IdentityMap identity;
+      astrometry::SphericalICRS icrs;
+      WCSs[i] = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT);
+    } else {
+      istringstream iss(s);
+      astrometry::PixelMapCollection pmcTemp;
+      if (!pmcTemp.read(iss)) {
+	cerr << "Could not deserialize starting WCS for extension #" << i << endl;
+	exit(1);
+      }
+      string wcsName = pmcTemp.allWcsNames().front();
+      WCSs[i] = pmcTemp.cloneWcs(wcsName);
+    }
+    
+  }
+  return WCSs;
+}
+
+
 template <class S>
 vector<unique_ptr<typename S::Extension>>
 readExtensions(img::FTable& extensionTable,
