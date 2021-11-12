@@ -56,7 +56,7 @@ struct Astro {
   typedef astrometry::PixelMapCollection Collection;
   typedef astrometry::CoordAlign Align;
   typedef astrometry::MCat MCat;
-  static void fillDetection(Detection* d, const Exposure* e,
+  static void fillDetection(Detection & d, const Exposure* e,
 			    astrometry::SphericalCoords& fieldProjection,
 			    img::FTable& table, long irow,
 			    string xKey, string yKey,
@@ -69,11 +69,11 @@ struct Astro {
 			    double magshift,
 			    const astrometry::PixelMap* startWcs,
 			    bool isTag);
-  static void setColor(Detection* d, double color) {
-    d->color = color;
+  static void setColor(Detection& d, double color) {
+    d.color = color;
   }
-  static double getColor(const Detection* d) {
-    return d->color;
+  static double getColor(const Detection& d) {
+    return d.color;
   }
 
   // saving results wants an array giving the field projection to use for each catalog.
@@ -92,8 +92,8 @@ struct Astro {
   // holding proper motion solution.
   // It will incorporate the basic info in (non-PM) Detection d
   // into a new PMDetection object and return it.
-  static astrometry::PMDetection*
-  makePMDetection(astrometry::Detection* d, const Exposure* e,
+  static unique_ptr<astrometry::PMDetection>
+  makePMDetection(const astrometry::Detection & d, const Exposure* e,
 		img::FTable& table, long irow,
 		string xKey, string yKey,
 		string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
@@ -101,10 +101,10 @@ struct Astro {
 		bool errorColumnIsDouble,
 		const astrometry::PixelMap* startWcs);
 
-  static void handlePMDetection(astrometry::PMDetection* pmd, Detection* d);
+  static void handlePMDetection(unique_ptr<astrometry::PMDetection> pmd, Detection const & d);
   
   static Match*
-  makeNewMatch(Detection* d, bool usePM);
+  makeNewMatch(unique_ptr<Detection> d, bool usePM);
 
   static const int isAstro = 1;
 };
@@ -117,7 +117,7 @@ struct Photo {
   typedef ColorExtensionBase<Match> ColorExtension;
   typedef photometry::PhotoMapCollection Collection;
   typedef photometry::PhotoAlign Align;
-  static void fillDetection(Detection* d, const Exposure* e,
+  static void fillDetection(Detection & d, const Exposure* e,
 			    astrometry::SphericalCoords& fieldProjection,
 			    img::FTable& table, long irow,
 			    string xKey, string yKey,
@@ -130,11 +130,11 @@ struct Photo {
 			    double magshift,
 			    const astrometry::PixelMap* startWcs,
 			    bool isTag);
-  static void setColor(Detection* d, double color) {
-    d->args.color = color;
+  static void setColor(Detection& d, double color) {
+    d.args.color = color;
   }
-  static double getColor(const Detection* d) {
-    return d->args.color;
+  static double getColor(const Detection & d) {
+    return d.args.color;
   }
   static void saveResults(const list<Match*>& matches,
 			  string outCatalog);
@@ -145,8 +145,8 @@ struct Photo {
 			       ostream& os);
 
   // This is a no-op for photometry:
-  static astrometry::PMDetection*
-  makePMDetection(photometry::Detection* d, const Exposure* e,
+  static unique_ptr<astrometry::PMDetection>
+  makePMDetection(photometry::Detection const d, const Exposure* e,
 		  img::FTable& table, long irow,
 		  string xKey, string yKey,
 		  string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
@@ -154,12 +154,12 @@ struct Photo {
 		  bool errorColumnIsDouble,
 		  const astrometry::PixelMap* startWcs) {return nullptr;}
 
-  static void handlePMDetection(astrometry::PMDetection* pmd,
-				Detection* d) {};   // This is a no-op for photo
+  static void handlePMDetection(unique_ptr<astrometry::PMDetection> pmd,
+				Detection const & d) {};   // This is a no-op for photo
 
   static Match*
-  makeNewMatch(Detection* d, bool usePM) {
-    return new Match(d);
+  makeNewMatch(unique_ptr<Detection> d, bool usePM) {
+    return new Match(std::move(d));
   }
   static const int isAstro = 0;
 };

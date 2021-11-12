@@ -16,24 +16,24 @@ Accum<S>::Accum(): sumxw(0.), sumyw(0.), sumw(0.),
 // Specialization for Astro
 template <>
 void 
-Accum<Astro>::add(const typename Astro::Detection* d) {
+Accum<Astro>::add(const typename Astro::Detection& d) {
   ++ntot;
-  if (d->isClipped) {
+  if (d.isClipped) {
     ++nclipped;
     return;
   }
 
   // Get a rough sigma to use in weighting the centroids
-  double sigma = d->getSigma();
+  double sigma = d.getSigma();
   
-  if (sigma <=0. || d->itsMatch->getDOF() <= 0) {
+  if (sigma <=0. || d.itsMatch->getDOF() <= 0) {
     // Residual statistics are meaningless if there
     // is no valid error nor multi-exposure fit
     return;
   }
   double wt = pow(sigma, -2.);
   
-  auto dxy = d->residWorld(); // Returned in RESIDUAL_UNIT
+  auto dxy = d.residWorld(); // Returned in RESIDUAL_UNIT
   double dx = dxy[0];
   double dy = dxy[1];
   sumx += dx;
@@ -43,38 +43,38 @@ Accum<Astro>::add(const typename Astro::Detection* d) {
   sumxx += dx*dx;
   sumyy += dy*dy;
 
-  chisq += d->trueChisq();
-  sumdof += d->expectedTrueChisq;
+  chisq += d.trueChisq();
+  sumdof += d.expectedTrueChisq;
   ++n;
 }
 
 // Specialization for Photo
 template<>
 void 
-Accum<Photo>::add(const Photo::Detection* d) {
+Accum<Photo>::add(const Photo::Detection & d) {
   ++ntot;
-  if (d->isClipped) {
+  if (d.isClipped) {
     ++nclipped;
     return;
   }
 
   // Get a rough sigma to use in weighting the centroids
-  double sigma = d->getSigma();
+  double sigma = d.getSigma();
   
-  if (sigma <=0. || d->itsMatch->getDOF() <= 0) {
+  if (sigma <=0. || d.itsMatch->getDOF() <= 0) {
     // Residual statistics are meaningless if there
     // is no valid error nor multi-exposure fit
     return;
   }
   double wt = pow(sigma, -2.);
   
-  double dm = d->residMag();
+  double dm = d.residMag();
   sumx += dm;
   sumxx += dm * dm;
   sumw += wt;
 
-  chisq += d->trueChisq();
-  sumdof += d->expectedTrueChisq;
+  chisq += d.trueChisq();
+  sumdof += d.expectedTrueChisq;
   ++n;
 }
 

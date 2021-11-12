@@ -114,11 +114,11 @@ namespace astrometry {
     // using full fitting covariance but *before* any weighting factor is applied.
     virtual double trueChisq() const;
   };
-    
+
   class Match {
     // Class for a set of matched Detections, with no PM or parallax freedom
   protected:
-    list<Detection*> elist;
+    list<unique_ptr<Detection>> elist;
     bool isReserved;	// Do not contribute to re-fitting if true
 
     // These flags will let a Match keep track of its internal state and
@@ -152,20 +152,17 @@ namespace astrometry {
 
   public:
     EIGEN_NEW
-    Match(Detection* e);
+    Match(unique_ptr<Detection> e);
 
     // Add and remove automatically update itsMatch of the Detection
-    void add(Detection* e);
-    void remove(Detection* e);
-    // Remove a Detection from the match given an iterator to it,
-    // optionally deleting the Detection:
-    list<Detection*>::iterator erase(list<Detection*>::iterator i,
-				     bool deleteDetection=false);
-    // Mark all members of match as unmatched, or optionally delete them,
-    // then empty the list:
-    void clear(bool deleteDetections=false);
+    void add(unique_ptr<Detection> e);
+    void remove(Detection const & e);
+    // Remove a Detection from the match given an iterator to it.
+    list<unique_ptr<Detection>>::iterator erase(list<unique_ptr<Detection>>::iterator i);
+    // Delete all members of match as unmatched.
+    void clear();
     // True if a Detection will contribute to chisq:
-    static bool isFit(const Detection* e);
+    static bool isFit(const Detection & e);
     // Number of points that would have nonzero weight in next fit
     int fitSize() const {prepare(); return nFit;}
     int getDOF() const {prepare(); return dof;}
@@ -228,8 +225,8 @@ namespace astrometry {
     virtual double chisq(int& dofAccum, double& maxDeviateSq,
 			 bool dump=false) const;
 
-    typedef list<Detection*>::iterator iterator;
-    typedef list<Detection*>::const_iterator const_iterator;
+    typedef list<unique_ptr<Detection>>::iterator iterator;
+    typedef list<unique_ptr<Detection>>::const_iterator const_iterator;
     iterator begin() {return elist.begin();}
     iterator end() {return elist.end();}
     const_iterator begin() const {return elist.begin();}
@@ -243,7 +240,7 @@ namespace astrometry {
     // Class for a set of matched Detections, with free PM and parallax
   public:
     EIGEN_NEW
-    PMMatch(Detection* e);
+    PMMatch(unique_ptr<Detection> e);
 
     // Set the prior applied to all PMMatches - given in the I/O units
     static void setPrior(double pmPrior, double parallaxPrior);
@@ -277,7 +274,7 @@ namespace astrometry {
     
     // Get predicted position (and inverse covariance) for a Detection.
     // The argument is needed only if there is full PM solution.
-    virtual Vector2 predict(const Detection* d = nullptr) const;
+    virtual Vector2 predict(const Detection * d = nullptr) const;
     virtual Matrix22 predictFisher(const Detection* d = nullptr)  const;
 
   protected:

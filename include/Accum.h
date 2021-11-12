@@ -26,7 +26,7 @@ public:
   // Add to statistics this detection, with Match mean having
   // value of (xoff, yoff) with inverse variance wtot.
   // dof is fraction of a degree of freedom to assign for each xoff, yoff.
-  void add(const typename S::Detection* d);
+  void add(const typename S::Detection & d);
   double rms() const;
   double reducedChisq() const;
   string summary() const;

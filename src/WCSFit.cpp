@@ -798,7 +798,7 @@ main(int argc, char *argv[])
     PROGRESS(2,Cleaning up);
     // Get rid of matches:
     for (auto im = matches.begin(); im!=matches.end(); ) {
-      (*im)->clear(true);  // deletes detections
+      (*im)->clear();  // deletes detections
       // And get rid of match itself.
       im = matches.erase(im);
     }

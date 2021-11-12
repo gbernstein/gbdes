@@ -42,22 +42,22 @@ Detection::trueChisq() const {
 }
 
 bool
-Match::isFit(const Detection* e) {
+Match::isFit(const Detection & e) {
   // A Detection will contribute to fit if it has nonzero weight and is not clipped.
-  return e->fitWeight>0.;
+  return e.fitWeight>0.;
 }
 
-Match::Match(Detection *e): elist(), nFit(0), dof(0),
+Match::Match(unique_ptr<Detection> e): elist(), nFit(0), dof(0),
 			    isReserved(false), isPrepared(false),
 			    isMappedFit(false), isMappedAll(false),
 			    isSolved(false), trivialWeights(true) {
-  add(e);
+  add(std::move(e));
 }
 
 void
-Match::add(Detection *e) {
+Match::add(unique_ptr<Detection> e) {
   isPrepared = false;
-  elist.push_back(e);
+  elist.push_back(std::move(e));
   e->itsMatch = this;
   e->isClipped = false;
   isMappedFit = false;
@@ -66,31 +66,22 @@ Match::add(Detection *e) {
 }
 
 void
-Match::remove(Detection* e) {
+Match::remove(const Detection & e) {
   isPrepared = false;
   isSolved = false;
-  elist.remove(e);  
-  e->itsMatch = nullptr;
+  elist.remove_if([&e](unique_ptr<Detection> const & d) { return &e == d.get(); });
 }
 
-list<Detection*>::iterator 
-Match::erase(list<Detection*>::iterator i,
-	     bool deleteDetection) {
+list<unique_ptr<Detection>>::iterator
+Match::erase(list<unique_ptr<Detection>>::iterator i) {
   isPrepared = false;
   isSolved = false;
-  if (deleteDetection) delete *i;
   return elist.erase(i);
 }
 
 void
-Match::clear(bool deleteDetections) {
+Match::clear() {
   isPrepared = false;
-  for (auto i : elist) {
-    if (deleteDetections)
-      delete i;
-    else
-      i->itsMatch = nullptr;
-  }
   elist.clear();
   nFit = 0;
   isMappedFit = true;
@@ -101,7 +92,7 @@ Match::clear(bool deleteDetections) {
 void
 Match::clipAll() {
   isPrepared = false;
-  for (auto i : elist)
+  for (auto const & i : elist)
     if (i)
       i->clip();
   nFit = 0;
@@ -119,8 +110,8 @@ Match::prepare() const {
   dof = 0;
   nFit = 0;
   trivialWeights = true;
-  for (auto i : elist) {
-    if (!isFit(i)) continue;
+  for (auto const & i : elist) {
+    if (!isFit(*i)) continue;
     dof += 1;
     nFit++;
     if (i->fitWeight != 1.) {
@@ -135,7 +126,7 @@ Match::prepare() const {
 
   if (dof<0) {
     // Degenerate fit, will never yield a solution of interest
-    for (auto i : elist)
+    for (auto const & i : elist)
       i->expectedTrueChisq = 0.;
     meanF = 0.;
     trueMeanVar = 0.;
@@ -152,8 +143,8 @@ Match::prepare() const {
     // Altered expectation for cov because of weighting
     // From notes of 28 Apr 2019,
     double tmp = 0.;
-    for (auto i : elist) {
-      if (!isFit(i)) continue;
+    for (auto const & i : elist) {
+      if (!isFit(*i)) continue;
       tmp += i->invVar * (i->fitWeight*i->fitWeight);
     }
     trueMeanVar = invF * tmp * invF;
@@ -162,7 +153,7 @@ Match::prepare() const {
   // Now get expected chisq for each detection, accounting for weighting
   // From notes of 28 Apr 2019,
   // where invF is the inverse of centroidF
-  for (auto i : elist) {
+  for (auto const & i : elist) {
     if (i->invVar<=0.) {
       // No error on this detection so no chisq
       i->expectedTrueChisq = 0.;
@@ -189,8 +180,8 @@ Match::remap(bool doAll) const {
   // Or if Fit are current and we only need them
   if (!doAll && isMappedFit) return;
   
-  for (auto i : elist) {
-    if (isFit(i)) {
+  for (auto const & i : elist) {
+    if (isFit(*i)) {
       if (!isMappedFit) {
 	i->magOut = i->map->forward(i->magIn, i->args);
 	isSolved = false;  // Solution has changed
@@ -218,8 +209,8 @@ Match::solve() const {
     return;
   }
   double sumwm = 0.;
-  for (auto i : elist) {
-    if (!isFit(i)) continue;
+  for (auto const & i : elist) {
+    if (!isFit(*i)) continue;
     sumwm += i->invVar * i->magOut * i->fitWeight;
   }
   meanMag = meanF * sumwm;
@@ -252,7 +243,7 @@ Match::accumulateChisq(double& chisq,
   vector<DVector*> di(elist.size());
   int ipt=0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
-    if (!isFit(*i)) continue;
+    if (!isFit(**i)) continue;
     int npi = (*i)->map->nParams();
     if (npi>0) {
       di[ipt] = new DVector(npi);
@@ -277,7 +268,7 @@ Match::accumulateChisq(double& chisq,
   map<int, iRange> mapsTouched;
   ipt = 0;
   for (auto i = elist.begin(); i!=elist.end(); ++i, ++ipt) {
-    if (!isFit(*i)) continue;
+    if (!isFit(**i)) continue;
     invVarW = (*i)->invVar * (*i)->fitWeight;
     resid = (*i)->magOut - meanMag;
     chisq += resid*resid*invVarW;
@@ -367,14 +358,14 @@ Match::sigmaClip(double sigThresh,
 
   // Only clip the worst outlier at most
   double maxSq=0.;
-  Detection* worst=nullptr;
+  iterator worst = elist.end();
 
-  for (auto i : elist) {
-    if (!isFit(i)) continue;
-    double resid = i->magOut - meanMag;
-    double devSq = resid*resid*i->invVar;
+  for (auto i = elist.begin(); i != elist.end(); ++i) {
+    if (!isFit(**i)) continue;
+    double resid = (*i)->magOut - meanMag;
+    double devSq = resid*resid*(*i)->invVar;
     // Calculate deviation relative to expected chisq
-    devSq /= i->expectedTrueChisq;
+    devSq /= (*i)->expectedTrueChisq;
     
     if ( devSq > sigThresh*sigThresh && devSq > maxSq) {
       // Mark this as point to clip
@@ -383,7 +374,7 @@ Match::sigmaClip(double sigThresh,
     }
   }
 
-  if (worst) {
+  if (worst != elist.end()) {
 #ifdef DEBUG
     cerr << "clipped " << worst->catalogNumber
 	 << " / " << worst->objectNumber 
@@ -393,10 +384,9 @@ Match::sigmaClip(double sigThresh,
 	 << endl;
 #endif
       if (deleteDetection) {
-	elist.remove(worst);
-	delete worst;
+	elist.erase(worst);
       }	else {
-	worst->isClipped = true;
+	(*worst)->isClipped = true;
       }
       isPrepared = false;
       isSolved = false;  // Note that magOut's are still valid
@@ -412,8 +402,8 @@ Match::chisq(int& dofAccum, double& maxDeviateSq) const {
   solve();
   double chi=0.;
   if (dof<=0) return chi;
-  for (auto i : elist) {
-    if (!isFit(i)) continue;
+  for (auto const & i : elist) {
+    if (!isFit(*i)) continue;
     double resid = i->magOut - meanMag;
     double cc = resid * resid * i->invVar;
     maxDeviateSq = MAX(cc/i->expectedTrueChisq, maxDeviateSq);
@@ -968,7 +958,7 @@ PhotoAlign::count(long int& mcount, long int& dcount,
         i->getDOF() < 0 || i->fitSize() < minMatches) continue;
 
     int ddcount=0;
-    for(auto d : *i) {
+    for(auto const & d : *i) {
       if(!(d->isClipped) && d->catalogNumber==catalog)
 	ddcount++;
     }

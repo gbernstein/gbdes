@@ -55,7 +55,7 @@ namespace photometry {
     double residMag() const;  // Get mag error after fit
     void clip() {isClipped=true; fitWeight=0.;}
   };
-  
+
   /*** Old quantities ???
     double sigma;	// Uncertainty, in mag
     // weight, nominally inverse sigma squared of output mag
@@ -65,7 +65,7 @@ namespace photometry {
   ***/
   class Match {
   private:
-    list<Detection*> elist;
+    list<unique_ptr<Detection>> elist;
     bool isReserved;	// Do not contribute to re-fitting if true
 
     /* State maintenance */
@@ -96,20 +96,17 @@ namespace photometry {
     // Other state-changing calls are public.
     
   public:
-    Match(Detection* e);
+    explicit Match(unique_ptr<Detection> e);
     // Add and remove automatically update itsMatch of the Detection
-    void add(Detection* e);
-    void remove(Detection* e);
-    // Mark all members of match as unmatched, or optionally delete them,
-    // then empty the list:
-    list<Detection*>::iterator erase(list<Detection*>::iterator i,
-				     bool deleteDetection=false);
-    // Mark all members of match as unmatched, or optionally delete them,
-    // then empty the list:
-    void clear(bool deleteDetections=false);
+    void add(unique_ptr<Detection> e);
+    void remove(const Detection & e);
+    // Remove a Detection from the match given an iterator to it.
+    list<unique_ptr<Detection>>::iterator erase(list<unique_ptr<Detection>>::iterator i);
+    // Delete all members of match.
+    void clear();
 
     // True if a Detection will contribute to chisq:
-    static bool isFit(const Detection* e);
+    static bool isFit(const Detection & e);
 
     // Is this object to be reserved from re-fitting?
     bool getReserved() const {return isReserved;}
@@ -158,8 +155,8 @@ namespace photometry {
     // 2 arguments are updated with info from this match.
     double chisq(int& dofAccum, double& maxDeviateSq) const;
 
-    typedef list<Detection*>::iterator iterator;
-    typedef list<Detection*>::const_iterator const_iterator;
+    typedef list<unique_ptr<Detection>>::iterator iterator;
+    typedef list<unique_ptr<Detection>>::const_iterator const_iterator;
     iterator begin() {return elist.begin();}
     iterator end() {return elist.end();}
     const_iterator begin() const {return elist.begin();}
