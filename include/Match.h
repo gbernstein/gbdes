@@ -53,7 +53,7 @@ namespace astrometry {
     double xw;
     double yw;
     // For proper motion and parallax:
-    PMProjector* pmProj;
+    unique_ptr<PMProjector> pmProj;
     const PMProjector& getProjector() const {return *pmProj;}
     
     // Inverse covariance, in world coords, for fitting.
@@ -73,7 +73,10 @@ namespace astrometry {
     Detection(): color(astrometry::NODATA), pmProj(nullptr),
 		 fitWeight(1.), expectedTrueChisq(0.),
 		 isClipped(false), itsMatch(nullptr), map(nullptr)  {}
-    virtual ~Detection() {if (pmProj) delete pmProj;}
+
+    Detection(Detection &&) = default;
+
+    virtual ~Detection() = default;
 
     // Build the projection matrix for this detection.
     void buildProjector(double pmTDB,	// Time in years from PM reference epoch

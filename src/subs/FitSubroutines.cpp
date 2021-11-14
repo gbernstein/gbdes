@@ -1337,7 +1337,7 @@ Astro::handlePMDetection(unique_ptr<astrometry::PMDetection> pmd, Astro::Detecti
   } else {
     // PMDetection is being used in non-PM Match.  Slice it down
     // to pure Detection info, replace old detection with it.
-    unique_ptr<Astro::Detection> dd(new Astro::Detection(*pmd));
+    unique_ptr<Astro::Detection> dd(new Astro::Detection(std::move(*pmd)));
     mm->remove(d);
     mm->add(std::move(dd));
   }

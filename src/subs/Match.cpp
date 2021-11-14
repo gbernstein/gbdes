@@ -44,7 +44,7 @@ Detection::buildProjector(double pmTDB,	       // Time in years from PM referenc
   if (pmProj) {
     pmProj->setZero();
   } else {
-    pmProj = new PMProjector(0.);
+    pmProj.reset(new PMProjector(0.));
   }
   PMProjector& m = *pmProj;  // Just making a shorter name
   m(0,X0) = 1.;
