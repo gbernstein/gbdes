@@ -265,15 +265,59 @@ inventoryFitsTables(string inputTables,
 		    vector<int>& instrumentHDUs,
 		    vector<int>& catalogHDUs);
 
-// Read the Fields table from input, copy to output, extract needed info
-// If a usable default is given, unassigned field epochs are set to default.
-void
-readFields(string inputTables,
-	   string outCatalog,
-	   NameIndex& fieldNames,
-	   vector<std::unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
-	   vector<double>& fieldEpochs,
-	   double defaultEpoch=0.);
+class Fields {
+public:
+
+	// Construct directly from vectors of values.
+	//
+	// This does _not_ take care of setting default epochs, like `read` does.
+	//
+	// Vectors are passed by value because we generally expect them to be
+	// constructed on-the-fly from Python lists or moved from locals in `read`,
+	// so by being careful about using moves we can avoid any copies (not that
+	// this really matters).
+	//
+	// Should be exposed to Python.
+	Fields(
+		vector<string> names,
+		vector<double> ra,
+		vector<double> dec,
+		vector<double> epochs
+	);
+
+	// Default constructor.
+	//
+	// This is currently used only by FitClass, and should be removed if that
+	// class is; it's better for this class to guarantee that it has been
+	// initialized with meaningful values whenever an instance exists.
+	Fields()  = default;
+
+	// Read the Fields table from input, copy to output, extract needed info
+	// If a usable default is given, unassigned field epochs are set to default.
+	//
+	// Need not be exposed to Python but may be if useful for debugging.
+	static Fields read(string inputTables, string outCatalog, double defaultEpoch=0.);
+
+	// Access to names.
+	//
+	// Should not be exposed to Python.
+	NameIndex const & names() const { return _names; }
+
+	// Access to projections.
+	//
+	// Should not be exposed to Python.
+	vector<unique_ptr<astrometry::SphericalCoords>> const & projections() const { return _projections; }
+
+	// Access to epochs.
+	//
+	// Should not be exposed to Python.
+	vector<double> const & epochs() const { return _epochs; }
+
+private:
+	NameIndex _names;
+	vector<unique_ptr<astrometry::SphericalCoords>> _projections;
+	vector<double> _epochs;
+};
 
 // Read in all the instrument extensions and their device info from input
 // FITS file, save useful ones and write to output FITS file.

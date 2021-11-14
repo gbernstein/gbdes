@@ -282,13 +282,7 @@ main(int argc, char *argv[])
 
     // Read the fields table & propagate the info,
     // and discard info as it is not used here.
-    {
-      NameIndex fieldNames;
-      vector<std::unique_ptr<astrometry::SphericalCoords>> fieldProjections;
-      vector<double> fieldEpochs;
-      readFields(inputTables, outputTables, fieldNames, fieldProjections,
-		 fieldEpochs);
-    }
+    Fields::read(inputTables, outputTables);
 
     // We've already opened (and overwritten) the output file:
     bool outputCatalogAlreadyOpen = true;

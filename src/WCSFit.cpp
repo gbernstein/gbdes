@@ -242,14 +242,9 @@ main(int argc, char *argv[])
     // white space replaced with single underscore - this keeps PixelMap parsing functional.
 
     PROGRESS(1,Reading fields);
-      
+
     // All we care about fields are names and orientations:
-    NameIndex fieldNames;
-    vector<unique_ptr<SphericalCoords>> fieldProjections;
-    vector<double> fieldEpochs;
-    // Read the Fields table from input, copy to a new output FITS file, extract needed info
-    readFields(inputTables, outCatalog, fieldNames, fieldProjections,
-	       fieldEpochs, pmEpoch);
+    Fields fields = Fields::read(inputTables, outCatalog, pmEpoch);
 
     PROGRESS(1,Reading instruments);
 
@@ -278,7 +273,7 @@ main(int argc, char *argv[])
     // Read in the table of exposures
     vector<unique_ptr<Exposure>> exposures =
       readExposures(instruments,
-		    fieldEpochs,
+		    fields.epochs(),
 		    exposureColorPriorities,
 		    useColorList,
 		    inputTables,
@@ -341,7 +336,7 @@ main(int argc, char *argv[])
       const Exposure& expo = *exposures[extnptr->exposure];
       if ( expo.instrument >= 0) continue;
       int ifield = expo.field;
-      extnptr->wcsName = fieldNames.nameOf(ifield); // ??? mapName instead???
+      extnptr->wcsName = fields.names().nameOf(ifield); // ??? mapName instead???
     }
 
     
@@ -395,8 +390,8 @@ main(int argc, char *argv[])
     PROGRESS(2,Checking for field degeneracy);
 
     {
-      vector<bool> fieldHasFree(fieldNames.size(), false);
-      vector<bool> fieldHasFixed(fieldNames.size(), false);
+      vector<bool> fieldHasFree(fields.names().size(), false);
+      vector<bool> fieldHasFixed(fields.names().size(), false);
       for (auto const & extnptr : extensions) {
 	if (!extnptr) continue; // Not in use
 	int field = exposures[extnptr->exposure]->field;
@@ -409,7 +404,7 @@ main(int argc, char *argv[])
       for (int i=0; i<fieldHasFree.size(); ++i) {
 	if (fieldHasFree[i] && !fieldHasFixed[i]) {
 	  cerr << "ERROR: No data in field "
-	       << fieldNames.nameOf(i)
+	       << fields.names().nameOf(i)
 	       << " have fixed maps to break shift degeneracy"
 	       << endl;
 	  done = true;
@@ -477,7 +472,7 @@ main(int argc, char *argv[])
     // Add WCS for every extension, and reproject into field coordinates
     PROGRESS(2,Defining all WCSs);
 
-    setupWCS(fieldProjections, instruments, exposures, extensions, mapCollection);
+    setupWCS(fields.projections(), instruments, exposures, extensions, mapCollection);
 
     /////////////////////////////////////////////////////
     //  Initialize map components that were created with default
@@ -575,7 +570,7 @@ main(int argc, char *argv[])
       if (!extnptr) continue;
       if (extnptr->exposure < 0) continue;
       int ifield = exposures[extnptr->exposure]->field;
-      extnptr->startWcs->reprojectTo(*fieldProjections[ifield]);
+      extnptr->startWcs->reprojectTo(*fields.projections()[ifield]);
     }
 
     // Start by reading all matched catalogs, creating Detection and Match arrays, and 
@@ -609,7 +604,7 @@ main(int argc, char *argv[])
     // Now loop over all original catalog bintables, reading the desired rows
     // and collecting needed information into the Detection structures
     PROGRESS(1,Reading catalogs);
-    readObjects<Astro>(extensionTable, exposures, extensions,fieldProjections);
+    readObjects<Astro>(extensionTable, exposures, extensions, fields.projections());
 
     // Now loop again over all catalogs being used to supply colors,
     // and insert colors into all the Detections they match
@@ -780,7 +775,7 @@ main(int argc, char *argv[])
 	if (iExposure<0 || !exposures[iExposure])
 	  continue;
 	int iField = exposures[iExposure]->field;
-	extensionProjections[i] = fieldProjections[iField].get();
+	extensionProjections[i] = fields.projections()[iField].get();
       }
       PROGRESS(2, extensionProjections completed);
       Astro::saveResults(matches, outCatalog, starCatalog, extensionProjections);

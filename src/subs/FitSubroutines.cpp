@@ -300,14 +300,28 @@ inventoryFitsTables(string inputTables,
   }
 }
 
+Fields::Fields(
+  vector<string> names,
+  vector<double> ra,
+  vector<double> dec,
+  vector<double> epochs
+) : _names(),
+    _projections(),
+    _epochs(std::move(epochs))
+{
+    // TODO: check that sizes are consistent, raise if they are not.
+    _projections.reserve(names.size());
+    for (std::size_t i = 0; i != names.size(); ++i) {
+        spaceReplace(names[i]);
+        _names.append(std::move(names[i]));
+        astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*WCS_UNIT, dec[i]*WCS_UNIT));
+        _projections.emplace_back( new astrometry::Gnomonic(orient));
+    }
+}
+
+
 // Read info from fields table, write to a new output file
-void
-readFields(string inputTables,
-	   string outCatalog,
-	   NameIndex& fieldNames,
-	   vector<std::unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
-	   vector<double>& fieldEpochs,
-	   double defaultEpoch) {
+Fields Fields::read(string inputTables, string outCatalog, double defaultEpoch) {
   const double MINIMUM_EPOCH=1900.;
   
   FITS::FitsTable in(inputTables, FITS::ReadOnly, "Fields");
@@ -322,32 +336,29 @@ readFields(string inputTables,
   ft.readCells(name, "Name");
   ft.readCells(ra, "RA");
   ft.readCells(dec, "Dec");
-  for (int i=0; i<name.size(); i++) {
-    spaceReplace(name[i]);
-    fieldNames.append(name[i]);
-    astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*WCS_UNIT, dec[i]*WCS_UNIT));
-    fieldProjections.emplace_back( new astrometry::Gnomonic(orient));
-  }
+  vector<double> epochs;
   if (ft.hasColumn("PM_EPOCH")) {
-    ft.readCells(fieldEpochs, "PM_EPOCH");
+    cerr << "rf 7" << endl;
+    ft.readCells(epochs, "PM_EPOCH");
     // Set reference epochs for each field to defaultEpoch if
     // they have a signal value like 0 or -1 
-    for (int i=0; i<fieldEpochs.size(); i++) {
-      if (fieldEpochs[i] < MINIMUM_EPOCH && defaultEpoch>MINIMUM_EPOCH) {
-	// Update to reference epoch if it's sensible
-	fieldEpochs[i] = defaultEpoch;
-	ft.writeCell(defaultEpoch, "PM_EPOCH", i);
+    for (int i=0; i<epochs.size(); i++) {
+      if (epochs[i] < MINIMUM_EPOCH && defaultEpoch>MINIMUM_EPOCH) {
+	      // Update to reference epoch if it's sensible
+	      epochs[i] = defaultEpoch;
+	      ft.writeCell(defaultEpoch, "PM_EPOCH", i);
       }
     }
   } else {
     // Assign default epoch to every field
-    fieldEpochs.clear();
-    fieldEpochs.resize(name.size(), defaultEpoch);
+    epochs.clear();
+    epochs.resize(name.size(), defaultEpoch);
     // And save back to output if this is a sensible default
     if (defaultEpoch > MINIMUM_EPOCH) {
-      ft.addColumn(fieldEpochs, "PM_EPOCH");
+      ft.addColumn(epochs, "PM_EPOCH");
     }
   }
+  return Fields(std::move(name), std::move(ra), std::move(dec), std::move(epochs));
 }
 
 // Read in all the instrument extensions and their device info from input
