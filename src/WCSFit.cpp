@@ -352,7 +352,7 @@ main(int argc, char *argv[])
     PROGRESS(1,Building initial PixelMapCollection);
 
     // Now build a preliminary set of pixel maps from the configured YAML files
-    PixelMapCollection* pmcInit = new PixelMapCollection;
+    unique_ptr<PixelMapCollection> pmcInit(new PixelMapCollection);
     pmcInit->learnMap(IdentityMap(), false, false);
     {
       istringstream iss(inputYAML.dump());
@@ -461,8 +461,7 @@ main(int argc, char *argv[])
     PROGRESS(1,Making final mapCollection);
 
     // Do not need the preliminary PMC any more.
-    delete pmcInit;
-    pmcInit = 0;
+    pmcInit.reset();
     // And clean out any old maps stored in the YAMLCollector
     inputYAML.clearMaps();
     
