@@ -422,7 +422,7 @@ main(int argc, char *argv[])
     //////////////////////////////////////////////////////////
 
     // List of all Matches - they will hold pointers to all Detections too.
-    list<Match*> matches;    
+    list<unique_ptr<Match>> matches;
 
     // Figure out which extensions' maps require a color entry to function
     whoNeedsColor<Photo>(extensions);
@@ -689,19 +689,6 @@ main(int argc, char *argv[])
     
     // Report summary of residuals to stdout
     Photo::reportStatistics(matches, exposures, extensions, cout);
-
-    //////////////////////////////////////
-    // Cleanup:
-    //////////////////////////////////////
-
-    PROGRESS(2,Cleaning up);
-    
-    // Get rid of matches:
-    for (auto im = matches.begin(); im!=matches.end(); ) {
-      (*im)->clear();  // deletes detections
-      // And get rid of match itself.
-      im = matches.erase(im);
-    }
 
   } catch (std::runtime_error& m) {
     quit(m,1);

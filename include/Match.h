@@ -234,7 +234,7 @@ namespace astrometry {
     int size() const {return elist.size();}
   };
 
-  typedef list<Match*> MCat;
+  typedef list<unique_ptr<Match>> MCat;
   
   class PMMatch: public Match {
     // Class for a set of matched Detections, with free PM and parallax

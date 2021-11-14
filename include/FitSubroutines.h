@@ -83,7 +83,7 @@ struct Astro {
 			  vector<astrometry::SphericalCoords*> catalogProjections);
 
 
-  static void reportStatistics(const list<typename Astro::Match*>& matches,
+  static void reportStatistics(const astrometry::MCat& matches,
 			       const vector<unique_ptr<Exposure>>& exposures,
 			       const vector<unique_ptr<Astro::Extension>>& extensions,
 			       ostream& os);
@@ -103,7 +103,7 @@ struct Astro {
 
   static void handlePMDetection(unique_ptr<astrometry::PMDetection> pmd, Detection const & d);
   
-  static Match*
+  static unique_ptr<Match>
   makeNewMatch(unique_ptr<Detection> d, bool usePM);
 
   static const int isAstro = 1;
@@ -111,7 +111,7 @@ struct Astro {
 struct Photo {
   typedef photometry::Detection Detection;
   typedef photometry::Match Match;
-  typedef list<Match*> MCat;
+  typedef list<unique_ptr<Match>> MCat;
   typedef photometry::SubMap SubMap;
   typedef ExtensionBase<SubMap, Detection> Extension;
   typedef ColorExtensionBase<Match> ColorExtension;
@@ -136,10 +136,10 @@ struct Photo {
   static double getColor(const Detection & d) {
     return d.args.color;
   }
-  static void saveResults(const list<Match*>& matches,
+  static void saveResults(const MCat& matches,
 			  string outCatalog);
 
-  static void reportStatistics(const list<typename Photo::Match*>& matches,
+  static void reportStatistics(const MCat& matches,
 			       const vector<unique_ptr<Exposure>>& exposures,
 			       const vector<unique_ptr<Photo::Extension>>& extensions,
 			       ostream& os);
@@ -157,9 +157,9 @@ struct Photo {
   static void handlePMDetection(unique_ptr<astrometry::PMDetection> pmd,
 				Detection const & d) {};   // This is a no-op for photo
 
-  static Match*
+  static unique_ptr<Match>
   makeNewMatch(unique_ptr<Detection> d, bool usePM) {
-    return new Match(std::move(d));
+    return unique_ptr<Match>(new Match(std::move(d)));
   }
   static const int isAstro = 0;
 };

@@ -122,7 +122,7 @@ fitDefaulted(PixelMapCollection& pmc,
       dref->map = identityMap;
       dfit->map = map;
       
-      matches.push_back(new Match(std::move(dfit)));
+      matches.emplace_back(new Match(std::move(dfit)));
       matches.back()->add(std::move(dref));
     }
 
@@ -139,13 +139,6 @@ fitDefaulted(PixelMapCollection& pmc,
     pmc.copyParamsFrom(*pm);
     delete pm;
   }
-
-  // Delete the Matches and Detections
-  for (auto m : matches) {
-    m->clear();  // Flush the detections
-    // And get rid of match itself.
-    delete m;
-  } 
 
   return;
 }

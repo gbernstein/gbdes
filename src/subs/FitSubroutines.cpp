@@ -1083,7 +1083,7 @@ readMatches(img::FTable& table,
 
       if (nValid >= minMatches) {
         // Make a match from the valid entries, and note need to get data for the detections and color
-        typename S::Match* m=nullptr;
+        unique_ptr<typename S::Match> m;
         for (int j=0; j<matchExtns.size(); j++) {
           if (matchExtns[j]<0) continue;  // Skip detections starved of their color
           unique_ptr<typename S::Detection> d(new typename S::Detection);
@@ -1099,14 +1099,14 @@ readMatches(img::FTable& table,
             m = S::makeNewMatch(std::move(d), usePM);
           }
         }
-        matches.push_back(m);
+        matches.push_back(std::move(m));
 
         if (matchColorExtension >=0) {
           // Tell the color catalog that it needs to look this guy up:
           Assert(colorExtensions[matchColorExtension]);
           colorExtensions[matchColorExtension]->keepers.insert
             (std::pair<long,typename S::Match*>(matchColorObject,
-                  matches.back()));
+                  matches.back().get()));
         }
       }
       // Clear out previous Match:
@@ -1343,14 +1343,14 @@ Astro::handlePMDetection(unique_ptr<astrometry::PMDetection> pmd, Astro::Detecti
   }
 }
  
-astrometry::Match*
+unique_ptr<astrometry::Match>
 Astro::makeNewMatch(unique_ptr<Astro::Detection> d, bool usePM) {
   if (usePM) {
     // Make a PMMatch
-    return new astrometry::PMMatch(std::move(d));
+    return unique_ptr<Match>(new astrometry::PMMatch(std::move(d)));
   } else {
     // Plain old Match
-    return new Match(std::move(d));
+    return unique_ptr<Match>(new Match(std::move(d)));
   }
 }
 
@@ -1703,7 +1703,7 @@ purgeNoisyDetections(double maxError,
 		     typename S::MCat& matches,
 		     const vector<unique_ptr<Exposure>>& exposures,
 		     const vector<unique_ptr<typename S::Extension>>& extensions) {
-  for (auto mptr : matches) {
+  for (auto const & mptr : matches) {
     auto j=mptr->begin(); 
     int k=0;
     while (j != mptr->end()) {
@@ -1772,7 +1772,7 @@ reserveMatches(typename S::MCat& matches,
   ran::UniformDeviate<double> u;
   if (randomNumberSeed >0) u.seed(randomNumberSeed);
 
-  for (auto mptr : matches)
+  for (auto const & mptr : matches)
     mptr->setReserved( u < reserveFraction );
 }
 
@@ -1788,7 +1788,7 @@ findUnderpopulatedExposures(long minFitExposure,
 			    const typename S::Collection& pmc) {
   // First count up useful Detections in each extension:
   vector<long> extnCounts(extensions.size(), 0);
-  for (auto mptr : matches)
+  for (auto const & mptr : matches)
     if (!mptr->getReserved())
       for (auto const & dptr : *mptr)
 	if (!dptr->isClipped)
@@ -1837,7 +1837,7 @@ freezeMap(string mapName,
 
   // And now delete all of the affected Detections
   if (badExtensions.empty()) return;  // nothing to do
-  for (auto mptr : matches) {
+  for (auto const & mptr : matches) {
     bool recount = false;
     for (auto dptr = mptr->begin(); dptr!=mptr->end(); ++dptr)
       if (badExtensions.count((*dptr)->catalogNumber)>0) {
@@ -1864,7 +1864,7 @@ matchCensus(const typename S::MCat& matches, ostream& os) {
   int dof = 0;
   double chi = 0.;
   double maxdev = 0.;
-  for (auto mptr : matches) {
+  for (auto const & mptr : matches) {
     dcount += mptr->fitSize();
     chi += mptr->chisq(dof, maxdev);
   }
@@ -1913,7 +1913,7 @@ clipReserved(typename S::Align& ca,
 
 // Save photometric fitting results (residual) to output FITS table.
 void
-Photo::saveResults(const list<Match*>& matches,
+Photo::saveResults(const MCat& matches,
 		   string outCatalog) {
   // Open the output bintable
   string tablename = "PhotoOut";
@@ -1923,8 +1923,8 @@ Photo::saveResults(const list<Match*>& matches,
   // Make a vector of match pointers so we can use OpenMP
   vector<Match*> vmatches;
   vmatches.reserve(matches.size());
-  for (auto m : matches)
-    vmatches.push_back(m);
+  for (auto const & m : matches)
+    vmatches.push_back(m.get());
   
   {
     // Create vectors to help type each new column
@@ -2064,8 +2064,8 @@ Astro::saveResults(const astrometry::MCat& matches,
   // Make a vector of match pointers so we can use OpenMP
   vector<Match*> vmatches;
   vmatches.reserve(matches.size());
-  for (auto m : matches)
-    vmatches.push_back(m);
+  for (auto const & m : matches)
+    vmatches.push_back(m.get());
 
   // Make a global of PMDetections to output
   vector<const PMDetection*> pmdets;
@@ -2518,7 +2518,7 @@ Astro::saveResults(const astrometry::MCat& matches,
 
 
 void
-Photo::reportStatistics(const list<typename Photo::Match*>& matches,
+Photo::reportStatistics(const MCat& matches,
 			const vector<unique_ptr<Exposure>>& exposures,
 			const vector<unique_ptr<Photo::Extension>>& extensions,
 			ostream& os) {
@@ -2534,7 +2534,7 @@ Photo::reportStatistics(const list<typename Photo::Match*>& matches,
   Acc accReserve;
 
   // Accumulate stats over all detections.
-  for (auto mptr : matches) {
+  for (auto const & mptr : matches) {
     mptr->remap(true);
     mptr->solve();
 
@@ -2604,7 +2604,7 @@ Photo::reportStatistics(const list<typename Photo::Match*>& matches,
 }
 
 void
-Astro::reportStatistics(const list<typename Astro::Match*>& matches,
+Astro::reportStatistics(const MCat& matches,
 			const vector<unique_ptr<Exposure>>& exposures,
 			const vector<unique_ptr<typename Astro::Extension>>& extensions,
 			ostream& os) {
@@ -2620,7 +2620,7 @@ Astro::reportStatistics(const list<typename Astro::Match*>& matches,
   Acc accReserve;
 
   // Accumulate stats over all detections.
-  for (auto mptr : matches) {
+  for (auto const & mptr : matches) {
 
     // Make sure match is ready, world coords for all detections done
     mptr->remap(true);

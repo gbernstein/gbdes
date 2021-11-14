@@ -1079,7 +1079,7 @@ CoordAlign::setParams(const DVector& p) {
   // First, change parameters in the map collection
   pmc.setParams(p);
   // Then alert all Matches that their world coordinates are crap
-  for (auto m : mlist)
+  for (auto const & m : mlist)
     m->mapsHaveChanged();
 }
 
@@ -1159,8 +1159,8 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   }
 #else
   // Without OPENMP, just loop through all matches:
-  for (auto i : mlist) {
-    Match* m = i;
+  for (auto const & i : mlist) {
+    Match* m = i.get();
     if (matchCtr%10000==0) cerr << "# accumulating chisq at match # " 
 				<< matchCtr 
 				<< endl;
@@ -1456,7 +1456,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 
 void
 CoordAlign::remap(bool doAll) {
-  for (auto i : mlist)
+  for (auto const & i : mlist)
     i->remap(doAll);
 }
 
@@ -1479,7 +1479,7 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch,
   for (auto ii=0; ii<n; ++ii) {
     auto i = mvec[ii];
 #else
-    for (auto i : mlist) {
+    for (auto const & i : mlist) {
 #endif
     // Skip this one if it's reserved and doReserved=false,
     // or vice-versa
@@ -1513,7 +1513,7 @@ CoordAlign::chisqDOF(int& dof, double& maxDeviate,
   for (auto ii=0; ii<n; ++ii) {
     auto i = mvec[ii];
 #else
-  for (auto i : mlist) {
+  for (auto const & i : mlist) {
 #endif
     if (doReserved ^ i->getReserved()) continue;
     chisq += i->chisq(dof, maxDeviate);
@@ -1528,7 +1528,7 @@ CoordAlign::count(long int& mcount, long int& dcount,
 		  bool doReserved, int minMatches) const {
   mcount = 0;
   dcount = 0;
-  for (auto i : mlist) {
+  for (auto const & i : mlist) {
     if ( (i->getReserved() ^ doReserved) ||
 	 i->getDOF() < 0 || i->fitSize() < minMatches) {
       continue;
@@ -1543,7 +1543,7 @@ CoordAlign::count(long int& mcount, long int& dcount,
                   bool doReserved, int minMatches, long catalog) const {
   mcount = 0;
   dcount = 0;
-  for (auto i : mlist) {
+  for (auto const & i : mlist) {
     if ((i->getReserved() ^ doReserved) ||
 	i->getDOF() < 0 || i->fitSize() < minMatches) continue;
 

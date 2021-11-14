@@ -268,7 +268,7 @@ namespace photometry {
   // Class that fits to make magnitudes agree
   class PhotoAlign {
   private:
-    list<Match*>& mlist;
+    list<unique_ptr<Match>>& mlist;
     PhotoMapCollection& pmc;
     list<PhotoPrior*>& priors;
     double relativeTolerance;
@@ -279,7 +279,7 @@ namespace photometry {
     void countPriorParams();  // Update parameter counts, indices, map numbers for priors
   public:
     PhotoAlign(PhotoMapCollection& pmc_,
-	       list<Match*>& mlist_,
+	       list<unique_ptr<Match>>& mlist_,
 	       list<PhotoPrior*>& priors_): mlist(mlist_),
 					    pmc(pmc_), 
 					    priors(priors_),
