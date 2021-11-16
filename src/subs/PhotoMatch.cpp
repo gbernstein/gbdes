@@ -518,7 +518,7 @@ PhotoAlign::operator()(const DVector& p, double& chisq,
 #else
   // Without OPENMP, just loop through all matches:
   for (auto i : mlist) {
-    Match* m = *i;
+    Match* m = i;
     if (matchCtr%10000==0) cerr << "# accumulating chisq at match # " 
 				<< matchCtr  //**<< " newChisq " << newChisq
 				<< endl;
