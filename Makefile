@@ -1,7 +1,7 @@
 # These site-dependent items should be defined in environment:
 
 # CXX = g++-6 -fopenmp
-# CXXFLAGS
+CXXFLAGS = -std=c++11 -fPIC
 
 # TMV_DIR
 # CFITSIO_DIR
@@ -129,6 +129,7 @@ INCLUDES += -I $(INCLUDEDIR)
 EXECS :=  $(wildcard $(SRCDIR)/*.cpp)
 TARGETS := $(EXECS:$(SRCDIR)/%.cpp=$(BINDIR)/%)
 OBJS := $(EXECS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
+SHARED := $(EXECS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.so)
 
 # Python executables
 PYEXECS :=  $(wildcard $(SRCDIR)/*.py)
@@ -146,7 +147,7 @@ RM = /bin/rm -f
 
 all: cpp python
 
-cpp: exts $(TARGETS)
+cpp: exts $(TARGETS) $(SHARED)
 
 python: $(PYTARGETS)
 
@@ -162,6 +163,10 @@ $(SUBOBJS): $(OBJDIR)/%.o : $(SUBDIR)/%.cpp
 # Linking
 $(TARGETS): $(BINDIR)/% : $(OBJDIR)/%.o $(SUBOBJS) $(EXTOBJS)
 	$(CXX) $(CXXFLAGS) $^  $(LIBS) -o $@
+
+$(SHARED): $(OBJDIR)/%.so : $(SUBOBJS) $(EXTOBJS)
+	$(CXX) -shared -fPIC -o $(OBJDIR)/libgbdes.so $(SUBOBJS) $(EXTOBJS)
+
 
 # Python executables - copy into bin directory
 $(PYTARGETS): $(BINDIR)/% : $(SRCDIR)/%
@@ -210,7 +215,7 @@ clean: local-clean
 	for dir in $(EXTDIRS); do (cd $$dir && $(MAKE) clean); done
 
 local-clean:
-	rm -rf $(OBJDIR)/*.o $(BINDIR)/* $(TESTBINDIR)/* *~ *.dvi *.aux core .depend
+	rm -rf $(OBJDIR)/*.o $(OBJDIR)/*.so $(BINDIR)/* $(TESTBINDIR)/* *~ *.dvi *.aux core .depend
 
 ifeq (.depend, $(wildcard .depend))
 include .depend
