@@ -12,9 +12,11 @@ FitClass::FitClass() {
     minFitExposures = 200;
     maxError = 100.0;
     reserveFraction = 0.2;
-    randomNumberSeed = 0;
+    randomNumberSeed = 1234;
     minimumImprovement = 0.02;
     clipThresh = 5.;
+    usePM = false;
+    chisqTolerance = 0.001;
     fixMapList = {};
     fieldNames = {};
     fieldProjections = vector<SphericalCoords*>(0);
@@ -42,6 +44,10 @@ FitClass::FitClass() {
     // Teach PixelMapCollection about new kinds of PixelMaps:
     loadPixelMapParser();
     
+}
+
+int FitClass::getMatchLength() {
+  return matches.size();
 }
 
 /*void FitClass::addInputYAML(string inputMaps) {
@@ -122,7 +128,7 @@ void FitClass::setExtensions(vector<shared_ptr<Extension>> extens) {
     extn->airmass = e->airmass;
     extn->magshift = e->magshift;
     extn->wcsName = e->wcsName;
-    extn->mapName = e->mapName;
+    extn->mapName = e->mapName; 
     extn->startWcs = e->startWcs;
     //test reproject:
     //if (extn->device > 0) {
@@ -133,7 +139,7 @@ void FitClass::setExtensions(vector<shared_ptr<Extension>> extens) {
     //extn->startWcs->reprojectTo(testCoords);
     extensions.push_back(extn);
   }
-
+  colorExtensions = vector<typename Astro::ColorExtension*>(extensions.size(), nullptr);
 }
 
 void FitClass::setRefWCSNames() {
@@ -176,6 +182,8 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
     
     PROGRESS(1,Building initial PixelMapCollection);
     cerr << "check 4" << endl;
+    typename Astro::SubMap* sm1=extensions[0]->map;
+    if (!sm1) cerr << "Exposure submap is null 1" << endl;
     // Now build a preliminary set of pixel maps from the configured YAML files
     PixelMapCollection* pmcInit = new PixelMapCollection;
     assert (pmcInit);
@@ -196,6 +204,8 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
       }
     }
     cerr << "read done" << endl;
+    typename Astro::SubMap* sm2=extensions[0]->map;
+    if (!sm2) cerr << "Exposure submap is null 2" << endl;
     cerr << "pmcInit len: " << to_string(pmcInit->allMapNames().size()) << endl;
     cerr << "check 4.1" << endl;
     // Check every map name against the list of those to fix.
@@ -205,6 +215,8 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
                             instruments);
     cerr << "pmcInit len: " << to_string(pmcInit->allMapNames().size()) << endl;
     cerr << "check 4.2" << endl;
+    typename Astro::SubMap* sm3=extensions[0]->map;
+    if (!sm3) cerr << "Exposure submap is null 3" << endl;
     /////////////////////////////////////////////////////
     // First sanity check: Check for maps that are defaulted but fixed
     /////////////////////////////////////////////////////
@@ -256,6 +268,8 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
       if (done) exit(1);
     }
     cerr << "check 5" << endl;
+    typename Astro::SubMap* sm4=extensions[0]->map;
+    if (!sm4) cerr << "Exposure submap is null 4" << endl;
     /////////////////////////////////////////////////////
     // Next degeneracy: if linear/poly maps are compounded there
     // must be data for which one of them is fixed.  See if it
@@ -294,7 +308,8 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
         inputYAML.addInput(iss, "", true); // Prepend these specs to others
       }
     } // End of poly-degeneracy check/correction
-    
+    typename Astro::SubMap* sm5=extensions[0]->map;
+    if (!sm5) cerr << "Exposure submap is null 5" << endl;
     PROGRESS(1,Making final mapCollection);
     cerr << "check 6" << endl;
     // Do not need the preliminary PMC any more.
@@ -312,13 +327,13 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
                                inputYAML,
                                mapCollection);
 
-
+    typename Astro::SubMap* sm6=extensions[0]->map;
+    if (!sm6) cerr << "Exposure submap is null 6" << endl;
     // Add WCS for every extension, and reproject into field coordinates
     PROGRESS(2,Defining all WCSs);
     cerr << "check 8 wcs" << endl;
     setupWCS(fieldProjections, instruments, exposures, extensions, mapCollection);
     cerr << "check 9 wcs" << endl;
-
     /////////////////////////////////////////////////////
   //  Initialize map components that were created with default
   //  parameters by fitting to fake data created from the
@@ -340,7 +355,10 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
     // Get the recommended initialization order:
     initializeOrder = degen.initializationOrder();
   }
-  
+  typename Astro::SubMap* sm62=extensions[0]->map;
+  if (!sm62) cerr << "Exposure submap is null 6.2" << endl;
+  typename Astro::SubMap* sm621=extensions[130]->map;
+  if (!sm621) cerr << "Exposure submap is null ref" << endl;
   for (auto extnSet : initializeOrder) {
     for (auto s : extnSet) {
         cerr << to_string(s) << " " ;
@@ -360,8 +378,13 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
                   instruments,
                   exposures,
                   verbose>=2);
+    typename Astro::SubMap* sm63=extensions[0]->map;
+    if (!sm63) cerr << "Exposure submap is null 6.3" << endl;
   }
-
+  typename Astro::SubMap* sm7=extensions[0]->map;
+    if (!sm7) cerr << "Exposure submap is null 7" << endl;
+  typename Astro::SubMap* sm71=extensions[130]->map;
+  if (!sm71) cerr << "Exposure submap is null ref" << endl;
   cerr << "check 8" << endl;
   // Try to fit on every extension not already initialized just to
   // make sure that we didn't miss any non-Poly map elements.
@@ -380,7 +403,8 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
     initializedExtensions.insert(iextn);
   }
   cerr << "Initialization order made" << endl;
-    
+  typename Astro::SubMap* sm8=extensions[0]->map;
+    if (!sm8) cerr << "Exposure submap is null 8" << endl;
   // As a check, there should be no more defaulted maps
   bool defaultProblem=false;
   for (auto iName : mapCollection.allMapNames()) {
@@ -398,7 +422,8 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
   fixMapComponents<Astro>(mapCollection,
                           fixMapList,
                           instruments);
-  
+  typename Astro::SubMap* sm9=extensions[0]->map;
+    if (!sm9) cerr << "Exposure submap is null 9" << endl;
   // Recalculate all parameter indices - maps are ready to roll!
   mapCollection.rebuildParameterVector();
 
@@ -422,6 +447,28 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
   }
 }
 
+void FitClass::setMatches(vector<int> sequence, vector<LONGLONG> extns, vector<LONGLONG> objects,
+                          ExtensionObjectSet skipSet) {
+  readMatches<Astro>(sequence, extns, objects, matches, extensions, colorExtensions,
+              skipSet, minMatches, usePM);
+}
+
+void FitClass::setObjects(int i, img::FTable ff, string xKey, string yKey, string idKey, string pmCovKey,
+                          vector<string> xyErrKeys, string magKey, int magKeyElement, string magErrKey,
+                          int magErrKeyElement, string pmRaKey, string pmDecKey, string parallaxKey) {
+        cerr << "setting objects for " << to_string(i)  << endl;
+        typename Astro::Extension& extn = *extensions[i];
+        const typename Astro::SubMap* sm=extn.map;
+        cerr << "got map" << endl;
+        if (!sm) cerr << "map is no good" << endl;
+        else cerr << "map is good" << endl;
+
+        readObjects_oneExtension<Astro>(exposures, i, ff, xKey, yKey, idKey, pmCovKey, xyErrKeys,
+                                 magKey, magKeyElement, magErrKey, magErrKeyElement, pmRaKey, pmDecKey,
+                                 parallaxKey, extensions, fieldProjections, verbose, true);
+}
+
+/*
 void FitClass::defaultMaps() {
   /////////////////////////////////////////////////////
   //  Initialize map components that were created with default
@@ -528,7 +575,7 @@ void FitClass::reprojectWCSs() {
     extnptr->startWcs->reprojectTo(*fieldProjections[ifield]);
   }
 }
-
+*/
 void FitClass::fit(){
 
   try {
@@ -544,30 +591,31 @@ void FitClass::fit(){
       }
       ++im;
     }
-    cerr << "Total to cut: "  << cut << endl;
+    cerr << "Total to cut: "  << to_string(cut) << endl;
     PROGRESS(2,Purging defective detections and matches);
 
     // Get rid of Detections with errors too high
+    maxError *= RESIDUAL_UNIT/WCS_UNIT;
     purgeNoisyDetections<Astro>(maxError, matches, exposures, extensions);
-    cerr << "Matches size: " << matches.size() << endl;
+    cerr << "Matches size: " << to_string(matches.size()) << endl;
     cerr << "check 9" << endl;
     PROGRESS(2,Purging sparse matches);
     // Get rid of Matches with too few detections
     purgeSparseMatches<Astro>(minMatches, matches);
-    cerr << "Matches size: " << matches.size() << endl;
+    cerr << "Matches size: " << to_string(matches.size()) << endl;
     cerr << "check 10" << endl;
     PROGRESS(2,Purging out-of-range colors);
     // Get rid of Matches with color out of range (note that default color is 0).
     purgeBadColor<Astro>(minColor, maxColor, matches);
-    cerr << "Matches size: " << matches.size() << endl;
+    cerr << "Matches size: " << to_string(matches.size()) << endl;
     cerr << "check 11" << endl;
     PROGRESS(2,Reserving matches);
     // Reserve desired fraction of matches
     if (reserveFraction>0.) {
-      cerr << "reserve info: " << reserveFraction << "  " << randomNumberSeed << endl;
+      cerr << "reserve info: " << to_string(reserveFraction) << "  " << to_string(randomNumberSeed) << endl;
       reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);
     }
-    cerr << "Matches size: " << matches.size() << endl;
+    cerr << "Matches size: " << to_string(matches.size()) << endl;
     cerr << "check 12" << endl;
     PROGRESS(2,Purging underpopulated exposures);
     // Find exposures whose parameters are free but have too few
@@ -577,14 +625,14 @@ void FitClass::fit(){
 							   exposures,
 							   extensions,
 							   mapCollection);
-    cerr << "Matches size: " << matches.size() << endl;
+    cerr << "Matches size: " << to_string(matches.size()) << endl;
     cerr << "check 13" << endl;
     PROGRESS(2,Purging bad exposure parameters and Detections);
     // Freeze parameters of an exposure model and clip all
     // Detections that were going to use it.
     for (auto i : badExposures) {
       cout << "WARNING: Shutting down exposure map " << i.first
-	   << " with only " << i.second
+	   << " with only " << to_string(i.second)
 	   << " fitted detections "
 	   << endl;
       freezeMap<Astro>(i.first, matches, extensions, mapCollection);
@@ -614,13 +662,13 @@ void FitClass::fit(){
     // Start off in a "coarse" mode so we are not fine-tuning the solution
     // until most of the outliers have been rejected:
     bool coarsePasses = true;
-    cerr << "relative Tolerance: " << chisqTolerance << endl;
+    cerr << "relative Tolerance: " << to_string(chisqTolerance) << endl;
     ca.setRelTolerance(10.*chisqTolerance);
     // Here is the actual fitting loop 
     do {
       // Report number of active Matches / Detections in each iteration:
       {
-        cerr << "Matches size: " << matches.size() << endl;
+        cerr << "Matches size: " << to_string(matches.size()) << endl;
 	long int mcount=0;
 	long int dcount=0;
 	ca.count(mcount, dcount, false, 2);
@@ -628,8 +676,8 @@ void FitClass::fit(){
 	int dof=0;
 	double chi= ca.chisqDOF(dof, maxdev, false);
 	if (verbose>=1)
-	  cerr << "Fitting " << mcount << " matches with " << dcount << " detections "
-	       << " chisq " << chi << " / " << dof << " dof,  maxdev " << maxdev 
+	  cerr << "Fitting " << to_string(mcount) << " matches with " << to_string(dcount) << " detections "
+	       << " chisq " << to_string(chi) << " / " << to_string(dof) << " dof,  maxdev " << to_string(maxdev)
 	       << " sigma" << endl;
       }
 
@@ -641,12 +689,12 @@ void FitClass::fit(){
       ca.chisqDOF(dof, max, false);	// Exclude reserved Matches
       double thresh = sqrt(chisq/dof) * clipThresh; // ??? change dof to expectedChisq?
       if (verbose>=1)
-        cerr << "After iteration: chisq " << chisq 
-              << " / " << dof << " dof, max deviation " << max
-              << "  new clip threshold at: " << thresh << " sigma"
+        cerr << "After iteration: chisq " << to_string(chisq)
+              << " / " << to_string(dof) << " dof, max deviation " << to_string(max)
+              << "  new clip threshold at: " << to_string(thresh) << " sigma"
               << endl;
       if (thresh >= max || (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement)) {
-        cerr << "minImp check: " << thresh << " " << max << " " << oldthresh << " " << (1-thresh/oldthresh) << " " << minimumImprovement << endl;
+        cerr << "minImp check: " << to_string(thresh) << " " << to_string(max) << " " << to_string(oldthresh) << " " << to_string((1-thresh/oldthresh)) << " " << to_string(minimumImprovement) << endl;
         // Sigma clipping is no longer doing much.  Quit if we are at full precision,
         // else require full target precision and initiate another pass.
         if (coarsePasses) {
@@ -658,7 +706,7 @@ void FitClass::fit(){
           nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses,
                     verbose>=1);
           if (verbose>=0)
-            cerr << "# Clipped " << nclip << " matches " << endl;
+            cerr << "# Clipped " << to_string(nclip) << " matches " << endl;
           continue;
         } else {
           // Done!
@@ -678,7 +726,7 @@ void FitClass::fit(){
         continue;
       }
       if (verbose>=0)
-	cerr << "# Clipped " << nclip << " matches " << endl;
+	cerr << "# Clipped " << to_string(nclip) << " matches " << endl;
       
     } while (coarsePasses || nclip>0);
   

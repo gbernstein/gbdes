@@ -1122,7 +1122,7 @@ readMatches(vector<int>& seq,
           }
         }
       }
-      
+
       if (nValid >= minMatches) {
         // Make a match from the valid entries, and note need to get data for the detections and color
         unique_ptr<typename S::Match> m;
@@ -1175,10 +1175,10 @@ readMatches(vector<int>& seq,
     if (colorExtensions[extn[i]]) {
       int newPriority = colorExtensions[extn[i]]->priority;
       if (newPriority >= 0 && (colorPriority < 0 || newPriority < colorPriority)) {
-	// This detection holds color info that we want
-	colorPriority = newPriority;
-	matchColorExtension = extn[i];
-	matchColorObject = obj[i];
+        // This detection holds color info that we want
+        colorPriority = newPriority;
+        matchColorExtension = extn[i];
+        matchColorObject = obj[i];
       }
     }
   } // End loop of catalog entries
@@ -1231,17 +1231,24 @@ Astro::fillDetection(Astro::Detection & d,
   if (isTag) {
     d.invCov.setZero();
   } else {
+    cerr << "fillDet 3" << endl;
     astrometry::Matrix22 cov(0.);
     if (xyErrKeys.size()==1) {
+      cerr << "fillDet 3.1" << endl;
       // We have a single pixel error, diagonal
       double sigma = getTableDouble(table, xyErrKeys[0], -1, errorColumnIsDouble,irow);
+      cerr << "fillDet 3.2" << endl;
       cov(0,0) = sigma*sigma;
       cov(1,1) = sigma*sigma;
     } else if (xyErrKeys.size()==3) {
+      cerr << "fillDet 3.3" << endl;
       // We have three components of an ellipse, giving x^2, y^2, xy values:
       cov(0,0) = getTableDouble(table, xyErrKeys[0], -1, errorColumnIsDouble,irow);
+      cerr << "fillDet 3.4" << endl;
       cov(1,1) = getTableDouble(table, xyErrKeys[1], -1, errorColumnIsDouble,irow);
+      cerr << "fillDet 3.5" << endl;
       cov(0,1) = getTableDouble(table, xyErrKeys[2], -1, errorColumnIsDouble,irow);
+      cerr << "fillDet 3.6" << endl;
       cov(1,0) = cov(0,1);
     } else {
       for (auto s : xyErrKeys)
@@ -1259,7 +1266,7 @@ Astro::fillDetection(Astro::Detection & d,
     // Build projection matrix if this Detection is being used in a PMMatch
     d.buildProjector(e->pmTDB, e->observatory, &fieldProjection);
   }
-
+  cerr << "fillDet 6" << endl;
 }
 
 // This one reads a full 5d stellar solution
@@ -1693,6 +1700,7 @@ void readObjects_oneExtension(
   
   // Relevant structures for this extension
   typename S::Extension& extn = *extensions[iext];
+  cerr << "exten: " << to_string(iext) << " expo: " << to_string(extn.exposure) << endl;
   Exposure& expo = *exposures[extn.exposure];
   if (extn.keepers.empty()) return; // or useless
   
@@ -1700,17 +1708,23 @@ void readObjects_oneExtension(
   bool isTag = expo.instrument == TAG_INSTRUMENT;
 
   const typename S::SubMap* sm=extn.map;
-
+  cerr << "in readObj 1" << endl;
   if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
-
+  cerr << "passed sm" << endl;
   astrometry::Wcs* startWcs = extn.startWcs;
-
+  cerr << "got startWcs" << endl;
+  cerr << startWcs->getName() << endl;
+  //double testxw;
+  //double testyw;
+  //startWcs->toWorld(0.4, 0.4, testxw, testyw);
+  //cerr << "test toWorld" << to_string(testxw) << to_string(testyw) << endl;
+  cerr << "startWCS name: " << startWcs->getName() << endl;
   if (!startWcs) {
     cerr << "Failed to find initial Wcs for exposure " << expo.name
       << endl;
     exit(1);
   }
-
+  cerr << "in readObj 2" << endl;
   vector<LONGLONG> id;
   if (useRows) {
     id.resize(ff.nrows());
@@ -1720,7 +1734,7 @@ void readObjects_oneExtension(
     ff.readCells(id, idKey);
   }
   Assert(id.size() == ff.nrows());
-
+  cerr << "in readObj 3" << endl;
   bool xColumnIsDouble = isDouble(ff, xKey, -1);
   bool yColumnIsDouble = isDouble(ff, yKey, -1);
   bool magColumnIsDouble;
@@ -1731,14 +1745,14 @@ void readObjects_oneExtension(
   // Get fieldProjection for this catalog
   astrometry::SphericalCoords* fieldProjection =
     fieldProjections[expo.field]->duplicate();
-  
+  cerr << "in readObj 4" << endl;
   if (S::isAstro) {
     errorColumnIsDouble = isDouble(ff, pmCatalog ? pmCovKey : xyErrKeys[0], -1);
   } else {
     magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
     magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
   }
-  
+  cerr << "in readObj 5" << endl;
   for (long irow = 0; irow < ff.nrows(); irow++) {
     auto pr = extn.keepers.find(id[irow]);
     if (pr == extn.keepers.end()) continue; // Not a desired object
@@ -1747,8 +1761,9 @@ void readObjects_oneExtension(
     typename S::Detection* d = pr->second;
     extn.keepers.erase(pr);
     d->map = sm;
-
+    cerr << "in readObj 6" << endl;
     if (pmCatalog) {
+      cerr << "in readObj 6.1" << endl;
       // Need to read data differently from catalog with
       // full proper motion solution.  Get PMDetection.
       auto pmd = S::makePMDetection(d, &expo,
@@ -1764,6 +1779,7 @@ void readObjects_oneExtension(
       // match, it will slice the PMDetection down to a Detection.
       S::handlePMDetection(pmd, d);
     } else {
+      cerr << "in readObj 7" << endl;
       // Normal photometric or astrometric entry
       S::fillDetection(d, &expo, *fieldProjection,
             ff, irow,
@@ -1776,9 +1792,9 @@ void readObjects_oneExtension(
             startWcs, isTag);
     }
   } // End loop over catalog objects
-  
+  cerr << "in readObj 8" << endl;
   if (fieldProjection) delete fieldProjection;
-
+  cerr << "in readObj 9" << endl;
   if (!extn.keepers.empty()) {
     cerr << "Did not find all desired objects extension " << iext << endl;
     exit(1);
@@ -1876,7 +1892,7 @@ purgeNoisyDetections(double maxError,
 		     typename S::MCat& matches,
 		     const vector<unique_ptr<Exposure>>& exposures,
 		     const vector<unique_ptr<typename S::Extension>>& extensions) {
-  cerr << "Check maxError: " << maxError << endl;
+  cerr << "Check maxError: " << to_string(maxError) << endl;
   int eraseCount = 0;
   for (auto const & mptr : matches) {
     auto j=mptr->begin(); 
@@ -1893,7 +1909,7 @@ purgeNoisyDetections(double maxError,
       }
     }
   }
-  cerr << "eraseCount: " << eraseCount << endl;
+  cerr << "eraseCount: " << to_string(eraseCount) << endl;
 }
 
 // Get rid of Matches with too few Detections being fit: delete
@@ -2045,9 +2061,9 @@ matchCensus(const typename S::MCat& matches, ostream& os) {
     dcount += mptr->fitSize();
     chi += mptr->chisq(dof, maxdev);
   }
-  os << "# Using " << matches.size() 
-       << " matches with " << dcount << " total detections." << endl;
-  os << "#  chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
+  cerr << "# Using " << to_string(matches.size())
+       << " matches with " << to_string(dcount) << " total detections." << endl;
+  cerr << "#  chisq " << to_string(chi) << " / " << to_string(dof) << " dof maxdev " << to_string(maxdev) << endl;
 }
 
 // Map and clip reserved matches
@@ -2070,20 +2086,20 @@ clipReserved(typename S::Align& ca,
     int dof=0;
     double chisq= ca.chisqDOF(dof, max, true);
     if (reportToCerr) 
-      cerr << "Clipping " << mcount << " matches with " << dcount << " detections "
-	   << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max 
+      cerr << "Clipping " << to_string(mcount) << " matches with " << to_string(dcount) << " detections "
+	   << " chisq " << to_string(chisq) << " / " << to_string(dof) << " dof,  maxdev " << to_string(max) 
 	   << " sigma" << endl;
       
     double thresh = sqrt(chisq/dof) * clipThresh; // ??? expected chisq instead of dof?
     if (reportToCerr) 
-      cerr << "  new clip threshold: " << thresh << " sigma"
+      cerr << "  new clip threshold: " << to_string(thresh) << " sigma"
 	   << endl;
     if (thresh >= max) break;
     if (oldthresh>0. && (1-thresh/oldthresh)<minimumImprovement) break;
     oldthresh = thresh;
     nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
     if (reportToCerr) 
-      cerr << "Clipped " << nclip
+      cerr << "Clipped " << to_string(nclip)
 	   << " matches " << endl;
   } while (nclip>0);
 }

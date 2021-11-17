@@ -307,7 +307,10 @@ PYBIND11_MODULE(wcsfit, m) {
         .def("addMap", &FitClass::addMap)
         .def("setRefWCSNames", &FitClass::setRefWCSNames)
         .def("setupMaps", &FitClass::setupMaps)
+        .def("setMatches", &FitClass::setMatches)
+        .def("setObjects", &FitClass::setObjects)
         .def("fit", &FitClass::fit)
+        .def("getMatchLength", &FitClass::getMatchLength)
         /*.def("fit", [](FitClass & self) {
             py::scoped_estream_redirect stream(
                 std::cerr,                               // std::ostream&

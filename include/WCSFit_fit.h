@@ -32,7 +32,6 @@ class FitClass {
     FitClass();
     //FitClass(string inputMaps);
     
-    // This initialization doesn't work for some reason!!!!
     double reserveFraction;
     int randomNumberSeed;
     
@@ -53,6 +52,8 @@ class FitClass {
     
     double minColor;
     double maxColor;
+
+    bool usePM;
     
     int verbose;
 
@@ -114,13 +115,21 @@ class FitClass {
     //void addMap(string mapName, vector<string> mapParams);
 
     void setupMaps(YAMLCollector& inputYAML);//, PixelMapCollection& mapCollection);
-    //void setupMaps();
+    
+    void setMatches(vector<int> sequence, vector<LONGLONG> extensions, vector<LONGLONG> objects,
+                    ExtensionObjectSet skipSet);
+
+    void setObjects(int i, img::FTable ff, string xKey, string yKey, string idKey, string pmCovKey,
+                    vector<string> xyErrKeys, string magKey, int magKeyElement, string magErrKey,
+                    int magErrKeyElement, string pmRaKey, string pmDecKey, string parallaxKey);
 
     void defaultMaps();
 
     void reprojectWCSs();
 
     void fit();
+
+    int getMatchLength();
 
     void cleanup();
       

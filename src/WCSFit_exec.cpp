@@ -178,7 +178,7 @@ main(int argc, char *argv[])
   // Convert error parameters from I/O units to internal
   //referenceSysError *= RESIDUAL_UNIT/WCS_UNIT;
   //sysError *= RESIDUAL_UNIT/WCS_UNIT;
-  maxError *= RESIDUAL_UNIT/WCS_UNIT;
+  //maxError *= RESIDUAL_UNIT/WCS_UNIT;
 
   PMMatch::setPrior(pmPrior, parallaxPrior);
 
@@ -188,7 +188,7 @@ main(int argc, char *argv[])
   cerr << "start fitclass" << endl;
   FitClass fitclass;
   //FitClass fitclass(inputMaps);
-  fitclass.maxError *= RESIDUAL_UNIT/WCS_UNIT;
+  //fitclass.maxError *= RESIDUAL_UNIT/WCS_UNIT;
   cerr << "init mm " << fitclass.minMatches << endl;
   
   fitclass.minMatches = minMatches;
