@@ -124,8 +124,8 @@ MapDegeneracies<S>::initializationOrder() {
   list<set<int>> out;
   while (!maps.empty()) {
     auto goodextns = findNondegenerate();
-    //**/cerr << ".." << maps.size() << " maps, " << goodextns.size() << " clean extns"
-    //     << endl;
+    cerr << ".." << to_string(maps.size()) << " maps, " << to_string(goodextns.size()) << " clean extns"
+         << endl;
     if (goodextns.empty()) {
       // We have maps with no clear degeneracy breaking path.
       cerr << "ERROR: no path to initialize these maps without degeneracies:" << endl;
@@ -166,10 +166,14 @@ MapDegeneracies<S>::initializationOrder() {
 	  maxExpo = m2.first;
 	}
       }
-      /**cerr << "...Do map " << m.first 
-	       << " from exposure " << maxExpo
-	       << " with " << maxCount << " exposures" << endl; /**/
+      cerr << "...Do map " << m.first 
+	       << " from exposure " << to_string(maxExpo)
+	       << " with " << to_string(maxCount) << " exposures" << endl; /**/
       out.push_back(m.second[maxExpo]);
+      for (auto s : m.second[maxExpo]) {
+        cerr << to_string(s) << " " ;
+      }
+      cerr << endl;
       eraseMap(m.first);
     }
   }

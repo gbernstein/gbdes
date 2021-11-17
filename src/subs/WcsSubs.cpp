@@ -63,6 +63,7 @@ fitDefaulted(PixelMapCollection& pmc,
     const Exposure& expo = *exposures[extnptr->exposure];
     // Get projection used for this extension, and set up
     // startWCS to reproject into this system.
+    astrometry::Orientation proj = *expo.projection;
     extnptr->startWcs->reprojectTo(*expo.projection);
 
     // Get a realization of the extension's map
@@ -70,7 +71,11 @@ fitDefaulted(PixelMapCollection& pmc,
     
     // Get the boundaries of the device it uses
     Bounds<double> b=instruments[expo.instrument]->domains[extnptr->device];
-
+    cerr << "inst dev: " << to_string(expo.instrument) << " "  << to_string(extnptr->device) << endl;
+    cerr << "bounds: " << to_string(b.getXMin()) << " " << to_string(b.getXMax()) << endl;
+    double txw, tyw;
+    extnptr->startWcs->toWorld(b.getXMin(), b.getYMin(), txw, tyw);
+    cerr << "check p1 " << to_string(txw) << " " << to_string(tyw) << endl;
     // Generate a grid of matched Detections
     const int nGridPoints=512;	// Number of test points for map initialization
 
@@ -85,6 +90,7 @@ fitDefaulted(PixelMapCollection& pmc,
     vector<int> vx(nGridPoints);
     for (int i=0; i<vx.size(); i++) vx[i]=i;
     vector<int> vy = vx;
+    std::srand(123);
     std::random_shuffle(vy.begin(), vy.end());
     double xstep = (b.getXMax()-b.getXMin())/nGridPoints;
     double ystep = (b.getYMax()-b.getYMin())/nGridPoints;
@@ -95,6 +101,9 @@ fitDefaulted(PixelMapCollection& pmc,
       extnptr->startWcs->toWorld(xpix, ypix, xw, yw); // startWCS has no color!
       unique_ptr<Detection> dfit(new Detection);
       unique_ptr<Detection> dref(new Detection);
+      if (i == 10) {
+        cerr << "pix check " << to_string(xpix) << " " << to_string(ypix) << " " << to_string(xw) << " " << to_string(yw) << endl;
+      }
       dfit->xpix = xpix;
       dfit->ypix = ypix;
       dref->xpix = xw;
@@ -111,7 +120,7 @@ fitDefaulted(PixelMapCollection& pmc,
       map->toWorld(xpix,ypix,xw,yw,dfit->color);
       dfit->xw = xw;
       dfit->yw = yw;
-
+      
       // Set up errors and maps for these matched "detections"
       Matrix22 eye(0.);
       eye(0,0) = eye(1,1) = 1.;
@@ -125,7 +134,7 @@ fitDefaulted(PixelMapCollection& pmc,
       matches.emplace_back(new Match(std::move(dfit)));
       matches.back()->add(std::move(dref));
     }
-
+    cerr << "ext added" << endl;
   }
 
   // Build CoordAlign object and solve for defaulted parameters

@@ -1162,7 +1162,7 @@ CoordAlign::operator()(const DVector& p, double& chisq,
   for (auto const & i : mlist) {
     Match* m = i.get();
     if (matchCtr%10000==0) cerr << "# accumulating chisq at match # " 
-				<< matchCtr 
+				<< to_string(matchCtr) 
 				<< endl;
     matchCtr++;
     if ( m->getReserved() ) continue;	//skip reserved objects
@@ -1239,7 +1239,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     timer.start();
     (*this)(p, oldChisq, beta, alpha);
     timer.stop();
-    if (reportToCerr) cerr << "..fitOnce alpha time " << timer << endl;
+    if (reportToCerr) cerr << "..fitOnce alpha time " << to_string(timer) << endl;
     timer.reset();
     timer.start();
 
@@ -1399,7 +1399,7 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       }
 	
       timer.stop();
-      if (reportToCerr) cerr << "..solution time " << timer << endl;
+      if (reportToCerr) cerr << "..solution time " << to_string(timer) << endl;
       timer.reset();
       timer.start();
       DVector newP = p + beta;
@@ -1409,10 +1409,13 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
       timer.stop();
+      ostringstream chi_stream;
+      chi_stream << newChisq;
+      string chi_string = chi_stream.str();
       if (reportToCerr) {
-	cerr << "....Newton iteration #" << newtonIter << " chisq " << newChisq 
-	     << " / " << dof 
-	     << " in time " << timer << " sec"
+	cerr << "....Newton iteration #" << to_string(newtonIter) << " chisq " << chi_string 
+	     << " / " << to_string(dof) 
+	     << " in time " << to_string(timer) << " sec"
 	     << endl;
       }
       timer.reset();
@@ -1491,7 +1494,7 @@ CoordAlign::sigmaClip(double sigThresh, bool doReserved, bool clipEntireMatch,
   }
   timer.stop();
   if (logging)
-    cerr << "-->Sigma clipping done in " << timer << " sec" << endl;
+    cerr << "-->Sigma clipping done in " << to_string(timer) << " sec" << endl;
   return nclip;
 }
 
