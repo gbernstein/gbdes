@@ -1047,22 +1047,25 @@ whoNeedsColor(const vector<unique_ptr<typename S::Extension>> & extensions) {
 	      
 // Read a MatchCatalog Extension, recording in each extension the
 // objects from it that need to be read from catalog.
+
 template <class S>
 void
-readMatches(img::FTable& table,
-	    typename S::MCat& matches,
-	    const vector<unique_ptr<typename S::Extension>>& extensions,
-	    const vector<unique_ptr<typename S::ColorExtension>>& colorExtensions,
-	    const ExtensionObjectSet& skipSet,
-	    int minMatches,
-	    bool usePM) {
+readMatches(vector<int>& seq,
+      vector<LONGLONG>& extn,
+      vector<LONGLONG>& obj,
+      typename S::MCat& matches,
+      const vector<unique_ptr<typename S::Extension>>& extensions,
+      const vector<unique_ptr<typename S::ColorExtension>>& colorExtensions,
+      const ExtensionObjectSet& skipSet,
+      int minMatches,
+      bool usePM) {
 
-  vector<int> seq;
+  /*vector<int> seq;
   vector<LONGLONG> extn;
   vector<LONGLONG> obj;
   table.readCells(seq, "sequenceNumber");
   table.readCells(extn, "extension");
-  table.readCells(obj, "object");
+  table.readCells(obj, "object");*/
 
   // Smaller collections for each match
   vector<long> matchExtns;
@@ -1152,6 +1155,26 @@ readMatches(img::FTable& table,
     }
   } // End loop of catalog entries
 }
+
+template <class S>
+void
+readMatches(img::FTable& table,
+	    typename S::MCat& matches,
+	    vector<typename S::Extension*>& extensions,
+	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const ExtensionObjectSet& skipSet,
+	    int minMatches,
+	    bool usePM) {
+
+  vector<int> seq;
+  vector<LONGLONG> extn;
+  vector<LONGLONG> obj;
+  table.readCells(seq, "sequenceNumber");
+  table.readCells(extn, "extension");
+  table.readCells(obj, "object");
+  readMatches<S>(seq, extn, obj, matches, extensions, colorExtensions, skipSet, minMatches, usePM);
+}
+
 
 // Subroutine to get what we want from a catalog entry for WCS fitting
 inline

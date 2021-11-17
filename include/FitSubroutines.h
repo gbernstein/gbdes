@@ -404,6 +404,18 @@ whoNeedsColor(const vector<unique_ptr<typename S::Extension>> & extensions);
 // Discards Detection if requires color but doesn't have it.
 template <class S>
 void
+readMatches(vector<int>& seq,
+      	vector<LONGLONG>& extn,
+      	vector<LONGLONG>& obj,
+	    typename S::MCat& matches,
+	    vector<typename S::Extension*>& extensions,
+	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const ExtensionObjectSet& skipSet,
+	    int minMatches,
+	    bool usePM=false);        // If true, create PMMatches
+
+template <class S>
+void
 readMatches(img::FTable& table,
 	    typename S::MCat& matches,
 	    const vector<unique_ptr<typename S::Extension>>& extensions,
@@ -411,6 +423,7 @@ readMatches(img::FTable& table,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
 	    bool usePM=false);        // If true, create PMMatches
+
 
 // Read each Extension's objects' data from it FITS catalog
 // and place into Detection structures.
