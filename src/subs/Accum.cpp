@@ -112,13 +112,13 @@ Accum<S>::summary() const {
       << fixed << setprecision(1) 
       << "  " << setw(4) << (nclipped*100.)/ntot;
   if (S::isAstro) {
-    oss << fixed << setprecision(1)
+    oss << fixed << setprecision(3)
 	<< " " << setw(6) << rms();
   } else {
-    oss << fixed << setprecision(1)
+    oss << fixed << setprecision(3)
 	<< " " << setw(6) << rms()/MMAG;
   }
-  oss << fixed << setprecision(2) 
+  oss << fixed << setprecision(5) 
       << "  " << setw(6) << reducedChisq();
   return oss.str();
 }

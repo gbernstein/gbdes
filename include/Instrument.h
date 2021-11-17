@@ -93,6 +93,16 @@ public:
   bool needsColor;	// Save info on whether map requires color information.
 
   std::map<long, T2*> keepers; // The objects from this Extension catalog that we will use
+  void addWcs(string wcsin) {
+    istringstream iss(wcsin);
+    astrometry::PixelMapCollection pmcTemp;
+    if (!pmcTemp.read(iss)) {
+      cerr << "Could not deserialize starting WCS" << endl;
+      exit(1);
+    }
+    string wcsName = pmcTemp.allWcsNames().front();
+    startWcs = pmcTemp.cloneWcs(wcsName);
+  }
   ~ExtensionBase() = default;
 };
 
