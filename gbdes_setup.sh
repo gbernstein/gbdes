@@ -1,0 +1,10 @@
+export YAML_DIR=/home/csaunder/software/yaml-cpp
+export GBUTIL_DIR=/home/csaunder/software/gb_packages/gbutil/
+export GBFITS_DIR=/home/csaunder/software/gb_packages/gbfits
+export ASTROMETRY_DIR=/home/csaunder/software/gb_packages/astrometry
+export PHOTOMETRY_DIR=/home/csaunder/software/gb_packages/photometry
+export EIGEN_DIR=/software/lsstsw/stack_20200504/stack/miniconda3-4.7.12-2deae7a/Linux64/eigen/3.3.7.lsst2/include/
+export FFTW_DIR=$CONDA_PREFIX
+export CFITSIO_DIR=$CONDA_PREFIX
+export LD_LIBRARY_PATH=/home/csaunder/software/yaml-cpp/build:$LD_LIBRARY_PATH
+export PATH=/home/csaunder/software/gbdes/bin:$PATH
