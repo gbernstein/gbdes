@@ -133,6 +133,7 @@ PYBIND11_MODULE(wcsfit, m) {
     m.def("readObjects_oneExtension", &readObjects_oneExtension<Astro>);
     m.def("reportStatistics", &Astro::reportStatistics);
     m.def("readFields", &readFields);
+    m.def("readWCSs", &readWCSs);
 
     py::class_<astrometry::SphericalCoords>(m, "SphericalCoords");
 
@@ -228,7 +229,22 @@ PYBIND11_MODULE(wcsfit, m) {
         .def(py::init<astrometry::PixelMap*, astrometry::SphericalCoords const&, string, double, bool>(),
             py::arg("pm_"), py::arg("nativeCoords_"), py::arg("name")="", py::arg("wScale_")=DEGREE,
             py::arg("shareMap_")=false)
-        .def("reprojectTo", &astrometry::Wcs::reprojectTo);
+        //.def("reprojectTo", &astrometry::Wcs::reprojectTo);
+        .def("reprojectTo", [](astrometry::Wcs & self, const SphericalCoords& targetCoords_) {
+            py::scoped_estream_redirect stream(
+                std::cerr,                               // std::ostream&
+                py::module_::import("sys").attr("stderr") // Python output
+            );
+            self.reprojectTo(targetCoords_);
+        })
+        .def("getTargetCoords", &astrometry::Wcs::getTargetCoords)
+        .def("toWorld", [](astrometry::Wcs & self, double x, double y) {
+            double ra;
+            double dec;
+            self.toWorld(x, y, ra, dec);
+            vector<double> radec = {ra, dec};
+            return radec;
+        });
 
     py::class_<astrometry::Match>(m, "Match");
 
@@ -237,11 +253,14 @@ PYBIND11_MODULE(wcsfit, m) {
 
     py::class_<NameIndex>(m, "NameIndex")
         .def(py::init<>())
-        .def("append", &NameIndex::append);
+        .def("append", &NameIndex::append)
+        .def("nameOf", &NameIndex::nameOf);
 
     py::class_<img::FTable>(m, "FTable")
         .def(py::init<long>())
-        .def("addColumn", &FTable::addColumn<double>, py::arg("values"), py::arg("columnName"),
+        .def("addColumnDouble", &FTable::addColumn<double>, py::arg("values"), py::arg("columnName"),
+             py::arg("repeat")=-1, py::arg("stringLength")=-1)
+        .def("addColumnStr", &FTable::addColumn<string>, py::arg("values"), py::arg("columnName"),
              py::arg("repeat")=-1, py::arg("stringLength")=-1);
 
     //declareDictionary<string, string>(m);
