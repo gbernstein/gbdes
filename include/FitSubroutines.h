@@ -434,6 +434,19 @@ void readObjects(const img::FTable& extensionTable,
 		 const vector<std::unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
 		 bool logging=true); //Give progress updates?
 
+template <class S>
+void readObjects_oneExtension(const vector<Exposure*>& exposures,
+      int iext, img::FTable ff,
+      string xKey, string yKey, string idkey, string pmCovKey,
+	  vector<string> xyErrKeys,
+	  string magKey, int magKeyElement, string magErrKey, int magErrKeyElement,
+	  string pmRaKey, string pmDecKey, string parallaxKey,
+      vector<typename S::Extension*>& extensions,
+      vector<astrometry::SphericalCoords*> fieldProjections,
+      bool logging,
+      bool useRows
+	  );
+
 // Read color information from files marked as holding such, insert into
 // relevant Matches.
 template <class S>

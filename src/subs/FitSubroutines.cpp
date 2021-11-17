@@ -805,7 +805,7 @@ readExtensions(img::FTable& extensionTable,
 	extn->mapName = extn->wcsName + "/base";
       else
 	extn->mapName = extn->wcsName;
-	
+      cerr << "adding map: " << extn->mapName << endl;
       if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
@@ -1060,13 +1060,6 @@ readMatches(vector<int>& seq,
       int minMatches,
       bool usePM) {
 
-  /*vector<int> seq;
-  vector<LONGLONG> extn;
-  vector<LONGLONG> obj;
-  table.readCells(seq, "sequenceNumber");
-  table.readCells(extn, "extension");
-  table.readCells(obj, "object");*/
-
   // Smaller collections for each match
   vector<long> matchExtns;
   vector<long> matchObjs;
@@ -1081,20 +1074,22 @@ readMatches(vector<int>& seq,
       // Processing the previous (or final) match.
       int nValid = matchExtns.size();
       if (matchColorExtension < 0) {
+        // There is no color information for this match. 
 	// There is no color information for this match. 
-	// Discard any detection which requires a color to produce its map:
-	nValid = 0;
-	for (int j=0; j<matchExtns.size(); j++) {
-	  Assert(extensions[matchExtns[j]]);
-	  if (extensions[matchExtns[j]]->needsColor) {
-	    // Mark this detection as useless
-	    matchExtns[j] = -1;
-	  } else {
-	    nValid++;
-	  }
-	}
+        // There is no color information for this match. 
+        // Discard any detection which requires a color to produce its map:
+        nValid = 0;
+        for (int j=0; j<matchExtns.size(); j++) {
+          Assert(extensions[matchExtns[j]]);
+          if (extensions[matchExtns[j]]->needsColor) {
+            // Mark this detection as useless
+            matchExtns[j] = -1;
+          } else {
+            nValid++;
+          }
+        }
       }
-
+      
       if (nValid >= minMatches) {
         // Make a match from the valid entries, and note need to get data for the detections and color
         unique_ptr<typename S::Match> m;
@@ -1648,6 +1643,117 @@ void readObjects(const img::FTable& extensionTable,
   
 }
 
+// Read each Extension's objects' data from it FITS catalog
+// and place into Detection structures.
+template <class S>
+void readObjects_oneExtension(
+      const vector<Exposure*>& exposures,
+      int iext, img::FTable ff,
+      string xKey, string yKey, string idKey, string pmCovKey, vector<string> xyErrKeys,
+      string magKey, int magKeyElement, string magErrKey, int magErrKeyElement, // TODO: make these dictionary?
+      string pmRaKey, string pmDecKey, string parallaxKey,
+      vector<typename S::Extension*>& extensions,
+      vector<astrometry::SphericalCoords*> fieldProjections,
+      bool logging,
+      bool useRows
+      ) {
+  
+  // Relevant structures for this extension
+  typename S::Extension& extn = *extensions[iext];
+  Exposure& expo = *exposures[extn.exposure];
+  if (extn.keepers.empty()) return; // or useless
+  
+  bool pmCatalog = S::isAstro && expo.instrument==PM_INSTRUMENT;
+  bool isTag = expo.instrument == TAG_INSTRUMENT;
+
+  const typename S::SubMap* sm=extn.map;
+
+  if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
+
+  astrometry::Wcs* startWcs = extn.startWcs;
+
+  if (!startWcs) {
+    cerr << "Failed to find initial Wcs for exposure " << expo.name
+      << endl;
+    exit(1);
+  }
+
+  vector<LONGLONG> id;
+  if (useRows) {
+    id.resize(ff.nrows());
+    for (long i=0; i<id.size(); i++)
+      id[i] = i;
+  } else {
+    ff.readCells(id, idKey);
+  }
+  Assert(id.size() == ff.nrows());
+
+  bool xColumnIsDouble = isDouble(ff, xKey, -1);
+  bool yColumnIsDouble = isDouble(ff, yKey, -1);
+  bool magColumnIsDouble;
+  bool magErrColumnIsDouble;
+  bool errorColumnIsDouble;
+  double magshift = extn.magshift;
+  
+  // Get fieldProjection for this catalog
+  astrometry::SphericalCoords* fieldProjection =
+    fieldProjections[expo.field]->duplicate();
+  
+  if (S::isAstro) {
+    errorColumnIsDouble = isDouble(ff, pmCatalog ? pmCovKey : xyErrKeys[0], -1);
+  } else {
+    magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
+    magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
+  }
+  
+  for (long irow = 0; irow < ff.nrows(); irow++) {
+    auto pr = extn.keepers.find(id[irow]);
+    if (pr == extn.keepers.end()) continue; // Not a desired object
+
+    // Have a desired object now.  Fill its Detection structure
+    typename S::Detection* d = pr->second;
+    extn.keepers.erase(pr);
+    d->map = sm;
+
+    if (pmCatalog) {
+      // Need to read data differently from catalog with
+      // full proper motion solution.  Get PMDetection.
+      auto pmd = S::makePMDetection(d, &expo,
+                  ff, irow,
+                  xKey, yKey,
+                  pmRaKey, pmDecKey, parallaxKey, pmCovKey,
+                  xColumnIsDouble,yColumnIsDouble,
+                  errorColumnIsDouble, 
+                  startWcs);
+
+      // This routine will either replace the plain old Detection in
+      // a PMMatch with this PMDetection; or if it is part of a plain
+      // match, it will slice the PMDetection down to a Detection.
+      S::handlePMDetection(pmd, d);
+    } else {
+      // Normal photometric or astrometric entry
+      S::fillDetection(d, &expo, *fieldProjection,
+            ff, irow,
+            xKey, yKey, xyErrKeys,
+            magKey, magErrKey,
+            magKeyElement, magErrKeyElement,
+            xColumnIsDouble,yColumnIsDouble,
+            errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble,
+            magshift,
+            startWcs, isTag);
+    }
+  } // End loop over catalog objects
+  
+  if (fieldProjection) delete fieldProjection;
+
+  if (!extn.keepers.empty()) {
+    cerr << "Did not find all desired objects extension " << iext << endl;
+    exit(1);
+  }
+
+}
+
+
 // Read color information from files marked as holding such, insert into
 // relevant Matches.
 template <class S>
@@ -1737,6 +1843,8 @@ purgeNoisyDetections(double maxError,
 		     typename S::MCat& matches,
 		     const vector<unique_ptr<Exposure>>& exposures,
 		     const vector<unique_ptr<typename S::Extension>>& extensions) {
+  cerr << "Check maxError: " << maxError << endl;
+  int eraseCount = 0;
   for (auto const & mptr : matches) {
     auto j=mptr->begin(); 
     int k=0;
@@ -1746,11 +1854,13 @@ purgeNoisyDetections(double maxError,
       if ( (d->isClipped || d->getSigma() > maxError) &&
 	        exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
 	      j = mptr->erase(j);
+        ++eraseCount;
       } else {
 	      ++j;
       }
     }
   }
+  cerr << "eraseCount: " << eraseCount << endl;
 }
 
 // Get rid of Matches with too few Detections being fit: delete
@@ -2768,6 +2878,17 @@ readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<unique_ptr<AP::Extension>>& extensions, \
 		const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections, \
                 bool logging);	      \
+template void \
+readObjects_oneExtension<AP>(const vector<Exposure*>& exposures, \
+    int iext, img::FTable ff,\
+    string xKey, string yKey, string idKey, string pmCovKey,  \
+    vector<string> xyErrKeys, \
+    string magKey, int magKeyElement, string magErrKey, int magErrKeyElement, \
+    string pmRaKey, string pmDecKey, string parallaxKey, \
+    vector<typename AP::Extension*>& extensions, \
+    vector<astrometry::SphericalCoords*> fieldProjections, \
+    bool logging, \
+    bool useRows);  \
 template void \
 readMatches<AP>(img::FTable& table, \
 		typename AP::MCat& matches, \
