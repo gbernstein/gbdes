@@ -84,7 +84,6 @@ fitDefaulted(PixelMapCollection& pmc,
     const double fitWeight = pow(testPointSigma,-2.);
     // Put smaller errors on the "reference" points.  Doesn't really matter.
     const double refWeight = 10. * fitWeight;
-    
     // Distribute points equally in x and y, but shuffle the y coords
     // so that the points fill the rectangle
     vector<int> vx(nGridPoints);
@@ -134,7 +133,6 @@ fitDefaulted(PixelMapCollection& pmc,
       matches.emplace_back(new Match(std::move(dfit)));
       matches.back()->add(std::move(dref));
     }
-    cerr << "ext added" << endl;
   }
 
   // Build CoordAlign object and solve for defaulted parameters

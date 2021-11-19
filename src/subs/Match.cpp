@@ -161,9 +161,9 @@ Match::Match(unique_ptr<Detection> e): elist(), nFit(0),dof(0),
 void
 Match::add(unique_ptr<Detection> e) {
   isPrepared = false;
-  elist.push_back(std::move(e));
   e->itsMatch = this;
   e->isClipped = false;
+  elist.push_back(std::move(e));
   isMappedFit = false;
   isMappedAll = false;
   isSolved = false;

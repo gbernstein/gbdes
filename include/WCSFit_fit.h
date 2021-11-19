@@ -74,19 +74,20 @@ class FitClass {
     
 
     // All we care about fields are names and orientations:
-    NameIndex fieldNames;
-    vector<SphericalCoords*> fieldProjections;
-    vector<double> fieldEpochs;
+    //NameIndex fieldNames;
+    //vector<SphericalCoords*> fieldProjections;
+    //vector<double> fieldEpochs;
+    Fields fields;
     
-    vector<Instrument*> instruments;
+    vector<unique_ptr<Instrument>> instruments;
     
     // The table of exposures
-    vector<Exposure*> exposures;
+    vector<unique_ptr<Exposure>> exposures;
     vector<shared_ptr<Exposure>> SPexposures;
     
     // Extension tables:
-    vector<ColorExtension*> colorExtensions;
-    vector<Extension*> extensions;
+    vector<unique_ptr<ColorExtension>> colorExtensions;
+    vector<unique_ptr<Extension>> extensions;
     vector<shared_ptr<Extension>> SPextensions;
     
     // Class that will build a starting YAML config for all extensions
@@ -105,7 +106,7 @@ class FitClass {
     //void addInputYAML(string inputMaps);
 
     void setExposures(vector<shared_ptr<Exposure>> expos, double sysErr, double refSysErr);
-    void setExposures(vector<Exposure*> expos, double sysErr, double refSysErr);
+    void setExposures(vector<unique_ptr<Exposure>> expos, double sysErr, double refSysErr);
     
     void setExtensions(vector<shared_ptr<Extension>> extens);
 

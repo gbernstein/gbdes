@@ -6,7 +6,7 @@
 
 //FitClass::FitClass(string inputMaps) {
 FitClass::FitClass() {
-    
+    // TODO: want input: fields, instruments, exposures, extensions (+wcss), matches
     int test = 1;
     minMatches = 2;
     minFitExposures = 200;
@@ -18,11 +18,16 @@ FitClass::FitClass() {
     usePM = false;
     chisqTolerance = 0.001;
     fixMapList = {};
-    fieldNames = {};
-    fieldProjections = vector<SphericalCoords*>(0);
-    fieldEpochs = vector<double>(0);
-    instruments = vector<Instrument*>(0);
+    //fieldNames = {};
+    //fieldProjections = vector<SphericalCoords*>(0);
+    //fieldEpochs = vector<double>(0);
+    //instruments = vector<unique_ptr<Instrument>>(0);
+    //exposures = vector<unique_ptr<Exposure>>(0);
     
+    // TODO: add the following
+    // setRefWCSNames
+    // setupMaps
+
     /*cerr << "setup inputYAML" << endl;
     YAMLCollector inputYAML(inputMaps, PixelMapCollection::magicKey);
     //inputYAML = tmpYAML;
@@ -60,26 +65,32 @@ int FitClass::getMatchLength() {
   }
 }*/
 
-void FitClass::setExposures(vector<shared_ptr<Exposure>> expos, double sysErr, double refSysErr) {
+/*void FitClass::setExposures(vector<shared_ptr<Exposure>> expos, double sysErr, double refSysErr) {
 
   SPexposures = expos;
-  //exposures.reserve(SPexposures.size());
-  vector<Exposure*> tmp_expos;
-  for (auto e : SPexposures) {
+  //vector<unique_ptr<Exposure>> tmp_expos;
+  //for (auto e : SPexposures) {
     //exposures.push_back(e.get());
-    tmp_expos.push_back(e.get());
+  //  tmp_expos.push_back(e.get());
+  //}
+  vector<unique_ptr<Exposure>> tmp_expos(SPexposures.size());
+  for (int i=0; i < SPexposures.size(); i++) {
+    shared_ptr<Exposure> SPexpo = SPexposures[i];
+    unique_ptr<Exposure> expo(new Exposure(SPexpo->name, SPexpo->projection));
+    expo->field = SPexpo->field;
+    tmp_expos[i] = std::move(expo);
   }
   setExposures(tmp_expos, sysErr, refSysErr);
-}
+}*/
 
-void FitClass::setExposures(vector<Exposure*> expos, double sysErr, double refSysErr) {
+void FitClass::setExposures(vector<unique_ptr<Exposure>> expos, double sysErr, double refSysErr) {
 
   /*SPexposures = expos;
   exposures.reserve(SPexposures.size());
   for (auto e : SPexposures) {
     exposures.push_back(e.get());
   }*/
-  exposures = expos;
+  exposures = std::move(expos);
 
   // Convert error parameters from I/O units to internal
   float referenceSysError = refSysErr * RESIDUAL_UNIT/WCS_UNIT;
@@ -91,7 +102,7 @@ void FitClass::setExposures(vector<Exposure*> expos, double sysErr, double refSy
     Matrix22 astrometricCovariance(0.);
     astrometricCovariance(0,0) = sysError*sysError;
     astrometricCovariance(1,1) = sysError*sysError;
-    for (auto e : exposures) {
+    for (auto const & e : exposures) {
       if (e && e->instrument >= 0) {
       e->astrometricCovariance += astrometricCovariance;
       cerr << "add to e" << endl;
@@ -103,7 +114,7 @@ void FitClass::setExposures(vector<Exposure*> expos, double sysErr, double refSy
     Matrix22 astrometricCovariance(0.);
     astrometricCovariance(0,0) = referenceSysError*referenceSysError;
     astrometricCovariance(1,1) = referenceSysError*referenceSysError;
-    for (auto e : exposures) {
+    for (auto const & e : exposures) {
       if (e && (e->instrument == REF_INSTRUMENT || e->instrument== PM_INSTRUMENT))
         e->astrometricCovariance += astrometricCovariance;
       // Note that code in FitSubroutines::makePMDetection() will
@@ -119,9 +130,10 @@ void FitClass::setExtensions(vector<shared_ptr<Extension>> extens) {
 
   SPextensions = extens;
   extensions.reserve(SPextensions.size());
-  for (auto e : SPextensions) {
+  for (int i=0; i < SPextensions.size(); i++) {
+    shared_ptr<Extension> e = SPextensions[i];
     //extensions.push_back(e.get());
-    typename Astro::Extension* extn = new typename Astro::Extension;
+    unique_ptr<Astro::Extension> extn(new typename Astro::Extension);// = new typename Astro::Extension;
 
     extn->exposure = e->exposure;
     extn->device = e->device;
@@ -129,17 +141,14 @@ void FitClass::setExtensions(vector<shared_ptr<Extension>> extens) {
     extn->magshift = e->magshift;
     extn->wcsName = e->wcsName;
     extn->mapName = e->mapName; 
-    extn->startWcs = e->startWcs;
-    //test reproject:
-    //if (extn->device > 0) {
+    extn->startWcs = std::unique_ptr<astrometry::Wcs>(e->startWcs.get());
+    
     const Exposure& expo = *exposures[extn->exposure];
-    //astrometry::SphericalICRS testCoords(2.62, 0.039);
     extn->startWcs->reprojectTo(*expo.projection);
-    //}
-    //extn->startWcs->reprojectTo(testCoords);
-    extensions.push_back(extn);
+  
+    extensions[i] = std::move(extn);
   }
-  colorExtensions = vector<typename Astro::ColorExtension*>(extensions.size(), nullptr);
+  colorExtensions = vector<unique_ptr<typename Astro::ColorExtension>>(extensions.size());
 }
 
 void FitClass::setRefWCSNames() {
@@ -147,12 +156,12 @@ void FitClass::setRefWCSNames() {
 
   // A special loop here to set the wcsname of reference extensions to the
   // name of their field.
-  for (auto extnptr : extensions) {
+  for (auto const & extnptr : extensions) {
     if (!extnptr) continue;
     const Exposure& expo = *exposures[extnptr->exposure];
     if ( expo.instrument >= 0) continue;
     int ifield = expo.field;
-    extnptr->wcsName = fieldNames.nameOf(ifield); // ??? mapName instead???
+    extnptr->wcsName = fields.names().nameOf(ifield); // ??? mapName instead???
   }
 }
 
@@ -243,9 +252,9 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
     PROGRESS(2,Checking for field degeneracy);
 
     {
-      vector<bool> fieldHasFree(fieldNames.size(), false);
-      vector<bool> fieldHasFixed(fieldNames.size(), false);
-      for (auto extnptr : extensions) {
+      vector<bool> fieldHasFree(fields.names().size(), false);
+      vector<bool> fieldHasFixed(fields.names().size(), false);
+      for (auto const & extnptr : extensions) {
         if (!extnptr) continue; // Not in use
         int field = exposures[extnptr->exposure]->field;
         if (pmcInit->getFixed(extnptr->mapName)) {
@@ -259,7 +268,7 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
       for (int i=0; i<fieldHasFree.size(); ++i) {
         if (fieldHasFree[i] && !fieldHasFixed[i]) {
         cerr << "ERROR: No data in field "
-          << fieldNames.nameOf(i)
+          << fields.names().nameOf(i)
           << " have fixed maps to break shift degeneracy"
           << endl;
         done = true;
@@ -287,7 +296,7 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
       // All exposure maps are candidates for setting to Identity
       // (the code will ignore those which already are Identity)
       set<string> exposureMapNames;
-      for (auto expoPtr : exposures) {
+      for (auto const & expoPtr : exposures) {
         if (expoPtr && !expoPtr->name.empty())
             exposureMapNames.insert(expoPtr->name);
       }
@@ -332,7 +341,7 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
     // Add WCS for every extension, and reproject into field coordinates
     PROGRESS(2,Defining all WCSs);
     cerr << "check 8 wcs" << endl;
-    setupWCS(fieldProjections, instruments, exposures, extensions, mapCollection);
+    setupWCS(fields.projections(), instruments, exposures, extensions, mapCollection);
     cerr << "check 9 wcs" << endl;
     /////////////////////////////////////////////////////
   //  Initialize map components that were created with default
@@ -367,7 +376,7 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
     // Fit set of extensions to initialize defaulted map(s)
     set<Extension*> defaultedExtensions;
     for (auto iextn : extnSet) {
-      defaultedExtensions.insert(extensions[iextn]);
+      defaultedExtensions.insert(extensions[iextn].get());
       initializedExtensions.insert(iextn);
     }
     for (auto s : defaultedExtensions) {
@@ -394,7 +403,7 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
     // Skip extensions that don't exist or are already initialized
     if (!extensions[iextn] || initializedExtensions.count(iextn))
       continue;
-    set<Extension*> defaultedExtensions = {extensions[iextn]};
+    set<Extension*> defaultedExtensions = {extensions[iextn].get()};
     fitDefaulted(mapCollection,
                   defaultedExtensions,
                   instruments,
@@ -439,11 +448,11 @@ void FitClass::setupMaps(YAMLCollector& inputYAML) {//, PixelMapCollection& mapC
 
   // Before reading objects, we want to set all starting WCS's to go into
   // field coordinates.
-  for (auto extnptr : extensions) {
+  for (auto const & extnptr : extensions) {
     if (!extnptr) continue;
     if (extnptr->exposure < 0) continue;
     int ifield = exposures[extnptr->exposure]->field;
-    extnptr->startWcs->reprojectTo(*fieldProjections[ifield]);
+    extnptr->startWcs->reprojectTo(*fields.projections()[ifield]);
   }
 }
 
@@ -457,15 +466,9 @@ void FitClass::setObjects(int i, img::FTable ff, string xKey, string yKey, strin
                           vector<string> xyErrKeys, string magKey, int magKeyElement, string magErrKey,
                           int magErrKeyElement, string pmRaKey, string pmDecKey, string parallaxKey) {
         cerr << "setting objects for " << to_string(i)  << endl;
-        typename Astro::Extension& extn = *extensions[i];
-        const typename Astro::SubMap* sm=extn.map;
-        cerr << "got map" << endl;
-        if (!sm) cerr << "map is no good" << endl;
-        else cerr << "map is good" << endl;
-
         readObjects_oneExtension<Astro>(exposures, i, ff, xKey, yKey, idKey, pmCovKey, xyErrKeys,
                                  magKey, magKeyElement, magErrKey, magErrKeyElement, pmRaKey, pmDecKey,
-                                 parallaxKey, extensions, fieldProjections, verbose, true);
+                                 parallaxKey, extensions, fields.projections(), verbose, true);
 }
 
 /*
@@ -756,7 +759,7 @@ void FitClass::fit(){
 	if (iExposure<0 || !exposures[iExposure])
 	  continue;
 	int iField = exposures[iExposure]->field;
-	extensionProjections[i] = fieldProjections[iField];
+	extensionProjections[i] = fields.projections()[iField].get();
       }
       PROGRESS(2, extensionProjections completed);
       
@@ -774,7 +777,7 @@ void FitClass::cleanup() {
 
   PROGRESS(2,Cleaning up);
   // Get rid of matches:
-  for (auto im = matches.begin(); im!=matches.end(); ) {
+  /*for (auto im = matches.begin(); im!=matches.end(); ) {
     (*im)->clear(true);  // deletes detections
     // And get rid of match itself.
     im = matches.erase(im);
@@ -790,5 +793,5 @@ void FitClass::cleanup() {
   //  if (exposures[i]) delete exposures[i];
   // Get rid of instruments
   for (int i=0; i<instruments.size(); i++)
-    if (instruments[i]) delete instruments[i];
+    if (instruments[i]) delete instruments[i];*/
 }

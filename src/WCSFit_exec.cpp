@@ -246,12 +246,8 @@ main(int argc, char *argv[])
   //vector<SphericalCoords*> fieldProjections;
   //vector<double> fieldEpochs;
   
-  readFields(inputTables, outCatalog, fitclass.fieldNames, fitclass.fieldProjections,
-             fitclass.fieldEpochs, pmEpoch);
-  
-  //readFields(inputTables, outCatalog, fieldNames, fieldProjections,
-  //           fieldEpochs, pmEpoch);
-  
+  fitclass.fields = Fields::read(inputTables, outCatalog, pmEpoch);
+    
   PROGRESS(1,Reading instruments);
 
   // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
@@ -273,16 +269,16 @@ main(int argc, char *argv[])
   // This vector will hold the color-priority value of each exposure.
   // -1 means an exposure that does not hold color info.
   vector<int> exposureColorPriorities;
-  //fitclass.exposures = readExposures(fitclass.instruments,
-  vector<Exposure*> exposures = readExposures(fitclass.instruments,
-                                     fitclass.fieldEpochs,
+  
+  vector<unique_ptr<Exposure>> exposures = readExposures(fitclass.instruments,
+                                     fitclass.fields.epochs(),
                                      exposureColorPriorities,
                                      useColorList,
                                      inputTables, outCatalog, skipExposureList, 
                                      true, // Use reference exposures for astrometry
                                      outputCatalogAlreadyOpen);
-  
-  fitclass.setExposures(exposures, sysError, referenceSysError);
+
+  fitclass.setExposures(std::move(exposures), sysError, referenceSysError);
 
   cerr << "check 3 exec" << endl;
   
@@ -297,7 +293,7 @@ main(int argc, char *argv[])
     out.copy(extensionTable);
   }
   
-  vector<ColorExtension*> colorExtensions;
+  vector<unique_ptr<ColorExtension>> colorExtensions;
   fitclass.extensions = readExtensions<Astro>(extensionTable,
                                               fitclass.instruments,
                                               fitclass.exposures,
@@ -349,7 +345,7 @@ main(int argc, char *argv[])
   // Now loop over all original catalog bintables, reading the desired rows
   // and collecting needed information into the Detection structures
   PROGRESS(1,Reading catalogs);
-  readObjects<Astro>(extensionTable, fitclass.exposures, fitclass.extensions, fitclass.fieldProjections);
+  readObjects<Astro>(extensionTable, fitclass.exposures, fitclass.extensions, fitclass.fields.projections());
   //readObjects<Astro>(extensionTable, fitclass.exposures, extensions, fitclass.fieldProjections);
 
   // Now loop again over all catalogs being used to supply colors,

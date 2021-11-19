@@ -292,7 +292,6 @@ main(int argc, char *argv[])
 	if (e && e->instrument >= 0)
 	  e->astrometricCovariance += astrometricCovariance;
   }
-      }
     }
     if (referenceSysError > 0.) {
       cerr << "rsysError: " << referenceSysError << endl;

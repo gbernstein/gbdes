@@ -408,11 +408,11 @@ whoNeedsColor(const vector<unique_ptr<typename S::Extension>> & extensions);
 template <class S>
 void
 readMatches(vector<int>& seq,
-      	vector<LONGLONG>& extn,
-      	vector<LONGLONG>& obj,
+      	    vector<LONGLONG>& extn,
+      	    vector<LONGLONG>& obj,
 	    typename S::MCat& matches,
-	    vector<typename S::Extension*>& extensions,
-	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const vector<unique_ptr<typename S::Extension>>& extensions,
+	    const vector<unique_ptr<typename S::ColorExtension>>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
 	    bool usePM=false);        // If true, create PMMatches
@@ -438,14 +438,14 @@ void readObjects(const img::FTable& extensionTable,
 		 bool logging=true); //Give progress updates?
 
 template <class S>
-void readObjects_oneExtension(const vector<Exposure*>& exposures,
+void readObjects_oneExtension(const vector<unique_ptr<Exposure>>& exposures,
       int iext, img::FTable ff,
       string xKey, string yKey, string idkey, string pmCovKey,
 	  vector<string> xyErrKeys,
 	  string magKey, int magKeyElement, string magErrKey, int magErrKeyElement,
 	  string pmRaKey, string pmDecKey, string parallaxKey,
-      vector<typename S::Extension*>& extensions,
-      vector<astrometry::SphericalCoords*> fieldProjections,
+      const vector<unique_ptr<typename S::Extension>>& extensions,
+      const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
       bool logging,
       bool useRows
 	  );

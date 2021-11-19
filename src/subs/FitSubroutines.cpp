@@ -467,7 +467,6 @@ readExposures(const vector<unique_ptr<Instrument>>& instruments,
   vector<double> mjd;
   vector<double> apcorr;
   vector<string> epoch;
-
   vector<vector<double>> observatory;
   vector<vector<double>> astrometricCovariance;
   vector<double> photometricVariance;
@@ -638,7 +637,6 @@ readExposures(const vector<unique_ptr<Instrument>>& instruments,
       expo->instrument = instrumentNumber[i];
       expo->airmass = airmass[i];
       expo->exptime = exptime[i];
-      exposures[i] = std::move(expo);
       if (!mjd.empty()) {
 	expo->mjd = mjd[i];
 	// Also calculate time in years after field's reference epoch
@@ -665,6 +663,7 @@ readExposures(const vector<unique_ptr<Instrument>>& instruments,
       }
       if (!photometricVariance.empty())
 	expo->photometricVariance = photometricVariance[i];
+      exposures[i] = std::move(expo);
     }
   } // End exposure loop
   return exposures;
@@ -1188,8 +1187,8 @@ template <class S>
 void
 readMatches(img::FTable& table,
 	    typename S::MCat& matches,
-	    vector<typename S::Extension*>& extensions,
-	    vector<typename S::ColorExtension*>& colorExtensions,
+	    const vector<unique_ptr<typename S::Extension>>& extensions,
+	    const vector<unique_ptr<typename S::ColorExtension>>& colorExtensions,
 	    const ExtensionObjectSet& skipSet,
 	    int minMatches,
 	    bool usePM) {
@@ -1687,13 +1686,13 @@ void readObjects(const img::FTable& extensionTable,
 // and place into Detection structures.
 template <class S>
 void readObjects_oneExtension(
-      const vector<Exposure*>& exposures,
+      const vector<unique_ptr<Exposure>>& exposures,
       int iext, img::FTable ff,
       string xKey, string yKey, string idKey, string pmCovKey, vector<string> xyErrKeys,
       string magKey, int magKeyElement, string magErrKey, int magErrKeyElement, // TODO: make these dictionary?
       string pmRaKey, string pmDecKey, string parallaxKey,
-      vector<typename S::Extension*>& extensions,
-      vector<astrometry::SphericalCoords*> fieldProjections,
+      const vector<unique_ptr<typename S::Extension>>& extensions,
+      const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
       bool logging,
       bool useRows
       ) {
@@ -1711,7 +1710,7 @@ void readObjects_oneExtension(
   cerr << "in readObj 1" << endl;
   if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
   cerr << "passed sm" << endl;
-  astrometry::Wcs* startWcs = extn.startWcs;
+  astrometry::Wcs* startWcs = extn.startWcs.get();
   cerr << "got startWcs" << endl;
   cerr << startWcs->getName() << endl;
   //double testxw;
@@ -1766,7 +1765,7 @@ void readObjects_oneExtension(
       cerr << "in readObj 6.1" << endl;
       // Need to read data differently from catalog with
       // full proper motion solution.  Get PMDetection.
-      auto pmd = S::makePMDetection(d, &expo,
+      auto pmd = S::makePMDetection(*d, &expo,
                   ff, irow,
                   xKey, yKey,
                   pmRaKey, pmDecKey, parallaxKey, pmCovKey,
@@ -1777,11 +1776,11 @@ void readObjects_oneExtension(
       // This routine will either replace the plain old Detection in
       // a PMMatch with this PMDetection; or if it is part of a plain
       // match, it will slice the PMDetection down to a Detection.
-      S::handlePMDetection(pmd, d);
+      S::handlePMDetection(std::move(pmd), *d);
     } else {
       cerr << "in readObj 7" << endl;
       // Normal photometric or astrometric entry
-      S::fillDetection(d, &expo, *fieldProjection,
+      S::fillDetection(*d, &expo, *fieldProjection,
             ff, irow,
             xKey, yKey, xyErrKeys,
             magKey, magErrKey,
@@ -2928,14 +2927,14 @@ readObjects<AP>(const img::FTable& extensionTable, \
 		const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections, \
                 bool logging);	      \
 template void \
-readObjects_oneExtension<AP>(const vector<Exposure*>& exposures, \
+readObjects_oneExtension<AP>(const vector<unique_ptr<Exposure>>& exposures, \
     int iext, img::FTable ff,\
     string xKey, string yKey, string idKey, string pmCovKey,  \
     vector<string> xyErrKeys, \
     string magKey, int magKeyElement, string magErrKey, int magErrKeyElement, \
     string pmRaKey, string pmDecKey, string parallaxKey, \
-    vector<typename AP::Extension*>& extensions, \
-    vector<astrometry::SphericalCoords*> fieldProjections, \
+    const vector<unique_ptr<typename AP::Extension>>& extensions, \
+    const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections, \
     bool logging, \
     bool useRows);  \
 template void \
