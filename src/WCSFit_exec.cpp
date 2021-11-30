@@ -186,33 +186,25 @@ main(int argc, char *argv[])
   //loadPixelMapParser();
   
   cerr << "start fitclass" << endl;
+  //Fields fields = Fields::read(inputTables, outCatalog, pmEpoch);
+  vector<string> vn{"testName"};
+  vector<double> vra{0.5};
+  vector<double> vdec{1.5};
+  vector<double> vep{10.5};
+  FieldsHelper fh(vn, vra, vdec, vep);
   FitClass fitclass;
   //FitClass fitclass(inputMaps);
   //fitclass.maxError *= RESIDUAL_UNIT/WCS_UNIT;
   cerr << "init mm " << fitclass.minMatches << endl;
   
   fitclass.minMatches = minMatches;
-  fitclass.minFitExposures = minFitExposures;
-  fitclass.clipEntireMatch = clipEntireMatch;
-  fitclass.chisqTolerance = chisqTolerance;
-  fitclass.divideInPlace = divideInPlace;
-  fitclass.purgeOutput = purgeOutput;
-  fitclass.minColor = minColor;
-  fitclass.maxColor = maxColor;
   fitclass.verbose = verbose;
-  fitclass.randomNumberSeed = randomNumberSeed;
-  fitclass.minimumImprovement = 0.02;
-
-  //list<string> fixMapList = splitArgument(fixMaps);
-  //fitclass.fixMapList = fixMapList;
   
-  fitclass.fixMapList = splitArgument(fixMaps);
   cerr << "exec 0.1" << endl;
   list<string> useInstrumentList = splitArgument(useInstruments);
   
   cerr << "exec 1" << endl;
   // Objects to ignore on input:
-  //ExtensionObjectSet skipSet = ExtensionObjectSet(skipFile);
   ExtensionObjectSet skipSet(skipFile);
   
   // The list of exposures that are considered valid sources of color information:
@@ -306,7 +298,7 @@ main(int argc, char *argv[])
   
   fitclass.setRefWCSNames();
   
-  fitclass.setupMaps(inputYAML);
+  fitclass.setupMaps(inputYAML, fixMaps=fixMaps);
   
   
   // Start by reading all matched catalogs, creating Detection and Match arrays, and 
@@ -354,7 +346,10 @@ main(int argc, char *argv[])
   readColors<Astro>(extensionTable, colorExtensions);
 
 
-  fitclass.fit();
+  fitclass.fit(maxError=maxError, minFitExposures=minFitExposures, reserveFraction=reserveFraction,
+               randomNumberSeed=randomNumberSeed, minimumImprovement=minimumImprovement,
+               clipThresh=clipThresh, chisqTolerance=chisqTolerance, clipEntireMatch=clipEntireMatch,
+               divideInPlace=divideInPlace, purgeOutput=purgeOutput, minColor=minColor, maxColor=maxColor);
 
   // The re-fitting is now complete.  Serialize all the fitted coordinate systems
   PROGRESS(2,Saving astrometric parameters);

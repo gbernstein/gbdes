@@ -319,6 +319,20 @@ private:
 	vector<double> _epochs;
 };
 
+struct FieldsHelper {
+public:
+	FieldsHelper(vector<string> names_,
+		vector<double> ra_,
+		vector<double> dec_,
+		vector<double> epochs_
+	): names(names_), ra(ra_), dec(dec_), epochs(epochs_) {};
+	
+	vector<string> names;
+	vector<double> ra;
+	vector<double> dec;
+	vector<double> epochs;
+};
+
 // Read in all the instrument extensions and their device info from input
 // FITS file, save useful ones and write to output FITS file.
 // The useInstrumentList entries are regexes, empty means use all.
@@ -347,7 +361,7 @@ readExposures(const vector<unique_ptr<Instrument>>& instruments,
 	      bool useReferenceExposures,
 	      bool& outputCatalogAlreadyOpen);
 
-vector<astrometry::Wcs*>
+vector<shared_ptr<astrometry::Wcs>>
 readWCSs(img::FTable& extensionTable);
 
 // Read extensions from the table.

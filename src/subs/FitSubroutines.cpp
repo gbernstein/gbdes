@@ -30,8 +30,11 @@ using photometry::MMAG;
 // internal white space with underscores:
 void
 spaceReplace(string& s) {
+  cerr << "sr 1" << endl;
   stripWhite(s);
+  cerr << "sr2 " << endl;
   s = regexReplace("[[:space:]]+","_",s);
+  cerr << "sr3" << endl;
 }
 
 // Another helper function to split up a string into a list of whitespace-trimmed strings.
@@ -310,12 +313,24 @@ Fields::Fields(
     _epochs(std::move(epochs))
 {
     // TODO: check that sizes are consistent, raise if they are not.
+    cerr << "in make fields" << endl;
     _projections.reserve(names.size());
+    cerr << "mf 2" << endl;
     for (std::size_t i = 0; i != names.size(); ++i) {
-        spaceReplace(names[i]);
-        _names.append(std::move(names[i]));
-        astrometry::Orientation orient(astrometry::SphericalICRS(ra[i]*WCS_UNIT, dec[i]*WCS_UNIT));
+        cerr << "mf 2.1" << endl;
+        //string tmp_name = std::move(names[i]);
+        string tmp_name = "test";
+        cerr << "mf 2.2" << endl;
+        cerr << tmp_name << endl;
+        cerr << "mf 2.3" << endl;
+        //spaceReplace(tmp_name);
+        cerr << "mf 3" << endl;
+        _names.append(tmp_name); //std::move(names[i]));
+        cerr << "mf 4" << endl;
+        astrometry::Orientation orient(astrometry::SphericalICRS(std::move(ra[i])*WCS_UNIT, std::move(dec[i])*WCS_UNIT));
+        cerr << "mf 5" << endl;
         _projections.emplace_back( new astrometry::Gnomonic(orient));
+        cerr << "mf 6" << endl;
     }
 }
 
@@ -695,13 +710,13 @@ fixMapComponents(typename S::Collection& pmc,
   pmc.setFixed(fixTheseMaps);
 }
 
-vector<astrometry::Wcs*>
+vector<shared_ptr<astrometry::Wcs>>
 readWCSs(img::FTable& extensionTable) {
   //cerr << inputTables << endl;
   //FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
   //cerr << "rW 1" << endl;
   //img::FTable extensionTable = ft.extract();
-  vector<astrometry::Wcs*> WCSs(extensionTable.nrows());
+  vector<shared_ptr<astrometry::Wcs>> WCSs(extensionTable.nrows());
 
   for (int i=0; i<extensionTable.nrows(); i++) {
     // Create the starting WCS for the exposure
@@ -711,7 +726,7 @@ readWCSs(img::FTable& extensionTable) {
       // Create a Wcs that just takes input as RA and Dec in degrees;
       astrometry::IdentityMap identity;
       astrometry::SphericalICRS icrs;
-      WCSs[i] = new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT);
+      WCSs[i] = shared_ptr<astrometry::Wcs>(new astrometry::Wcs(&identity, icrs, "ICRS_degrees", WCS_UNIT));
     } else {
       istringstream iss(s);
       astrometry::PixelMapCollection pmcTemp;
@@ -720,7 +735,8 @@ readWCSs(img::FTable& extensionTable) {
 	exit(1);
       }
       string wcsName = pmcTemp.allWcsNames().front();
-      WCSs[i] = pmcTemp.cloneWcs(wcsName);
+      shared_ptr<astrometry::Wcs> tmp(pmcTemp.cloneWcs(wcsName));
+      WCSs[i] = shared_ptr<astrometry::Wcs>(pmcTemp.cloneWcs(wcsName));
     }
     
   }
@@ -1107,8 +1123,6 @@ readMatches(vector<int>& seq,
       int nValid = matchExtns.size();
       if (matchColorExtension < 0) {
         // There is no color information for this match. 
-	// There is no color information for this match. 
-        // There is no color information for this match. 
         // Discard any detection which requires a color to produce its map:
         nValid = 0;
         for (int j=0; j<matchExtns.size(); j++) {
@@ -1220,13 +1234,17 @@ Astro::fillDetection(Astro::Detection & d,
 		     double magshift,
 		     const astrometry::PixelMap* startWcs,
 		     bool isTag) {
+  cerr << "fillDet 1" << endl;
   d.xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
+  cerr << "fillDet 1.1" << endl;
   d.ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
+  cerr << "fillDet 1.2" << endl;
 
   // Get coordinates and transformation matrix
   startWcs->toWorld(d.xpix, d.ypix, d.xw, d.yw);  // no color in startWCS
+  cerr << "fillDet 1.3" << endl;
   auto dwdp = startWcs->dWorlddPix(d.xpix, d.ypix);
-
+  cerr << "fillDet 1.4" << endl;
   if (isTag) {
     d.invCov.setZero();
   } else {
@@ -1596,6 +1614,8 @@ void readObjects(const img::FTable& extensionTable,
 	   << endl;
       exit(1);
     }
+    cerr << "got startWcs" << endl;
+    cerr << startWcs->getName() << endl;
 
     img::FTable ff;
 #ifdef _OPENMP
@@ -1696,7 +1716,7 @@ void readObjects_oneExtension(
       bool logging,
       bool useRows
       ) {
-  
+
   // Relevant structures for this extension
   typename S::Extension& extn = *extensions[iext];
   cerr << "exten: " << to_string(iext) << " expo: " << to_string(extn.exposure) << endl;

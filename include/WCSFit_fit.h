@@ -30,37 +30,32 @@ using img::FTable;
 class FitClass {
   public:
     FitClass();
-    //FitClass(string inputMaps);
-    
-    double reserveFraction;
-    int randomNumberSeed;
-    
-    double clipThresh;
-    double maxError;
-    //double sysError;
-    //double referenceSysError;
-    //double parallaxPrior;
-    //double pmPrior;
+    FitClass(FieldsHelper fields_,
+             vector<shared_ptr<Instrument>> instruments_,
+             ExposuresHelper exposures_,
+             vector<int> extensionExposureNumbers,
+             vector<int> extensionDevices,
+             YAMLCollector inputYAML,
+             vector<shared_ptr<astrometry::Wcs>> wcss,
+             vector<int> sequence,
+             vector<LONGLONG> extns,
+             vector<LONGLONG> objects,
+             double sysErr=2.0,
+             double refSysErr=2.0,
+             int minMatches=2,
+             ExtensionObjectSet matchSkipSet=ExtensionObjectSet(""),
+             string fixMaps="",
+             bool usePM=true,
+             verbose=false
+             );
     
     int minMatches;
-    int minFitExposures;
-    
-    bool clipEntireMatch;
-    double chisqTolerance;
-    bool divideInPlace;
-    bool purgeOutput;
-    
-    double minColor;
-    double maxColor;
-
-    bool usePM;
-    
     int verbose;
 
 
     // This is list of regexes of PixelMap names (or instrument names) that should
     // have their parameters held fixed.
-    list<string> fixMapList;
+    //static list<string> fixMapList_;
     
     // The list of instruments that we will be matching together in this run:
     // have their parameters held fixed.
@@ -70,7 +65,7 @@ class FitClass {
     // pixel maps: 
     //const double worldTolerance = 0.1*MILLIARCSEC/WCS_UNIT;
     // Fractional reduction in RMS required to continue sigma-clipping:
-    double minimumImprovement;
+    //double minimumImprovement;
     
 
     // All we care about fields are names and orientations:
@@ -115,10 +110,10 @@ class FitClass {
     void addMap(YAMLCollector& inputYAML, string mapName, vector<string> mapParams);
     //void addMap(string mapName, vector<string> mapParams);
 
-    void setupMaps(YAMLCollector& inputYAML);//, PixelMapCollection& mapCollection);
+    void setupMaps(YAMLCollector& inputYAML, string fixMaps="");//, PixelMapCollection& mapCollection);
     
     void setMatches(vector<int> sequence, vector<LONGLONG> extensions, vector<LONGLONG> objects,
-                    ExtensionObjectSet skipSet);
+                    ExtensionObjectSet skipSet, bool usePM=true);
 
     void setObjects(int i, img::FTable ff, string xKey, string yKey, string idKey, string pmCovKey,
                     vector<string> xyErrKeys, string magKey, int magKeyElement, string magErrKey,
@@ -128,7 +123,10 @@ class FitClass {
 
     void reprojectWCSs();
 
-    void fit();
+    void fit(double maxError=100., int minFitExposures=200, double reserveFraction=0.2, int randomNumberSeed=1234,
+             double minimumImprovement=0.02, double clipThresh=5.0, double chisqTolerance=0.001,
+             bool clipEntireMatch=false, bool divideInPlace=false, bool purgeOutput=false,
+             double minColor=-10.0, double maxColor=10.0);
 
     int getMatchLength();
 

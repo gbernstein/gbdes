@@ -5,13 +5,51 @@
 #include <pybind11/iostream.h>
 
 #include "FitSubroutines.h"
-#include "TPVMap.h"
-#include "WCSFoF_match.h"
+#include "Instrument.h"
+//#include "TPVMap.h"
+//#include "WCSFoF_match.h"
 #include "WCSFit_fit.h"
 
+using namespace pybind11::literals;
 namespace py = pybind11;
 
-template<class T1, class T2> 
+
+template<class T = float>
+void declareBounds(py::module &m) {
+    using Class = Bounds<T>;
+
+    py::class_<Class>(m, "Bounds")
+        .def(py::init<const T, const T, const T, const T>());
+
+}
+
+using InstrumentVector = std::vector<std::unique_ptr<Instrument>>;
+
+PYBIND11_MAKE_OPAQUE(InstrumentVector);
+
+void declareInstrumentVector(py::module & mod) {
+    py::class_<InstrumentVector> cls(mod, "InstrumentVector");
+    cls.def(py::init<>());
+    cls.def(
+        "add",
+        [](InstrumentVector & self, std::string name, std::string band, py::dict devices) {
+            std::unique_ptr<Instrument> instrument(new Instrument(name));
+            instrument->band = band;
+            for (auto item : devices) {
+                auto device_name = py::cast<std::string>(item.first);
+                auto domain = py::cast<Bounds<double>>(item.second);
+                instrument->addDevice(device_name, domain);
+            }
+        },
+        "name"_a, "band"_a, "devices"_a,
+        "Add a new instrument to the vector.\n"
+        "\n"
+        "'devices' is a dict mapping detector name to the bounding box of \n"
+        "that detector.\n"
+    );
+}
+
+/*template<class T1, class T2> 
 void declareExtension(py::module &m) {
     using Class = ExtensionBase<T1, T2>;
 
@@ -29,7 +67,22 @@ void declareExtension(py::module &m) {
         .def_readwrite("wcsName", &Class::wcsName)
         .def_readwrite("mapName", &Class::mapName)
         .def_readwrite("keepers", &Class::keepers);
+}*/
+
+/*
+
+void declareFields(py::module & mod) {
+    py::class_<Fields> cls(mod, "Fields");
+    cls.def(
+        py::init<std::vector<std::string>, std::vector<double>, std::vector<double>, std::vector<double>>(),
+        "names"_a,
+        "ra"_a,
+        "dec"_a,
+        "epochs"_a
+    );
 }
+
+
 
 template<class T>
 void declareColorExtension(py::module &m) {
@@ -39,14 +92,6 @@ void declareColorExtension(py::module &m) {
         .def(py::init<>());
 }
 
-template<class T = float>
-void declareBounds(py::module &m) {
-    using Class = Bounds<T>;
-
-    py::class_<Class>(m, "Bounds")
-        .def(py::init<const T, const T, const T, const T>());
-
-}
 
 template<class T>
 void declareVector(py::module &m) {
@@ -110,9 +155,147 @@ void declareReadMatches(py::module &m) {
 //void declareDictionary(py::module &m) {
 //    py::class_<YAMLCollector::Dictionary, std::map<T1, T2>>();
 //}
-
+*/
 PYBIND11_MODULE(wcsfit, m) {
-    
+
+    m.def("readWCSs", &readWCSs);
+
+    py::class_<img::FTable>(m, "FTable")
+        .def(py::init<long>())
+        .def("addColumnDouble", &FTable::addColumn<double>, py::arg("values"), py::arg("columnName"),
+             py::arg("repeat")=-1, py::arg("stringLength")=-1)
+        .def("addColumnStr", &FTable::addColumn<string>, py::arg("values"), py::arg("columnName"),
+             py::arg("repeat")=-1, py::arg("stringLength")=-1);
+
+    py::class_<astrometry::PixelMap>(m, "PixelMap");
+
+    py::class_<astrometry::Wcs, shared_ptr<astrometry::Wcs>>(m, "Wcs")
+        .def(py::init<astrometry::PixelMap*, astrometry::SphericalCoords const&, string, double, bool>(),
+            py::arg("pm_"), py::arg("nativeCoords_"), py::arg("name")="", py::arg("wScale_")=DEGREE,
+            py::arg("shareMap_")=false)
+        .def("reprojectTo", [](astrometry::Wcs & self, const SphericalCoords& targetCoords_) {
+            py::scoped_estream_redirect stream(
+                std::cerr,                               // std::ostream&
+                py::module_::import("sys").attr("stderr") // Python output
+            );
+            self.reprojectTo(targetCoords_);
+        })
+        .def("getTargetCoords", &astrometry::Wcs::getTargetCoords)
+        .def("toWorld", [](astrometry::Wcs & self, double x, double y) {
+            double ra;
+            double dec;
+            self.toWorld(x, y, ra, dec);
+            vector<double> radec = {ra, dec};
+            return radec;
+        });
+
+    declareInstrumentVector(m);
+    py::class_<Fields>(m, "Fields")
+        .def(py::init<vector<string>, vector<double>, vector<double>, vector<double>>());
+
+    py::class_<FieldsHelper>(m, "FieldsHelper")
+        .def(py::init<vector<string>, vector<double>, vector<double>, vector<double>>());
+
+    py::class_<Instrument, shared_ptr<Instrument>>(m, "Instrument")
+        .def(py::init<string>(), py::arg("name_")="")
+        .def_readwrite("name", &Instrument::name)
+        //.def_readwrite("nDevices", &Instrument::nDevices)
+        .def_readwrite("band", &Instrument::band)
+        //.def_readwrite("deviceNames", &Instrument::deviceNames)
+        .def("addDevice", &Instrument::addDevice);
+
+    py::class_<ExposuresHelper>(m, "ExposuresHelper")
+        .def(py::init<vector<string>, vector<int>, vector<int>, vector<double>, vector<double>, vector<double>, vector<double>, vector<double>>());
+
+    declareBounds<double>(m);
+
+    py::class_<YAMLCollector>(m, "YAMLCollector")
+        .def(py::init<string, string>())
+        .def("addInput", [](YAMLCollector & self, string is, string filter, bool prepend){
+                        istringstream iss(is);
+                        self.addInput(iss, filter, prepend);},
+                        py::arg("is"), py::arg("filter")="", py::arg("prepend")=false);
+        //.def("addMap", &YAMLCollector::addMap, py::arg("name"), py::arg("dict"),
+        //     py::arg("criticalTime")=nullptr);
+        //.def("addMap", [](YAMLCollector & self, string name, py::dict pyDict) {
+        //                  astrometry::YAMLCollector::Dictionary d;
+        //                  for (auto e : pyDict) {
+        //                      d[e.first] = e.second;
+        //                  }
+        //                  self.addMap(name, d);});
+
+    py::class_<ExtensionObjectSet>(m, "ExtensionObjectSet")
+        .def(py::init<string>());
+
+    //declareExtension<astrometry::SubMap, astrometry::Detection>(m);
+
+    py::class_<FitClass>(m, "FitClass")
+        .def(py::init<FieldsHelper, vector<shared_ptr<Instrument>>, ExposuresHelper, vector<int>, vector<int>, YAMLCollector, vector<shared_ptr<astrometry::Wcs>>, vector<int>, vector<LONGLONG>, vector<LONGLONG>, double, double, int, ExtensionObjectSet, string, bool>(),
+             py::arg("fields_"), py::arg("instruments_"), py::arg("exposures_"),
+             py::arg("extensionExposureNumbers"), py::arg("extensionDevices"), py::arg("inputYAML"),
+             py::arg("wcss"), py::arg("sequence"), py::arg("extns"), py::arg("objects"),
+             py::arg("sysErr")=2.0, py::arg("refSysErr")=2.0, py::arg("minMatches")=2, py::arg("matchSkipSet")=ExtensionObjectSet(""),
+             py::arg("fixMaps")="", py::arg("usePM")=true)
+        .def("setObjects", &FitClass::setObjects) 
+        //.def_readwrite("reserveFraction", &FitClass::reserveFraction)
+        .def_readwrite("verbose", &FitClass::verbose)
+        .def("setRefWCSNames", &FitClass::setRefWCSNames) // to delete
+        .def("setupMaps", &FitClass::setupMaps) // to delete
+        .def("setMatches", &FitClass::setMatches) // to delete
+        .def("setExtensions", &FitClass::setExtensions) // to delete
+        .def("fit", &FitClass::fit, py::arg("maxError")=100., py::arg("minFitExposures")=200,
+             py::arg("reserveFraction")=0.2, py::arg("randomNumberSeed")=1234,
+             py::arg("minimumImprovement")=0.02, py::arg("clipThresh")=5.0, py::arg("chisqTolerance")=0.001,
+             py::arg("clipEntireMatch")=false, py::arg("divideInPlace")=false, py::arg("purgeOutput")=false,
+             py::arg("minColor")=-10.0, py::arg("maxColor")=10.0)
+        ;
+        //.def(py::init<string>())
+        /*
+        .def_readwrite("fields", &FitClass::fields) 
+        .def_readwrite("instruments", &FitClass::instruments) 
+        .def("setExposures", [](FitClass & self, vector<shared_ptr<Exposure>> expos, double sysErr, double refSysErr) {
+            py::scoped_estream_redirect stream(
+                std::cerr,                               // std::ostream&
+                py::module_::import("sys").attr("stderr") // Python output
+            );
+            self.setExposures(expos, sysErr, refSysErr);
+        })
+        
+        .def("addMap", &FitClass::addMap)
+        
+        
+        
+        
+        .def("getMatchLength", &FitClass::getMatchLength)
+        //.def("fit", [](FitClass & self) {
+        //    py::scoped_estream_redirect stream(
+        //        std::cerr,                               // std::ostream&
+        //        py::module_::import("sys").attr("stdout") // Python output
+        //    );
+        //    self.fit();
+        //})
+        
+        .def_readwrite("randomNumberSeed", &FitClass::randomNumberSeed)
+        .def_readwrite("clipThresh", &FitClass::clipThresh)
+        .def_readwrite("maxError", &FitClass::maxError)
+        .def_readwrite("minMatches", &FitClass::minMatches)
+        .def_readwrite("minFitExposures", &FitClass::minFitExposures)
+        .def_readwrite("clipEntireMatch", &FitClass::clipEntireMatch)
+        .def_readwrite("chisqTolerance", &FitClass::chisqTolerance)
+        .def_readwrite("divideInPlace", &FitClass::divideInPlace)
+        .def_readwrite("purgeOutput", &FitClass::purgeOutput)
+        .def_readwrite("minColor", &FitClass::minColor)
+        .def_readwrite("maxColor", &FitClass::maxColor)
+        .def_readwrite("exposures", &FitClass::exposures)
+        
+        .def_readwrite("extensions", &FitClass::extensions)
+        .def_readwrite("fieldNames", &FitClass::fieldNames)
+        .def_readwrite("fieldProjections", &FitClass::fieldProjections)
+        .def_readwrite("fieldEpochs", &FitClass::fieldEpochs)
+        .def_readwrite("matches", &FitClass::matches);
+        //.def_readwrite("inputYAML", &FitClass::inputYAML)*/
+
+    /*
     m.doc() = "tmp docstring"; // optional module docstring
 
     m.attr("REF_INSTRUMENT") = REF_INSTRUMENT;
@@ -133,18 +316,12 @@ PYBIND11_MODULE(wcsfit, m) {
     m.def("readObjects_oneExtension", &readObjects_oneExtension<Astro>);
     m.def("reportStatistics", &Astro::reportStatistics);
     m.def("readFields", &readFields);
-    m.def("readWCSs", &readWCSs);
+    
 
     py::class_<astrometry::SphericalCoords>(m, "SphericalCoords");
 
     // TODO: check which of these are actually needed
-    py::class_<Instrument>(m, "Instrument")
-        .def(py::init<string>(), py::arg("name_")="")
-        .def_readwrite("name", &Instrument::name)
-        .def_readwrite("nDevices", &Instrument::nDevices)
-        .def_readwrite("band", &Instrument::band)
-        .def_readwrite("deviceNames", &Instrument::deviceNames)
-        .def("addDevice", &Instrument::addDevice);
+    
     
     py::class_<Exposure, shared_ptr<Exposure>>(m, "Exposure")
         .def(py::init<string, astrometry::SphericalCoords const&>())
@@ -185,7 +362,7 @@ PYBIND11_MODULE(wcsfit, m) {
     py::class_<astrometry::SubMap, astrometry::PixelMap>(m, "SubMap")
         .def(py::init<list<astrometry::PixelMap*> const&, string, bool>());
 
-    declareExtension<astrometry::SubMap, astrometry::Detection>(m);
+    
 
     declareColorExtension<astrometry::Match>(m);
         
@@ -223,63 +400,20 @@ PYBIND11_MODULE(wcsfit, m) {
     py::class_<astrometry::PolyMap, astrometry::PixelMap>(m, "PolyMap")
         .def(py::init<poly2d::Poly2d, poly2d::Poly2d, string, Bounds<double>, double>());
 
-    declareBounds<double>(m);
-
-    py::class_<astrometry::Wcs, astrometry::PixelMap>(m, "Wcs")
-        .def(py::init<astrometry::PixelMap*, astrometry::SphericalCoords const&, string, double, bool>(),
-            py::arg("pm_"), py::arg("nativeCoords_"), py::arg("name")="", py::arg("wScale_")=DEGREE,
-            py::arg("shareMap_")=false)
-        //.def("reprojectTo", &astrometry::Wcs::reprojectTo);
-        .def("reprojectTo", [](astrometry::Wcs & self, const SphericalCoords& targetCoords_) {
-            py::scoped_estream_redirect stream(
-                std::cerr,                               // std::ostream&
-                py::module_::import("sys").attr("stderr") // Python output
-            );
-            self.reprojectTo(targetCoords_);
-        })
-        .def("getTargetCoords", &astrometry::Wcs::getTargetCoords)
-        .def("toWorld", [](astrometry::Wcs & self, double x, double y) {
-            double ra;
-            double dec;
-            self.toWorld(x, y, ra, dec);
-            vector<double> radec = {ra, dec};
-            return radec;
-        });
+    
 
     py::class_<astrometry::Match>(m, "Match");
 
-    py::class_<ExtensionObjectSet>(m, "ExtensionObjectSet")
-        .def(py::init<string>());
+    
 
     py::class_<NameIndex>(m, "NameIndex")
         .def(py::init<>())
         .def("append", &NameIndex::append)
         .def("nameOf", &NameIndex::nameOf);
 
-    py::class_<img::FTable>(m, "FTable")
-        .def(py::init<long>())
-        .def("addColumnDouble", &FTable::addColumn<double>, py::arg("values"), py::arg("columnName"),
-             py::arg("repeat")=-1, py::arg("stringLength")=-1)
-        .def("addColumnStr", &FTable::addColumn<string>, py::arg("values"), py::arg("columnName"),
-             py::arg("repeat")=-1, py::arg("stringLength")=-1);
-
+    
     //declareDictionary<string, string>(m);
     //py::class_<YAMLCollector::Dictionary, std::map<string, string>>(m, "Dictionary");
-
-    py::class_<YAMLCollector>(m, "YAMLCollector")
-        .def(py::init<string, string>())
-        .def("addInput", [](YAMLCollector & self, string is, string filter, bool prepend){
-                        istringstream iss(is);
-                        self.addInput(iss, filter, prepend);},
-                        py::arg("is"), py::arg("filter")="", py::arg("prepend")=false);
-        //.def("addMap", &YAMLCollector::addMap, py::arg("name"), py::arg("dict"),
-        //     py::arg("criticalTime")=nullptr);
-        /*.def("addMap", [](YAMLCollector & self, string name, py::dict pyDict) {
-                          astrometry::YAMLCollector::Dictionary d;
-                          for (auto e : pyDict) {
-                              d[e.first] = e.second;
-                          }
-                          self.addMap(name, d);});*/
 
     // This may not be necessary long-term
     // the "read" function still doesn't work
@@ -293,53 +427,7 @@ PYBIND11_MODULE(wcsfit, m) {
         .def("allWcsNames", &PixelMapCollection::allWcsNames)
         .def("cloneWcs", &PixelMapCollection::cloneWcs);
 
-    py::class_<FitClass>(m, "FitClass")
-        .def(py::init<>())
-        //.def(py::init<string>())
-        .def("setExposures", [](FitClass & self, vector<shared_ptr<Exposure>> expos, double sysErr, double refSysErr) {
-            py::scoped_estream_redirect stream(
-                std::cerr,                               // std::ostream&
-                py::module_::import("sys").attr("stderr") // Python output
-            );
-            self.setExposures(expos, sysErr, refSysErr);
-        })
-        .def("setExtensions", &FitClass::setExtensions)
-        .def("addMap", &FitClass::addMap)
-        .def("setRefWCSNames", &FitClass::setRefWCSNames)
-        .def("setupMaps", &FitClass::setupMaps)
-        .def("setMatches", &FitClass::setMatches)
-        .def("setObjects", &FitClass::setObjects)
-        .def("fit", &FitClass::fit)
-        .def("getMatchLength", &FitClass::getMatchLength)
-        /*.def("fit", [](FitClass & self) {
-            py::scoped_estream_redirect stream(
-                std::cerr,                               // std::ostream&
-                py::module_::import("sys").attr("stdout") // Python output
-            );
-            self.fit();
-        })*/
-        .def_readwrite("reserveFraction", &FitClass::reserveFraction)
-        .def_readwrite("randomNumberSeed", &FitClass::randomNumberSeed)
-        .def_readwrite("clipThresh", &FitClass::clipThresh)
-        .def_readwrite("maxError", &FitClass::maxError)
-        .def_readwrite("minMatches", &FitClass::minMatches)
-        .def_readwrite("minFitExposures", &FitClass::minFitExposures)
-        .def_readwrite("clipEntireMatch", &FitClass::clipEntireMatch)
-        .def_readwrite("chisqTolerance", &FitClass::chisqTolerance)
-        .def_readwrite("divideInPlace", &FitClass::divideInPlace)
-        .def_readwrite("purgeOutput", &FitClass::purgeOutput)
-        .def_readwrite("minColor", &FitClass::minColor)
-        .def_readwrite("maxColor", &FitClass::maxColor)
-        .def_readwrite("verbose", &FitClass::verbose)
-        .def_readwrite("exposures", &FitClass::exposures)
-        .def_readwrite("instruments", &FitClass::instruments)
-        .def_readwrite("extensions", &FitClass::extensions)
-        .def_readwrite("fieldNames", &FitClass::fieldNames)
-        .def_readwrite("fieldProjections", &FitClass::fieldProjections)
-        .def_readwrite("fieldEpochs", &FitClass::fieldEpochs)
-        .def_readwrite("matches", &FitClass::matches);
-        //.def_readwrite("inputYAML", &FitClass::inputYAML)
-
+    
 
 
     // The following are WCSFoF-specific classes:
@@ -411,5 +499,5 @@ PYBIND11_MODULE(wcsfit, m) {
              py::call_guard<py::scoped_ostream_redirect,
                             py::scoped_estream_redirect>())
         .def("writeMatches", &FoFClass::writeMatches);
-
+    */
 }

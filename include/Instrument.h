@@ -72,6 +72,31 @@ public:
   EIGEN_NEW
 };
 
+class ExposuresHelper {
+  public:
+    ExposuresHelper(vector<string> expNames_,
+                    vector<int> fieldNumbers_,
+                    vector<int> instrumentNumbers_,
+                    vector<double> ras_,
+                    vector<double> decs_,
+                    vector<double> airmasses_,
+                    vector<double> exposureTimes_,
+                    vector<double> mjds_
+                    ): expNames(expNames_), fieldNumbers(fieldNumbers_),
+                    instrumentNumbers(instrumentNumbers_), ras(ras_), decs(decs_),
+                    airmasses(airmasses_), exposureTimes(exposureTimes_), mjds(mjds_) {};
+    vector<string> expNames;
+    // Index of the exposures' fields:
+    vector<int> fieldNumbers;
+    // Index of the exposures' instruments;
+    vector<int> instrumentNumbers;
+    vector<double> ras;
+    vector<double> decs;
+    vector<double> airmasses;
+    vector<double> exposureTimes;
+    vector<double> mjds;
+};
+
 // Class that represents an catalog of objects from a single device on single exposure.
 // Will have originated from a single bintable HDU that we can access.
 // The template argument are SubMap, Detection from either astrometry or photometry.
