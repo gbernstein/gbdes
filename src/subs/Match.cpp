@@ -1424,7 +1424,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	     << " in time " << to_string(timer) << " sec"
 	     << endl;
       }
-      cerr << to_string(newChisq) << endl;
       //double chi2 = newChisq;
       //cerr << "new chisq: " << chi2 << " old chisq: " << (1.0001 * oldChisq) << " is greater? " << (chi2 > (1.0001 > oldChisq)) << endl;
       timer.reset();

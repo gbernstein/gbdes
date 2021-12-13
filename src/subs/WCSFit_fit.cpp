@@ -4,7 +4,7 @@
 
 #define PROGRESS(val, msg) if (verbose>=val) cerr << "-->" <<  #msg << endl
 
-FitClass::FitClass(FieldsHelper fields_,
+FitClass::FitClass(Fields & fields_,
                    vector<shared_ptr<Instrument>> instruments_,
                    ExposuresHelper exposures_,
                    vector<int> extensionExposureNumbers,
@@ -20,12 +20,12 @@ FitClass::FitClass(FieldsHelper fields_,
                    ExtensionObjectSet matchSkipSet,
                    string fixMaps,
                    bool usePM,
-                   bool verbose
-                   ) : minMatches(minMatches), verbose(verbose) {
+                   int verbose
+                   ) : minMatches(minMatches), verbose(verbose), fields(std::move(fields_)) {
   
   cerr << "FC 0" << endl;
   // Set Fields:
-  fields = Fields(std::move(fields_.names), std::move(fields_.ra), std::move(fields_.dec), std::move(fields_.epochs));
+  //fields = Fields(std::move(fields_.names), std::move(fields_.ra), std::move(fields_.dec), std::move(fields_.epochs));
   cerr << "FC 1" << endl;
 
   // Set Instruments:
@@ -76,9 +76,12 @@ FitClass::FitClass(FieldsHelper fields_,
     extn->device = extensionDevices[i];
     cerr << "set device" << endl;
     shared_ptr<astrometry::Wcs> tmpWcs = wcss[i];
+    cerr << "made tmp wcs" << endl;
     extn->startWcs = unique_ptr<astrometry::Wcs>(tmpWcs.get());
+    cerr << "set startWCS" << endl;
     extn->startWcs->reprojectTo(*expo.projection);
-
+    cerr << "reprojected WCS" << endl;
+    cerr << "inst num: " << to_string(expo.instrument) << endl;
     if (expo.instrument < 0) {
       // This is the reference catalog:
       extn->mapName = astrometry::IdentityMap().getName();
@@ -533,9 +536,9 @@ void FitClass::fit(double maxError, int minFitExposures, double reserveFraction,
     auto im = matches.begin();
     cerr << "Reviewing matches:" << to_string(matches.size()) << endl;
     while (im != matches.end() ) {
-      cerr << to_string((*im)->fitSize()) << endl;
+      //cerr << to_string((*im)->fitSize()) << endl;
       if ((*im)->fitSize() < minMatches){
-        cerr << to_string((*im)->fitSize()) << endl;
+        //cerr << to_string((*im)->fitSize()) << endl;
         ++cut;
       }
       ++im;

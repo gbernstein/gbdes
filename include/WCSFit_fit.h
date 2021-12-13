@@ -30,7 +30,7 @@ using img::FTable;
 class FitClass {
   public:
     FitClass();
-    FitClass(FieldsHelper fields_,
+    FitClass(Fields & fields_,
              vector<shared_ptr<Instrument>> instruments_,
              ExposuresHelper exposures_,
              vector<int> extensionExposureNumbers,
@@ -46,7 +46,7 @@ class FitClass {
              ExtensionObjectSet matchSkipSet=ExtensionObjectSet(""),
              string fixMaps="",
              bool usePM=true,
-             verbose=false
+             int verbose=0
              );
     
     int minMatches;

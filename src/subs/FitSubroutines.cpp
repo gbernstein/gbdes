@@ -1234,38 +1234,26 @@ Astro::fillDetection(Astro::Detection & d,
 		     double magshift,
 		     const astrometry::PixelMap* startWcs,
 		     bool isTag) {
-  cerr << "fillDet 1" << endl;
   d.xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
-  cerr << "fillDet 1.1" << endl;
   d.ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
-  cerr << "fillDet 1.2" << endl;
 
   // Get coordinates and transformation matrix
   startWcs->toWorld(d.xpix, d.ypix, d.xw, d.yw);  // no color in startWCS
-  cerr << "fillDet 1.3" << endl;
   auto dwdp = startWcs->dWorlddPix(d.xpix, d.ypix);
-  cerr << "fillDet 1.4" << endl;
   if (isTag) {
     d.invCov.setZero();
   } else {
-    cerr << "fillDet 3" << endl;
     astrometry::Matrix22 cov(0.);
     if (xyErrKeys.size()==1) {
-      cerr << "fillDet 3.1" << endl;
       // We have a single pixel error, diagonal
       double sigma = getTableDouble(table, xyErrKeys[0], -1, errorColumnIsDouble,irow);
-      cerr << "fillDet 3.2" << endl;
       cov(0,0) = sigma*sigma;
       cov(1,1) = sigma*sigma;
     } else if (xyErrKeys.size()==3) {
-      cerr << "fillDet 3.3" << endl;
       // We have three components of an ellipse, giving x^2, y^2, xy values:
       cov(0,0) = getTableDouble(table, xyErrKeys[0], -1, errorColumnIsDouble,irow);
-      cerr << "fillDet 3.4" << endl;
       cov(1,1) = getTableDouble(table, xyErrKeys[1], -1, errorColumnIsDouble,irow);
-      cerr << "fillDet 3.5" << endl;
       cov(0,1) = getTableDouble(table, xyErrKeys[2], -1, errorColumnIsDouble,irow);
-      cerr << "fillDet 3.6" << endl;
       cov(1,0) = cov(0,1);
     } else {
       for (auto s : xyErrKeys)
@@ -1283,7 +1271,6 @@ Astro::fillDetection(Astro::Detection & d,
     // Build projection matrix if this Detection is being used in a PMMatch
     d.buildProjector(e->pmTDB, e->observatory, &fieldProjection);
   }
-  cerr << "fillDet 6" << endl;
 }
 
 // This one reads a full 5d stellar solution
@@ -1780,9 +1767,7 @@ void readObjects_oneExtension(
     typename S::Detection* d = pr->second;
     extn.keepers.erase(pr);
     d->map = sm;
-    cerr << "in readObj 6" << endl;
     if (pmCatalog) {
-      cerr << "in readObj 6.1" << endl;
       // Need to read data differently from catalog with
       // full proper motion solution.  Get PMDetection.
       auto pmd = S::makePMDetection(*d, &expo,
@@ -1798,7 +1783,6 @@ void readObjects_oneExtension(
       // match, it will slice the PMDetection down to a Detection.
       S::handlePMDetection(std::move(pmd), *d);
     } else {
-      cerr << "in readObj 7" << endl;
       // Normal photometric or astrometric entry
       S::fillDetection(*d, &expo, *fieldProjection,
             ff, irow,
@@ -1811,7 +1795,6 @@ void readObjects_oneExtension(
             startWcs, isTag);
     }
   } // End loop over catalog objects
-  cerr << "in readObj 8" << endl;
   if (fieldProjection) delete fieldProjection;
   cerr << "in readObj 9" << endl;
   if (!extn.keepers.empty()) {

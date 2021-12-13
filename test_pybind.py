@@ -6,26 +6,29 @@ import wcsfit
 import numpy as np
 import sip_tpv
 from astropy.io import fits
+import astropy.time
 
-#butler = Butler('/repo/main', collections="HSC/runs/RC2/w_2021_30/DM-31182")
-#butler = Butler('/repo/main', collections="HSC/runs/RC2/w_2021_34/DM-31524")
-#butler = ButlerGen2('/datasets/hsc/repo/rerun/DM-23243/SFM/DEEP')
-refactor_db_file = "/home/csaunder/stack_projects/gbdes_tests/refactor_tests/refactor.fof"
-refactor_db = fits.open(refactor_db_file)
-#import ipdb; ipdb.set_trace()
+useButler = False
 
-"""
-print('test package:', wcsfit_test.__file__)
-inputTables = '/home/csaunder/stack_projects/gbdes_tests/cosmos_pdr2_field/match_newgaia.fof'
-"""
+if useButler:
+    butler = Butler('/repo/main', collections="HSC/runs/RC2/w_2021_34/DM-31524")
+    #butler = ButlerGen2('/datasets/hsc/repo/rerun/DM-23243/SFM/DEEP')
+    
+#else:
+if True:
+    refactor_db_file = "/home/csaunder/stack_projects/gbdes_tests/refactor_tests/refactor.fof"
+    #refactor_db_file = "/home/csaunder/stack_projects/gbdes_tests/refactor_tests/gen3.fof"
+    refactor_db = fits.open(refactor_db_file)
+
+
 # GBDES defaults:
 reserveFraction = 0.05
 randomNumberSeed = 0
 skipFile = ''
 clipThresh = 5
 maxError = 100
-sysError = 2
-referenceSysError = 2
+sysError = 2.0
+referenceSysError = 2.0
 freePM = True
 pmEpoch = 2015.5
 parallaxPrior = 10
@@ -49,8 +52,6 @@ maxColor = 10
 verbose = 2
 
 pvrange, tpvx, tpvy = sip_tpv.pvsiputils.sym_tpvexprs()
-
-
 def pv_matrix_from_sip(sipx, sipy):
     # This function is a combination of sip_tpv.add_pv_keywords and ReadPV in gbdes/src/subs/TPVMap.cpp
     coeffs_size = max(pvrange) + 1
@@ -60,17 +61,17 @@ def pv_matrix_from_sip(sipx, sipy):
     for p in pvrange:
         # makes PV1_{p}, PV2_{p}
         index = p
-        if (index==3 or index==11 or index==23 or index==39):
+        if (index == 3 or index == 11 or index == 23 or index == 39):
              continue
-        if (index>=39): index -= 1
+        if (index >= 39):
+            index -= 1
         if (index>=23): index -= 1
         if (index>=11): index -= 1
         if (index>=3): index -= 1
-        print(p, index)
+    
         pv1_vals[index] = float(sip_tpv.pvsiputils.calcpv(pvrange, 1, p, sipx, sipy, tpvx, tpvy).evalf())
         pv2_vals[index] = float(sip_tpv.pvsiputils.calcpv(pvrange, 2, p, sipx, sipy, tpvx, tpvy).evalf())
-    print(pv1_vals)
-    print(pv2_vals)
+    
     coeffs_size = np.flatnonzero(pv1_vals != 0).max() + 1
     order = 1
     while ((order + 1) * (order + 2) / 2) < coeffs_size:
@@ -205,12 +206,53 @@ def getSources():
     ind = (extended == 0) & (blended == 0) & (parent == 0)
     src_cat = src_cat[ind]
 
-def readExposuresExtensions(refs, input_yaml, fieldNumber=0, instrumentNumber=0, isReference=False):
+#def readExposuresExtensions(refs, input_yaml, fields, band, fieldNumber=0, instrumentNumber=0, isReference=False):
+def readExposuresExtensions(fields, band, visits, visitsCcds, ccds, fieldNumber=0, instrumentNumber=0, isReference=False):
     # TODO: add ExposureColorPriorities, ColorExtension / decide if necessary
     
-    extensions = []
-    exposures = []
-    
+    #extensions = []
+    #exposures = []
+    expNames = []
+    fieldNumbers = []
+    instrumentNumbers = []
+    ras = []
+    decs = []
+    airmasses = []
+    exposureTimes = []
+    mjds = []
+    extExps = []
+    extDevices = []
+    # TODO: this has to be redone to be input to WCSFoF step!!!
+    for f, field in enumerate(fields):
+        visitTable = butler.get('visitTable', tract=field)
+        visitTable = visitTable[visitTable['filterName'] == band]
+        sortOrder = np.array([np.flatnonzero(visitTable == vis) for vis in visits]).reshape(1, -1)
+        expNames.extend(visitTable['visitId'].to_numpy().astype(str)[sortOrder])
+        fieldNumbers.extend(np.ones(len(visitTable), dtype=int) * f)
+        instrumentNumbers.extend(np.ones(len(visitTable), dtype=int) * instrumentNumber)
+        ras.extend(visitTable['ra'].to_list()[sortOrder])
+        decs.extend(visitTable['decl'].to_list()[sortOrder])
+        airmasses.extend(visitTable['airmass'].to_list()[sortOrder])
+        exposureTimes.extend(visitTable['expTime'].to_list()[sortOrder])
+        mjds.extend(astropy.time.Time(visitTable['obsStart']).mjd[sortOrder])
+        
+        ccdVisitTable = butler.get('CcdVisitTable', tract=field)
+        for v, visit in enumerate(visitTable['visitId'].to_numpy()):
+            ccds = ccdVisitTable[ccdVisitTable['visitId'] == visit]
+            extExp = np.ones(len(ccds), dtype=int) * v
+            extDevice = ccds.index
+            extExps.extend(list(extExp))
+            extDevices.extend(list(extDevice))
+            
+    exposuresHelper = wcsfit.ExposuresHelper((expNames),
+                                             (fieldNumbers),
+                                             (instrumentNumbers),
+                                             (ras),
+                                             (decs),
+                                             (airmasses),
+                                             (exposureTimes),
+                                             (mjds))
+    """
     for v, visitSummaryRef in enumerate(refs):
         print(visitSummaryRef)        
         visitSummary = butler.get(visitSummaryRef)
@@ -257,7 +299,8 @@ def readExposuresExtensions(refs, input_yaml, fieldNumber=0, instrumentNumber=0,
             extension.mapName = f"{extension.wcsName}/base"
             print(extension.mapName)
             extensions.append(extension)
-    return exposures, extensions
+    return exposures, extensions"""
+    return extExps, extDevices, exposuresHelper
 
 
 def readExposuresExtensions_fits(hdus, input_yaml, instruments, fieldNumber=0, instrumentNumber=0, isReference=False):
@@ -267,7 +310,7 @@ def readExposuresExtensions_fits(hdus, input_yaml, instruments, fieldNumber=0, i
     exposures = []
     wcss = []
     visits = []
-    names, ras, decs, fieldNum, insts, airmasses, exptimes, mjds = [], [], [], [], [], [], [], []
+    #names, ras, decs, fieldNum, insts, airmasses, exptimes, mjds = [], [], [], [], [], [], [], []
     expTable = hdus[2].data
     exposuresHelper = wcsfit.ExposuresHelper(expTable['NAME'],
                                              np.ones(len(expTable), dtype=int) * fieldNumber,
@@ -277,6 +320,7 @@ def readExposuresExtensions_fits(hdus, input_yaml, instruments, fieldNumber=0, i
                                              expTable['AIRMASS'],
                                              expTable['EXPTIME'],
                                              expTable['MJD'])
+    """
     for v, visitSummary in enumerate(hdus[2].data):
         print(visitSummary)
         
@@ -300,7 +344,7 @@ def readExposuresExtensions_fits(hdus, input_yaml, instruments, fieldNumber=0, i
         exptime = visitSummary['EXPTIME']
         #exposure.airmass = airmass
         #exposure.exptime = exptime
-        #exposure.mjd = visitSummary['MJD']"""
+        #exposure.mjd = visitSummary['MJD']
         names.append(name)
         ras.append(ra)
         decs.append(dec)
@@ -315,9 +359,13 @@ def readExposuresExtensions_fits(hdus, input_yaml, instruments, fieldNumber=0, i
             exposure.apcorr
         # TODO: add astrometric covariance
         #exposures.append(exposure)
-    
-    extExps, extDevices = [], []
+    """
+    #extExps, extDevices = [], []
+    extExps = list(hdus[4].data['EXPOSURE'].astype(int))
+    extDevices = list(hdus[4].data['DEVICE'].astype(int))
+    print(len(extExps), len(extDevices))
     for r, row in enumerate(hdus[4].data):
+        continue
         extExps.append(row['EXPOSURE'])
         extDevices.append(row['DEVICE'])
         continue
@@ -379,8 +427,8 @@ def readExposuresExtensions_fits(hdus, input_yaml, instruments, fieldNumber=0, i
         extensions.append(extension)
         wcss.append(wcs)
     
-    return exposures, extensions, wcss, names, ras, decs, fieldNum, insts, airmasses, exptimes, mjds, extExps, extDevices, exposuresHelper
-
+    #return exposures, extensions, wcss, names, ras, decs, fieldNum, insts, airmasses, exptimes, mjds, extExps, extDevices, exposuresHelper
+    return extExps, extDevices, exposuresHelper
 
 def readInstruments(filtername):
     
@@ -519,28 +567,37 @@ def getMatchArray(catalog, allowSelfMatches=False):
         1/0
 
 fields = [9813]
-bands = ['HSC-z']
+altbands = ['z']
+bands = ['HSC-Z']
 usePM = False
 
-#skyMap = butler.get('skyMap')
-
+ras = []
+decs = []
+epochs = []
 fieldNames = []
-fieldProjections = []
-fieldObjects = []
+#fieldProjections = []
+#fieldObjects = []
 for f, field in enumerate(fields):
     #fieldNames.append(wcsfit.spaceReplace(str(field)))
     fieldNames.append(str(field))
     # TODO: does tractinfo have a center?
     
-    """
-    tractInfo = skyMap.generateTract(field)    
-    skyOrigin = tractInfo.getWcs().getSkyOrigin()
-    ra = skyOrigin.getRa().asRadians()
-    dec = skyOrigin.getDec().asRadians()
-    print(skyOrigin.getRa(), skyOrigin.getDec())
-    """
-    ra = 2.62232
-    dec = 0.0389454
+    if useButler:
+        skyMap = butler.get('skyMap')
+        tractInfo = skyMap.generateTract(field)    
+        skyOrigin = tractInfo.ctr_coord
+        ra = skyOrigin.getRa().asDegrees()
+        dec = skyOrigin.getDec().asDegrees()
+        print(skyOrigin.getRa(), skyOrigin.getDec())
+    else:
+        ind = refactor_db[1].data['NAME'] == str(field)
+        ra = refactor_db[1].data['RA'][ind][0]
+        dec = refactor_db[1].data['DEC'][ind][0]
+        #ra = 2.62232
+        #dec = 0.0389454
+    ras.append(ra)
+    decs.append(dec)
+    epochs.append(2015.5)
     #fieldProjection = wcsfit.Gnomonic(wcsfit.Orientation(wcsfit.SphericalICRS(ra, dec)))
     #fieldProjections.append(fieldProjection)
     
@@ -627,85 +684,146 @@ for f, field in enumerate(fields):
     #wcs_list = readExposures_wcsfof(visitSummaryRefs[:2])
     # TODO wcs - reprojectTo(fields[field].projection)
     """
-    ## WCSFit setup:
-    fh = wcsfit.FieldsHelper(["9813"], [ra * 180 /np.pi], [dec * 180/np.pi], [2015.5])
+    
+## WCSFit setup:
+fh = wcsfit.Fields(fieldNames, ras, decs, epochs)
+
+# Get instrument info:
+if False:#useButler:
+    # TODO: get from butler
+    #instrumentName = "Hyper_Suprime-Cam"
+    instrumentName = 'HSC'
+    instruments = [wcsfit.Instrument(instrumentName)]
+else:
+    instrumentName = 'HSC'
     instruments = readInstruments_fits(refactor_db[3])
-    
-    inputYAML = wcsfit.YAMLCollector("/home/csaunder/stack_projects/gbdes_tests/polyExposure.astro",
-                                     "PixelMapCollection")
-    inputYAML.addInput("Identity:\n  Type:  Identity\n")
-    print("inputYAML made")
-    
+
+if useButler:
+    visitSummaryRefs = list(butler.registry.queryDatasets('visitSummary', band=altbands[0], tract=fields[0],
+                                                        instrument=instrumentName))
+    visitSummaryRefs = visitSummaryRefs[:5]
+
+inputYAML = wcsfit.YAMLCollector("/home/csaunder/stack_projects/gbdes_tests/polyExposure.astro",
+                                    "PixelMapCollection")
+inputYAML.addInput("Identity:\n  Type:  Identity\n")
+print("inputYAML made")
+
+# Get initial WCS info:
+if useButler:
+    visits = []
+    visitCcds = []
+    ccds = []
+    all_wcss = []
+    #butler_wcs = butler.get('calexp', visit=95066, ccd=103).getWcs()
+    #for visitSummaryRef in visitSummaryRefs:
+    #    visitSummary = butler.get(visitSummaryRef)
+    #    for ccdRow in visitSummary:
+    #        butler_wcs = butler.get('calexp.wcs', visit=ccdRow['visit'], detector=ccdRow['id'])
+    #        wcs = convert_sip_to_tpv(butler_wcs)
+    #        all_wcss.append(wcs)
+    for extn in refactor_db[4].data:
+        if extn['DEVICE'] == -1: 
+            identity = wcsfit.IdentityMap()
+            icrs = wcsfit.SphericalICRS()
+            wcs = wcsfit.Wcs(identity, icrs, "ICRS_degrees", np.pi / 180.)
+        else:
+            visit = int(float(refactor_db[2].data[extn['EXPOSURE']]['NAME'][4:]) / 100)
+            ccd = int(refactor_db[3].data[extn['DEVICE']]['NAME'])
+            visitCcds.append(visit)
+            ccds.append(ccd)
+            print(refactor_db[2].data[extn['EXPOSURE']]['NAME'], visit, ccd)
+            butler_wcs = butler.get('calexp.wcs', visit=visit, detector=ccd)
+            wcs = convert_sip_to_tpv(butler_wcs)
+        all_wcss.append(wcs)
+                
+    print(len(all_wcss))
+            
+else:
     ff = wcsfit.FTable(len(refactor_db[4].data))
     ff.addColumnStr(list(refactor_db[4].data["WCSIn"]), "WCSIn")
     print('reading WCSs')
     all_wcss = wcsfit.readWCSs(ff)
-    
-    print("reading exposures")
-    #exposures, extensions, wcss = readExposuresExtensions_fits(refactor_db, inputYAML, wcsf.instruments, fieldNumber=f, instrumentNumber=0)
-    exposures, extensions, wcss, names, ras, decs, fieldNum, insts, airmasses, exptimes, mjds, extExps, extDevices, exposuresHelper = readExposuresExtensions_fits(refactor_db, inputYAML, instruments, fieldNumber=f, instrumentNumber=0)
-    
-    sequence = refactor_db[5].data['SequenceNumber']
-    extn = refactor_db[5].data['Extension']
-    obj = refactor_db[5].data['Object']
-    skipSet = wcsfit.ExtensionObjectSet("")
-    
-    wcsf = wcsfit.FitClass(fh, instruments, exposuresHelper, #names, ras, decs, fieldNum, insts, airmasses, exptimes, mjds,
-                           extExps, extDevices, inputYAML, all_wcss, sequence,
-                           extn, obj,
-                           sysErr=sysError, refSysErr=referenceSysError, usePM=False, verbose=True)
-    
-    
-    
-    #readObjects(wcsf)
-    """fieldNames = wcsfit.NameIndex()
-    fieldNames.append(str(fields[f]))
-    wcsf.fieldNames = fieldNames
-    wcsf.fieldProjections = fieldProjections
-    wcsf.fieldEpochs = [2015.5]"""
-    #wcsf.fields = wcsfit.Fields([fields[f]], [ra], [dec], [2015.5])
-    
-    #instruments = readInstruments(bands[0])
-    
-    #wcsf.instruments = instruments
-    
-    
-    
-    
-    #exposures, extensions = readExposuresExtensions(visitSummaryRefs, fieldNumber=f, instrumentNumber=0)
-    print("reading exposures")
-    #exposures, extensions, wcss = readExposuresExtensions_fits(refactor_db, inputYAML, wcsf.instruments, fieldNumber=f, instrumentNumber=0)
-    
-    # TODO: Add special fn to read reference catalog
-    #wcsf.setExposures(exposures, sysError, referenceSysError)
-    
-    #wcsf.setExtensions(extensions)
-    #wcsf.setRefWCSNames()
-    #print("check refset")
-    #wcsf.setupMaps(inputYAML)
-    
-    #wcsfit.readFields(refactor_db_file, "test_wcscat.fits", wcsf.fieldNames, wcsf.fieldProjections, 
-    #                  wcsf.fieldEpochs, pmEpoch)
-    
-    #colorExtensions = [None for e in extensions]
-    #wcsf.setMatches(sequence, extn, obj, skipSet)
-    #print(wcsf.getMatchLength())
-    #wcsfit.readMatches(sequence, extn, obj, wcsf.matches, wcsf.extensions, colorExtensions,
-    #                   skipSet, minMatches, usePM)
-    readObjects(wcsf)
-    #print(wcsf.matches.size())
-    
-    ### TEST WCS:
-    #test_wcs = all_wcss[0]
-    #butler_wcs = butler.get('calexp', visit=95066, ccd=103).getWcs()
-    #convert_sip_to_tpv(butler_wcs)
-    
-    
-    print("starting fit")
-    wcsf.fit()
-    
-    # Return fit
 
-    #fitter = wcsfit_test.WCSFit(exposures, extensions, fieldNames, fieldEpochs, fieldProjections, 
-    #                            instruments, matches, fixMapsList=[1, 2])
-    #print(fitter.exposures)
+print("reading exposures")
+
+if False:#useButler:
+    extExps, extDevices, exposuresHelper = readExposuresExtensions(fields, bands[0], visits, visitCcds, ccds)
+    for extDevice in set(extDevices):
+        """deviceSum = visitSummary[visitSummary['id'] == extDevice][0]
+        device_bbox = wcsfit.Bounds(deviceSum['bbox_min_x'],
+                                    deviceSum['bbox_max_x'],
+                                    deviceSum['bbox_min_y'],
+                                    deviceSum['bbox_max_y'])"""
+        # TODO: get correct bbox in
+        device_bbox = wcsfit.Bounds(0, 2048, 0, 4096)
+        instruments[0].addDevice(str(extDevice), device_bbox)
+    print("exposures:", max(extExps), "ext devices:", len(extDevices))
+else:
+    #exposures, extensions, wcss = readExposuresExtensions_fits(refactor_db, inputYAML, wcsf.instruments, fieldNumber=f, instrumentNumber=0)
+    extExps, extDevices, exposuresHelper = readExposuresExtensions_fits(refactor_db, inputYAML, instruments, fieldNumber=f, instrumentNumber=0)
+
+
+sequence = refactor_db[5].data['SequenceNumber']
+extn = refactor_db[5].data['Extension']
+obj = refactor_db[5].data['Object']
+skipSet = wcsfit.ExtensionObjectSet("")
+print(len(all_wcss), len(extExps))
+wcsf = wcsfit.FitClass(fh, instruments, exposuresHelper, 
+                       extExps, extDevices, inputYAML, all_wcss, list(sequence.astype(int)),
+                       list(extn.astype(int)), list(obj.astype(int)),
+                       sysErr=sysError, refSysErr=referenceSysError, usePM=False, verbose=2)
+
+
+
+#readObjects(wcsf)
+"""fieldNames = wcsfit.NameIndex()
+fieldNames.append(str(fields[f]))
+wcsf.fieldNames = fieldNames
+wcsf.fieldProjections = fieldProjections
+wcsf.fieldEpochs = [2015.5]"""
+#wcsf.fields = wcsfit.Fields([fields[f]], [ra], [dec], [2015.5])
+
+#instruments = readInstruments(bands[0])
+
+#wcsf.instruments = instruments
+
+
+
+
+#exposures, extensions = readExposuresExtensions(visitSummaryRefs, fieldNumber=f, instrumentNumber=0)
+print("reading exposures")
+#exposures, extensions, wcss = readExposuresExtensions_fits(refactor_db, inputYAML, wcsf.instruments, fieldNumber=f, instrumentNumber=0)
+
+# TODO: Add special fn to read reference catalog
+#wcsf.setExposures(exposures, sysError, referenceSysError)
+
+#wcsf.setExtensions(extensions)
+#wcsf.setRefWCSNames()
+#print("check refset")
+#wcsf.setupMaps(inputYAML)
+
+#wcsfit.readFields(refactor_db_file, "test_wcscat.fits", wcsf.fieldNames, wcsf.fieldProjections, 
+#                  wcsf.fieldEpochs, pmEpoch)
+
+#colorExtensions = [None for e in extensions]
+#wcsf.setMatches(sequence, extn, obj, skipSet)
+#print(wcsf.getMatchLength())
+#wcsfit.readMatches(sequence, extn, obj, wcsf.matches, wcsf.extensions, colorExtensions,
+#                   skipSet, minMatches, usePM)
+readObjects(wcsf)
+#print(wcsf.matches.size())
+
+### TEST WCS:
+#test_wcs = all_wcss[0]
+#butler_wcs = butler.get('calexp', visit=95066, ccd=103).getWcs()
+#convert_sip_to_tpv(butler_wcs)
+
+
+print("starting fit")
+wcsf.fit()
+
+# Return fit
+
+#fitter = wcsfit_test.WCSFit(exposures, extensions, fieldNames, fieldEpochs, fieldProjections, 
+#                            instruments, matches, fixMapsList=[1, 2])
+#print(fitter.exposures)

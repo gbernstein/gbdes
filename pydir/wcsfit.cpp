@@ -6,7 +6,7 @@
 
 #include "FitSubroutines.h"
 #include "Instrument.h"
-//#include "TPVMap.h"
+#include "TPVMap.h"
 //#include "WCSFoF_match.h"
 #include "WCSFit_fit.h"
 
@@ -159,6 +159,7 @@ void declareReadMatches(py::module &m) {
 PYBIND11_MODULE(wcsfit, m) {
 
     m.def("readWCSs", &readWCSs);
+    m.attr("DEGREE") = DEGREE;
 
     py::class_<img::FTable>(m, "FTable")
         .def(py::init<long>())
@@ -168,6 +169,41 @@ PYBIND11_MODULE(wcsfit, m) {
              py::arg("repeat")=-1, py::arg("stringLength")=-1);
 
     py::class_<astrometry::PixelMap>(m, "PixelMap");
+
+    py::class_<astrometry::SphericalCoords>(m, "SphericalCoords");
+
+    py::class_<astrometry::SphericalICRS, astrometry::SphericalCoords>(m, "SphericalICRS")
+        .def(py::init<>())
+        .def(py::init<double, double>());
+
+    py::class_<astrometry::Orientation>(m, "Orientation")
+        .def(py::init<>())
+        .def(py::init<astrometry::SphericalCoords&, double>(), py::arg("pole_"), py::arg("pa")=0)
+        .def("set", &astrometry::Orientation::set)
+        .def("getPole", &astrometry::Orientation::getPole);
+
+    py::class_<astrometry::Gnomonic, astrometry::SphericalCoords>(m, "Gnomonic")
+        .def(py::init<astrometry::Orientation const&, bool>(), py::arg("o"), py::arg("shareOrient")=false)
+        .def(py::init<astrometry::SphericalCoords const&, astrometry::Orientation&>())
+        .def(py::init<>());
+
+    py::class_<astrometry::LinearMap, astrometry::PixelMap>(m, "LinearMap")
+        //.def("setVector", [](astrometry::LinearMap & self, astrometry::DVector::Base const& vector){self.v = vector;});
+        .def(py::init<astrometry::DVector::Base const&>());
+
+    py::class_<poly2d::Poly2d>(m, "Poly2d")
+        .def(py::init<int>())
+        .def(py::init<astrometry::DMatrix::Base const&>())
+        .def("nCoeffs", &poly2d::Poly2d::nCoeffs)
+        .def("getC", &poly2d::Poly2d::getC)
+        .def("setC", &poly2d::Poly2d::setC)
+        .def("vectorIndex", &poly2d::Poly2d::vectorIndex);
+
+    py::class_<astrometry::PolyMap, astrometry::PixelMap>(m, "PolyMap")
+        .def(py::init<poly2d::Poly2d, poly2d::Poly2d, string, Bounds<double>, double>());
+
+    py::class_<astrometry::SubMap, astrometry::PixelMap>(m, "SubMap")
+        .def(py::init<list<astrometry::PixelMap*> const&, string, bool>());
 
     py::class_<astrometry::Wcs, shared_ptr<astrometry::Wcs>>(m, "Wcs")
         .def(py::init<astrometry::PixelMap*, astrometry::SphericalCoords const&, string, double, bool>(),
@@ -202,7 +238,10 @@ PYBIND11_MODULE(wcsfit, m) {
         //.def_readwrite("nDevices", &Instrument::nDevices)
         .def_readwrite("band", &Instrument::band)
         //.def_readwrite("deviceNames", &Instrument::deviceNames)
-        .def("addDevice", &Instrument::addDevice);
+        .def("addDevice", &Instrument::addDevice)
+        .def("hasDevice", [](Instrument & self, string name) {
+                          return self.deviceNames.has(name);
+        });
 
     py::class_<ExposuresHelper>(m, "ExposuresHelper")
         .def(py::init<vector<string>, vector<int>, vector<int>, vector<double>, vector<double>, vector<double>, vector<double>, vector<double>>());
@@ -224,18 +263,23 @@ PYBIND11_MODULE(wcsfit, m) {
         //                  }
         //                  self.addMap(name, d);});
 
+    py::class_<astrometry::IdentityMap, astrometry::PixelMap>(m, "IdentityMap")
+        .def(py::init<>())
+        .def("getName", &astrometry::IdentityMap::getName);
+
     py::class_<ExtensionObjectSet>(m, "ExtensionObjectSet")
         .def(py::init<string>());
 
     //declareExtension<astrometry::SubMap, astrometry::Detection>(m);
 
     py::class_<FitClass>(m, "FitClass")
-        .def(py::init<FieldsHelper, vector<shared_ptr<Instrument>>, ExposuresHelper, vector<int>, vector<int>, YAMLCollector, vector<shared_ptr<astrometry::Wcs>>, vector<int>, vector<LONGLONG>, vector<LONGLONG>, double, double, int, ExtensionObjectSet, string, bool>(),
+        .def(py::init<Fields &, vector<shared_ptr<Instrument>>, ExposuresHelper, vector<int>, vector<int>, 
+                      YAMLCollector, vector<shared_ptr<astrometry::Wcs>>, vector<int>, vector<LONGLONG>, vector<LONGLONG>, double, double, int, ExtensionObjectSet, string, bool, int>(),
              py::arg("fields_"), py::arg("instruments_"), py::arg("exposures_"),
              py::arg("extensionExposureNumbers"), py::arg("extensionDevices"), py::arg("inputYAML"),
              py::arg("wcss"), py::arg("sequence"), py::arg("extns"), py::arg("objects"),
              py::arg("sysErr")=2.0, py::arg("refSysErr")=2.0, py::arg("minMatches")=2, py::arg("matchSkipSet")=ExtensionObjectSet(""),
-             py::arg("fixMaps")="", py::arg("usePM")=true)
+             py::arg("fixMaps")="", py::arg("usePM")=true, py::arg("verbose")=0)
         .def("setObjects", &FitClass::setObjects) 
         //.def_readwrite("reserveFraction", &FitClass::reserveFraction)
         .def_readwrite("verbose", &FitClass::verbose)
@@ -302,7 +346,7 @@ PYBIND11_MODULE(wcsfit, m) {
     m.attr("PM_INSTRUMENT") = PM_INSTRUMENT;
     m.attr("ARCSEC") = ARCSEC;
     m.attr("MILLIARCSEC") = MILLIARCSEC;
-    m.attr("DEGREE") = DEGREE;
+    
     //m.attr("RESIDUAL_UNIT") = RESIDUAL_UNIT;
     //m.attr("WCS_UNIT") = WCS_UNIT;
     m.def("spaceReplace", &spaceReplace);
@@ -359,48 +403,15 @@ PYBIND11_MODULE(wcsfit, m) {
     
     py::class_<astrometry::PixelMap>(m, "PixelMap");
 
-    py::class_<astrometry::SubMap, astrometry::PixelMap>(m, "SubMap")
-        .def(py::init<list<astrometry::PixelMap*> const&, string, bool>());
-
-    
 
     declareColorExtension<astrometry::Match>(m);
         
-    py::class_<astrometry::Gnomonic, astrometry::SphericalCoords>(m, "Gnomonic")
-        .def(py::init<astrometry::Orientation const&, bool>(), py::arg("o"), py::arg("shareOrient")=false)
-        .def(py::init<astrometry::SphericalCoords const&, astrometry::Orientation&>())
-        .def(py::init<>());
+    
         
-    py::class_<astrometry::IdentityMap, astrometry::PixelMap>(m, "IdentityMap")
-        .def(py::init<>())
-        .def("getName", &astrometry::IdentityMap::getName);
 
-    py::class_<astrometry::SphericalICRS, astrometry::SphericalCoords>(m, "SphericalICRS")
-        .def(py::init<>())
-        .def(py::init<double, double>());
-    
-    py::class_<astrometry::Orientation>(m, "Orientation")
-        .def(py::init<>())
-        .def(py::init<astrometry::SphericalCoords&, double>(), py::arg("pole_"), py::arg("pa")=0)
-        .def("set", &astrometry::Orientation::set)
-        .def("getPole", &astrometry::Orientation::getPole);
-
-    py::class_<astrometry::LinearMap, astrometry::PixelMap>(m, "LinearMap")
-        //.def("setVector", [](astrometry::LinearMap & self, astrometry::DVector::Base const& vector){self.v = vector;});
-        .def(py::init<astrometry::DVector::Base const&>());
-
-    py::class_<poly2d::Poly2d>(m, "Poly2d")
-        .def(py::init<int>())
-        .def(py::init<astrometry::DMatrix::Base const&>())
-        .def("nCoeffs", &poly2d::Poly2d::nCoeffs)
-        .def("getC", &poly2d::Poly2d::getC)
-        .def("setC", &poly2d::Poly2d::setC)
-        .def("vectorIndex", &poly2d::Poly2d::vectorIndex);
-
-    py::class_<astrometry::PolyMap, astrometry::PixelMap>(m, "PolyMap")
-        .def(py::init<poly2d::Poly2d, poly2d::Poly2d, string, Bounds<double>, double>());
 
     
+
 
     py::class_<astrometry::Match>(m, "Match");
 
