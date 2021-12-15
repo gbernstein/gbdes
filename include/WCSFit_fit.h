@@ -29,7 +29,8 @@ using img::FTable;
 
 class FitClass {
   public:
-    FitClass();
+    FitClass(int minMatches=2,
+             int verbose=0);
     FitClass(Fields & fields_,
              vector<shared_ptr<Instrument>> instruments_,
              ExposuresHelper exposures_,
@@ -43,7 +44,7 @@ class FitClass {
              double sysErr=2.0,
              double refSysErr=2.0,
              int minMatches=2,
-             ExtensionObjectSet matchSkipSet=ExtensionObjectSet(""),
+             string skipObjectsFile="",
              string fixMaps="",
              bool usePM=true,
              int verbose=0
@@ -95,7 +96,7 @@ class FitClass {
     // List of all Matches - they will hold pointers to all Detections too.
     MCat matches;
 
-    vector<SphericalCoords*> extensionProjections;//extensions.size(), nullptr);  
+    //vector<shared_ptr<SphericalCoords>> extensionProjections;//extensions.size(), nullptr);  
     
     //set<string> degenerateTypes; //={"Poly","Linear","Constant"};
     //void addInputYAML(string inputMaps);
@@ -115,9 +116,11 @@ class FitClass {
     void setMatches(vector<int> sequence, vector<LONGLONG> extensions, vector<LONGLONG> objects,
                     ExtensionObjectSet skipSet, bool usePM=true);
 
-    void setObjects(int i, img::FTable ff, string xKey, string yKey, string idKey, string pmCovKey,
-                    vector<string> xyErrKeys, string magKey, int magKeyElement, string magErrKey,
-                    int magErrKeyElement, string pmRaKey, string pmDecKey, string parallaxKey);
+    void setObjects(int i, map<string, vector<double>> tableMap,
+                    string xKey, string yKey, 
+                    vector<string> xyErrKeys, string idKey="", string pmCovKey="", string magKey="",
+                    int magKeyElement=0, string magErrKey="",
+                    int magErrKeyElement=0, string pmRaKey="", string pmDecKey="", string parallaxKey="");
 
     void defaultMaps();
 
@@ -130,7 +133,7 @@ class FitClass {
 
     int getMatchLength();
 
-    void cleanup();
+    void saveResults(string outWcs, string outCatalog, string starCatalog);
       
 };
 

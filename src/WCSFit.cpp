@@ -196,9 +196,12 @@ main(int argc, char *argv[])
     string inputTables = argv[1];
 
     // Convert error parameters from I/O units to internal
+    cerr << "orig sys err: " << referenceSysError << " " << sysError << endl;
     referenceSysError *= RESIDUAL_UNIT/WCS_UNIT;
     sysError *= RESIDUAL_UNIT/WCS_UNIT;
     maxError *= RESIDUAL_UNIT/WCS_UNIT;
+    cerr << "RES WCS " << RESIDUAL_UNIT << " " << WCS_UNIT << endl; 
+    cerr << referenceSysError << " " << sysError << endl;
 
     PMMatch::setPrior(pmPrior, parallaxPrior);
 
@@ -329,7 +332,6 @@ main(int argc, char *argv[])
 			    inputYAML,
 			    verbose>=1);  // Print reading progress?
 
-		cerr << "exten check " << extensions[1]->mapName << endl;  
     PROGRESS(2,Setting reference wcsNames);
 
     // A special loop here to set the wcsname of reference extensions to the
@@ -341,8 +343,7 @@ main(int argc, char *argv[])
       int ifield = expo.field;
       extnptr->wcsName = fields.names().nameOf(ifield); // ??? mapName instead???
     }
-    cerr << "exten check " << extensions[1]->mapName << endl;
-    
+
     /////////////////////////////////////////////////////
     //  Create and initialize all maps
     /////////////////////////////////////////////////////
@@ -389,11 +390,6 @@ main(int argc, char *argv[])
     // Second sanity check: in each field that has *any* free maps,
     // do we have at least one map that is *fixed*?
     /////////////////////////////////////////////////////
-    
-    /*try {cout << "color check1 " << extensions[0]->map->needsColor() << endl;}
-    catch (...) {
-      cerr << "not set here" << endl;
-    }*/
     PROGRESS(2,Checking for field degeneracy);
 
     {
@@ -419,10 +415,7 @@ main(int argc, char *argv[])
       }
       if (done) exit(1);
     }
-    /*try {cout << "color check2 " << extensions[0]->map->needsColor() << endl;}
-    catch (...) {
-      cerr << "not set here" << endl;
-    }*/
+
     /////////////////////////////////////////////////////
     // Next degeneracy: if linear/poly maps are compounded there
     // must be data for which one of them is fixed.  See if it
@@ -462,10 +455,7 @@ main(int argc, char *argv[])
 	inputYAML.addInput(iss, "", true); // Prepend these specs to others
       }
     } // End of poly-degeneracy check/correction
-    /*try {cout << "color check3 " << extensions[0]->map->needsColor() << endl;}
-    catch (...) {
-      cerr << "not set here" << endl;
-    }*/
+
     PROGRESS(1,Making final mapCollection);
 
     // Do not need the preliminary PMC any more.
@@ -480,10 +470,6 @@ main(int argc, char *argv[])
 			       extensions,
 			       inputYAML,
 			       mapCollection);
-    /*try {cout << "color check4 " << extensions[0]->map->needsColor() << endl;}
-    catch (...) {
-      cerr << "not set here" << endl;
-    }*/
 
     // Add WCS for every extension, and reproject into field coordinates
     PROGRESS(2,Defining all WCSs);
@@ -500,7 +486,6 @@ main(int argc, char *argv[])
 
     // This routine figures out an order in which defaulted maps can
     // be initialized without degeneracies
-    cerr << "exten check " << extensions[1]->mapName << endl;
     list<set<int>> initializeOrder;
     set<int> initializedExtensions;
     {
@@ -511,22 +496,13 @@ main(int argc, char *argv[])
       // Get the recommended initialization order:
       initializeOrder = degen.initializationOrder();
     }
-    cerr << "exten check " << extensions[1]->mapName << endl;
-    cout << "color check6 " << extensions[0]->map->needsColor() << endl;
-    
+ 
     for (auto extnSet : initializeOrder) {
-      for (auto s : extnSet) {
-        cerr << s << " " ;
-      }
-      cerr << endl;
       // Fit set of extensions to initialize defaulted map(s)
       set<Extension*> defaultedExtensions;
       for (auto iextn : extnSet) {
 	defaultedExtensions.insert(extensions[iextn].get());
 	initializedExtensions.insert(iextn);
-      }
-      for (auto s : defaultedExtensions) {
-        cerr << s->mapName << " " ;
       }
       fitDefaulted(mapCollection,
 		   defaultedExtensions,
@@ -534,11 +510,7 @@ main(int argc, char *argv[])
 		   exposures,
 		   verbose>=2);
     }
-    
-    try {cout << "color check7 " << extensions[0]->map->needsColor() << endl;}
-    catch (...) {
-      cerr << "not set here" << endl;
-    }
+
     // Try to fit on every extension not already initialized just to
     // make sure that we didn't miss any non-Poly map elements.
     // The fitDefaulted routine will just return if there are no
@@ -569,10 +541,7 @@ main(int argc, char *argv[])
       }
     }
     if (defaultProblem) exit(1);
-    try {cout << "color check9 " << extensions[0]->map->needsColor() << endl;}
-    catch (...) {
-      cerr << "not set here" << endl;
-    }
+
     // Now fix all map elements requested to be fixed
     fixMapComponents<Astro>(mapCollection,
 			    fixMapList,
@@ -591,7 +560,6 @@ main(int argc, char *argv[])
 
     // List of all Matches - they will hold pointers to all Detections too.
     MCat matches;
-    cout << "color check10 " << extensions[0]->map->needsColor() << endl;
     // Figure out which extensions' maps require a color entry to function
     whoNeedsColor<Astro>(extensions);
     
@@ -644,17 +612,6 @@ main(int argc, char *argv[])
     PROGRESS(1,Reading colors);
     readColors<Astro>(extensionTable, colorExtensions);
 
-    int cut=0;
-    auto im = matches.begin();
-    cerr << "Reviewing matches:" << endl;
-    while (im != matches.end() ) {
-      if ((*im)->fitSize() < minMatches){
-        cerr << (*im)->fitSize() << endl;
-        ++cut;
-      }
-      ++im;
-    }
-    cerr << "Total to cut: "  << cut << endl;
     PROGRESS(2,Purging defective detections and matches);
 
     // Get rid of Detections with errors too high
@@ -672,7 +629,6 @@ main(int argc, char *argv[])
     PROGRESS(2,Reserving matches);
     // Reserve desired fraction of matches
     if (reserveFraction>0.) {
-      cerr << "reserve info: " << reserveFraction << "  " << randomNumberSeed << endl;
       reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);
     }
     cerr << "Matches size: " << matches.size() << endl;

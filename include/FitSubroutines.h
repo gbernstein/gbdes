@@ -453,7 +453,7 @@ void readObjects(const img::FTable& extensionTable,
 
 template <class S>
 void readObjects_oneExtension(const vector<unique_ptr<Exposure>>& exposures,
-      int iext, img::FTable ff,
+	  int iext, img::FTable ff,
       string xKey, string yKey, string idkey, string pmCovKey,
 	  vector<string> xyErrKeys,
 	  string magKey, int magKeyElement, string magErrKey, int magErrKeyElement,

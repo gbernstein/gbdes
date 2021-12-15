@@ -71,11 +71,13 @@ fitDefaulted(PixelMapCollection& pmc,
     
     // Get the boundaries of the device it uses
     Bounds<double> b=instruments[expo.instrument]->domains[extnptr->device];
-    cerr << "inst dev: " << to_string(expo.instrument) << " "  << to_string(extnptr->device) << endl;
-    cerr << "bounds: " << to_string(b.getXMin()) << " " << to_string(b.getXMax()) << endl;
-    double txw, tyw;
-    extnptr->startWcs->toWorld(b.getXMin(), b.getYMin(), txw, tyw);
-    cerr << "check p1 " << to_string(txw) << " " << to_string(tyw) << endl;
+    if (logging) {
+      cerr << "instrument, device: " << to_string(expo.instrument) << " "  << to_string(extnptr->device) << endl;
+      cerr << "bounds: " << to_string(b.getXMin()) << " " << to_string(b.getXMax()) << endl;
+      double txw, tyw;
+      extnptr->startWcs->toWorld(b.getXMin(), b.getYMin(), txw, tyw);
+      cerr << "check p1 " << to_string(txw) << " " << to_string(tyw) << endl;
+    }
     // Generate a grid of matched Detections
     const int nGridPoints=512;	// Number of test points for map initialization
 
@@ -100,7 +102,7 @@ fitDefaulted(PixelMapCollection& pmc,
       extnptr->startWcs->toWorld(xpix, ypix, xw, yw); // startWCS has no color!
       unique_ptr<Detection> dfit(new Detection);
       unique_ptr<Detection> dref(new Detection);
-      if (i == 10) {
+      if (logging && (i == 10)) {
         cerr << "pix check " << to_string(xpix) << " " << to_string(ypix) << " " << to_string(xw) << " " << to_string(yw) << endl;
       }
       dfit->xpix = xpix;

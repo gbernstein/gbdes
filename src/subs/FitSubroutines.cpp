@@ -30,11 +30,8 @@ using photometry::MMAG;
 // internal white space with underscores:
 void
 spaceReplace(string& s) {
-  cerr << "sr 1" << endl;
   stripWhite(s);
-  cerr << "sr2 " << endl;
   s = regexReplace("[[:space:]]+","_",s);
-  cerr << "sr3" << endl;
 }
 
 // Another helper function to split up a string into a list of whitespace-trimmed strings.
@@ -313,24 +310,12 @@ Fields::Fields(
     _epochs(std::move(epochs))
 {
     // TODO: check that sizes are consistent, raise if they are not.
-    cerr << "in make fields" << endl;
     _projections.reserve(names.size());
-    cerr << "mf 2" << endl;
     for (std::size_t i = 0; i != names.size(); ++i) {
-        cerr << "mf 2.1" << endl;
-        //string tmp_name = std::move(names[i]);
-        string tmp_name = "test";
-        cerr << "mf 2.2" << endl;
-        cerr << tmp_name << endl;
-        cerr << "mf 2.3" << endl;
-        //spaceReplace(tmp_name);
-        cerr << "mf 3" << endl;
-        _names.append(tmp_name); //std::move(names[i]));
-        cerr << "mf 4" << endl;
+        //spaceReplace(names[i]);
+        _names.append(std::move(names[i]));
         astrometry::Orientation orient(astrometry::SphericalICRS(std::move(ra[i])*WCS_UNIT, std::move(dec[i])*WCS_UNIT));
-        cerr << "mf 5" << endl;
         _projections.emplace_back( new astrometry::Gnomonic(orient));
-        cerr << "mf 6" << endl;
     }
 }
 
@@ -353,7 +338,6 @@ Fields Fields::read(string inputTables, string outCatalog, double defaultEpoch) 
   ft.readCells(dec, "Dec");
   vector<double> epochs;
   if (ft.hasColumn("PM_EPOCH")) {
-    cerr << "rf 7" << endl;
     ft.readCells(epochs, "PM_EPOCH");
     // Set reference epochs for each field to defaultEpoch if
     // they have a signal value like 0 or -1 
@@ -853,7 +837,6 @@ readExtensions(img::FTable& extensionTable,
 	extn->mapName = extn->wcsName + "/base";
       else
 	extn->mapName = extn->wcsName;
-      cerr << "adding map: " << extn->mapName << endl;
       if (!inputYAML.addMap(extn->mapName,d)) { 
 	cerr << "Input YAML files do not have complete information for map "
 	     << extn->mapName
@@ -1601,8 +1584,6 @@ void readObjects(const img::FTable& extensionTable,
 	   << endl;
       exit(1);
     }
-    cerr << "got startWcs" << endl;
-    cerr << startWcs->getName() << endl;
 
     img::FTable ff;
 #ifdef _OPENMP
@@ -1894,8 +1875,6 @@ purgeNoisyDetections(double maxError,
 		     typename S::MCat& matches,
 		     const vector<unique_ptr<Exposure>>& exposures,
 		     const vector<unique_ptr<typename S::Extension>>& extensions) {
-  cerr << "Check maxError: " << to_string(maxError) << endl;
-  int eraseCount = 0;
   for (auto const & mptr : matches) {
     auto j=mptr->begin(); 
     int k=0;
@@ -1905,13 +1884,11 @@ purgeNoisyDetections(double maxError,
       if ( (d->isClipped || d->getSigma() > maxError) &&
 	        exposures[ extensions[d->catalogNumber]->exposure]->instrument >= 0) {
 	      j = mptr->erase(j);
-        ++eraseCount;
       } else {
 	      ++j;
       }
     }
   }
-  cerr << "eraseCount: " << to_string(eraseCount) << endl;
 }
 
 // Get rid of Matches with too few Detections being fit: delete
@@ -2248,7 +2225,6 @@ Astro::saveResults(const astrometry::MCat& matches,
 		   string outCatalog,
 		   string starCatalog,
 		   vector<astrometry::SphericalCoords*> catalogProjections) {
-
   // Open the output bintable for pure position residuals
   string tableName = "WCSOut";
   string pmTableName = "PMOut";
@@ -2266,7 +2242,6 @@ Astro::saveResults(const astrometry::MCat& matches,
   vector<const PMDetection*> pmdets;
   // And the id's of matches they belong to
   vector<int> pmDetMatchID;
-
   // Make vector of units conversions to I/O units
   vector<float> units(5);
   units[astrometry::X0] = WCS_UNIT/RESIDUAL_UNIT;
@@ -2274,12 +2249,10 @@ Astro::saveResults(const astrometry::MCat& matches,
   units[astrometry::PAR] = WCS_UNIT/RESIDUAL_UNIT;
   units[astrometry::VX] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
   units[astrometry::VY] = WCS_UNIT/(RESIDUAL_UNIT/TDB_UNIT);
-
   {
     // Open a scope for existence of the WCSOut table
     FITS::FitsTable ft(outCatalog, FITS::ReadWrite + FITS::Create, tableName);
     img::FTable outTable = ft.use();
-
     {
       // Create vectors to help type each new column
       vector<int> vint;
@@ -2307,7 +2280,6 @@ Astro::saveResults(const astrometry::MCat& matches,
       outTable.addColumn(vfloat, "chisq");
       outTable.addColumn(vfloat, "chisqExpected");
     }  
-
     /** Now create a team of threads to refit all matches **/
     // Write residual vectors to table this many at a time
     const int MATCH_CHUNK=10000;  // Matches to process at a time
@@ -2346,7 +2318,6 @@ Astro::saveResults(const astrometry::MCat& matches,
       for (int iMatch = iChunk*MATCH_CHUNK;
 	   iMatch < vmatches.size() && iMatch<(iChunk+1)*MATCH_CHUNK;
 	   iMatch++) {
-
 	const Match* m = vmatches[iMatch];
 
 	// Update all world coords and mean solutions
@@ -2367,7 +2338,6 @@ Astro::saveResults(const astrometry::MCat& matches,
 	}
     
 	double matchColor = astrometry::NODATA;
-
 	for (auto const & detptr : *m) {
 
 	  // Get a pointer to a PMDetection if this is one:
@@ -2386,7 +2356,6 @@ Astro::saveResults(const astrometry::MCat& matches,
 	  if (matchColor== astrometry::NODATA &&
 	      detptr->color != astrometry::NODATA)
 	    matchColor = detptr->color;
-
 	  // Save some basics:
 	  matchID.push_back(iMatch);
 	  catalogNumber.push_back(detptr->catalogNumber);
@@ -2408,7 +2377,6 @@ Astro::saveResults(const astrometry::MCat& matches,
 	  astrometry::Vector2 residW = detptr->residWorld();
 	  xresw.push_back(residW[0]);
 	  yresw.push_back(residW[1]);
-
 	  // Get pixel residuals
 	  astrometry::Vector2 residP;
 	  try {
@@ -2430,7 +2398,6 @@ Astro::saveResults(const astrometry::MCat& matches,
 	  }
 	  xrespix.push_back(residP[0]);
 	  yrespix.push_back(residP[1]);
-
 	  astrometry::Matrix22 cov(0.);
 	  // Get error covariances, if we have any
 	  double chisqThis;

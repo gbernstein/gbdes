@@ -3,7 +3,6 @@
 #include <sstream>
 
 #include "WCSFit_fit.h"
-//#include "Pset.h"
 
 using namespace std;
 
@@ -163,56 +162,29 @@ main(int argc, char *argv[])
     parameters.addMember("verbose", &verbose, def,
                 "stderr detail level", 1);
   }
-  
-  // Positional accuracy demanded of numerical solutions for inversion of 
-  // pixel maps: 
-  const double worldTolerance = 0.1*MILLIARCSEC/WCS_UNIT;
+
   // Fractional reduction in RMS required to continue sigma-clipping:
-  //const double minimumImprovement=0.02;
   double minimumImprovement=0.02;
   try {
   // Read all the command-line and parameter-file program parameters
   processParameters(parameters, usage, 1, argc, argv);
   string inputTables = argv[1];
 
-  // Convert error parameters from I/O units to internal
-  //referenceSysError *= RESIDUAL_UNIT/WCS_UNIT;
-  //sysError *= RESIDUAL_UNIT/WCS_UNIT;
-  //maxError *= RESIDUAL_UNIT/WCS_UNIT;
-
   PMMatch::setPrior(pmPrior, parallaxPrior);
 
-  // Teach PixelMapCollection about new kinds of PixelMaps:
-  //loadPixelMapParser();
-  
-  cerr << "start fitclass" << endl;
-  //Fields fields = Fields::read(inputTables, outCatalog, pmEpoch);
-  vector<string> vn{"testName"};
-  vector<double> vra{0.5};
-  vector<double> vdec{1.5};
-  vector<double> vep{10.5};
-  FieldsHelper fh(vn, vra, vdec, vep);
-  FitClass fitclass;
-  //FitClass fitclass(inputMaps);
-  //fitclass.maxError *= RESIDUAL_UNIT/WCS_UNIT;
-  cerr << "init mm " << fitclass.minMatches << endl;
-  
-  fitclass.minMatches = minMatches;
-  fitclass.verbose = verbose;
-  
-  cerr << "exec 0.1" << endl;
+  FitClass fitclass(minMatches=minMatches, verbose=verbose);
+
   list<string> useInstrumentList = splitArgument(useInstruments);
-  
-  cerr << "exec 1" << endl;
+
   // Objects to ignore on input:
   ExtensionObjectSet skipSet(skipFile);
   
   // The list of exposures that are considered valid sources of color information:
   list<string> useColorList = splitArgument(colorExposures);
-  cerr << "exec 2" << endl;
+
   // Exposures to ignore:
   list<string> skipExposureList = splitArgument(skipExposures);
-  
+
   //fitclass.addInputYAML(inputMaps);
   YAMLCollector inputYAML(inputMaps, PixelMapCollection::magicKey);
   // Make sure inputYAML knows about the Identity transformation:
@@ -220,9 +192,7 @@ main(int argc, char *argv[])
     istringstream iss("Identity:\n  Type:  Identity\n");
     inputYAML.addInput(iss);
   }
-  cerr << "exec 3" << endl;
-  
-  
+
   /////////////////////////////////////////////////////
   //  Read in properties of all Fields, Instruments, Devices, Exposures
   /////////////////////////////////////////////////////
@@ -233,11 +203,7 @@ main(int argc, char *argv[])
   PROGRESS(1,Reading fields);
 
   // All we care about fields are names and orientations:
-  // Read the Fields table from input, copy to a new output FITS file, extract needed info
-  //NameIndex fieldNames;
-  //vector<SphericalCoords*> fieldProjections;
-  //vector<double> fieldEpochs;
-  
+  // Read the Fields table from input, copy to a new output FITS file, extract needed info  
   fitclass.fields = Fields::read(inputTables, outCatalog, pmEpoch);
     
   PROGRESS(1,Reading instruments);
@@ -261,7 +227,6 @@ main(int argc, char *argv[])
   // This vector will hold the color-priority value of each exposure.
   // -1 means an exposure that does not hold color info.
   vector<int> exposureColorPriorities;
-  
   vector<unique_ptr<Exposure>> exposures = readExposures(fitclass.instruments,
                                      fitclass.fields.epochs(),
                                      exposureColorPriorities,
@@ -272,8 +237,6 @@ main(int argc, char *argv[])
 
   fitclass.setExposures(std::move(exposures), sysError, referenceSysError);
 
-  cerr << "check 3 exec" << endl;
-  
   PROGRESS(1,Reading extensions);
 
   // Read info about all Extensions - we will keep the Table around.
@@ -300,11 +263,8 @@ main(int argc, char *argv[])
   
   fitclass.setupMaps(inputYAML, fixMaps=fixMaps);
   
-  
   // Start by reading all matched catalogs, creating Detection and Match arrays, and 
   // telling each Extension which objects it should retrieve from its catalog
-  cerr << "get matches" << endl;
-  //MCat matches;
   for (int icat = 0; icat < catalogHDUs.size(); icat++) {
     FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
     FTable ff = ft.use();
@@ -325,54 +285,27 @@ main(int argc, char *argv[])
 
     readMatches<Astro>(ff, fitclass.matches, fitclass.extensions, colorExtensions, skipSet,
                        fitclass.minMatches, usePM);
-    
-    //readMatches<Astro>(ff, matches, extensions, colorExtensions, skipSet,
-    //                   fitclass.minMatches, usePM);
-      
   } // End loop over input matched catalogs
 
   if (verbose>=0) cout << "# Total match count: " << fitclass.matches.size() << endl;
-  //if (verbose>=0) cout << "# Total match count: " << matches.size() << endl;
 
   // Now loop over all original catalog bintables, reading the desired rows
   // and collecting needed information into the Detection structures
   PROGRESS(1,Reading catalogs);
   readObjects<Astro>(extensionTable, fitclass.exposures, fitclass.extensions, fitclass.fields.projections());
-  //readObjects<Astro>(extensionTable, fitclass.exposures, extensions, fitclass.fieldProjections);
 
   // Now loop again over all catalogs being used to supply colors,
   // and insert colors into all the Detections they match
   PROGRESS(1,Reading colors);
   readColors<Astro>(extensionTable, colorExtensions);
 
-
   fitclass.fit(maxError=maxError, minFitExposures=minFitExposures, reserveFraction=reserveFraction,
                randomNumberSeed=randomNumberSeed, minimumImprovement=minimumImprovement,
                clipThresh=clipThresh, chisqTolerance=chisqTolerance, clipEntireMatch=clipEntireMatch,
                divideInPlace=divideInPlace, purgeOutput=purgeOutput, minColor=minColor, maxColor=maxColor);
 
-  // The re-fitting is now complete.  Serialize all the fitted coordinate systems
-  PROGRESS(2,Saving astrometric parameters);
-  // Save the pointwise fitting results
-  {
-    ofstream ofs(outWcs.c_str());
-    if (!ofs) {
-      cerr << "Error trying to open output file for fitted Wcs: "
-        << outWcs << endl;
-      // *** will not quit before dumping output ***
-    } else {
-      fitclass.mapCollection.write(ofs);
-    }
-  }
+  fitclass.saveResults(outWcs, outCatalog, starCatalog);
 
-  Astro::saveResults(fitclass.matches, outCatalog, starCatalog, fitclass.extensionProjections);
-
-  PROGRESS(2,Saving FITS tables);
-  // Report summary of residuals to stdout
-  Astro::reportStatistics(fitclass.matches, fitclass.exposures, fitclass.extensions, cout);
-
-  //fitclass.cleanup();
-  
   }
   catch (std::runtime_error& m) {
     quit(m,1);

@@ -170,10 +170,6 @@ MapDegeneracies<S>::initializationOrder() {
 	       << " from exposure " << to_string(maxExpo)
 	       << " with " << to_string(maxCount) << " exposures" << endl; /**/
       out.push_back(m.second[maxExpo]);
-      for (auto s : m.second[maxExpo]) {
-        cerr << to_string(s) << " " ;
-      }
-      cerr << endl;
       eraseMap(m.first);
     }
   }

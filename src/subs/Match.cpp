@@ -1409,9 +1409,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
       double maxDev;
       double newChisq = chisqDOF(dof, maxDev);
       timer.stop();
-      ostringstream chi_stream;
-      chi_stream << newChisq;
-      string chi_string = chi_stream.str();
       double out_chi = newChisq;
       string sci = "";
       if (newChisq < 1) {
@@ -1424,18 +1421,15 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
 	     << " in time " << to_string(timer) << " sec"
 	     << endl;
       }
-      //double chi2 = newChisq;
-      //cerr << "new chisq: " << chi2 << " old chisq: " << (1.0001 * oldChisq) << " is greater? " << (chi2 > (1.0001 > oldChisq)) << endl;
       timer.reset();
       timer.start();
 
       // Give up on Newton if chisq went up non-trivially
       if (newChisq > oldChisq * 1.0001) {
-        cerr << "newChisq has gone up non-trivially" << endl;
+        cerr << "chisq has gone up non-trivially" << endl;
         break;
       }
       else if ((oldChisq - newChisq) < oldChisq * relativeTolerance) {
-  cerr << "fit converged" << endl;
   // Newton has converged, so we're done.
 #ifdef USE_EIGEN
 	if (llt) delete llt;
@@ -1449,18 +1443,16 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     }
     // If we reach this place, Newton is going backwards or nowhere, slowly.
     // So just give it up.
-    cerr << "deleting stuff" << endl;
 #ifdef USE_EIGEN
     if (llt) delete llt;
     if (inplaceLLT) delete inplaceLLT;
 #endif
   }
-  cerr << "Going into marquardt" << endl;
+
   // ??? Signal that alpha should be fixed for all iterations of Marquardt?
   Marquardt<CoordAlign> marq(*this);
   marq.setRelTolerance(relativeTolerance);
   marq.setSaveMemory();  
-  cerr << "fitting marq" << endl;
   double chisq = marq.fit(p, DefaultMaxIterations, reportToCerr);
   setParams(p);
   {
@@ -1468,7 +1460,6 @@ CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
     double maxDev;
     chisq = chisqDOF(dof, maxDev);
   }
-  cerr << "Fit once done" << endl;
   return chisq;
 }
 
