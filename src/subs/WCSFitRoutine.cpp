@@ -1,10 +1,10 @@
 // Program to fit astrometric solutions to detection catalogs already matched by WCSFoF.
 
-#include "WCSFit_fit.h"
+#include "WCSFitRoutine.h"
 
 #define PROGRESS(val, msg) if (verbose>=val) cerr << "-->" <<  #msg << endl
 
-FitClass::FitClass(Fields & fields_,
+WCSFit::WCSFit(Fields & fields_,
                    vector<shared_ptr<Instrument>> instruments_,
                    ExposuresHelper exposures_,
                    vector<int> extensionExposureNumbers,
@@ -102,18 +102,14 @@ FitClass::FitClass(Fields & fields_,
   
 }
 
-FitClass::FitClass(int minMatches, int verbose): minMatches(minMatches), verbose(verbose){
+WCSFit::WCSFit(int minMatches, int verbose): minMatches(minMatches), verbose(verbose){
 
     // Teach PixelMapCollection about new kinds of PixelMaps:
     loadPixelMapParser();
     
 }
 
-int FitClass::getMatchLength() {
-  return matches.size();
-}
-
-void FitClass::setExposures(vector<unique_ptr<Exposure>> expos, double sysErr, double refSysErr) {
+void WCSFit::setExposures(vector<unique_ptr<Exposure>> expos, double sysErr, double refSysErr) {
 
   exposures = std::move(expos);
 
@@ -147,30 +143,7 @@ void FitClass::setExposures(vector<unique_ptr<Exposure>> expos, double sysErr, d
   }
 }
 
-void FitClass::setExtensions(vector<shared_ptr<Extension>> extens) {
-
-  SPextensions = extens;
-  extensions.reserve(SPextensions.size());
-  for (int i=0; i < SPextensions.size(); i++) {
-    shared_ptr<Extension> e = SPextensions[i];
-    unique_ptr<Astro::Extension> extn(new typename Astro::Extension);
-
-    extn->exposure = e->exposure;
-    extn->device = e->device;
-    extn->airmass = e->airmass;
-    extn->magshift = e->magshift;
-    extn->wcsName = e->wcsName;
-    extn->mapName = e->mapName; 
-    extn->startWcs = std::unique_ptr<astrometry::Wcs>(e->startWcs.get());
-    
-    const Exposure& expo = *exposures[extn->exposure];
-    extn->startWcs->reprojectTo(*expo.projection);
-  
-    extensions[i] = std::move(extn);
-  }
-}
-
-void FitClass::setRefWCSNames() {
+void WCSFit::setRefWCSNames() {
   PROGRESS(2,Setting reference wcsNames);
 
   // A special loop here to set the wcsname of reference extensions to the
@@ -180,12 +153,12 @@ void FitClass::setRefWCSNames() {
     const Exposure& expo = *exposures[extnptr->exposure];
     if ( expo.instrument >= 0) continue;
     int ifield = expo.field;
-    extnptr->wcsName = fields.names().nameOf(ifield); // ??? mapName instead???
+    extnptr->wcsName = fields.names().nameOf(ifield);
   }
 }
 
-void FitClass::addMap(YAMLCollector& inputYAML, string mapName, vector<string> mapParams) {
-//void FitClass::addMap(string mapName, vector<string> mapParams) {
+void WCSFit::addMap(YAMLCollector& inputYAML, string mapName, vector<string> mapParams) {
+
   astrometry::YAMLCollector::Dictionary d;
   d["INSTRUMENT"] = mapParams[0];
   d["DEVICE"] = mapParams[1];
@@ -194,7 +167,7 @@ void FitClass::addMap(YAMLCollector& inputYAML, string mapName, vector<string> m
   inputYAML.addMap(mapName,d);
 }
 
-void FitClass::setupMaps(YAMLCollector& inputYAML, string fixMaps) {
+void WCSFit::setupMaps(YAMLCollector& inputYAML, string fixMaps) {
 
   /////////////////////////////////////////////////////
   //  Create and initialize all maps
@@ -422,13 +395,13 @@ void FitClass::setupMaps(YAMLCollector& inputYAML, string fixMaps) {
   }
 }
 
-void FitClass::setMatches(vector<int> sequence, vector<LONGLONG> extns, vector<LONGLONG> objects,
+void WCSFit::setMatches(vector<int> sequence, vector<LONGLONG> extns, vector<LONGLONG> objects,
                           ExtensionObjectSet skipSet, bool usePM) {
   readMatches<Astro>(sequence, extns, objects, matches, extensions, colorExtensions,
               skipSet, minMatches, usePM);
 }
 
-void FitClass::setObjects(int i, map<string, vector<double>> tableMap, 
+void WCSFit::setObjects(int i, map<string, vector<double>> tableMap, 
                           string xKey, string yKey,
                           vector<string> xyErrKeys, string idKey, string pmCovKey, string magKey, int magKeyElement, string magErrKey,
                           int magErrKeyElement, string pmRaKey, string pmDecKey, string parallaxKey) {
@@ -442,7 +415,7 @@ void FitClass::setObjects(int i, map<string, vector<double>> tableMap,
                                  parallaxKey, extensions, fields.projections(), verbose, true);
 }
 
-void FitClass::fit(double maxError, int minFitExposures, double reserveFraction, int randomNumberSeed,
+void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, int randomNumberSeed,
                    double minimumImprovement, double clipThresh, double chisqTolerance, bool clipEntireMatch,
                    bool divideInPlace, bool purgeOutput, double minColor, double maxColor){
   try {
@@ -597,7 +570,7 @@ void FitClass::fit(double maxError, int minFitExposures, double reserveFraction,
   }
 }
 
-void FitClass::saveResults(string outWcs, string outCatalog, string starCatalog) {
+void WCSFit::saveResults(string outWcs, string outCatalog, string starCatalog) {
 
   // The re-fitting is now complete.  Serialize all the fitted coordinate systems
   PROGRESS(2,Saving astrometric parameters);
