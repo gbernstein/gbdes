@@ -13,18 +13,19 @@
 using namespace std;
 using namespace astrometry;
 
-string usage="Tpv2Pixmap: convert ASCII FITS header TPV WCS to YAML serialized PixelMapCollection\n"
-  "usage: Tpv2Pixmap <TPV in> <YAML out> <WCS name>\n"
-  "   TPV in:   file holding ASCII FITS-header TPV WCS\n"
-  "   YAML out: file to hold serialized PixelMapCollection\n"
-  "   WCS name: name of the WCS in the output file.";
+string usage = "Tpv2Pixmap: convert ASCII FITS header TPV WCS to YAML serialized PixelMapCollection\n"
+               "usage: Tpv2Pixmap <TPV in> <YAML out> <WCS name>\n"
+               "   TPV in:   file holding ASCII FITS-header TPV WCS\n"
+               "   YAML out: file to hold serialized PixelMapCollection\n"
+               "   WCS name: name of the WCS in the output file.";
 
-int
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
-  try {
+  try
+  {
     // Read parameters
-    if (argc!=4) {
+    if (argc != 4)
+    {
       cerr << usage << endl;
       exit(1);
     }
@@ -37,16 +38,17 @@ main(int argc, char *argv[])
     PixelMapCollection::registerMapType<astrometry::TemplateMap>();
     PixelMapCollection::registerMapType<astrometry::PiecewiseMap>();
 
-
     ifstream mapfs(tpvIn.c_str());
-    if (!mapfs) {
+    if (!mapfs)
+    {
       cerr << "Could not open TPV spec file " << tpvIn << endl;
       exit(1);
     }
-    img::Header h; 
+    img::Header h;
     mapfs >> h;
-    auto wcs = readTPV(h,wcsName);
-    if (!wcs) {
+    auto wcs = readTPV(h, wcsName);
+    if (!wcs)
+    {
       cerr << "Error reading input TPV map from file " << tpvIn << endl;
       exit(1);
     }
@@ -54,7 +56,8 @@ main(int argc, char *argv[])
     PixelMapCollection pmc;
     pmc.learnWcs(*wcs);
     ofstream ofs(yamlOut.c_str());
-    if (!ofs) {
+    if (!ofs)
+    {
       cerr << "Could not open output file " << yamlOut << endl;
       exit(1);
     }
@@ -62,8 +65,9 @@ main(int argc, char *argv[])
     ofs.close();
 
     exit(0);
-
-  } catch (std::runtime_error &m) {
-    quit(m,1);
+  }
+  catch (std::runtime_error &m)
+  {
+    quit(m, 1);
   }
 }

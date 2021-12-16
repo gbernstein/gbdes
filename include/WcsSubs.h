@@ -20,26 +20,26 @@ typedef Astro::ColorExtension ColorExtension;
 // Function that will using starting WCS to fit all of the defaulted
 // maps used by the selected extensions.  Then will put the
 // initialized parameters back into the PMC and clear the defaulted flag.
-void fitDefaulted(astrometry::PixelMapCollection& pmc,
-		  set<Extension*> useThese,
-		  const vector<unique_ptr<Instrument>>& instruments,
-		  const vector<unique_ptr<Exposure>>& exposures,
-		  bool logging=true);
+void fitDefaulted(astrometry::PixelMapCollection &pmc,
+                  set<Extension *> useThese,
+                  const vector<unique_ptr<Instrument>> &instruments,
+                  const vector<unique_ptr<Exposure>> &exposures,
+                  bool logging = true);
 
 // Define and issue WCS for each extension in use, and set projection to
 // field coordinates.
-void setupWCS(const vector<unique_ptr<astrometry::SphericalCoords>>& fieldProjections,
-	      const vector<unique_ptr<Instrument>>& instruments,
-	      const vector<unique_ptr<Exposure>>& exposures,
-	      vector<unique_ptr<Extension>>& extensions,
-	      astrometry::PixelMapCollection& pmc);
+void setupWCS(const vector<unique_ptr<astrometry::SphericalCoords>> &fieldProjections,
+              const vector<unique_ptr<Instrument>> &instruments,
+              const vector<unique_ptr<Exposure>> &exposures,
+              vector<unique_ptr<Extension>> &extensions,
+              astrometry::PixelMapCollection &pmc);
 
 // Analyze the PixelMap to find list of exposures that we can
 // initialize first to set up all defaulted device maps.
 list<int>
-pickExposuresToInitialize(const vector<unique_ptr<Instrument>>& instruments,
-			  const vector<unique_ptr<Exposure>>& exposures,
-			  const vector<unique_ptr<Extension>>& extensions,
-			  astrometry::PixelMapCollection& pmc);
+pickExposuresToInitialize(const vector<unique_ptr<Instrument>> &instruments,
+                          const vector<unique_ptr<Exposure>> &exposures,
+                          const vector<unique_ptr<Extension>> &extensions,
+                          astrometry::PixelMapCollection &pmc);
 
 #endif
