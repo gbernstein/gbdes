@@ -56,6 +56,9 @@ int main(int argc,
   processParameters(parameters, usage, 1, argc, argv);
   string configFile = argv[1];
 
+  // Convert matching radius to our system units for world coords
+  matchRadius *= ARCSEC / WCS_UNIT;
+
   // Set of Friends-of-Friends class
   FoFClass fofclass;
   fofclass.matchRadius = matchRadius;
@@ -78,7 +81,8 @@ int main(int argc,
       quit(e, 1);
     }
 
-    vector<Field *> fields;
+    vector<unique_ptr<Field>> fields;
+    fields.reserve(fieldTable.nrows());
 
     for (int ifield = 0; ifield < fieldTable.nrows(); ifield++)
     {
@@ -91,13 +95,13 @@ int main(int argc,
       fieldTable.readCell(dec, "DEC", ifield);
       fieldTable.readCell(extent, "RADIUS", ifield);
 
-      Field *f = new Field;
+      unique_ptr<Field> f = unique_ptr<Field>(new Field);
       f->name = name;
       astrometry::Orientation orient(astrometry::SphericalICRS(ra * WCS_UNIT, dec * WCS_UNIT));
-      f->projection = new astrometry::Gnomonic(orient);
+      f->projection = unique_ptr<astrometry::SphericalCoords>(new astrometry::Gnomonic(orient));
       f->extent = extent;
       f->matchRadius = matchRadius;
-      fields.push_back(f);
+      fields.emplace_back(std::move(f));
     } // Done reading fields
     Assert(!fields.empty());
 
@@ -114,7 +118,8 @@ int main(int argc,
       }
     }
     vector<FTable> instrumentTables(instrumentHDUs.size());
-    vector<Instr *> instruments(instrumentHDUs.size(), 0);
+    vector<unique_ptr<Instr>> instruments;//(instrumentHDUs.size(), 0);
+    instruments.reserve(instrumentHDUs.size());
 
     for (list<int>::const_iterator i = instrumentHDUs.begin();
          i != instrumentHDUs.end();
@@ -135,7 +140,7 @@ int main(int argc,
 
       // Now save the table and make an Instrument structure
       instrumentTables[instrumentNumber] = ft;
-      instruments[instrumentNumber] = new Instr(ft);
+      instruments[instrumentNumber] = unique_ptr<Instr>(new Instr(ft));
     }
     // Check that all Instruments were read
     for (int i = 0; i < instruments.size(); i++)
@@ -156,12 +161,12 @@ int main(int argc,
       quit(e, 1);
     }
 
-    vector<Expo *> exposures;
+    vector<unique_ptr<Expo>> exposures;
     for (int i = 0; i < exposureTable.nrows(); i++)
     {
-      Expo *e = new Expo;
+      unique_ptr<Expo> e(new Expo);
       e->read(exposureTable, i);
-      exposures.push_back(e);
+      exposures.emplace_back(std::move(e));
     }
     Assert(exposures.size() == exposureTable.nrows());
 
@@ -176,15 +181,15 @@ int main(int argc,
       quit(e, 1);
     }
 
-    fofclass.fields = fields;
-    fofclass.instruments = instruments;
-    fofclass.exposures = exposures;
+    fofclass.fields = std::move(fields);
+    fofclass.instruments = std::move(instruments);
+    fofclass.exposures = std::move(exposures);
     fofclass.extensionTable = extensionTable;
 
     // Loop over input catalogs
     for (long iextn = 0; iextn < extensionTable.nrows(); iextn++)
     {
-      astrometry::Wcs *wcs = 0;
+      unique_ptr<astrometry::Wcs> wcs = 0;
       string thisAffinity;
       int exposureNumber;
       int instrumentNumber;
@@ -200,11 +205,8 @@ int main(int argc,
       // TODO: take out fieldNumber, use fields[fieldNumber]
       fofclass.addCatalog(wcs, thisAffinity, exposureNumber, fieldNumber, instrumentNumber, deviceNumber, iextn, isStar, vx, vy, vid);
     }
-    fofclass.writeMatches(outCatalogName);
 
-    cerr << "Passed fof class setup" << endl;
-    friendOfFriend(matchRadius, useAffinities, outCatalogName, minMatches, allowSelfMatches, fields,
-                   instruments, exposures, extensionTable);
+    fofclass.writeMatches(outCatalogName);
 
     //  Write all of our tables to output file
     {
@@ -218,7 +220,7 @@ int main(int argc,
       ft.copy(exposureTable);
     }
 
-    for (int i = 0; i < instruments.size(); i++)
+    for (int i = 0; i < fofclass.instruments.size(); i++)
     {
       // Instrument tables
       // Update the device bounds in the table first
@@ -251,6 +253,7 @@ int main(int argc,
       FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Extensions");
       ft.copy(extensionTable);
     }
+    cerr << "Done!" << endl;
   }
   catch (std::runtime_error &m)
   {

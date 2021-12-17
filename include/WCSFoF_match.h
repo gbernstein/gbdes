@@ -3,7 +3,6 @@
 
 #include "FoF.h"
 #include "Astrometry.h"
-//#include "Bounds.h"
 #include "FitsTable.h"
 #include "Units.h"
 #include "FitSubroutines.h"
@@ -43,21 +42,19 @@ struct Field
 {
   string name;
   // Coordinate system that has lat=lon=0 at field center and does projection to use for matching
-  astrometry::SphericalCoords *projection;
+  unique_ptr<astrometry::SphericalCoords> projection;
   double extent;
   double matchRadius;
   // Map from affinity name to its catalog of matches:
   typedef map<string, PointCat *> CatMap;
   CatMap catalogs;
-  Field() : projection(0) {}
+  Field() : projection() {}
   ~Field()
   {
     for (CatMap::iterator i = catalogs.begin();
          i != catalogs.end();
          ++i)
       delete i->second;
-    if (projection)
-      delete projection;
   }
   PointCat *catalogFor(const string &affinity)
   {
@@ -140,40 +137,29 @@ class FoFClass
 {
 public:
   FoFClass();
-  double matchRadius = 1.0;
+  double matchRadius;
   bool useAffinities = true;
-  //string outCatalogName;
-  int minMatches = 2;
+  int minMatches;
   bool allowSelfMatches = false;
-  vector<Field *> fields;
-  vector<Instr *> instruments;
-  vector<Expo *> exposures;
+  vector<unique_ptr<Field>> fields;
+  vector<unique_ptr<Instr>> instruments;
+  vector<unique_ptr<Expo>> exposures;
   FTable extensionTable;
   list<Point> allPoints;
-  string currentPixelMapCollectionFileName = "";
-  astrometry::PixelMapCollection *inputPmc = 0;
+  string currentPixelMapCollectionFileName;
   vector<int> sequence;
   vector<long> extn;
   vector<long> obj;
-  int a = 5;
-  int b = 4;
-  int c;
-  void addTest();
 
-  void getExtensionInfo(long iextn, string thisAffinity, int exposureNumber, int instrumentNumber,
-                        int fieldNumber, int deviceNumber, vector<bool> isStar, vector<double> vx,
-                        vector<double> vy, vector<long> vid);
-  void getWCS(long iextn, int fieldNumber, astrometry::Wcs *wcs);
+  void getExtensionInfo(long iextn, string &thisAffinity, int &exposureNumber, int &instrumentNumber,
+                        int &fieldNumber, int &deviceNumber, vector<bool> &isStar, vector<double> &vx,
+                        vector<double> &vy, vector<long> &vid);
+  void getWCS(long iextn, int fieldNumber, unique_ptr<astrometry::Wcs> &wcs);
   void reprojectWCS(astrometry::Wcs *wcs, int fieldNumber);
-  void addCatalog(astrometry::Wcs *wcs, string thisAffinity, int exposureNumber, int fieldNumber,
+  void addCatalog(unique_ptr<astrometry::Wcs> &wcs, string thisAffinity, int exposureNumber, int fieldNumber,
                   int instrumentNumber, int deviceNumber, long iextn, vector<bool> isStar, vector<double> vx,
                   vector<double> vy, vector<long> vid);
   void writeMatches(string outCatalogName);
   void sortMatches(int fieldNumber); //, vector<int> sequence, vector<long> extn, vector<long> obj);
 };
-
-void friendOfFriend(double matchRadius, bool useAffinities, string outCatalogName, int minMatches,
-                    bool allowSelfMatches, vector<Field *> fields, vector<Instr *> instruments,
-                    vector<Expo *> exposures, FTable extensionTable);
-
 #endif
