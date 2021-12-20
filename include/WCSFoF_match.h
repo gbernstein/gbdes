@@ -142,8 +142,8 @@ public:
   int minMatches;
   bool allowSelfMatches = false;
   vector<unique_ptr<Field>> fields;
-  vector<unique_ptr<Instr>> instruments;
-  vector<unique_ptr<Expo>> exposures;
+  vector<unique_ptr<Instrument>> instruments;
+  vector<unique_ptr<Exposure>> exposures;
   FTable extensionTable;
   list<Point> allPoints;
   string currentPixelMapCollectionFileName;

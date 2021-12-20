@@ -117,10 +117,11 @@ int main(int argc,
           instrumentHDUs.push_back(i);
       }
     }
-    vector<FTable> instrumentTables(instrumentHDUs.size());
-    vector<unique_ptr<Instr>> instruments;//(instrumentHDUs.size(), 0);
-    instruments.reserve(instrumentHDUs.size());
 
+    vector<FTable> instrumentTables;
+    instrumentTables.reserve(instrumentHDUs.size());
+    vector<unique_ptr<Instrument>> instruments;
+    instruments.reserve(instrumentHDUs.size());
     for (list<int>::const_iterator i = instrumentHDUs.begin();
          i != instrumentHDUs.end();
          ++i)
@@ -139,8 +140,29 @@ int main(int argc,
       ft.header()->setValue("Name", instrumentName);
 
       // Now save the table and make an Instrument structure
-      instrumentTables[instrumentNumber] = ft;
-      instruments[instrumentNumber] = unique_ptr<Instr>(new Instr(ft));
+      instrumentTables.push_back(ft);
+      unique_ptr<Instrument> inst(new Instrument(instrumentName));
+      for (int i = 0; i < ft.nrows(); i++)
+      {
+        string devname;
+        ft.readCell(devname, "Name", i);
+        double xmin, xmax, ymin, ymax;
+        ft.readCell(xmin, "XMin", i);
+        ft.readCell(xmax, "XMax", i);
+        ft.readCell(ymin, "YMin", i);
+        ft.readCell(ymax, "YMax", i);
+        Bounds<double> devBounds;
+        if (xmin != 0. || xmax != 0. || ymin != 0. || ymax != 0.)
+        {
+          // initialize bounds if there are some, otherwise leave undefined
+          devBounds.setXMin(xmin);
+          devBounds.setXMax(xmax);
+          devBounds.setYMin(ymin);
+          devBounds.setYMax(ymax);
+        }
+        inst->addDevice(devname, devBounds);
+      }
+      instruments.emplace_back(std::move(inst));
     }
     // Check that all Instruments were read
     for (int i = 0; i < instruments.size(); i++)
@@ -161,11 +183,22 @@ int main(int argc,
       quit(e, 1);
     }
 
-    vector<unique_ptr<Expo>> exposures;
+    vector<unique_ptr<Exposure>> exposures;
     for (int i = 0; i < exposureTable.nrows(); i++)
     {
-      unique_ptr<Expo> e(new Expo);
-      e->read(exposureTable, i);
+      double ra, dec;
+      string name;
+      int field, instrument;
+      exposureTable.readCell(name, "Name", i);
+      exposureTable.readCell(ra, "RA", i);
+      exposureTable.readCell(dec, "Dec", i);
+      exposureTable.readCell(field, "FieldNumber", i);
+      exposureTable.readCell(instrument, "InstrumentNumber", i);
+      astrometry::SphericalICRS pointing;
+      pointing.setRADec(ra * WCS_UNIT, dec * WCS_UNIT);
+      unique_ptr<Exposure> e(new Exposure(name, pointing));
+      e->field = field;
+      e->instrument = instrument;
       exposures.emplace_back(std::move(e));
     }
     Assert(exposures.size() == exposureTable.nrows());
@@ -206,8 +239,6 @@ int main(int argc,
       fofclass.addCatalog(wcs, thisAffinity, exposureNumber, fieldNumber, instrumentNumber, deviceNumber, iextn, isStar, vx, vy, vid);
     }
 
-    fofclass.writeMatches(outCatalogName);
-
     //  Write all of our tables to output file
     {
       // Fields
@@ -224,18 +255,18 @@ int main(int argc,
     {
       // Instrument tables
       // Update the device bounds in the table first
-      const Instr &inst = *instruments[i];
-      int nDevices = inst.size();
-      vector<double> vxmin(nDevices);
-      vector<double> vxmax(nDevices);
-      vector<double> vymin(nDevices);
-      vector<double> vymax(nDevices);
-      for (int j = 0; j < nDevices; j++)
+      //const Instr &inst = *fofclass.instruments[i];
+      const Instrument &inst = *fofclass.instruments[i];
+      vector<double> vxmin(inst.nDevices);
+      vector<double> vxmax(inst.nDevices);
+      vector<double> vymin(inst.nDevices);
+      vector<double> vymax(inst.nDevices);
+      for (int j = 0; j < inst.nDevices; j++)
       {
-        vxmin[j] = floor(inst[j].getXMin());
-        vxmax[j] = ceil(inst[j].getXMax());
-        vymin[j] = floor(inst[j].getYMin());
-        vymax[j] = ceil(inst[j].getYMax());
+        vxmin[j] = floor(inst.domains[j].getXMin());
+        vxmax[j] = ceil(inst.domains[j].getXMax());
+        vymin[j] = floor(inst.domains[j].getYMin());
+        vymax[j] = ceil(inst.domains[j].getYMax());
       }
       instrumentTables[i].writeCells(vxmin, "XMin");
       instrumentTables[i].writeCells(vxmax, "XMax");
@@ -253,6 +284,9 @@ int main(int argc,
       FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Extensions");
       ft.copy(extensionTable);
     }
+
+    fofclass.writeMatches(outCatalogName);
+
     cerr << "Done!" << endl;
   }
   catch (std::runtime_error &m)

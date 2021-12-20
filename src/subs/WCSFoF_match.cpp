@@ -260,7 +260,7 @@ void FoFClass::addCatalog(unique_ptr<astrometry::Wcs> &wcs, string thisAffinity,
     double ypix = vy[iObj];
     // Expand bounds of device:
     if (instrumentNumber >= 0)
-      (*instruments[instrumentNumber])[deviceNumber] += Position<double>(xpix, ypix);
+      (*instruments[instrumentNumber]).domains[deviceNumber] += Position<double>(xpix, ypix);
 
     //  maps coords to field's tangent plane
     double xw, yw;
