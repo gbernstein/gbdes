@@ -137,10 +137,12 @@ class FoFClass
 {
 public:
   FoFClass();
-  double matchRadius;
-  bool useAffinities = true;
-  int minMatches;
-  bool allowSelfMatches = false;
+  FoFClass(Fields &fields_,
+           vector<shared_ptr<Instrument>> instruments_,
+           ExposuresHelper exposures_,
+           vector<double> fieldExtents,
+           double matchRadius);
+
   vector<unique_ptr<Field>> fields;
   vector<unique_ptr<Instrument>> instruments;
   vector<unique_ptr<Exposure>> exposures;
@@ -155,11 +157,14 @@ public:
                         int &fieldNumber, int &deviceNumber, vector<bool> &isStar, vector<double> &vx,
                         vector<double> &vy, vector<long> &vid);
   void getWCS(long iextn, int fieldNumber, unique_ptr<astrometry::Wcs> &wcs);
-  void reprojectWCS(astrometry::Wcs *wcs, int fieldNumber);
+  void reprojectWCS(shared_ptr<astrometry::Wcs> &wcs, int fieldNumber);
+  void addCatalog(shared_ptr<astrometry::Wcs> &wcs, string thisAffinity, int exposureNumber, int fieldNumber,
+                  int instrumentNumber, int deviceNumber, long iextn, vector<bool> isStar, vector<double> vx,
+                  vector<double> vy, vector<long> vid);
   void addCatalog(unique_ptr<astrometry::Wcs> &wcs, string thisAffinity, int exposureNumber, int fieldNumber,
                   int instrumentNumber, int deviceNumber, long iextn, vector<bool> isStar, vector<double> vx,
                   vector<double> vy, vector<long> vid);
-  void writeMatches(string outCatalogName);
-  void sortMatches(int fieldNumber); //, vector<int> sequence, vector<long> extn, vector<long> obj);
+  void writeMatches(string outCatalogName, int minMatches=2, bool allowSelfMatches=false);
+  void sortMatches(int fieldNumber, int minMatches=2, bool allowSelfMatches=false);
 };
 #endif

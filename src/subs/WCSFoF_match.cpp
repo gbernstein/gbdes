@@ -14,7 +14,6 @@
 #include "TemplateMap.h"
 #include "StringStuff.h"
 #include "Units.h"
-
 #include "FitSubroutines.h"
 
 using namespace std;
@@ -29,15 +28,48 @@ FoFClass::FoFClass()
   // Teach PixelMapCollection about all types of PixelMaps it might need to deserialize
   loadPixelMapParser();
 
-  // And a list holding all Points being matched.  Note that catalogs do not make copies
-  // of the Points, they just hold pointers to them.  So this is a warehouse.
-  // If we wanted to save the memory of the list links we could just let all the Points
-  // be zombies that are destroyed when the program ends.
-  //list<Point> allPoints;
+  // If WCS is coming from a serialized PixelMapCollection, I'll keep last-used one around
+  // to avoid re-parsing it all the time:
+  string currentPixelMapCollectionFileName = "";
+}
+
+FoFClass::FoFClass(Fields &fields_, vector<shared_ptr<Instrument>> instruments_, ExposuresHelper exposures_, vector<double> fieldExtents, double matchRadius)
+{
+  // Teach PixelMapCollection about all types of PixelMaps it might need to deserialize
+  loadPixelMapParser();
 
   // If WCS is coming from a serialized PixelMapCollection, I'll keep last-used one around
   // to avoid re-parsing it all the time:
   string currentPixelMapCollectionFileName = "";
+
+  fields.reserve(fields_.names().size());
+  for (int i = 0; i < fields_.names().size(); i++) {
+  //for (int i = 0; i < instruments_.size(); i++)
+    unique_ptr<Field> f = unique_ptr<Field>(new Field);
+    f->name = fields_.names().nameOf(i);
+    f->projection = unique_ptr<astrometry::SphericalCoords>(fields_.projections()[i].get());
+    f->extent = fieldExtents[i];
+    f->matchRadius = matchRadius;
+    fields.emplace_back(std::move(f));
+  }
+
+  instruments.reserve(instruments_.size());
+  for (int i = 0; i < instruments_.size(); i++) {
+    instruments.emplace_back(unique_ptr<Instrument>(instruments_[i].get()));
+  }
+
+  // Set Exposures:
+  exposures.reserve(exposures_.expNames.size());
+  for (int i = 0; i < exposures_.expNames.size(); i++)
+  {
+    astrometry::Gnomonic gn(astrometry::Orientation(astrometry::SphericalICRS(exposures_.ras[i],
+                                                                              exposures_.decs[i])));
+    unique_ptr<Exposure> expo(new Exposure(exposures_.expNames[i], gn));
+    expo->field = exposures_.fieldNumbers[i];
+    expo->instrument = exposures_.instrumentNumbers[i];
+    exposures.emplace_back(std::move(expo));
+  }
+
 }
 
 void FoFClass::getExtensionInfo(long iextn, string &thisAffinity, int &exposureNumber, int &instrumentNumber,
@@ -237,16 +269,25 @@ void FoFClass::getWCS(long iextn, int fieldNumber, unique_ptr<astrometry::Wcs> &
   }
 }
 
-void FoFClass::reprojectWCS(astrometry::Wcs *wcs, int fieldNumber)
+void FoFClass::reprojectWCS(shared_ptr<astrometry::Wcs> &wcs, int fieldNumber)
 {
   wcs->reprojectTo(*fields[fieldNumber]->projection);
+}
+
+void FoFClass::addCatalog(shared_ptr<astrometry::Wcs> &wcs, string thisAffinity, int exposureNumber,
+                          int fieldNumber, int instrumentNumber, int deviceNumber, long iextn,
+                          vector<bool> isStar, vector<double> vx, vector<double> vy, vector<long> vid)
+{
+  unique_ptr<astrometry::Wcs> uwcs = unique_ptr<astrometry::Wcs>(wcs.get());
+  addCatalog(uwcs, thisAffinity, exposureNumber,
+             fieldNumber, instrumentNumber, deviceNumber, iextn,
+             isStar, vx, vy, vid);
 }
 
 void FoFClass::addCatalog(unique_ptr<astrometry::Wcs> &wcs, string thisAffinity, int exposureNumber,
                           int fieldNumber, int instrumentNumber, int deviceNumber, long iextn,
                           vector<bool> isStar, vector<double> vx, vector<double> vy, vector<long> vid)
 {
-
   PointCat *starCatalog = fields[fieldNumber]->catalogFor(stellarAffinity);
   PointCat *galaxyCatalog = (stringstuff::nocaseEqual(stellarAffinity,
                                                       thisAffinity)
@@ -289,12 +330,9 @@ void FoFClass::addCatalog(unique_ptr<astrometry::Wcs> &wcs, string thisAffinity,
     else
       galaxyCatalog->add(allPoints.back());
   } // end object loop
-  cerr << "AllPoints size: " << allPoints.size() << endl;
-  cerr << "star cat: "<< starCatalog->size() << endl;
-
 }
 
-void FoFClass::writeMatches(string outCatalogName)
+void FoFClass::writeMatches(string outCatalogName, int minMatches, bool allowSelfMatches)
 {
 
   // Now write all the match catalogs
@@ -377,16 +415,11 @@ void FoFClass::writeMatches(string outCatalogName)
        << " points." << endl;
 }
 
-void FoFClass::sortMatches(int fieldNumber)
-{ //, vector<int> sequence, vector<long> extn,
-  //vector<long> obj) {
-
+void FoFClass::sortMatches(int fieldNumber, int minMatches, bool allowSelfMatches)
+{
   // Now write all the match catalogs
   long matchCount = 0;
   long pointCount = 0;
-  //vector<int> sequence;
-  //vector<long> extn;
-  //vector<long> obj;
 
   //  loop over affinities per field
   for (Field::CatMap::iterator iAffinity = fields[fieldNumber]->catalogs.begin();
@@ -397,7 +430,7 @@ void FoFClass::sortMatches(int fieldNumber)
     const PointCat *pcat = iAffinity->second;
     cerr << "Catalog for field " << fields[fieldNumber]->name
          << " affinity " << iAffinity->first
-         << " with " << pcat->size() << " matches "
+         << " with " << to_string(pcat->size()) << " matches "
          << endl;
 
     if (pcat->empty())
@@ -447,12 +480,12 @@ void FoFClass::sortMatches(int fieldNumber)
       }
     } // end match loop
 
-    cerr << "...Kept " << matches << " matches with " << sequence.size()
+    cerr << "...Kept " << to_string(matches) << " matches with " << to_string(sequence.size())
          << " points." << endl;
     pointCount += sequence.size();
   } // end Affinity loop
 
-  cerr << "Total of " << matchCount
-       << " matches with " << pointCount
+  cerr << "Total of " << to_string(matchCount)
+       << " matches with " << to_string(pointCount)
        << " points." << endl;
 }

@@ -23,7 +23,6 @@ int main(int argc,
 {
   // Read in parameters
   double matchRadius;
-  bool useAffinities;
   string outCatalogName;
   int minMatches;
   bool allowSelfMatches;
@@ -38,8 +37,6 @@ int main(int argc,
 
     parameters.addMember("matchRadius", &matchRadius, def | lowopen,
                          "Matching tolerance (arcsec)", 1., 0.);
-    parameters.addMember("useAffinities", &useAffinities, def,
-                         "Disallow star-galaxy matches & inter-filter galaxy matches?", true);
     parameters.addMember("outName", &outCatalogName, def,
                          "filename for FITS output catalog", "match.fof");
     parameters.addMember("minMatch", &minMatches, def | low,
@@ -61,10 +58,6 @@ int main(int argc,
 
   // Set of Friends-of-Friends class
   FoFClass fofclass;
-  fofclass.matchRadius = matchRadius;
-  fofclass.useAffinities = useAffinities;
-  fofclass.minMatches = minMatches;
-  fofclass.allowSelfMatches = allowSelfMatches;
 
   try
   {
@@ -235,7 +228,6 @@ int main(int argc,
       fofclass.getExtensionInfo(iextn, thisAffinity, exposureNumber, instrumentNumber, fieldNumber,
                                 deviceNumber, isStar, vx, vy, vid);
       fofclass.getWCS(iextn, fieldNumber, wcs);
-      // TODO: take out fieldNumber, use fields[fieldNumber]
       fofclass.addCatalog(wcs, thisAffinity, exposureNumber, fieldNumber, instrumentNumber, deviceNumber, iextn, isStar, vx, vy, vid);
     }
 
@@ -285,9 +277,8 @@ int main(int argc,
       ft.copy(extensionTable);
     }
 
-    fofclass.writeMatches(outCatalogName);
+    fofclass.writeMatches(outCatalogName, minMatches=minMatches, allowSelfMatches=allowSelfMatches);
 
-    cerr << "Done!" << endl;
   }
   catch (std::runtime_error &m)
   {
