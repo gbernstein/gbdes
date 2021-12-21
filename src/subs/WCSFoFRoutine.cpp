@@ -1,6 +1,6 @@
 // Program to match catalogs based on world coordinates.
 
-#include "WCSFoF_match.h"
+#include "WCSFoFRoutine.h"
 #include "Std.h"
 #include "FoF.h"
 #include "FitsTable.h"
