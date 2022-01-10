@@ -14,25 +14,19 @@
 #include "Bounds.h"
 #include "PixelMapCollection.h"
 
-namespace astrometry
-{
+namespace astrometry {
 // Convert a Wcs expressible as FITS "TPV" WCS standard to/from a list of header key/values
 // The Wcs will have a Gnomonic sky system, and a PixelMap that is linear followed by
 // optional polynomial.
 Wcs *readTPV(const img::Header &h, string name = "");
-img::Header writeTPV(const Wcs &w); // Will throw exception if Wcs is wrong form
+img::Header writeTPV(const Wcs &w);  // Will throw exception if Wcs is wrong form
 // Fit a TPV model to wcsIn over the range specified by b.  The TPV system will
 // have its CRVAL[01] and the tpvPole.
 // The transformation will use the given color for any color terms.
 // Order of the fitting polynomial can be specified (stick to <=5).  Entry
 // of -1 means it will start at 3 and continue until RMS is <tolerance or 5 is
 // done.
-Wcs *fitTPV(Bounds<double> b,
-            const Wcs &wcsIn,
-            const SphericalCoords &tpvPole,
-            string name = "",
-            double color = 0.,
-            double tolerance = 0.0001 * ARCSEC / DEGREE,
-            double order = -1);
-} // namespace astrometry
+Wcs *fitTPV(Bounds<double> b, const Wcs &wcsIn, const SphericalCoords &tpvPole, string name = "",
+            double color = 0., double tolerance = 0.0001 * ARCSEC / DEGREE, double order = -1);
+}  // namespace astrometry
 #endif

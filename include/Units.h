@@ -4,8 +4,7 @@
 
 #include "AstronomicalConstants.h"
 
-namespace astrometry
-{
+namespace astrometry {
 // Unit to be used input celestial coordinates and units of angular
 // distance for other world coord systems (e.g. in gnomonic projection coords).
 // Also expected for all input and internal position errors.
@@ -26,23 +25,15 @@ const double PM_UNIT = MILLIARCSEC / YEAR;
 // Units of time (TDB's)
 const double TDB_UNIT = YEAR;
 // Standard order of 5d params
-enum PM
-{
-  X0,
-  Y0,
-  VX,
-  VY,
-  PAR
-};
+enum PM { X0, Y0, VX, VY, PAR };
 //
 // Observatory positions assumed to be in ICRS AU.
 
-} // end namespace astrometry
+}  // end namespace astrometry
 
-namespace photometry
-{
+namespace photometry {
 // Unit to be used for all residuals and errors I/O:
 const double MMAG = 0.001;
 // (Internal unit for everything is magnitudes)
-} // namespace photometry
+}  // namespace photometry
 #endif
