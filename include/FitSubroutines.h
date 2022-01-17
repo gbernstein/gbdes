@@ -56,12 +56,13 @@ struct Astro {
     typedef astrometry::PixelMapCollection Collection;
     typedef astrometry::CoordAlign Align;
     typedef astrometry::MCat MCat;
-    static void fillDetection(Detection &d, const Exposure *e, astrometry::SphericalCoords &fieldProjection,
-                              img::FTable &table, long irow, string xKey, string yKey,
-                              vector<string> &xyErrKeys, string magKey, string magErrKey, int magKeyElement,
-                              int magErrKeyElement, bool xColumnIsDouble, bool yColumnIsDouble,
-                              bool errorColumnIsDouble, bool magColumnIsDouble, bool magErrColumnIsDouble,
-                              double magshift, const astrometry::PixelMap *startWcs, bool isTag);
+    static void fillDetection(Detection &d, const Exposure &e, astrometry::SphericalCoords &fieldProjection,
+                              const img::FTable &table, long irow, string xKey, string yKey,
+                              const vector<string> &xyErrKeys, string magKey, string magErrKey,
+                              int magKeyElement, int magErrKeyElement, bool xColumnIsDouble,
+                              bool yColumnIsDouble, bool errorColumnIsDouble, bool magColumnIsDouble,
+                              bool magErrColumnIsDouble, double magshift,
+                              const astrometry::PixelMap *startWcs, bool isTag);
     static void setColor(Detection &d, double color) { d.color = color; }
     static double getColor(const Detection &d) { return d.color; }
 
@@ -78,8 +79,8 @@ struct Astro {
     // It will incorporate the basic info in (non-PM) Detection d
     // into a new PMDetection object and return it.
     static unique_ptr<astrometry::PMDetection> makePMDetection(
-            const astrometry::Detection &d, const Exposure *e, img::FTable &table, long irow, string xKey,
-            string yKey, string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
+            const astrometry::Detection &d, const Exposure &e, const img::FTable &table, long irow,
+            string xKey, string yKey, string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
             bool xColumnIsDouble, bool yColumnIsDouble, bool errorColumnIsDouble,
             const astrometry::PixelMap *startWcs);
 
@@ -98,12 +99,13 @@ struct Photo {
     typedef ColorExtensionBase<Match> ColorExtension;
     typedef photometry::PhotoMapCollection Collection;
     typedef photometry::PhotoAlign Align;
-    static void fillDetection(Detection &d, const Exposure *e, astrometry::SphericalCoords &fieldProjection,
-                              img::FTable &table, long irow, string xKey, string yKey,
-                              vector<string> &xyErrKeys, string magKey, string magErrKey, int magKeyElement,
-                              int magErrKeyElement, bool xColumnIsDouble, bool yColumnIsDouble,
-                              bool errorColumnIsDouble, bool magColumnIsDouble, bool magErrColumnIsDouble,
-                              double magshift, const astrometry::PixelMap *startWcs, bool isTag);
+    static void fillDetection(Detection &d, const Exposure &e, astrometry::SphericalCoords &fieldProjection,
+                              const img::FTable &table, long irow, string xKey, string yKey,
+                              const vector<string> &xyErrKeys, string magKey, string magErrKey,
+                              int magKeyElement, int magErrKeyElement, bool xColumnIsDouble,
+                              bool yColumnIsDouble, bool errorColumnIsDouble, bool magColumnIsDouble,
+                              bool magErrColumnIsDouble, double magshift,
+                              const astrometry::PixelMap *startWcs, bool isTag);
     static void setColor(Detection &d, double color) { d.args.color = color; }
     static double getColor(const Detection &d) { return d.args.color; }
     static void saveResults(const MCat &matches, string outCatalog);
@@ -113,8 +115,8 @@ struct Photo {
 
     // This is a no-op for photometry:
     static unique_ptr<astrometry::PMDetection> makePMDetection(
-            photometry::Detection const d, const Exposure *e, img::FTable &table, long irow, string xKey,
-            string yKey, string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
+            photometry::Detection const d, const Exposure &e, const img::FTable &table, long irow,
+            string xKey, string yKey, string pmRaKey, string pmDecKey, string parallaxKey, string pmCovKey,
             bool xColumnIsDouble, bool yColumnIsDouble, bool errorColumnIsDouble,
             const astrometry::PixelMap *startWcs) {
         return nullptr;
@@ -281,9 +283,9 @@ public:
 // The useInstrumentList entries are regexes, empty means use all.
 // The final bool argument is set true if we have already created
 // the outCatalog FITS file.
-vector<unique_ptr<Instrument>> readInstruments(vector<int> &instrumentHDUs, list<string> &useInstrumentList,
-                                               string inputTables, string outCatalog,
-                                               bool &outputCatalogAlreadyOpen);
+vector<unique_ptr<Instrument>> readInstruments(const vector<int> &instrumentHDUs,
+                                               const list<string> &useInstrumentList, string inputTables,
+                                               string outCatalog, bool &outputCatalogAlreadyOpen);
 
 // Read the Exposure table into an array.
 // Uses the instruments table.
@@ -298,7 +300,7 @@ vector<unique_ptr<Exposure>> readExposures(const vector<unique_ptr<Instrument>> 
                                            string outCatalog, const list<string> &skipExposureList,
                                            bool useReferenceExposures, bool &outputCatalogAlreadyOpen);
 
-vector<shared_ptr<astrometry::Wcs>> readWCSs(img::FTable &extensionTable);
+vector<shared_ptr<astrometry::Wcs>> readWCSs(const img::FTable &extensionTable);
 
 // Read extensions from the table.
 // colorExtensions will get filled with ColorExtension objects for color data
@@ -308,7 +310,7 @@ vector<shared_ptr<astrometry::Wcs>> readWCSs(img::FTable &extensionTable);
 // otherwise taken from the value of sysError or referenceSysError as appropriate
 template <class S>
 vector<unique_ptr<typename S::Extension>> readExtensions(
-        img::FTable &extensionTable, const vector<unique_ptr<Instrument>> &instruments,
+        const img::FTable &extensionTable, const vector<unique_ptr<Instrument>> &instruments,
         const vector<unique_ptr<Exposure>> &exposures, const vector<int> &exposureColorPriorities,
         vector<unique_ptr<typename S::ColorExtension>> &colorExtensions, astrometry::YAMLCollector &inputYAML,
         bool logging = true);
@@ -344,14 +346,14 @@ void whoNeedsColor(const vector<unique_ptr<typename S::Extension>> &extensions);
 // Matches with less than minMatches useful inputs are discarded too.
 // Discards Detection if requires color but doesn't have it.
 template <class S>
-void readMatches(vector<int> &seq, vector<LONGLONG> &extn, vector<LONGLONG> &obj, typename S::MCat &matches,
-                 const vector<unique_ptr<typename S::Extension>> &extensions,
+void readMatches(const vector<int> &seq, const vector<LONGLONG> &extn, const vector<LONGLONG> &obj,
+                 typename S::MCat &matches, const vector<unique_ptr<typename S::Extension>> &extensions,
                  const vector<unique_ptr<typename S::ColorExtension>> &colorExtensions,
                  const ExtensionObjectSet &skipSet, int minMatches,
                  bool usePM = false);  // If true, create PMMatches
 
 template <class S>
-void readMatches(img::FTable &table, typename S::MCat &matches,
+void readMatches(const img::FTable &table, typename S::MCat &matches,
                  const vector<unique_ptr<typename S::Extension>> &extensions,
                  const vector<unique_ptr<typename S::ColorExtension>> &colorExtensions,
                  const ExtensionObjectSet &skipSet, int minMatches,
@@ -366,10 +368,11 @@ void readObjects(const img::FTable &extensionTable, const vector<unique_ptr<Expo
                  bool logging = true);  // Give progress updates?
 
 template <class S>
-void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int iext, img::FTable ff,
-                              string xKey, string yKey, string idkey, string pmCovKey,
-                              vector<string> xyErrKeys, string magKey, int magKeyElement, string magErrKey,
-                              int magErrKeyElement, string pmRaKey, string pmDecKey, string parallaxKey,
+void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int iext, const img::FTable &ff,
+                              const string &xKey, const string &yKey, const string &idkey,
+                              const string &pmCovKey, const vector<string> &xyErrKeys, const string &magKey,
+                              const int &magKeyElement, const string &magErrKey, const int &magErrKeyElement,
+                              const string &pmRaKey, const string &pmDecKey, const string &parallaxKey,
                               const vector<unique_ptr<typename S::Extension>> &extensions,
                               const vector<unique_ptr<astrometry::SphericalCoords>> &fieldProjections,
                               bool logging, bool useRows);
@@ -377,7 +380,7 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
 // Read color information from files marked as holding such, insert into
 // relevant Matches.
 template <class S>
-void readColors(img::FTable extensionTable,
+void readColors(const img::FTable &extensionTable,
                 const vector<unique_ptr<typename S::ColorExtension>> &colorExtensions,
                 bool logging = true);  // Progress reports
 

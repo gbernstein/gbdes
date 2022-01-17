@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Get the WCS
-        astrometry::Wcs *wcs = nullptr;
+        unique_ptr<astrometry::Wcs> wcs = nullptr;
 
         if (argc > 2) {
             string wcsfile = argv[2];
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
                     cerr << "File <" << filename << "> is not serialized WCS file" << endl;
                     exit(1);
                 }
-                wcs = pmc.cloneWcs(wcsname);
+                wcs = unique_ptr<astrometry::Wcs>(pmc.cloneWcs(wcsname));
             } else {
                 // Get WCS as TPV in FITS-header-style file
                 ifstream mapfs(wcsfile.c_str());
@@ -136,7 +136,6 @@ int main(int argc, char *argv[]) {
         }
 
         // Clean up
-        if (wcs) delete wcs;
         delete photo;
     } catch (std::runtime_error &m) {
         quit(m, 1);

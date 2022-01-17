@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
         PixelMapCollection::registerMapType<astrometry::PiecewiseMap>();
 
         int iarg = 1;
-        vector<Wcs *> wcs(2, (Wcs *)0);
+        vector<unique_ptr<Wcs>> wcs(2);
         vector<unique_ptr<SphericalCoords>> projection(2);
         vector<bool> useNative(2, false);
 
@@ -105,7 +105,7 @@ int main(int argc, char *argv[]) {
                     }
                     pmcFile = filename;
                 }
-                wcs[i] = pmc->cloneWcs(wcsname);
+                wcs[i] = unique_ptr<Wcs>(pmc->cloneWcs(wcsname));
             } else {
                 // Get WCS as TPV in FITS-header-style file
                 ifstream mapfs(wcsfile.c_str());
@@ -186,10 +186,6 @@ int main(int argc, char *argv[]) {
             cout << xout << " " << yout << endl;
         }
 
-        // Clean up
-        for (int i = 0; i < 2; i++) {
-            if (wcs[i]) delete wcs[i];
-        }
     } catch (std::runtime_error &m) {
         quit(m, 1);
     }

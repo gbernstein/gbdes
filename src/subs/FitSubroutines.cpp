@@ -71,16 +71,16 @@ void processParameters(Pset &parameters, const string &usage, int nRequiredArgs,
         cerr << usage << endl;
         cout << "#---- Parameter defaults: ----" << endl;
         parameters.dump(cerr);
-        exit(1);
+        throw std::runtime_error(
+                "Number of positional arguments is less than number of required arguments + 1");
     }
 
     for (int i = nRequiredArgs + 1; i < positionalArguments; i++) {
         // Open & read all specified input files
         ifstream ifs(argv[i]);
         if (!ifs) {
-            cerr << "Can't open parameter file " << argv[i] << endl;
-            cerr << usage << endl;
-            exit(1);
+            std::string argMessage(argv[i], 1);
+            throw std::runtime_error("Can't open parameter file " + argMessage + "\n" + usage);
         }
         try {
             parameters.setStream(ifs);
@@ -107,8 +107,8 @@ RegexReplacements parseTranslator(string specString, string errorDescription) {
         if (i.empty()) continue;
         list<string> ls2 = split(i, '=');
         if (ls2.size() != 2) {
-            cerr << errorDescription << " has bad translation spec: " << i << endl;
-            exit(1);
+            std::string iMessage(i, 1);
+            throw std::runtime_error(errorDescription + " has bad translation spec: " + iMessage);
         }
         string regex = ls2.front();
         string replacement = ls2.back();
@@ -123,8 +123,7 @@ ExtensionObjectSet::ExtensionObjectSet(string filename) {
     if (filename.empty()) return;
     ifstream ifs(filename.c_str());
     if (!ifs) {
-        cerr << "Could not open Extension/Object pair file " << filename << endl;
-        exit(1);
+        throw std::runtime_error("Could not open Extension/Object pair file " + filename);
     }
     string buffer;
     while (stringstuff::getlineNoComment(ifs, buffer)) {
@@ -132,8 +131,7 @@ ExtensionObjectSet::ExtensionObjectSet(string filename) {
         long objectNumber;
         istringstream iss(buffer);
         if (!(iss >> extensionNumber >> objectNumber)) {
-            cerr << "Bad Extension/Object pair in " << filename << ": <" << buffer << ">" << endl;
-            exit(1);
+            throw std::runtime_error("Bad Extension/Object pair in " + filename + ": <" + buffer + ">");
         }
         pairs.insert(EOPair(extensionNumber, objectNumber));
     }
@@ -192,9 +190,9 @@ double getTableDouble(img::FTable f, string key, int elementNumber, bool isDoubl
             vector<double> v;
             f.readCell(v, key, irow);
             if (elementNumber >= v.size()) {
-                cerr << "Requested element " << elementNumber << " of array at key " << key
-                     << " but size of array is " << v.size();
-                exit(1);
+                throw std::runtime_error("Requested element " + std::to_string(elementNumber) +
+                                         " of array at key " + key + " but size of array is " +
+                                         std::to_string(v.size()));
             }
             out = v[elementNumber];
         }
@@ -207,9 +205,9 @@ double getTableDouble(img::FTable f, string key, int elementNumber, bool isDoubl
             vector<float> v;
             f.readCell(v, key, irow);
             if (elementNumber >= v.size()) {
-                cerr << "Requested element " << elementNumber << " of array at key " << key
-                     << " but size of array is " << v.size();
-                exit(1);
+                throw std::runtime_error("Requested element " + std::to_string(elementNumber) +
+                                         " of array at key " + key + " but size of array is " +
+                                         std::to_string(v.size()));
             }
             out = v[elementNumber];
         }
@@ -276,7 +274,7 @@ Fields::Fields(vector<string> names, vector<double> ra, vector<double> dec, vect
     // TODO: check that sizes are consistent, raise if they are not.
     _projections.reserve(names.size());
     for (std::size_t i = 0; i != names.size(); ++i) {
-        // spaceReplace(names[i]);
+        spaceReplace(names[i]);
         _names.append(std::move(names[i]));
         astrometry::Orientation orient(
                 astrometry::SphericalICRS(std::move(ra[i]) * WCS_UNIT, std::move(dec[i]) * WCS_UNIT));
@@ -327,9 +325,9 @@ Fields Fields::read(string inputTables, string outCatalog, double defaultEpoch) 
 // The useInstrumentList entries are regexes, empty means use all.
 // The final bool argument is set true if we have already created
 // the outCatalog FITS file.
-vector<unique_ptr<Instrument>> readInstruments(vector<int> &instrumentHDUs, list<string> &useInstrumentList,
-                                               string inputTables, string outCatalog,
-                                               bool &outputCatalogAlreadyOpen) {
+vector<unique_ptr<Instrument>> readInstruments(const vector<int> &instrumentHDUs,
+                                               const list<string> &useInstrumentList, string inputTables,
+                                               string outCatalog, bool &outputCatalogAlreadyOpen) {
     vector<unique_ptr<Instrument>> instruments;
     for (int iextn : instrumentHDUs) {
         FITS::FitsTable ft(inputTables, FITS::ReadOnly, iextn);
@@ -632,7 +630,7 @@ void fixMapComponents(typename S::Collection &pmc, const list<string> &fixMapLis
     pmc.setFixed(fixTheseMaps);
 }
 
-vector<shared_ptr<astrometry::Wcs>> readWCSs(img::FTable &extensionTable) {
+vector<shared_ptr<astrometry::Wcs>> readWCSs(const img::FTable &extensionTable) {
     // cerr << inputTables << endl;
     // FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
     // cerr << "rW 1" << endl;
@@ -653,8 +651,8 @@ vector<shared_ptr<astrometry::Wcs>> readWCSs(img::FTable &extensionTable) {
             istringstream iss(s);
             astrometry::PixelMapCollection pmcTemp;
             if (!pmcTemp.read(iss)) {
-                cerr << "Could not deserialize starting WCS for extension #" << i << endl;
-                exit(1);
+                throw std::runtime_error("Could not deserialize starting WCS for extension #" +
+                                         std::to_string(i));
             }
             string wcsName = pmcTemp.allWcsNames().front();
             shared_ptr<astrometry::Wcs> tmp(pmcTemp.cloneWcs(wcsName));
@@ -666,7 +664,7 @@ vector<shared_ptr<astrometry::Wcs>> readWCSs(img::FTable &extensionTable) {
 
 template <class S>
 vector<unique_ptr<typename S::Extension>> readExtensions(
-        img::FTable &extensionTable, const vector<unique_ptr<Instrument>> &instruments,
+        const img::FTable &extensionTable, const vector<unique_ptr<Instrument>> &instruments,
         const vector<unique_ptr<Exposure>> &exposures, const vector<int> &exposureColorPriorities,
         vector<unique_ptr<typename S::ColorExtension>> &colorExtensions, astrometry::YAMLCollector &inputYAML,
         bool logging) {
@@ -682,8 +680,8 @@ vector<unique_ptr<typename S::Extension>> readExtensions(
         extensionTable.readCell(iExposure, "Exposure", i);
 
         if (iExposure < 0 || iExposure >= exposures.size()) {
-            cerr << "Extension " << i << " has invalid exposure number " << iExposure << endl;
-            exit(1);
+            throw std::runtime_error("Extension " + std::to_string(i) + " has invalid exposure number " +
+                                     std::to_string(iExposure));
         }
 
         // Determine whether this extension might be used to provide colors
@@ -729,8 +727,8 @@ vector<unique_ptr<typename S::Extension>> readExtensions(
             istringstream iss(s);
             astrometry::PixelMapCollection pmcTemp;
             if (!pmcTemp.read(iss)) {
-                cerr << "Could not deserialize starting WCS for extension #" << i << endl;
-                exit(1);
+                throw std::runtime_error("Could not deserialize starting WCS for extension #" +
+                                         std::to_string(i));
             }
             string wcsName = pmcTemp.allWcsNames().front();
             extn->startWcs = std::unique_ptr<astrometry::Wcs>(pmcTemp.cloneWcs(wcsName));
@@ -766,8 +764,8 @@ vector<unique_ptr<typename S::Extension>> readExtensions(
             else
                 extn->mapName = extn->wcsName;
             if (!inputYAML.addMap(extn->mapName, d)) {
-                cerr << "Input YAML files do not have complete information for map " << extn->mapName << endl;
-                exit(1);
+                throw std::runtime_error("Input YAML files do not have complete information for map " +
+                                         extn->mapName);
             }
         }
         extensions[i] = std::move(extn);
@@ -839,9 +837,8 @@ int findCanonical(Instrument &instr, int iInst, vector<unique_ptr<Exposure>> &ex
                 // maps, then enter this dependence into our sets
                 exposuresUsingDevice[iDev].insert(iExpo);
                 if (unusedExposures.count(iExpo) > 0 || unusedDevices.count(iDev) > 0) {
-                    cerr << "ERROR: Logic problem: extension map " << extnptr->mapName
-                         << " is using allegedly unused exposure or device map" << endl;
-                    exit(1);
+                    throw std::runtime_error("ERROR: Logic problem: extension map " + extnptr->mapName +
+                                             " is using allegedly unused exposure or device map");
                 }
             }
         }
@@ -871,9 +868,8 @@ int findCanonical(Instrument &instr, int iInst, vector<unique_ptr<Exposure>> &ex
     if (degenerateDevices.empty()) return -1;
 
     if (degenerateExposures.empty()) {
-        cerr << "Logic problem: Instrument " << instr.name
-             << " came up with degenerate devices but not exposures:" << endl;
-        exit(1);
+        throw std::runtime_error("Logic problem: Instrument " + instr.name +
+                                 " came up with degenerate devices but not exposures.");
     }
 
     int canonicalExposure = -1;
@@ -896,8 +892,7 @@ int findCanonical(Instrument &instr, int iInst, vector<unique_ptr<Exposure>> &ex
     }
 
     if (canonicalExposure < 0) {
-        cerr << "Failed to locate a canonical exposure for " << instr.name << endl;
-        exit(1);
+        throw std::runtime_error("Failed to locate a canonical exposure for " + instr.name);
     }
 
     // Check that fixing this exposure map will resolve degeneracies.
@@ -905,8 +900,7 @@ int findCanonical(Instrument &instr, int iInst, vector<unique_ptr<Exposure>> &ex
     okExposures.insert(canonicalExposure);
     findDegeneracies(degenerateDevices, okDevices, degenerateExposures, okExposures, exposuresUsingDevice);
     if (!degenerateDevices.empty()) {
-        cerr << "But canonical did not resolve exposure/device degeneracy." << endl;
-        exit(1);
+        throw std::runtime_error("But canonical did not resolve exposure/device degeneracy.");
     }
     return canonicalExposure;
 }
@@ -941,8 +935,8 @@ void createMapCollection(const vector<unique_ptr<Instrument>> &instruments,
             if (!expo.epoch.empty()) d["EPOCH"] = expo.epoch;
         }
         if (!inputYAML.addMap(extnptr->mapName, d, &criticalTime)) {
-            cerr << "Input YAML files do not have complete information for map " << extnptr->mapName << endl;
-            exit(1);
+            throw std::runtime_error("Input YAML files do not have complete information for map " +
+                                     extnptr->mapName);
         }
     }  // End extension loop
     cout << "**Time in addMap critical regions:" << criticalTime << endl;
@@ -955,8 +949,7 @@ void createMapCollection(const vector<unique_ptr<Instrument>> &instruments,
         timer.reset();
         timer.start();
         if (!pmc.read(iss)) {
-            cerr << "Failure parsing the final YAML map specs" << endl;
-            exit(1);
+            throw std::runtime_error("Failure parsing the final YAML map specs");
         }
         timer.stop();
         cout << "Loading time: " << timer << endl;
@@ -976,8 +969,8 @@ void whoNeedsColor(const vector<unique_ptr<typename S::Extension>> &extensions) 
 // objects from it that need to be read from catalog.
 
 template <class S>
-void readMatches(vector<int> &seq, vector<LONGLONG> &extn, vector<LONGLONG> &obj, typename S::MCat &matches,
-                 const vector<unique_ptr<typename S::Extension>> &extensions,
+void readMatches(const vector<int> &seq, const vector<LONGLONG> &extn, const vector<LONGLONG> &obj,
+                 typename S::MCat &matches, const vector<unique_ptr<typename S::Extension>> &extensions,
                  const vector<unique_ptr<typename S::ColorExtension>> &colorExtensions,
                  const ExtensionObjectSet &skipSet, int minMatches, bool usePM) {
     // Smaller collections for each match
@@ -1069,7 +1062,7 @@ void readMatches(vector<int> &seq, vector<LONGLONG> &extn, vector<LONGLONG> &obj
 }
 
 template <class S>
-void readMatches(img::FTable &table, typename S::MCat &matches,
+void readMatches(const img::FTable &table, typename S::MCat &matches,
                  const vector<unique_ptr<typename S::Extension>> &extensions,
                  const vector<unique_ptr<typename S::ColorExtension>> &colorExtensions,
                  const ExtensionObjectSet &skipSet, int minMatches, bool usePM) {
@@ -1083,13 +1076,13 @@ void readMatches(img::FTable &table, typename S::MCat &matches,
 }
 
 // Subroutine to get what we want from a catalog entry for WCS fitting
-inline void Astro::fillDetection(Astro::Detection &d, const Exposure *e,
-                                 astrometry::SphericalCoords &fieldProjection, img::FTable &table, long irow,
-                                 string xKey, string yKey, vector<string> &xyErrKeys, string magKey,
-                                 string magErrKey, int magKeyElement, int magErrKeyElement,
-                                 bool xColumnIsDouble, bool yColumnIsDouble, bool errorColumnIsDouble,
-                                 bool magColumnIsDouble, bool magErrColumnIsDouble, double magshift,
-                                 const astrometry::PixelMap *startWcs, bool isTag) {
+void Astro::fillDetection(Astro::Detection &d, const Exposure &e,
+                          astrometry::SphericalCoords &fieldProjection, const img::FTable &table, long irow,
+                          string xKey, string yKey, const vector<string> &xyErrKeys, string magKey,
+                          string magErrKey, int magKeyElement, int magErrKeyElement, bool xColumnIsDouble,
+                          bool yColumnIsDouble, bool errorColumnIsDouble, bool magColumnIsDouble,
+                          bool magErrColumnIsDouble, double magshift, const astrometry::PixelMap *startWcs,
+                          bool isTag) {
     d.xpix = getTableDouble(table, xKey, -1, xColumnIsDouble, irow);
     d.ypix = getTableDouble(table, yKey, -1, yColumnIsDouble, irow);
 
@@ -1117,20 +1110,20 @@ inline void Astro::fillDetection(Astro::Detection &d, const Exposure *e,
             throw AstrometryError("Invalid number of xyErrKeys passed to fillDetection");
         }
         cov = dwdp * cov * dwdp.transpose();  // Note this converts to world units (degrees)
-        cov += e->astrometricCovariance;
+        cov += e.astrometricCovariance;
         d.invCov = cov.inverse();
-        d.fitWeight = e->weight;
+        d.fitWeight = e.weight;
     }
 
     if (dynamic_cast<const PMMatch *>(d.itsMatch)) {
         // Build projection matrix if this Detection is being used in a PMMatch
-        d.buildProjector(e->pmTDB, e->observatory, &fieldProjection);
+        d.buildProjector(e.pmTDB, e.observatory, &fieldProjection);
     }
 }
 
 // This one reads a full 5d stellar solution
-unique_ptr<astrometry::PMDetection> Astro::makePMDetection(astrometry::Detection const &d, const Exposure *e,
-                                                           img::FTable &table, long irow, string xKey,
+unique_ptr<astrometry::PMDetection> Astro::makePMDetection(astrometry::Detection const &d, const Exposure &e,
+                                                           const img::FTable &table, long irow, string xKey,
                                                            string yKey, string pmRaKey, string pmDecKey,
                                                            string parallaxKey, string pmCovKey,
                                                            bool xColumnIsDouble, bool yColumnIsDouble,
@@ -1157,7 +1150,7 @@ unique_ptr<astrometry::PMDetection> Astro::makePMDetection(astrometry::Detection
     // We will want to shift the inputs to move their reference time from
     // the exposure's (i.e. catalog's) reference to that of the field,
     // which is defined as 0 here.
-    double epochShift = -e->pmTDB;
+    double epochShift = -e.pmTDB;
 
     // Shift the RA and Dec according to proper motion, including
     // factors for unit difference, and cos(dec) on the RA.
@@ -1240,13 +1233,13 @@ unique_ptr<astrometry::PMDetection> Astro::makePMDetection(astrometry::Detection
 #else
     out->pmInvCov = wCov.inverse();
 #endif
-    out->fitWeight = e->weight;
+    out->fitWeight = e.weight;
 
     // Now fill in the Detection 2d (inverse) covariance in case we end
     // up using the PM data as a single observation at the field's reference epoch.
     astrometry::Matrix22 cov22 = wCov.subMatrix(0, 2, 0, 2);
     // Add any extra covariance associated with reference catalogs.
-    cov22 += e->astrometricCovariance;
+    cov22 += e.astrometricCovariance;
     out->invCov = cov22.inverse();
 
     return out;
@@ -1279,9 +1272,9 @@ unique_ptr<astrometry::Match> Astro::makeNewMatch(unique_ptr<Astro::Detection> d
 }
 
 // And a routine to get photometric information too
-void Photo::fillDetection(Photo::Detection &d, const Exposure *e,
-                          astrometry::SphericalCoords &fieldProjection, img::FTable &table, long irow,
-                          string xKey, string yKey, vector<string> &xyErrKeys, string magKey,
+void Photo::fillDetection(Photo::Detection &d, const Exposure &e,
+                          astrometry::SphericalCoords &fieldProjection, const img::FTable &table, long irow,
+                          string xKey, string yKey, const vector<string> &xyErrKeys, string magKey,
                           string magErrKey, int magKeyElement, int magErrKeyElement, bool xColumnIsDouble,
                           bool yColumnIsDouble, bool errorColumnIsDouble, bool magColumnIsDouble,
                           bool magErrColumnIsDouble, double magshift, const astrometry::PixelMap *startWcs,
@@ -1302,13 +1295,13 @@ void Photo::fillDetection(Photo::Detection &d, const Exposure *e,
     // Map to output and estimate output error
     d.magOut = d.map->forward(d.magIn, d.args);
 
-    d.invVar = 1. / (e->photometricVariance + sigma * sigma);
+    d.invVar = 1. / (e.photometricVariance + sigma * sigma);
     // Don't bother, all unity: sigma *= d.map->derivative(d.magIn, d.args);
 
     if (isTag) {
         d.fitWeight = 0.;
     } else {
-        d.fitWeight = e->magWeight;
+        d.fitWeight = e.magWeight;
     }
 }
 
@@ -1425,8 +1418,7 @@ void readObjects(const img::FTable &extensionTable, const vector<unique_ptr<Expo
         astrometry::Wcs *startWcs = extn.startWcs.get();
 
         if (!startWcs) {
-            cerr << "Failed to find initial Wcs for exposure " << expo.name << endl;
-            exit(1);
+            throw std::runtime_error("Failed to find initial Wcs for exposure " + expo.name);
         }
 
         img::FTable ff;
@@ -1475,7 +1467,7 @@ void readObjects(const img::FTable &extensionTable, const vector<unique_ptr<Expo
             if (pmCatalog) {
                 // Need to read data differently from catalog with
                 // full proper motion solution.  Get PMDetection.
-                auto pmd = S::makePMDetection(*d, &expo, ff, irow, xKey, yKey, pmRaKey, pmDecKey, parallaxKey,
+                auto pmd = S::makePMDetection(*d, expo, ff, irow, xKey, yKey, pmRaKey, pmDecKey, parallaxKey,
                                               pmCovKey, xColumnIsDouble, yColumnIsDouble, errorColumnIsDouble,
                                               startWcs);
 
@@ -1485,7 +1477,7 @@ void readObjects(const img::FTable &extensionTable, const vector<unique_ptr<Expo
                 S::handlePMDetection(std::move(pmd), *d);
             } else {
                 // Normal photometric or astrometric entry
-                S::fillDetection(*d, &expo, *fieldProjection, ff, irow, xKey, yKey, xyErrKeys, magKey,
+                S::fillDetection(*d, expo, *fieldProjection, ff, irow, xKey, yKey, xyErrKeys, magKey,
                                  magErrKey, magKeyElement, magErrKeyElement, xColumnIsDouble, yColumnIsDouble,
                                  errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble, magshift,
                                  startWcs, isTag);
@@ -1493,9 +1485,8 @@ void readObjects(const img::FTable &extensionTable, const vector<unique_ptr<Expo
         }  // End loop over catalog objects
 
         if (!extn.keepers.empty()) {
-            cerr << "Did not find all desired objects in catalog " << filename << " extension " << hduNumber
-                 << endl;
-            exit(1);
+            throw std::runtime_error("Did not find all desired objects in catalog " + filename +
+                                     " extension " + std::to_string(hduNumber));
         }
 
     }  // end loop over catalogs to read
@@ -1504,17 +1495,17 @@ void readObjects(const img::FTable &extensionTable, const vector<unique_ptr<Expo
 // Read each Extension's objects' data from it FITS catalog
 // and place into Detection structures.
 template <class S>
-void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int iext, img::FTable ff,
-                              string xKey, string yKey, string idKey, string pmCovKey,
-                              vector<string> xyErrKeys, string magKey, int magKeyElement, string magErrKey,
-                              int magErrKeyElement,  // TODO: make these dictionary?
-                              string pmRaKey, string pmDecKey, string parallaxKey,
+void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int iext, const img::FTable &ff,
+                              const string &xKey, const string &yKey, const string &idKey,
+                              const string &pmCovKey, const vector<string> &xyErrKeys, const string &magKey,
+                              const int &magKeyElement, const string &magErrKey,
+                              const int &magErrKeyElement,  // TODO: make these dictionary?
+                              const string &pmRaKey, const string &pmDecKey, const string &parallaxKey,
                               const vector<unique_ptr<typename S::Extension>> &extensions,
                               const vector<unique_ptr<astrometry::SphericalCoords>> &fieldProjections,
                               bool logging, bool useRows) {
     // Relevant structures for this extension
     typename S::Extension &extn = *extensions[iext];
-    cerr << "exten: " << to_string(iext) << " expo: " << to_string(extn.exposure) << endl;
     Exposure &expo = *exposures[extn.exposure];
     if (extn.keepers.empty()) return;  // or useless
 
@@ -1522,22 +1513,15 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
     bool isTag = expo.instrument == TAG_INSTRUMENT;
 
     const typename S::SubMap *sm = extn.map;
-    cerr << "in readObj 1" << endl;
+
     if (!sm) cerr << "Exposure " << expo.name << " submap is null" << endl;
-    cerr << "passed sm" << endl;
+
     astrometry::Wcs *startWcs = extn.startWcs.get();
-    cerr << "got startWcs" << endl;
-    cerr << startWcs->getName() << endl;
-    // double testxw;
-    // double testyw;
-    // startWcs->toWorld(0.4, 0.4, testxw, testyw);
-    // cerr << "test toWorld" << to_string(testxw) << to_string(testyw) << endl;
-    cerr << "startWCS name: " << startWcs->getName() << endl;
+
     if (!startWcs) {
-        cerr << "Failed to find initial Wcs for exposure " << expo.name << endl;
-        exit(1);
+        throw std::runtime_error("Failed to find initial Wcs for exposure " + expo.name);
     }
-    cerr << "in readObj 2" << endl;
+
     vector<LONGLONG> id;
     if (useRows) {
         id.resize(ff.nrows());
@@ -1546,7 +1530,6 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
         ff.readCells(id, idKey);
     }
     Assert(id.size() == ff.nrows());
-    cerr << "in readObj 3" << endl;
     bool xColumnIsDouble = isDouble(ff, xKey, -1);
     bool yColumnIsDouble = isDouble(ff, yKey, -1);
     bool magColumnIsDouble;
@@ -1556,14 +1539,13 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
 
     // Get fieldProjection for this catalog
     astrometry::SphericalCoords *fieldProjection = fieldProjections[expo.field]->duplicate();
-    cerr << "in readObj 4" << endl;
     if (S::isAstro) {
         errorColumnIsDouble = isDouble(ff, pmCatalog ? pmCovKey : xyErrKeys[0], -1);
     } else {
         magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
         magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
     }
-    cerr << "in readObj 5" << endl;
+
     for (long irow = 0; irow < ff.nrows(); irow++) {
         auto pr = extn.keepers.find(id[irow]);
         if (pr == extn.keepers.end()) continue;  // Not a desired object
@@ -1575,7 +1557,7 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
         if (pmCatalog) {
             // Need to read data differently from catalog with
             // full proper motion solution.  Get PMDetection.
-            auto pmd = S::makePMDetection(*d, &expo, ff, irow, xKey, yKey, pmRaKey, pmDecKey, parallaxKey,
+            auto pmd = S::makePMDetection(*d, expo, ff, irow, xKey, yKey, pmRaKey, pmDecKey, parallaxKey,
                                           pmCovKey, xColumnIsDouble, yColumnIsDouble, errorColumnIsDouble,
                                           startWcs);
 
@@ -1585,24 +1567,23 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
             S::handlePMDetection(std::move(pmd), *d);
         } else {
             // Normal photometric or astrometric entry
-            S::fillDetection(*d, &expo, *fieldProjection, ff, irow, xKey, yKey, xyErrKeys, magKey, magErrKey,
+            S::fillDetection(*d, expo, *fieldProjection, ff, irow, xKey, yKey, xyErrKeys, magKey, magErrKey,
                              magKeyElement, magErrKeyElement, xColumnIsDouble, yColumnIsDouble,
                              errorColumnIsDouble, magColumnIsDouble, magErrColumnIsDouble, magshift, startWcs,
                              isTag);
         }
     }  // End loop over catalog objects
     if (fieldProjection) delete fieldProjection;
-    cerr << "in readObj 9" << endl;
+
     if (!extn.keepers.empty()) {
-        cerr << "Did not find all desired objects extension " << iext << endl;
-        exit(1);
+        throw std::runtime_error("Did not find all desired objects extension " + iext);
     }
 }
 
 // Read color information from files marked as holding such, insert into
 // relevant Matches.
 template <class S>
-void readColors(img::FTable extensionTable,
+void readColors(const img::FTable &extensionTable,
                 const vector<unique_ptr<typename S::ColorExtension>> &colorExtensions, bool logging) {
     for (int iext = 0; iext < colorExtensions.size(); iext++) {
         if (!colorExtensions[iext]) continue;  // Skip unused
@@ -1626,8 +1607,8 @@ void readColors(img::FTable extensionTable,
         }
         stripWhite(colorExpression);
         if (colorExpression.empty()) {
-            cerr << "No colorExpression specified for filename " << filename << " HDU " << hduNumber << endl;
-            exit(1);
+            throw std::runtime_error("No colorExpression specified for filename " + filename + " HDU " +
+                                     std::to_string(hduNumber));
         }
 
         // Read the entire catalog for this extension
@@ -1660,10 +1641,10 @@ void readColors(img::FTable extensionTable,
         }  // End loop over catalog objects
 
         if (!extn.keepers.empty()) {
-            cerr << "Did not find all desired objects in catalog " << filename << " extension " << hduNumber
-                 << " " << extn.keepers.size() << " left, first ID is " << extn.keepers.begin()->first
-                 << endl;
-            exit(1);
+            throw std::runtime_error("Did not find all desired objects in catalog " + filename +
+                                     " extension " + std::to_string(hduNumber) + " " +
+                                     std::to_string(extn.keepers.size()) + " left, first ID is " +
+                                     std::to_string(extn.keepers.begin()->first));
         }
     }  // end loop over catalogs to read
 }
@@ -2580,7 +2561,7 @@ void Astro::reportStatistics(const MCat &matches, const vector<unique_ptr<Exposu
 
 #define INSTANTIATE(AP)                                                                                    \
     template vector<unique_ptr<AP::Extension>> readExtensions<AP>(                                         \
-            img::FTable & extensionTable, const vector<unique_ptr<Instrument>> &instruments,               \
+            const img::FTable &extensionTable, const vector<unique_ptr<Instrument>> &instruments,          \
             const vector<unique_ptr<Exposure>> &exposures, const vector<int> &exposureColorPriorities,     \
             vector<unique_ptr<AP::ColorExtension>> &colorExtensions, astrometry::YAMLCollector &inputYAML, \
             bool logging);                                                                                 \
@@ -2598,17 +2579,19 @@ void Astro::reportStatistics(const MCat &matches, const vector<unique_ptr<Exposu
             const vector<unique_ptr<AP::Extension>> &extensions,                                           \
             const vector<unique_ptr<astrometry::SphericalCoords>> &fieldProjections, bool logging);        \
     template void readObjects_oneExtension<AP>(                                                            \
-            const vector<unique_ptr<Exposure>> &exposures, int iext, img::FTable ff, string xKey,          \
-            string yKey, string idKey, string pmCovKey, vector<string> xyErrKeys, string magKey,           \
-            int magKeyElement, string magErrKey, int magErrKeyElement, string pmRaKey, string pmDecKey,    \
-            string parallaxKey, const vector<unique_ptr<typename AP::Extension>> &extensions,              \
+            const vector<unique_ptr<Exposure>> &exposures, int iext, const img::FTable &ff,                \
+            const string &xKey, const string &yKey, const string &idKey, const string &pmCovKey,           \
+            const vector<string> &xyErrKeys, const string &magKey, const int &magKeyElement,               \
+            const string &magErrKey, const int &magErrKeyElement, const string &pmRaKey,                   \
+            const string &pmDecKey, const string &parallaxKey,                                             \
+            const vector<unique_ptr<typename AP::Extension>> &extensions,                                  \
             const vector<unique_ptr<astrometry::SphericalCoords>> &fieldProjections, bool logging,         \
             bool useRows);                                                                                 \
-    template void readMatches<AP>(img::FTable & table, typename AP::MCat & matches,                        \
+    template void readMatches<AP>(const img::FTable &table, typename AP::MCat &matches,                    \
                                   const vector<unique_ptr<AP::Extension>> &extensions,                     \
                                   const vector<unique_ptr<AP::ColorExtension>> &colorExtensions,           \
                                   const ExtensionObjectSet &skipSet, int minMatches, bool usePM);          \
-    template void readColors<AP>(img::FTable extensionTable,                                               \
+    template void readColors<AP>(const img::FTable &extensionTable,                                        \
                                  const vector<unique_ptr<AP::ColorExtension>> &colorExtensions,            \
                                  bool logging);                                                            \
     template void purgeNoisyDetections<AP>(double maxError, AP::MCat &matches,                             \

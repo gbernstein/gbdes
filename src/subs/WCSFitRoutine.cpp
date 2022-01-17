@@ -3,53 +3,36 @@
 #include "WCSFitRoutine.h"
 
 #define PROGRESS(val, msg) \
-    if (verbose >= val) cerr << "-->" << #msg << endl
+    if (verbose >= val) std::cerr << "-->" << #msg << std::endl
 
-WCSFit::WCSFit(Fields &fields_, vector<shared_ptr<Instrument>> instruments_, ExposuresHelper exposures_,
-               vector<int> extensionExposureNumbers, vector<int> extensionDevices, YAMLCollector inputYAML,
-               vector<shared_ptr<astrometry::Wcs>> wcss, vector<int> sequence, vector<LONGLONG> extns,
-               vector<LONGLONG> objects, double sysErr, double refSysErr, int minMatches,
-               string skipObjectsFile, string fixMaps, bool usePM, int verbose)
+WCSFit::WCSFit(Fields &fields_, std::vector<std::shared_ptr<Instrument>> instruments_,
+               ExposuresHelper exposures_, std::vector<int> extensionExposureNumbers,
+               std::vector<int> extensionDevices, astrometry::YAMLCollector inputYAML,
+               std::vector<std::shared_ptr<astrometry::Wcs>> wcss, const std::vector<int> &sequence,
+               const std::vector<LONGLONG> &extns, const std::vector<LONGLONG> &objects,
+               const std::vector<int> &exposureColorPriorities, double sysErr, double refSysErr,
+               int minMatches, std::string skipObjectsFile, std::string fixMaps, bool usePM, int verbose)
         : minMatches(minMatches), verbose(verbose), fields(std::move(fields_)) {
     // Set Instruments:
     instruments.reserve(instruments_.size());
     for (int i = 0; i < instruments_.size(); i++) {
-        shared_ptr<Instrument> inst_init = instruments_[i];
-        unique_ptr<Instrument> inst(new Instrument(inst_init->name));
-        inst->band = inst_init->band;
-        for (int d = 0; d < inst_init->nDevices; d++) {
-            inst->addDevice(inst_init->deviceNames.nameOf(d), inst_init->domains[d]);
-        }
+        std::unique_ptr<Instrument> inst(new Instrument(*instruments_[i]));
         instruments.emplace_back(std::move(inst));
     }
 
-    // Set Exposures:
-    vector<unique_ptr<Exposure>> tmpExposures;
-    tmpExposures.reserve(exposures_.expNames.size());
-    for (int i = 0; i < exposures_.expNames.size(); i++) {
-        astrometry::Gnomonic gn(
-                astrometry::Orientation(astrometry::SphericalICRS(exposures_.ras[i], exposures_.decs[i])));
-        unique_ptr<Exposure> expo(new Exposure(exposures_.expNames[i], gn));
-        expo->field = exposures_.fieldNumbers[i];
-        expo->instrument = exposures_.instrumentNumbers[i];
-        expo->airmass = exposures_.airmasses[i];
-        expo->exptime = exposures_.exposureTimes[i];
-        expo->mjd = exposures_.mjds[i];
-        tmpExposures.emplace_back(std::move(expo));
-    }
-    setExposures(std::move(tmpExposures), sysErr, refSysErr);
+    setExposures(exposures_.getExposuresVector(), sysErr, refSysErr);
 
     // Set Extensions:
     extensions.reserve(extensionExposureNumbers.size());
+    colorExtensions = vector<unique_ptr<typename Astro::ColorExtension>>(extensionExposureNumbers.size());
     for (int i = 0; i < extensionExposureNumbers.size(); i++) {
-        unique_ptr<Extension> extn(new Extension());
+        std::unique_ptr<Extension> extn(new Extension());
         int iExposure = extensionExposureNumbers[i];
         extn->exposure = iExposure;
         const Exposure &expo = *exposures[iExposure];
         extn->device = extensionDevices[i];
-        shared_ptr<astrometry::Wcs> tmpWcs = wcss[i];
-        extn->startWcs = unique_ptr<astrometry::Wcs>(tmpWcs.get());
-        extn->startWcs->reprojectTo(*expo.projection);
+        wcss[i]->reprojectTo(*expo.projection);
+        extn->startWcs = std::unique_ptr<astrometry::Wcs>(wcss[i]->duplicate());
         if (expo.instrument < 0) {
             // This is the reference catalog:
             extn->mapName = astrometry::IdentityMap().getName();
@@ -67,12 +50,24 @@ WCSFit::WCSFit(Fields &fields_, vector<shared_ptr<Instrument>> instruments_, Exp
             // the name of the photometric map (for which we do not want the "base" part).
             extn->mapName = extn->wcsName + "/base";
             if (!inputYAML.addMap(extn->mapName, d)) {
-                cerr << "Input YAML files do not have complete information for map " << extn->mapName << endl;
+                throw std::runtime_error("Input YAML files do not have complete information for map " +
+                                         extn->mapName);
             }
         }
         extensions.emplace_back(std::move(extn));
+
+        if (exposureColorPriorities.size() > 0) {
+            cerr << "in colorPrior" << endl;
+            int colorPriority = exposureColorPriorities[iExposure];
+            cerr << "colorPrio: " << std::to_string(colorPriority) << endl;
+            if (colorPriority >= 0) {
+                cerr << "adding colorExt" << endl;
+                std::unique_ptr<Astro::ColorExtension> ce(new typename Astro::ColorExtension);
+                ce->priority = colorPriority;
+                colorExtensions[i] = std::move(ce);
+            }
+        }
     }
-    colorExtensions = vector<unique_ptr<typename Astro::ColorExtension>>(extensions.size());
 
     loadPixelMapParser();
 
@@ -90,15 +85,15 @@ WCSFit::WCSFit(int minMatches, int verbose) : minMatches(minMatches), verbose(ve
     loadPixelMapParser();
 }
 
-void WCSFit::setExposures(vector<unique_ptr<Exposure>> expos, double sysErr, double refSysErr) {
+void WCSFit::setExposures(std::vector<std::unique_ptr<Exposure>> expos, double sysErr, double refSysErr) {
     exposures = std::move(expos);
 
     // Convert error parameters from I/O units to internal
-    float referenceSysError = refSysErr * RESIDUAL_UNIT / WCS_UNIT;
-    float sysError = sysErr * RESIDUAL_UNIT / WCS_UNIT;
+    float referenceSysError = refSysErr * astrometry::RESIDUAL_UNIT / astrometry::WCS_UNIT;
+    float sysError = sysErr * astrometry::RESIDUAL_UNIT / astrometry::WCS_UNIT;
 
     if (sysError > 0.) {
-        Matrix22 astrometricCovariance(0.);
+        astrometry::Matrix22 astrometricCovariance(0.);
         astrometricCovariance(0, 0) = sysError * sysError;
         astrometricCovariance(1, 1) = sysError * sysError;
         for (auto const &e : exposures) {
@@ -108,7 +103,7 @@ void WCSFit::setExposures(vector<unique_ptr<Exposure>> expos, double sysErr, dou
         }
     }
     if (referenceSysError > 0.) {
-        Matrix22 astrometricCovariance(0.);
+        astrometry::Matrix22 astrometricCovariance(0.);
         astrometricCovariance(0, 0) = referenceSysError * referenceSysError;
         astrometricCovariance(1, 1) = referenceSysError * referenceSysError;
         for (auto const &e : exposures) {
@@ -137,7 +132,8 @@ void WCSFit::setRefWCSNames() {
     }
 }
 
-void WCSFit::addMap(YAMLCollector &inputYAML, string mapName, vector<string> mapParams) {
+void WCSFit::addMap(astrometry::YAMLCollector &inputYAML, std::string mapName,
+                    std::vector<std::string> mapParams) {
     astrometry::YAMLCollector::Dictionary d;
     d["INSTRUMENT"] = mapParams[0];
     d["DEVICE"] = mapParams[1];
@@ -146,7 +142,7 @@ void WCSFit::addMap(YAMLCollector &inputYAML, string mapName, vector<string> map
     inputYAML.addMap(mapName, d);
 }
 
-void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
+void WCSFit::setupMaps(astrometry::YAMLCollector &inputYAML, std::string fixMaps) {
     /////////////////////////////////////////////////////
     //  Create and initialize all maps
     /////////////////////////////////////////////////////
@@ -154,20 +150,19 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
     PROGRESS(1, Building initial PixelMapCollection);
 
     // Now build a preliminary set of pixel maps from the configured YAML files
-    PixelMapCollection *pmcInit = new PixelMapCollection;
-    pmcInit->learnMap(IdentityMap(), false, false);
+    astrometry::PixelMapCollection *pmcInit = new astrometry::PixelMapCollection;
+    pmcInit->learnMap(astrometry::IdentityMap(), false, false);
 
     {
-        istringstream iss(inputYAML.dump());
+        std::istringstream iss(inputYAML.dump());
         if (!pmcInit->read(iss)) {
-            cerr << "Failure parsing the initial YAML map specs" << endl;
-            exit(1);
+            throw std::runtime_error("Failure parsing the initial YAML map specs");
         }
     }
 
     // Check every map name against the list of those to fix.
     // Includes all devices of any instruments on the fixMapList.
-    list<string> fixMapList = splitArgument(fixMaps);
+    std::list<std::string> fixMapList = splitArgument(fixMaps);
     fixMapComponents<Astro>(*pmcInit, fixMapList, instruments);
 
     /////////////////////////////////////////////////////
@@ -178,11 +173,14 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
       bool done = false;
       for (auto iName : pmcInit->allMapNames()) {
           if (pmcInit->getFixed(iName) && pmcInit->getDefaulted(iName)) {
-              cerr << "ERROR: Map element " << iName << " is frozen at defaulted parameters" << endl;
+              std::cerr << "ERROR: Map element " << iName << " is frozen at defaulted parameters"
+                        << std::endl;
               done = true;
           }
       }
-      if (done) exit(1);
+      if (done) {
+          throw std::runtime_error("Some map elements are frozen at defaulted parameters");
+      }
   }
 
   /////////////////////////////////////////////////////
@@ -193,8 +191,8 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
   PROGRESS(2,Checking for field degeneracy);
 
   {
-      vector<bool> fieldHasFree(fields.names().size(), false);
-      vector<bool> fieldHasFixed(fields.names().size(), false);
+      std::vector<bool> fieldHasFree(fields.names().size(), false);
+      std::vector<bool> fieldHasFixed(fields.names().size(), false);
       for (auto const &extnptr : extensions) {
           if (!extnptr) continue;  // Not in use
           int field = exposures[extnptr->exposure]->field;
@@ -207,12 +205,14 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
       bool done = false;
       for (int i = 0; i < fieldHasFree.size(); ++i) {
           if (fieldHasFree[i] && !fieldHasFixed[i]) {
-              cerr << "ERROR: No data in field " << fields.names().nameOf(i)
-                   << " have fixed maps to break shift degeneracy" << endl;
+              std::cerr << "ERROR: No data in field " << fields.names().nameOf(i)
+                        << " have fixed maps to break shift degeneracy" << std::endl;
               done = true;
           }
       }
-      if (done) exit(1);
+      if (done) {
+          throw std::runtime_error("Cannot break degeneracies");
+      }
   }
 
   /////////////////////////////////////////////////////
@@ -223,13 +223,13 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
   /////////////////////////////////////////////////////
 
   PROGRESS(2,Checking for polynomial degeneracies);
-  set<string> degenerateTypes = {"Poly", "Linear", "Constant"};
+  std::set<std::string> degenerateTypes = {"Poly", "Linear", "Constant"};
   {
       MapDegeneracies<Astro> degen(extensions, *pmcInit, degenerateTypes,
                                    false);  // Any non-fixed maps are examined
       // All exposure maps are candidates for setting to Identity
       // (the code will ignore those which already are Identity)
-      set<string> exposureMapNames;
+      std::set<std::string> exposureMapNames;
       for (auto const &expoPtr : exposures) {
           if (expoPtr && !expoPtr->name.empty()) exposureMapNames.insert(expoPtr->name);
       }
@@ -238,15 +238,15 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
 
       // Supersede their maps if there are any
       if (!replaceThese.empty()) {
-          PixelMapCollection pmcAltered;
+          astrometry::PixelMapCollection pmcAltered;
           for (auto mapname : replaceThese) {
-              cerr << "..Setting map <" << mapname << "> to Identity" << endl;
-              pmcAltered.learnMap(IdentityMap(mapname));
+              std::cerr << "..Setting map <" << mapname << "> to Identity" << std::endl;
+              pmcAltered.learnMap(astrometry::IdentityMap(mapname));
           }
           // Add the altered maps specs to the input YAML specifications
-          ostringstream oss;
+          std::ostringstream oss;
           pmcAltered.write(oss);
-          istringstream iss(oss.str());
+          std::istringstream iss(oss.str());
           inputYAML.addInput(iss, "", true);  // Prepend these specs to others
       }
   }  // End of poly-degeneracy check/correction
@@ -260,7 +260,6 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
   inputYAML.clearMaps();
 
   // Make final map collection from the YAML
-  // PixelMapCollection mapCollection;
   createMapCollection<Astro>(instruments, exposures, extensions, inputYAML, mapCollection);
 
   // Add WCS for every extension, and reproject into field coordinates
@@ -277,8 +276,8 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
 
   // This routine figures out an order in which defaulted maps can
   // be initialized without degeneracies
-  list<set<int>> initializeOrder;
-  set<int> initializedExtensions;
+  std::list<std::set<int>> initializeOrder;
+  std::set<int> initializedExtensions;
   {
       MapDegeneracies<Astro> degen(extensions, mapCollection, degenerateTypes,
                                    true);  // Only defaulted maps are used
@@ -288,7 +287,7 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
 
   for (auto extnSet : initializeOrder) {
       // Fit set of extensions to initialize defaulted map(s)
-      set<Extension *> defaultedExtensions;
+      std::set<Extension *> defaultedExtensions;
       for (auto iextn : extnSet) {
           defaultedExtensions.insert(extensions[iextn].get());
           initializedExtensions.insert(iextn);
@@ -303,7 +302,7 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
   for (int iextn = 0; iextn < extensions.size(); iextn++) {
       // Skip extensions that don't exist or are already initialized
       if (!extensions[iextn] || initializedExtensions.count(iextn)) continue;
-      set<Extension *> defaultedExtensions = {extensions[iextn].get()};
+      std::set<Extension *> defaultedExtensions = {extensions[iextn].get()};
       fitDefaulted(mapCollection, defaultedExtensions, instruments, exposures, verbose >= 2);
       initializedExtensions.insert(iextn);
   }
@@ -312,12 +311,14 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
   bool defaultProblem = false;
   for (auto iName : mapCollection.allMapNames()) {
       if (mapCollection.getDefaulted(iName)) {
-          cerr << "Logic error: after all intializations, still have map " << iName << " as defaulted."
-               << endl;
+          std::cerr << "Logic error: after all intializations, still have map " << iName << " as defaulted."
+                    << std::endl;
           defaultProblem = true;
       }
   }
-  if (defaultProblem) exit(1);
+  if (defaultProblem) {
+      throw std::runtime_error("Logic error: still have some maps as defaulted");
+  }
 
   // Now fix all map elements requested to be fixed
   fixMapComponents<Astro>(mapCollection, fixMapList, instruments);
@@ -325,8 +326,8 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
   // Recalculate all parameter indices - maps are ready to roll!
   mapCollection.rebuildParameterVector();
 
-  cout << "# Total number of free map elements " << to_string(mapCollection.nFreeMaps()) << " with "
-       << to_string(mapCollection.nParams()) << " free parameters." << endl;
+  cout << "# Total number of free map elements " << std::to_string(mapCollection.nFreeMaps()) << " with "
+       << std::to_string(mapCollection.nParams()) << " free parameters." << std::endl;
 
   // Figure out which extensions' maps require a color entry to function
   whoNeedsColor<Astro>(extensions);
@@ -343,16 +344,18 @@ void WCSFit::setupMaps(YAMLCollector &inputYAML, string fixMaps) {
   }
 }
 
-void WCSFit::setMatches(vector<int> sequence, vector<LONGLONG> extns, vector<LONGLONG> objects,
-                        ExtensionObjectSet skipSet, bool usePM) {
+void WCSFit::setMatches(const std::vector<int> &sequence, const std::vector<LONGLONG> &extns,
+                        const std::vector<LONGLONG> &objects, ExtensionObjectSet skipSet, bool usePM) {
     readMatches<Astro>(sequence, extns, objects, matches, extensions, colorExtensions, skipSet, minMatches,
                        usePM);
 }
 
-void WCSFit::setObjects(int i, map<string, vector<double>> tableMap, string xKey, string yKey,
-                        vector<string> xyErrKeys, string idKey, string pmCovKey, string magKey,
-                        int magKeyElement, string magErrKey, int magErrKeyElement, string pmRaKey,
-                        string pmDecKey, string parallaxKey) {
+void WCSFit::setObjects(int i, const map<std::string, std::vector<double>> &tableMap, const std::string &xKey,
+                        const std::string &yKey, const std::vector<std::string> &xyErrKeys,
+                        const std::string &idKey, const std::string &pmCovKey, const std::string &magKey,
+                        const int &magKeyElement, const std::string &magErrKey, const int &magErrKeyElement,
+                        const std::string &pmRaKey, const std::string &pmDecKey,
+                        const std::string &parallaxKey) {
     img::FTable ff;
     for (auto x : tableMap) {
         ff.addColumn<double>(x.second, x.first);
@@ -369,19 +372,20 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
         PROGRESS(2, Purging defective detections and matches);
 
         // Get rid of Detections with errors too high
-        maxError *= RESIDUAL_UNIT / WCS_UNIT;
+        maxError *= astrometry::RESIDUAL_UNIT / astrometry::WCS_UNIT;
         purgeNoisyDetections<Astro>(maxError, matches, exposures, extensions);
-        cerr << "Matches size after purgeNoisyDetections: " << to_string(matches.size()) << endl;
+        std::cerr << "Matches size after purgeNoisyDetections: " << std::to_string(matches.size())
+                  << std::endl;
 
         PROGRESS(2, Purging sparse matches);
         // Get rid of Matches with too few detections
         purgeSparseMatches<Astro>(minMatches, matches);
-        cerr << "Matches size after purgeSparseMatches: " << to_string(matches.size()) << endl;
+        std::cerr << "Matches size after purgeSparseMatches: " << std::to_string(matches.size()) << std::endl;
 
         PROGRESS(2, Purging out - of - range colors);
         // Get rid of Matches with color out of range (note that default color is 0).
         purgeBadColor<Astro>(minColor, maxColor, matches);
-        cerr << "Matches size after purgeBadColor: " << to_string(matches.size()) << endl;
+        std::cerr << "Matches size after purgeBadColor: " << std::to_string(matches.size()) << std::endl;
 
         PROGRESS(2, Reserving matches);
         // Reserve desired fraction of matches
@@ -399,8 +403,8 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
         // Freeze parameters of an exposure model and clip all
         // Detections that were going to use it.
         for (auto i : badExposures) {
-            cout << "WARNING: Shutting down exposure map " << i.first << " with only " << to_string(i.second)
-                 << " fitted detections " << endl;
+            cout << "WARNING: Shutting down exposure map " << i.first << " with only "
+                 << std::to_string(i.second) << " fitted detections " << std::endl;
             freezeMap<Astro>(i.first, matches, extensions, mapCollection);
         }
 
@@ -419,7 +423,7 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
         PROGRESS(1, Begin fitting process);
 
         // make CoordAlign class
-        CoordAlign ca(mapCollection, matches);
+        astrometry::CoordAlign ca(mapCollection, matches);
 
         int nclip;
         double oldthresh = 0.;
@@ -433,7 +437,7 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
         do {
             // Report number of active Matches / Detections in each iteration:
             {
-                cerr << "Matches size: " << to_string(matches.size()) << endl;
+                std::cerr << "Matches size: " << std::to_string(matches.size()) << std::endl;
                 long int mcount = 0;
                 long int dcount = 0;
                 ca.count(mcount, dcount, false, 2);
@@ -441,10 +445,10 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
                 int dof = 0;
                 double chi = ca.chisqDOF(dof, maxdev, false);
                 if (verbose >= 1)
-                    cerr << "Fitting " << to_string(mcount) << " matches with " << to_string(dcount)
-                         << " detections "
-                         << " chisq " << to_string(chi) << " / " << to_string(dof) << " dof,  maxdev "
-                         << to_string(maxdev) << " sigma" << endl;
+                    std::cerr << "Fitting " << std::to_string(mcount) << " matches with "
+                              << std::to_string(dcount) << " detections "
+                              << " chisq " << std::to_string(chi) << " / " << std::to_string(dof)
+                              << " dof,  maxdev " << std::to_string(maxdev) << " sigma" << std::endl;
             }
 
             // Do the fit here!!
@@ -455,9 +459,9 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
             ca.chisqDOF(dof, max, false);                    // Exclude reserved Matches
             double thresh = sqrt(chisq / dof) * clipThresh;  // ??? change dof to expectedChisq?
             if (verbose >= 1)
-                cerr << "After iteration: chisq " << to_string(chisq) << " / " << to_string(dof)
-                     << " dof, max deviation " << to_string(max)
-                     << "  new clip threshold at: " << to_string(thresh) << " sigma" << endl;
+                std::cerr << "After iteration: chisq " << std::to_string(chisq) << " / "
+                          << std::to_string(dof) << " dof, max deviation " << std::to_string(max)
+                          << "  new clip threshold at: " << std::to_string(thresh) << " sigma" << std::endl;
             if (thresh >= max || (oldthresh > 0. && (1 - thresh / oldthresh) < minimumImprovement)) {
                 // Sigma clipping is no longer doing much.  Quit if we are at full precision,
                 // else require full target precision and initiate another pass.
@@ -465,10 +469,11 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
                     coarsePasses = false;
                     ca.setRelTolerance(chisqTolerance);
                     PROGRESS(1, Starting strict tolerance passes);
-                    if (clipEntireMatch && verbose >= 1) cerr << "-->clipping full matches" << endl;
+                    if (clipEntireMatch && verbose >= 1) std::cerr << "-->clipping full matches" << std::endl;
                     oldthresh = thresh;
                     nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses, verbose >= 1);
-                    if (verbose >= 0) cerr << "# Clipped " << to_string(nclip) << " matches " << endl;
+                    if (verbose >= 0)
+                        std::cerr << "# Clipped " << std::to_string(nclip) << " matches " << std::endl;
                     continue;
                 } else {
                     // Done!
@@ -483,10 +488,10 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
                 coarsePasses = false;
                 ca.setRelTolerance(chisqTolerance);
                 PROGRESS(1, Starting strict tolerance passes);
-                if (clipEntireMatch && verbose >= 1) cerr << "-->clipping full matches" << endl;
+                if (clipEntireMatch && verbose >= 1) std::cerr << "-->clipping full matches" << std::endl;
                 continue;
             }
-            if (verbose >= 0) cerr << "# Clipped " << to_string(nclip) << " matches " << endl;
+            if (verbose >= 0) std::cerr << "# Clipped " << std::to_string(nclip) << " matches " << std::endl;
 
         } while (coarsePasses || nclip > 0);
 
@@ -507,14 +512,14 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
     }
 }
 
-void WCSFit::saveResults(string outWcs, string outCatalog, string starCatalog) {
+void WCSFit::saveResults(std::string outWcs, std::string outCatalog, std::string starCatalog) {
     // The re-fitting is now complete.  Serialize all the fitted coordinate systems
     PROGRESS(2, Saving astrometric parameters);
     // Save the pointwise fitting results
     {
         ofstream ofs(outWcs.c_str());
         if (!ofs) {
-            cerr << "Error trying to open output file for fitted Wcs: " << outWcs << endl;
+            std::cerr << "Error trying to open output file for fitted Wcs: " << outWcs << std::endl;
             // *** will not quit before dumping output ***
         } else {
             mapCollection.write(ofs);
@@ -525,7 +530,7 @@ void WCSFit::saveResults(string outWcs, string outCatalog, string starCatalog) {
     // Save the pointwise fitting results
     {
         // This routine needs an array of field projections for each extension
-        vector<SphericalCoords *> extensionProjections(extensions.size());
+        std::vector<astrometry::SphericalCoords *> extensionProjections(extensions.size());
         for (int i = 0; i < extensions.size(); i++) {
             if (!extensions[i]) continue;
             int iExposure = extensions[i]->exposure;

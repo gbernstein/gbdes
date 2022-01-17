@@ -1,3 +1,11 @@
+LSST Science Pipelines-specific TODOs:
+* Add copyright preambles
+* Switch from using std::list to std::vector in general
+* Change Point.x from std::vector<double> to std::array<double, 2> in WCSFoFRoutine.h
+* Do a memory overhaul of FoF.h (change raw pointers to smart pointers)
+* Do a memory overhaul of PhotoMatch.h (raw pointers to smart pointers)
+
+
 * Check on int/long/LONGLONG for id's
 
 * "bad conversion" happening during/after Final MapCollection in WCSFit - some multithreading bug.  Check protection of YAMLCollector against threads.

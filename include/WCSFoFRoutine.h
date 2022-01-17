@@ -9,11 +9,6 @@
 
 #include <vector>
 
-using namespace std;
-using namespace img;
-
-using astrometry::WCS_UNIT;
-
 /// Struct that will hold the info about each point that matcher (and subsequent programs)
 /// will need
 struct Point {
@@ -22,11 +17,11 @@ struct Point {
         x[0] = x_;
         x[1] = y_;
     }
-    vector<double> x;
+    std::vector<double> x;
     long extensionNumber;  // "extension" is an individual input FITS bintable.
     long objectNumber;     // gives the object number of this Point in its input catalog
     long exposureNumber;   // Which exposure the catalog is from.
-    const vector<double> getX() const { return x; }
+    const std::vector<double> getX() const { return x; }
 };
 
 // *** Here is the typedef that says we'll be collecting & matching Points
@@ -40,40 +35,39 @@ struct Field {
     Field(Field &&) = delete;
     Field &operator=(Field &&) = delete;
 
-    string name;
+    std::string name;
     // Coordinate system that has lat=lon=0 at field center and does projection to use for matching
-    unique_ptr<astrometry::SphericalCoords> projection;
+    std::unique_ptr<astrometry::SphericalCoords> projection;
     double extent;
     double matchRadius;
     // Map from affinity name to its catalog of matches:
-    typedef map<string, PointCat *> CatMap;
+    typedef std::map<std::string, std::unique_ptr<PointCat>> CatMap;
     CatMap catalogs;
     Field() : projection() {}
-    ~Field() {
-        for (CatMap::iterator i = catalogs.begin(); i != catalogs.end(); ++i) delete i->second;
-    }
-    PointCat *catalogFor(const string &affinity) {
+
+    PointCat &catalogFor(const std::string &affinity) {
         if (catalogs.find(affinity) == catalogs.end()) {
-            vector<double> lower(2, -extent);
-            vector<double> upper(2, extent);
+            std::vector<double> lower(2, -extent);
+            std::vector<double> upper(2, extent);
             // *** This line creates new point catalogs.  Might need to be changed if
             // *** we decide to use a different catalog structure.
-            catalogs.insert(std::pair<string, PointCat *>(affinity, new PointCat(lower, upper, matchRadius)));
+            catalogs.insert(std::pair<std::string, std::unique_ptr<PointCat>>(
+                    affinity, new PointCat(lower, upper, matchRadius)));
         }
-        return catalogs[affinity];
+        return *catalogs[affinity];
     }
 };
 
 // Right now a device is just a region of pixel coordinates, plus a name
 struct Device : public Bounds<double> {
-    string name;
+    std::string name;
 };
 
 // Instr is a collection of Devices, with a name
-struct Instr : public vector<Device> {
-    Instr(const string &name_ = "") : name(name_) {}
-    string name;
-    Instr(const FTable &ft) {
+struct Instr : public std::vector<Device> {
+    Instr(const std::string &name_ = "") : name(name_) {}
+    std::string name;
+    Instr(const img::FTable &ft) {
         ft.header()->getValue("Name", name);
         for (int i = 0; i < ft.nrows(); i++) {
             Device d;
@@ -97,49 +91,46 @@ struct Instr : public vector<Device> {
 
 struct Expo {
 public:
-    string name;
+    std::string name;
     astrometry::SphericalICRS pointing;
     int field;
     int instrument;
-    void read(const FTable &ft, int irow) {
+    void read(const img::FTable &ft, int irow) {
         double ra, dec;
         ft.readCell(name, "Name", irow);
         ft.readCell(ra, "RA", irow);
         ft.readCell(dec, "Dec", irow);
         ft.readCell(field, "FieldNumber", irow);
         ft.readCell(instrument, "InstrumentNumber", irow);
-        pointing.setRADec(ra * WCS_UNIT, dec * WCS_UNIT);
+        pointing.setRADec(ra * astrometry::WCS_UNIT, dec * astrometry::WCS_UNIT);
     }
 };
 
 class FoFClass {
 public:
     FoFClass();
-    FoFClass(Fields &fields_, vector<shared_ptr<Instrument>> instruments_, ExposuresHelper exposures_,
-             vector<double> fieldExtents, double matchRadius);
+    FoFClass(Fields &fields_, std::vector<std::shared_ptr<Instrument>> instruments_,
+             ExposuresHelper exposures_, std::vector<double> fieldExtents, double matchRadius);
 
-    vector<unique_ptr<Field>> fields;
-    vector<unique_ptr<Instrument>> instruments;
-    vector<unique_ptr<Exposure>> exposures;
-    FTable extensionTable;
-    list<Point> allPoints;
-    string currentPixelMapCollectionFileName;
-    vector<int> sequence;
-    vector<long> extn;
-    vector<long> obj;
+    std::vector<std::unique_ptr<Field>> fields;
+    std::vector<std::unique_ptr<Instrument>> instruments;
+    std::vector<std::unique_ptr<Exposure>> exposures;
+    img::FTable extensionTable;
+    std::list<Point> allPoints;
+    std::string currentPixelMapCollectionFileName;
+    std::vector<int> sequence;
+    std::vector<long> extn;
+    std::vector<long> obj;
 
-    void getExtensionInfo(long iextn, string &thisAffinity, int &exposureNumber, int &instrumentNumber,
-                          int &fieldNumber, int &deviceNumber, vector<bool> &isStar, vector<double> &vx,
-                          vector<double> &vy, vector<long> &vid);
-    void getWCS(long iextn, int fieldNumber, unique_ptr<astrometry::Wcs> &wcs);
-    void reprojectWCS(shared_ptr<astrometry::Wcs> &wcs, int fieldNumber);
-    void addCatalog(shared_ptr<astrometry::Wcs> &wcs, string thisAffinity, int exposureNumber,
-                    int fieldNumber, int instrumentNumber, int deviceNumber, long iextn, vector<bool> isStar,
-                    vector<double> vx, vector<double> vy, vector<long> vid);
-    void addCatalog(unique_ptr<astrometry::Wcs> &wcs, string thisAffinity, int exposureNumber,
-                    int fieldNumber, int instrumentNumber, int deviceNumber, long iextn, vector<bool> isStar,
-                    vector<double> vx, vector<double> vy, vector<long> vid);
-    void writeMatches(string outCatalogName, int minMatches = 2, bool allowSelfMatches = false);
+    void getExtensionInfo(long iextn, std::string &thisAffinity, int &exposureNumber, int &instrumentNumber,
+                          int &fieldNumber, int &deviceNumber, std::vector<bool> &isStar,
+                          std::vector<double> &vx, std::vector<double> &vy, std::vector<long> &vid);
+    std::unique_ptr<astrometry::Wcs> getWCS(long iextn, int fieldNumber);
+    void reprojectWCS(astrometry::Wcs &wcs, int fieldNumber);
+    void addCatalog(const astrometry::Wcs &wcs, std::string thisAffinity, int exposureNumber, int fieldNumber,
+                    int instrumentNumber, int deviceNumber, long iextn, std::vector<bool> isStar,
+                    std::vector<double> vx, std::vector<double> vy, std::vector<long> vid);
+    void writeMatches(std::string outCatalogName, int minMatches = 2, bool allowSelfMatches = false);
     void sortMatches(int fieldNumber, int minMatches = 2, bool allowSelfMatches = false);
 };
 #endif

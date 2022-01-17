@@ -190,9 +190,10 @@ int main(int argc, char *argv[]) {
                 Gnomonic projection(0., 0., orient);
                 Wcs devWcs(pm, projection);
                 double buffer = 30.;  // Number of pixels to ignore at edges when fitting TPV
-                Wcs *tpv = fitTPV(Bounds<double>(ccdBounds.getXMin() + buffer, ccdBounds.getXMax() - buffer,
-                                                 ccdBounds.getYMin() + buffer, ccdBounds.getYMax() - buffer),
-                                  devWcs, projection, "NoName", color, SCAMPTolerance, tpvOrder);
+                unique_ptr<Wcs> tpv =
+                        fitTPV(Bounds<double>(ccdBounds.getXMin() + buffer, ccdBounds.getXMax() - buffer,
+                                              ccdBounds.getYMin() + buffer, ccdBounds.getYMax() - buffer),
+                               devWcs, projection, "NoName", color, SCAMPTolerance, tpvOrder);
                 auto hdr = writeTPV(*tpv);
                 hdr.replace("DETPOS", device);
                 if (diter != decammap.end()) hdr.replace("CCDNUM", diter->second.ccdnum);

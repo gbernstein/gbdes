@@ -35,10 +35,10 @@ public:
         Assert(domains.size() == nDevices);
     }
     // Everything cleaned up in destructor:
-    ~Instrument() {}
+    //~Instrument() {}
     // No copying:
-    Instrument(const Instrument &rhs) = delete;
-    void operator=(const Instrument &rhs) = delete;
+    //Instrument(const Instrument &rhs) = delete;
+    //void operator=(const Instrument &rhs) = delete;
 };
 
 // Class that represents a single pointing of the telescope:
@@ -105,6 +105,23 @@ public:
     vector<double> airmasses;
     vector<double> exposureTimes;
     vector<double> mjds;
+
+    std::vector<std::unique_ptr<Exposure>> getExposuresVector() {
+        std::vector<std::unique_ptr<Exposure>> tmpExposures;
+        tmpExposures.reserve(expNames.size());
+        for (int i = 0; i < expNames.size(); i++) {
+            astrometry::Gnomonic gn(
+                    astrometry::Orientation(astrometry::SphericalICRS(ras[i], decs[i])));
+            std::unique_ptr<Exposure> expo(new Exposure(expNames[i], gn));
+            expo->field = fieldNumbers[i];
+            expo->instrument = instrumentNumbers[i];
+            expo->airmass = airmasses[i];
+            expo->exptime = exposureTimes[i];
+            expo->mjd = mjds[i];
+            tmpExposures.emplace_back(std::move(expo));
+        }
+        return tmpExposures;
+    }
 };
 
 // Class that represents an catalog of objects from a single device on single exposure.

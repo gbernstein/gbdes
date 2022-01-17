@@ -4,12 +4,10 @@
 
 #include "WCSFitRoutine.h"
 
-using namespace std;
-
 #define PROGRESS(val, msg) \
-    if (verbose >= val) cerr << "-->" << #msg << endl
+    if (verbose >= val) std::cerr << "-->" << #msg << std::endl
 
-string usage =
+std::string usage =
         "WCSFit: Refine coordinate solutions for a matched set of catalogs.\n"
         "usage: WCSFit <match file> [parameter file] [parameter file...]\n"
         "   [-parameter[=]value...]\n"
@@ -51,7 +49,7 @@ string usage =
 int main(int argc, char *argv[]) {
     double reserveFraction;
     int randomNumberSeed;
-    string skipFile;
+    std::string skipFile;
 
     double clipThresh;
     double maxError;
@@ -69,16 +67,16 @@ int main(int argc, char *argv[]) {
     bool divideInPlace;
     bool purgeOutput;
 
-    string inputMaps;
-    string fixMaps;
-    string useInstruments;
-    string skipExposures;
+    std::string inputMaps;
+    std::string fixMaps;
+    std::string useInstruments;
+    std::string skipExposures;
 
-    string outCatalog;
-    string outWcs;
-    string starCatalog;
+    std::string outCatalog;
+    std::string outWcs;
+    std::string starCatalog;
 
-    string colorExposures;
+    std::string colorExposures;
     double minColor;
     double maxColor;
 
@@ -153,27 +151,27 @@ int main(int argc, char *argv[]) {
     try {
         // Read all the command-line and parameter-file program parameters
         processParameters(parameters, usage, 1, argc, argv);
-        string inputTables = argv[1];
+        std::string inputTables = argv[1];
 
-        PMMatch::setPrior(pmPrior, parallaxPrior);
+        astrometry::PMMatch::setPrior(pmPrior, parallaxPrior);
 
-        WCSFit wcsfit(minMatches = minMatches, verbose = verbose);
+        WCSFit wcsfit(minMatches, verbose);
 
-        list<string> useInstrumentList = splitArgument(useInstruments);
+        std::list<std::string> useInstrumentList = splitArgument(useInstruments);
 
         // Objects to ignore on input:
         ExtensionObjectSet skipSet(skipFile);
 
         // The list of exposures that are considered valid sources of color information:
-        list<string> useColorList = splitArgument(colorExposures);
+        std::list<std::string> useColorList = splitArgument(colorExposures);
 
         // Exposures to ignore:
-        list<string> skipExposureList = splitArgument(skipExposures);
+        std::list<std::string> skipExposureList = splitArgument(skipExposures);
 
-        YAMLCollector inputYAML(inputMaps, PixelMapCollection::magicKey);
+        astrometry::YAMLCollector inputYAML(inputMaps, astrometry::PixelMapCollection::magicKey);
         // Make sure inputYAML knows about the Identity transformation:
         {
-            istringstream iss("Identity:\n  Type:  Identity\n");
+            std::istringstream iss("Identity:\n  Type:  Identity\n");
             inputYAML.addInput(iss);
         }
 
@@ -193,8 +191,8 @@ int main(int argc, char *argv[]) {
         PROGRESS(1, Reading instruments);
 
         // Let's figure out which of our FITS extensions are Instrument or MatchCatalog
-        vector<int> instrumentHDUs;
-        vector<int> catalogHDUs;
+        std::vector<int> instrumentHDUs;
+        std::vector<int> catalogHDUs;
         inventoryFitsTables(inputTables, instrumentHDUs, catalogHDUs);
 
         // This flag is set since we have already opened (and overwritten) the
@@ -210,8 +208,8 @@ int main(int argc, char *argv[]) {
 
         // This vector will hold the color-priority value of each exposure.
         // -1 means an exposure that does not hold color info.
-        vector<int> exposureColorPriorities;
-        vector<unique_ptr<Exposure>> exposures =
+        std::vector<int> exposureColorPriorities;
+        std::vector<std::unique_ptr<Exposure>> exposures =
                 readExposures(wcsfit.instruments, wcsfit.fields.epochs(), exposureColorPriorities,
                               useColorList, inputTables, outCatalog, skipExposureList,
                               true,  // Use reference exposures for astrometry
@@ -222,7 +220,7 @@ int main(int argc, char *argv[]) {
         PROGRESS(1, Reading extensions);
 
         // Read info about all Extensions - we will keep the Table around.
-        FTable extensionTable;
+        img::FTable extensionTable;
         {
             FITS::FitsTable ft(inputTables, FITS::ReadOnly, "Extensions");
             extensionTable = ft.extract();
@@ -230,21 +228,21 @@ int main(int argc, char *argv[]) {
             out.copy(extensionTable);
         }
 
-        vector<unique_ptr<ColorExtension>> colorExtensions;
+        std::vector<std::unique_ptr<ColorExtension>> colorExtensions;
         wcsfit.extensions = readExtensions<Astro>(extensionTable, wcsfit.instruments, wcsfit.exposures,
                                                   exposureColorPriorities, colorExtensions, inputYAML,
                                                   verbose >= 1);  // Print reading progress?
 
         wcsfit.setRefWCSNames();
 
-        wcsfit.setupMaps(inputYAML, fixMaps = fixMaps);
+        wcsfit.setupMaps(inputYAML, fixMaps);
 
         // Start by reading all matched catalogs, creating Detection and Match arrays, and
         // telling each Extension which objects it should retrieve from its catalog
         for (int icat = 0; icat < catalogHDUs.size(); icat++) {
             FITS::FitsTable ft(inputTables, FITS::ReadOnly, catalogHDUs[icat]);
-            FTable ff = ft.use();
-            string dummy1, affinity;
+            img::FTable ff = ft.use();
+            std::string dummy1, affinity;
             ff.getHdrValue("Field", dummy1);
             ff.getHdrValue("Affinity", affinity);
             stringstuff::stripWhite(affinity);
@@ -252,7 +250,7 @@ int main(int argc, char *argv[]) {
             // Only use STELLAR affinity for astrometry
             if (!stringstuff::nocaseEqual(affinity, stellarAffinity)) continue;
             if (verbose >= 2)
-                cerr << "-->Parsing catalog field " << dummy1 << " Affinity " << affinity << endl;
+                std::cerr << "-->Parsing catalog field " << dummy1 << " Affinity " << affinity << std::endl;
 
             // Set this true if we are going to want to create PMMatches from
             // this extension's matches:
@@ -262,7 +260,7 @@ int main(int argc, char *argv[]) {
                                wcsfit.minMatches, usePM);
         }  // End loop over input matched catalogs
 
-        if (verbose >= 0) cout << "# Total match count: " << wcsfit.matches.size() << endl;
+        if (verbose >= 0) std::cout << "# Total match count: " << wcsfit.matches.size() << std::endl;
 
         // Now loop over all original catalog bintables, reading the desired rows
         // and collecting needed information into the Detection structures
@@ -274,11 +272,9 @@ int main(int argc, char *argv[]) {
         PROGRESS(1, Reading colors);
         readColors<Astro>(extensionTable, colorExtensions);
 
-        wcsfit.fit(maxError = maxError, minFitExposures = minFitExposures, reserveFraction = reserveFraction,
-                   randomNumberSeed = randomNumberSeed, minimumImprovement = minimumImprovement,
-                   clipThresh = clipThresh, chisqTolerance = chisqTolerance,
-                   clipEntireMatch = clipEntireMatch, divideInPlace = divideInPlace,
-                   purgeOutput = purgeOutput, minColor = minColor, maxColor = maxColor);
+        wcsfit.fit(maxError, minFitExposures, reserveFraction, randomNumberSeed, minimumImprovement,
+                   clipThresh, chisqTolerance, clipEntireMatch, divideInPlace, purgeOutput, minColor,
+                   maxColor);
 
         wcsfit.saveResults(outWcs, outCatalog, starCatalog);
     } catch (std::runtime_error &m) {

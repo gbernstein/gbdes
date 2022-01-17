@@ -7,10 +7,7 @@
 
 #include <iostream>
 
-using namespace std;
-using namespace FITS;
-
-string usage =
+std::string usage =
         "Match objects using FoF algorithm on world coordinate system\n"
         "WCSFoF <configfile> [parameter file] [parameter file...]\n"
         "   [-parameter[=]value...]\n"
@@ -21,7 +18,7 @@ string usage =
 int main(int argc, char *argv[]) {
     // Read in parameters
     double matchRadius;
-    string outCatalogName;
+    std::string outCatalogName;
     int minMatches;
     bool allowSelfMatches;
 
@@ -49,10 +46,10 @@ int main(int argc, char *argv[]) {
 
     // Read all the command-line and parameter-file program parameters
     processParameters(parameters, usage, 1, argc, argv);
-    string configFile = argv[1];
+    std::string configFile = argv[1];
 
     // Convert matching radius to our system units for world coords
-    matchRadius *= ARCSEC / WCS_UNIT;
+    matchRadius *= ARCSEC / astrometry::WCS_UNIT;
 
     // Set of Friends-of-Friends class
     FoFClass fofclass;
@@ -61,18 +58,18 @@ int main(int argc, char *argv[]) {
         ////////////////////////////////////////////////
         // Read in field table and save away orientations of tangent plane systems for each
         ////////////////////////////////////////////////
-        FTable fieldTable;
+        img::FTable fieldTable;
         try {
-            fieldTable = FitsTable(configFile, FITS::ReadOnly, "Fields").extract();
+            fieldTable = FITS::FitsTable(configFile, FITS::ReadOnly, "Fields").extract();
         } catch (std::runtime_error &e) {
             quit(e, 1);
         }
 
-        vector<unique_ptr<Field>> fields;
+        std::vector<std::unique_ptr<Field>> fields;
         fields.reserve(fieldTable.nrows());
 
         for (int ifield = 0; ifield < fieldTable.nrows(); ifield++) {
-            string name;
+            std::string name;
             double ra;
             double dec;
             double extent;
@@ -81,10 +78,10 @@ int main(int argc, char *argv[]) {
             fieldTable.readCell(dec, "DEC", ifield);
             fieldTable.readCell(extent, "RADIUS", ifield);
 
-            unique_ptr<Field> f = unique_ptr<Field>(new Field);
+            std::unique_ptr<Field> f = std::unique_ptr<Field>(new Field);
             f->name = name;
-            astrometry::Orientation orient(astrometry::SphericalICRS(ra * WCS_UNIT, dec * WCS_UNIT));
-            f->projection = unique_ptr<astrometry::SphericalCoords>(new astrometry::Gnomonic(orient));
+            astrometry::Orientation orient(astrometry::SphericalICRS(ra * astrometry::WCS_UNIT, dec * astrometry::WCS_UNIT));
+            f->projection = std::unique_ptr<astrometry::SphericalCoords>(new astrometry::Gnomonic(orient));
             f->extent = extent;
             f->matchRadius = matchRadius;
             fields.emplace_back(std::move(f));
@@ -92,7 +89,7 @@ int main(int argc, char *argv[]) {
         Assert(!fields.empty());
 
         // Now read in all the instrument tables
-        list<int> instrumentHDUs;
+        std::list<int> instrumentHDUs;
         {
             // Find which extensions are instrument tables
             FITS::FitsFile ff(configFile);
@@ -102,17 +99,17 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        vector<FTable> instrumentTables;
+        std::vector<img::FTable> instrumentTables;
         instrumentTables.reserve(instrumentHDUs.size());
-        vector<unique_ptr<Instrument>> instruments;
+        std::vector<std::unique_ptr<Instrument>> instruments;
         instruments.reserve(instrumentHDUs.size());
-        for (list<int>::const_iterator i = instrumentHDUs.begin(); i != instrumentHDUs.end(); ++i) {
-            FTable ft = FitsTable(configFile, FITS::ReadOnly, *i).extract();
-            string instrumentName;
+        for (std::list<int>::const_iterator i = instrumentHDUs.begin(); i != instrumentHDUs.end(); ++i) {
+            img::FTable ft = FITS::FitsTable(configFile, FITS::ReadOnly, *i).extract();
+            std::string instrumentName;
             int instrumentNumber;
             if (!ft.header()->getValue("Name", instrumentName) ||
                 !ft.header()->getValue("Number", instrumentNumber)) {
-                cerr << "Could not read name and/or number of instrument at extension " << *i << endl;
+                std::cerr << "Could not read name and/or number of instrument at extension " << *i << std::endl;
             }
             // Get rid of spaces in the name
             spaceReplace(instrumentName);
@@ -121,9 +118,9 @@ int main(int argc, char *argv[]) {
 
             // Now save the table and make an Instrument structure
             instrumentTables.push_back(ft);
-            unique_ptr<Instrument> inst(new Instrument(instrumentName));
+            std::unique_ptr<Instrument> inst(new Instrument(instrumentName));
             for (int i = 0; i < ft.nrows(); i++) {
-                string devname;
+                std::string devname;
                 ft.readCell(devname, "Name", i);
                 double xmin, xmax, ymin, ymax;
                 ft.readCell(xmin, "XMin", i);
@@ -145,22 +142,22 @@ int main(int argc, char *argv[]) {
         // Check that all Instruments were read
         for (int i = 0; i < instruments.size(); i++)
             if (!instruments[i]) {
-                cerr << "Failed to read instrument number " << i << endl;
+                std::cerr << "Failed to read instrument number " << i << std::endl;
                 exit(1);
             }
 
         // Now get information on exposures
-        FTable exposureTable;
+        img::FTable exposureTable;
         try {
-            exposureTable = FitsTable(configFile, FITS::ReadOnly, "Exposures").extract();
+            exposureTable = FITS::FitsTable(configFile, FITS::ReadOnly, "Exposures").extract();
         } catch (std::runtime_error &e) {
             quit(e, 1);
         }
 
-        vector<unique_ptr<Exposure>> exposures;
+        std::vector<std::unique_ptr<Exposure>> exposures;
         for (int i = 0; i < exposureTable.nrows(); i++) {
             double ra, dec;
-            string name;
+            std::string name;
             int field, instrument;
             exposureTable.readCell(name, "Name", i);
             exposureTable.readCell(ra, "RA", i);
@@ -168,8 +165,8 @@ int main(int argc, char *argv[]) {
             exposureTable.readCell(field, "FieldNumber", i);
             exposureTable.readCell(instrument, "InstrumentNumber", i);
             astrometry::SphericalICRS pointing;
-            pointing.setRADec(ra * WCS_UNIT, dec * WCS_UNIT);
-            unique_ptr<Exposure> e(new Exposure(name, pointing));
+            pointing.setRADec(ra * astrometry::WCS_UNIT, dec * astrometry::WCS_UNIT);
+            std::unique_ptr<Exposure> e(new Exposure(name, pointing));
             e->field = field;
             e->instrument = instrument;
             exposures.emplace_back(std::move(e));
@@ -177,9 +174,9 @@ int main(int argc, char *argv[]) {
         Assert(exposures.size() == exposureTable.nrows());
 
         // Table of information about every catalog file to read:
-        FTable extensionTable;
+        img::FTable extensionTable;
         try {
-            extensionTable = FitsTable(configFile, FITS::ReadOnly, "Extensions").extract();
+            extensionTable = FITS::FitsTable(configFile, FITS::ReadOnly, "Extensions").extract();
         } catch (std::runtime_error &e) {
             quit(e, 1);
         }
@@ -191,44 +188,42 @@ int main(int argc, char *argv[]) {
 
         // Loop over input catalogs
         for (long iextn = 0; iextn < extensionTable.nrows(); iextn++) {
-            unique_ptr<astrometry::Wcs> wcs = 0;
-            string thisAffinity;
+            std::string thisAffinity;
             int exposureNumber;
             int instrumentNumber;
             int fieldNumber;
             int deviceNumber;
-            vector<bool> isStar;
-            vector<double> vx;
-            vector<double> vy;
-            vector<long> vid;
+            std::vector<bool> isStar;
+            std::vector<double> vx;
+            std::vector<double> vy;
+            std::vector<long> vid;
             fofclass.getExtensionInfo(iextn, thisAffinity, exposureNumber, instrumentNumber, fieldNumber,
                                       deviceNumber, isStar, vx, vy, vid);
-            fofclass.getWCS(iextn, fieldNumber, wcs);
-            fofclass.addCatalog(wcs, thisAffinity, exposureNumber, fieldNumber, instrumentNumber,
+            std::unique_ptr<astrometry::Wcs> wcs = fofclass.getWCS(iextn, fieldNumber);
+            fofclass.addCatalog(*wcs, thisAffinity, exposureNumber, fieldNumber, instrumentNumber,
                                 deviceNumber, iextn, isStar, vx, vy, vid);
         }
 
         //  Write all of our tables to output file
         {
             // Fields
-            FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::OverwriteFile, "Fields");
+            FITS::FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::OverwriteFile, "Fields");
             ft.copy(fieldTable);
         }
         {
             // Exposures
-            FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Exposures");
+            FITS::FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Exposures");
             ft.copy(exposureTable);
         }
 
         for (int i = 0; i < fofclass.instruments.size(); i++) {
             // Instrument tables
             // Update the device bounds in the table first
-            // const Instr &inst = *fofclass.instruments[i];
             const Instrument &inst = *fofclass.instruments[i];
-            vector<double> vxmin(inst.nDevices);
-            vector<double> vxmax(inst.nDevices);
-            vector<double> vymin(inst.nDevices);
-            vector<double> vymax(inst.nDevices);
+            std::vector<double> vxmin(inst.nDevices);
+            std::vector<double> vxmax(inst.nDevices);
+            std::vector<double> vymin(inst.nDevices);
+            std::vector<double> vymax(inst.nDevices);
             for (int j = 0; j < inst.nDevices; j++) {
                 vxmin[j] = floor(inst.domains[j].getXMin());
                 vxmax[j] = ceil(inst.domains[j].getXMax());
@@ -240,7 +235,7 @@ int main(int argc, char *argv[]) {
             instrumentTables[i].writeCells(vymin, "YMin");
             instrumentTables[i].writeCells(vymax, "YMax");
 
-            FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
+            FITS::FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, -1);
             ft.setName("Instrument");
             ft.setVersion(i + 1);  // might use this later, or put into extension name???
             ft.copy(instrumentTables[i]);
@@ -248,11 +243,11 @@ int main(int argc, char *argv[]) {
 
         {
             // Extension table
-            FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Extensions");
+            FITS::FitsTable ft(outCatalogName, FITS::ReadWrite + FITS::Create, "Extensions");
             ft.copy(extensionTable);
         }
 
-        fofclass.writeMatches(outCatalogName, minMatches = minMatches, allowSelfMatches = allowSelfMatches);
+        fofclass.writeMatches(outCatalogName, minMatches, allowSelfMatches);
 
     } catch (std::runtime_error &m) {
         quit(m, 1);

@@ -122,7 +122,7 @@ public:
 
     // Calculate full *5d* chisq relative to best prediction of itsMatch,
     // using full fitting covariance but *before* any weighting factor is applied.
-    virtual double trueChisq() const;
+    double trueChisq() const override;
 };
 
 class Match {
@@ -260,22 +260,22 @@ public:
     // Set the prior applied to all PMMatches - given in the I/O units
     static void setPrior(double pmPrior, double parallaxPrior);
 
-    virtual void solve() const;  // Recalculate best-fit PM
+    void solve() const override;  // Recalculate best-fit PM
 
     // Increment fitting chisq, beta, and alpha for this match.
     // Returned integer is the DOF count.
     // reuseAlpha=true will skip the incrementing of alpha.
-    virtual int accumulateChisq(double &chisq, DVector &beta, SymmetricUpdater &updater,
-                                bool reuseAlpha = false);
+    int accumulateChisq(double &chisq, DVector &beta, SymmetricUpdater &updater,
+                                bool reuseAlpha = false) override;
 
     // sigmaClip returns true if clipped,
     // and deletes the clipped guy if 2nd arg is true.
-    virtual bool sigmaClip(double sigThresh, bool deleteDetection = false);
+    bool sigmaClip(double sigThresh, bool deleteDetection = false) override;
 
     // Fitting chisq (not true one) for this match, and largest ratio
     // of true chisq to expected for any detection being fit.
     // Both arguments are updated with info from this match.
-    virtual double chisq(int &dofAccum, double &maxDeviateSq, bool dump = false) const;
+    double chisq(int &dofAccum, double &maxDeviateSq, bool dump = false) const override;
 
     //
     const PMSolution &getPM() const { return pm; }
@@ -291,8 +291,8 @@ public:
 
     // Get predicted position (and inverse covariance) for a Detection.
     // The argument is needed only if there is full PM solution.
-    virtual Vector2 predict(const Detection *d = nullptr) const;
-    virtual Matrix22 predictFisher(const Detection *d = nullptr) const;
+    Vector2 predict(const Detection *d = nullptr) const override;
+    Matrix22 predictFisher(const Detection *d = nullptr) const override;
 
 protected:
 private:
@@ -302,7 +302,7 @@ private:
 
     mutable PMSolution pm;  // Chisq-minimizing position/parallax/pm
 
-    virtual void prepare() const;      // Recalculate and cache, if needed:
+    void prepare() const override;      // Recalculate and cache, if needed:
     mutable PMCovariance pmFisher;     // Fisher matrix for PM that includes weights
     mutable PMCovariance pmInvFisher;  // Inverse of pmFisher
     mutable PMCovariance pmTrueCov;    // Expected cov matrix of PM.

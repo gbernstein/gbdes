@@ -199,7 +199,7 @@ const double POLYSTEP = 1. / 3600.;
 const string linearSuffix = "_cd";
 const string polySuffix = "_pv";
 
-Wcs *astrometry::readTPV(const img::Header &h, string name) {
+unique_ptr<Wcs> astrometry::readTPV(const img::Header &h, string name) {
     Orientation orientIn;
     LinearMap lm = ReadCD(&h, orientIn, name + linearSuffix);
 
@@ -241,7 +241,7 @@ Wcs *astrometry::readTPV(const img::Header &h, string name) {
     // Delete the polymap if we made it:
     delete pv;
     // Return the Wcs, which again makes its own copy of the maps (no sharing):
-    return new Wcs(&sm, tp, name, DEGREE, false);
+    return unique_ptr<Wcs>(new Wcs(&sm, tp, name, DEGREE, false));
 }
 
 Header astrometry::writeTPV(const Wcs &w) {
@@ -293,8 +293,8 @@ Header astrometry::writeTPV(const Wcs &w) {
 // Now a function that will fit a linear + polynomial + gnomonic deprojection
 // to an arbitrary Wcs
 //////////////////////////////
-Wcs *astrometry::fitTPV(Bounds<double> b, const Wcs &wcsIn, const SphericalCoords &tpvPole, string name,
-                        double color, double tolerance, double order) {
+unique_ptr<Wcs> astrometry::fitTPV(Bounds<double> b, const Wcs &wcsIn, const SphericalCoords &tpvPole,
+                                   string name, double color, double tolerance, double order) {
     int startOrder = 3;
     int maxOrder = 5;
     if (order > 0) {
@@ -444,5 +444,5 @@ Wcs *astrometry::fitTPV(Bounds<double> b, const Wcs &wcsIn, const SphericalCoord
     SubMap sm(pmlist, name, false);
     delete pv;
     // And return a Wcs built from this SubMap (Wcs owns the maps)
-    return new Wcs(&sm, tpvCoords, name, DEGREE, false);
+    return unique_ptr<Wcs>(new Wcs(&sm, tpvCoords, name, DEGREE, false));
 }
