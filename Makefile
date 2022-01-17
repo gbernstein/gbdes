@@ -1,7 +1,7 @@
 # These site-dependent items should be defined in environment:
 
 # CXX = g++-6 -fopenmp
-CXXFLAGS = -std=c++11 -fPIC
+CXXFLAGS = -std=c++17 -fPIC
 
 # TMV_DIR
 # CFITSIO_DIR
