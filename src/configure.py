@@ -146,7 +146,7 @@ def py_to_fits(val):
     
     if(vtype is int):
         return 'J'
-    elif(vtype is float):
+    elif((vtype is float) or (vtype is np.float64)):
         return 'D'
     elif(vtype is str):
         size=len(max(val,key=len))
@@ -186,7 +186,7 @@ def buildFieldTable(fields):
     dec =[]
     radius = []
     pmepoch = []
-    
+
     index = 0
     for k,v in fields.items():
         name.append(k)
@@ -196,7 +196,7 @@ def buildFieldTable(fields):
         pmepoch.append(v.pm_epoch)
         v.index = index
         index += 1
-        
+
     hdu = pf.BinTableHDU.from_columns(\
         pf.ColDefs( [pf.Column(name='NAME',format=py_to_fits(name),array=name),
                      pf.Column(name='RA',format=py_to_fits(ra),array=ra),
@@ -732,7 +732,7 @@ if __name__=='__main__':
                         f.distance(expo['coords'])<minDistance:
                     expo['FIELD'] = k
                     minDistance = f.distance(expo['coords'])
-    
+
     # Get rid of fields with only 1 exposure:
     for k in list(fields):
         count = 0
@@ -783,21 +783,21 @@ if __name__=='__main__':
             extn['DEVICE'] = instruments[inst].devices[extn['DEVICE']]
     
     # ------Now ready to write the output files-------
-    
+
     # Make the output FITS object
     outfits = pf.HDUList([pf.PrimaryHDU()])
-    
+
     # Write FIELDs, assign numerical indices
     outfits.append(buildFieldTable(fields))
-    
+
     # Write INSTRUMENTS, assign indices
     for index,inst in enumerate(sorted(instruments.keys())):
         instruments[inst].index = index
         outfits.append(buildInstrumentTable(instruments[inst]))
-        
+
     # Write EXPOSURES, assign indices
     outfits.append(buildExposureTable(exposures, fields, instruments))
-    
+
     # Now build the final (large) table of extensions.
     
     # Replace EXPOSURE name with integer index
@@ -819,7 +819,7 @@ if __name__=='__main__':
     for e in extensions:
         allAttributes.update(e.keys())
     allAttributes.discard('WCSIN')  # Already did this one above.
-    
+
     # Now create a column for every attribute we have
     for a in allAttributes:
         print("*** Getting",a)
@@ -838,7 +838,7 @@ if __name__=='__main__':
     thdu = pf.BinTableHDU.from_columns(pf.ColDefs(cols),
                                       name='Extensions')
     outfits.append(thdu)
-    
+
     # Write to FITS file
     outfits.writeto(outFile, overwrite=True)
     #Done!
