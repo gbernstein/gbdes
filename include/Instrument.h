@@ -34,11 +34,6 @@ public:
         Assert(mapNames.size() == nDevices);
         Assert(domains.size() == nDevices);
     }
-    // Everything cleaned up in destructor:
-    //~Instrument() {}
-    // No copying:
-    //Instrument(const Instrument &rhs) = delete;
-    //void operator=(const Instrument &rhs) = delete;
 };
 
 // Class that represents a single pointing of the telescope:

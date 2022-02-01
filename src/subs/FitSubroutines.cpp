@@ -1801,10 +1801,8 @@ void matchCensus(const typename S::MCat &matches, ostream &os) {
         dcount += mptr->fitSize();
         chi += mptr->chisq(dof, maxdev);
     }
-    cerr << "# Using " << to_string(matches.size()) << " matches with " << to_string(dcount)
-         << " total detections." << endl;
-    cerr << "#  chisq " << to_string(chi) << " / " << to_string(dof) << " dof maxdev " << to_string(maxdev)
-         << endl;
+    cerr << "# Using " << matches.size() << " matches with " << dcount << " total detections." << endl;
+    cerr << "#  chisq " << chi << " / " << dof << " dof maxdev " << maxdev << endl;
 }
 
 // Map and clip reserved matches
@@ -1822,18 +1820,16 @@ void clipReserved(typename S::Align &ca, double clipThresh, double minimumImprov
         int dof = 0;
         double chisq = ca.chisqDOF(dof, max, true);
         if (reportToCerr)
-            cerr << "Clipping " << to_string(mcount) << " matches with " << to_string(dcount)
-                 << " detections "
-                 << " chisq " << to_string(chisq) << " / " << to_string(dof) << " dof,  maxdev "
-                 << to_string(max) << " sigma" << endl;
+            cerr << "Clipping " << mcount << " matches with " << dcount << " detections "
+                 << " chisq " << chisq << " / " << dof << " dof,  maxdev " << max << " sigma" << endl;
 
         double thresh = sqrt(chisq / dof) * clipThresh;  // ??? expected chisq instead of dof?
-        if (reportToCerr) cerr << "  new clip threshold: " << to_string(thresh) << " sigma" << endl;
+        if (reportToCerr) cerr << "  new clip threshold: " << thresh << " sigma" << endl;
         if (thresh >= max) break;
         if (oldthresh > 0. && (1 - thresh / oldthresh) < minimumImprovement) break;
         oldthresh = thresh;
         nclip = ca.sigmaClip(thresh, true, clipEntireMatch);
-        if (reportToCerr) cerr << "Clipped " << to_string(nclip) << " matches " << endl;
+        if (reportToCerr) cerr << "Clipped " << nclip << " matches " << endl;
     } while (nclip > 0);
 }
 

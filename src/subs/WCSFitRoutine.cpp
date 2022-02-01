@@ -57,11 +57,8 @@ WCSFit::WCSFit(Fields &fields_, std::vector<std::shared_ptr<Instrument>> instrum
         extensions.emplace_back(std::move(extn));
 
         if (exposureColorPriorities.size() > 0) {
-            cerr << "in colorPrior" << endl;
             int colorPriority = exposureColorPriorities[iExposure];
-            cerr << "colorPrio: " << std::to_string(colorPriority) << endl;
             if (colorPriority >= 0) {
-                cerr << "adding colorExt" << endl;
                 std::unique_ptr<Astro::ColorExtension> ce(new typename Astro::ColorExtension);
                 ce->priority = colorPriority;
                 colorExtensions[i] = std::move(ce);
@@ -326,8 +323,8 @@ void WCSFit::setupMaps(astrometry::YAMLCollector &inputYAML, std::string fixMaps
   // Recalculate all parameter indices - maps are ready to roll!
   mapCollection.rebuildParameterVector();
 
-  cout << "# Total number of free map elements " << std::to_string(mapCollection.nFreeMaps()) << " with "
-       << std::to_string(mapCollection.nParams()) << " free parameters." << std::endl;
+  cout << "# Total number of free map elements " << mapCollection.nFreeMaps() << " with "
+       << mapCollection.nParams() << " free parameters." << std::endl;
 
   // Figure out which extensions' maps require a color entry to function
   whoNeedsColor<Astro>(extensions);
@@ -374,18 +371,18 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
         // Get rid of Detections with errors too high
         maxError *= astrometry::RESIDUAL_UNIT / astrometry::WCS_UNIT;
         purgeNoisyDetections<Astro>(maxError, matches, exposures, extensions);
-        std::cerr << "Matches size after purgeNoisyDetections: " << std::to_string(matches.size())
+        std::cerr << "Matches size after purgeNoisyDetections: " << matches.size()
                   << std::endl;
 
         PROGRESS(2, Purging sparse matches);
         // Get rid of Matches with too few detections
         purgeSparseMatches<Astro>(minMatches, matches);
-        std::cerr << "Matches size after purgeSparseMatches: " << std::to_string(matches.size()) << std::endl;
+        std::cerr << "Matches size after purgeSparseMatches: " << matches.size() << std::endl;
 
         PROGRESS(2, Purging out - of - range colors);
         // Get rid of Matches with color out of range (note that default color is 0).
         purgeBadColor<Astro>(minColor, maxColor, matches);
-        std::cerr << "Matches size after purgeBadColor: " << std::to_string(matches.size()) << std::endl;
+        std::cerr << "Matches size after purgeBadColor: " << matches.size() << std::endl;
 
         PROGRESS(2, Reserving matches);
         // Reserve desired fraction of matches
@@ -404,7 +401,7 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
         // Detections that were going to use it.
         for (auto i : badExposures) {
             cout << "WARNING: Shutting down exposure map " << i.first << " with only "
-                 << std::to_string(i.second) << " fitted detections " << std::endl;
+                 << i.second << " fitted detections " << std::endl;
             freezeMap<Astro>(i.first, matches, extensions, mapCollection);
         }
 
@@ -437,7 +434,7 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
         do {
             // Report number of active Matches / Detections in each iteration:
             {
-                std::cerr << "Matches size: " << std::to_string(matches.size()) << std::endl;
+                std::cerr << "Matches size: " << matches.size() << std::endl;
                 long int mcount = 0;
                 long int dcount = 0;
                 ca.count(mcount, dcount, false, 2);
@@ -445,10 +442,10 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
                 int dof = 0;
                 double chi = ca.chisqDOF(dof, maxdev, false);
                 if (verbose >= 1)
-                    std::cerr << "Fitting " << std::to_string(mcount) << " matches with "
-                              << std::to_string(dcount) << " detections "
-                              << " chisq " << std::to_string(chi) << " / " << std::to_string(dof)
-                              << " dof,  maxdev " << std::to_string(maxdev) << " sigma" << std::endl;
+                    std::cerr << "Fitting " << mcount << " matches with "
+                              << dcount << " detections "
+                              << " chisq " << chi << " / " << dof
+                              << " dof,  maxdev " << maxdev << " sigma" << std::endl;
             }
 
             // Do the fit here!!
@@ -459,9 +456,9 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
             ca.chisqDOF(dof, max, false);                    // Exclude reserved Matches
             double thresh = sqrt(chisq / dof) * clipThresh;  // ??? change dof to expectedChisq?
             if (verbose >= 1)
-                std::cerr << "After iteration: chisq " << std::to_string(chisq) << " / "
-                          << std::to_string(dof) << " dof, max deviation " << std::to_string(max)
-                          << "  new clip threshold at: " << std::to_string(thresh) << " sigma" << std::endl;
+                std::cerr << "After iteration: chisq " << chisq << " / "
+                          << dof << " dof, max deviation " << max
+                          << "  new clip threshold at: " << thresh << " sigma" << std::endl;
             if (thresh >= max || (oldthresh > 0. && (1 - thresh / oldthresh) < minimumImprovement)) {
                 // Sigma clipping is no longer doing much.  Quit if we are at full precision,
                 // else require full target precision and initiate another pass.
@@ -473,7 +470,7 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
                     oldthresh = thresh;
                     nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses, verbose >= 1);
                     if (verbose >= 0)
-                        std::cerr << "# Clipped " << std::to_string(nclip) << " matches " << std::endl;
+                        std::cerr << "# Clipped " << nclip << " matches " << std::endl;
                     continue;
                 } else {
                     // Done!
@@ -491,7 +488,7 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
                 if (clipEntireMatch && verbose >= 1) std::cerr << "-->clipping full matches" << std::endl;
                 continue;
             }
-            if (verbose >= 0) std::cerr << "# Clipped " << std::to_string(nclip) << " matches " << std::endl;
+            if (verbose >= 0) std::cerr << "# Clipped " << nclip << " matches " << std::endl;
 
         } while (coarsePasses || nclip > 0);
 

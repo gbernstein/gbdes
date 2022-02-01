@@ -66,12 +66,12 @@ void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
         // Get the boundaries of the device it uses
         Bounds<double> b = instruments[expo.instrument]->domains[extnptr->device];
         if (logging) {
-            cerr << "instrument, device: " << to_string(expo.instrument) << " " << to_string(extnptr->device)
+            cerr << "instrument, device: " << expo.instrument << " " << extnptr->device
                  << endl;
-            cerr << "bounds: " << to_string(b.getXMin()) << " " << to_string(b.getXMax()) << endl;
+            cerr << "bounds: " << b.getXMin() << " " << b.getXMax() << endl;
             double txw, tyw;
             extnptr->startWcs->toWorld(b.getXMin(), b.getYMin(), txw, tyw);
-            cerr << "check p1 " << to_string(txw) << " " << to_string(tyw) << endl;
+            cerr << "check p1 " << txw << " " << tyw << endl;
         }
         // Generate a grid of matched Detections
         const int nGridPoints = 512;  // Number of test points for map initialization
@@ -98,8 +98,8 @@ void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
             unique_ptr<Detection> dfit(new Detection);
             unique_ptr<Detection> dref(new Detection);
             if (logging && (i == 10)) {
-                cerr << "pix check " << to_string(xpix) << " " << to_string(ypix) << " " << to_string(xw)
-                     << " " << to_string(yw) << endl;
+                cerr << "pix check " << xpix << " " << ypix << " " << xw
+                     << " " << yw << endl;
             }
             dfit->xpix = xpix;
             dfit->ypix = ypix;

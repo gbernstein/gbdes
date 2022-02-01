@@ -40,10 +40,9 @@ FoFClass::FoFClass(Fields &fields_, std::vector<std::shared_ptr<Instrument>> ins
 
     fields.reserve(fields_.names().size());
     for (int i = 0; i < fields_.names().size(); i++) {
-        // for (int i = 0; i < instruments_.size(); i++)
-        std::unique_ptr<Field> f = std::unique_ptr<Field>(new Field);
+        std::unique_ptr<Field> f(new Field);
         f->name = fields_.names().nameOf(i);
-        f->projection = std::unique_ptr<astrometry::SphericalCoords>(fields_.projections()[i].get());
+        f->projection = std::unique_ptr<astrometry::SphericalCoords>(fields_.projections()[i]->duplicate());
         f->extent = fieldExtents[i];
         f->matchRadius = matchRadius;
         fields.emplace_back(std::move(f));
@@ -56,7 +55,7 @@ FoFClass::FoFClass(Fields &fields_, std::vector<std::shared_ptr<Instrument>> ins
     }
 
     // Set Exposures:
-    exposures = exposures_.getExposuresVector();
+    exposures = std::move(exposures_.getExposuresVector());
 }
 
 void FoFClass::getExtensionInfo(long iextn, std::string &thisAffinity, int &exposureNumber,
@@ -105,7 +104,6 @@ void FoFClass::getExtensionInfo(long iextn, std::string &thisAffinity, int &expo
         return;
     }
 
-    // std::vector<double> vx;
     std::string key;
     extensionTable.readCell(key, "XKEY", iextn);
     try {
@@ -117,7 +115,7 @@ void FoFClass::getExtensionInfo(long iextn, std::string &thisAffinity, int &expo
         vx.resize(vf.size());
         for (int i = 0; i < vf.size(); i++) vx[i] = vf[i];
     }
-    // std::vector<double> vy;
+
     extensionTable.readCell(key, "YKEY", iextn);
     try {
         ft.readCells(vy, key);
@@ -128,7 +126,7 @@ void FoFClass::getExtensionInfo(long iextn, std::string &thisAffinity, int &expo
         vy.resize(vf.size());
         for (int i = 0; i < vf.size(); i++) vy[i] = vf[i];
     }
-    // std::vector<long> vid;
+
     extensionTable.readCell(key, "IDKEY", iextn);
     try {
         //**/std::cerr << "Trying long read" << std::endl;
@@ -343,7 +341,7 @@ void FoFClass::sortMatches(int fieldNumber, int minMatches, bool allowSelfMatche
          iAffinity != fields[fieldNumber]->catalogs.end(); ++iAffinity) {
         const PointCat &pcat = *iAffinity->second;
         std::cerr << "Catalog for field " << fields[fieldNumber]->name << " affinity " << iAffinity->first
-                  << " with " << std::to_string(pcat.size()) << " matches " << std::endl;
+                  << " with " <<  pcat.size() << " matches " << std::endl;
 
         if (pcat.empty()) continue;
 
@@ -376,11 +374,11 @@ void FoFClass::sortMatches(int fieldNumber, int minMatches, bool allowSelfMatche
             }
         }  // end match loop
 
-        std::cerr << "...Kept " << std::to_string(matches) << " matches with "
-                  << std::to_string(sequence.size()) << " points." << std::endl;
+        std::cerr << "...Kept " << matches << " matches with "
+                  <<  sequence.size() << " points." << std::endl;
         pointCount += sequence.size();
     }  // end Affinity loop
 
-    std::cerr << "Total of " << std::to_string(matchCount) << " matches with " << std::to_string(pointCount)
+    std::cerr << "Total of " <<  matchCount << " matches with " <<  pointCount
               << " points." << std::endl;
 }
