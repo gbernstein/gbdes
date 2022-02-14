@@ -1,0 +1,72 @@
+\documentclass[11pt,preprint,flushrt]{aastex}
+\usepackage{graphicx,amsmath,subfigure,xcolor}
+\def\eqq#1{Equation~(\ref{#1})}
+\newcommand{\vx}{\mbox{\bf x}}
+\newcommand{\bfu}{\mbox{\bf u}}
+\newcommand{\bfa}{\mbox{\boldmath $\alpha$}}
+\begin{document}
+
+\slugcomment{Revised 11 Apr 2017}
+
+\title{Documentation for PhotoMap Classes}
+
+\author{G. M. Bernstein}
+\affil{Dept. of Physics \& Astronomy, University of Pennsylvania}
+\email{garyb@physics.upenn.edu}
+
+\section{Introduction}
+This \textsc{photometry} repository implements classes defining photometric transformations which have adjustable parameters.  The basic interface is the {\tt PhotoMap} (abstract) class, and the \texttt{PhotoMapCollection} class manages complex assemblages of these maps, and supervises their (de)serialization to (from) YAML-format files.
+
+These classes are almost completely analagous to the \texttt{PixelMap} and \texttt{PixelMapCollection} classes in the \textsc{astrometry} repository.  We therefore refer the reader here to the \textit{doc/PixelMap.tex} document in that repository for a detailed discussion of the design and implementation of those classes.  In this document we will therefore only describe those aspects of the photometric classes that differ from their astrometric cousins.  The major exception is that in photometry there is no analogy to a transformation to the celestial sphere.  Hence none of the sections in the \texttt{PixelMap} documentation that refer to world coordinate systems (WCS) or the \texttt{Wcs} class have any counterpart in the photometric codes, and can be ignored.
+
+\section{Dependences}
+The {\tt PhotoMap} classes are placed into the \texttt{photometry} namespace, and are dependent on the \textsc{gbutil} repository.
+Linear algebra is done with either Mike Jarvis's {\sc TMV} package or the \textsc{Eigen} package.  The \textit{gbutil/LinearAlgebra.h} file defines wrappers that can have either of these classes underneath the hood, and {\it PhotoMap.h} brings some of these typedefs into the \texttt{astrometry} namespace.  In particular, \texttt{PhotoMap} codes make heavy use {\tt DVector} for dynamically-dimensioned double-precision vectors. 
+
+See the \textit{README} file for more notes on installation.  Note that the code is written under the assumption of C++-11 (or higher) compliance by the compiler.
+
+\section{{\tt PhotoMap}}
+The fundamental routines in the \texttt{PhotoMap} class are maps from an input magnitude $m_{\rm in}$ to an output magnitude $m_{\rm out}$, and vice-versa:
+\begin{verbatim}
+class PhotoMap {
+    ...
+    virtual double forward(double magIn, const PhotoArguments& args) const=0;
+    virtual double inverse(double magOut, const PhotoArguments& args) const;
+    ...
+}
+\end{verbatim}
+In generall, we allow the forward transformations to be functions of $m_{\rm in}$ plus the quantities in the \texttt{PhotoArguments} structure defined as
+\begin{verbatim}
+class PhotoArguments {
+public:
+  PhotoArguments(): xDevice(NODATA), yDevice(NODATA), xExposure(NODATA),
+    yExposure(NODATA), color(NODATA) {}
+  double xDevice;
+  double yDevice;
+  double xExposure;
+  double yExposure;
+  double color;
+};
+\end{verbatim}
+In all extant cases, these transformations add some function of the \texttt{PhotoArguments} to $m_{\rm in}$ to yield $m_{\rm out},$ but nothing in the code precludes use of nonlinear magnitude functions.
+
+The arguments are intended to represent: (1) the $x$ and $y$ coordinates of the measurement on their particular detector (``device''); (2) the coordinates in a system that spans the entire focal plane and has origin at the telescope axis for a given exposures; and (3) the color of the source in some well-defined system.
+
+The \texttt{PhotoMap} therefore differs from \texttt{PixelMaps} in that the arguments to the transformation are specified in a special structure, and that the quantity being transformed is a single magnitude instead of two components of position.  \texttt{PhotoMap} code tends to be simpler as a consequence.
+
+All of the other methods of the \texttt{PhotoMap} interface are in analogy with astrometric counterparts---there are methods to get, set, and count the free parameters in each transformation; to get derivatives of the output with respect to these transformations; and to serialize and deserialize instances to YAML format.
+
+\section{Derived classes of {\tt PhotoMap}s}
+All of the astrometric transformations derived from \texttt{PhotoMap} behave as one-dimensional versions of corresponding \texttt{PixelMaps}.  These include the atomic transformations \texttt{IdentityMap, ConstantMap, LinearMap, ColorMap, PolyMap, TemplateMap,} and \texttt{PiecewiseMap}.  There is also the \texttt{SubMap}, which allows composition of any sequence of magnitude transformations.
+
+The serialization formats of each of these are similar as well, modulo the need for fewer parameters given the reduced dimensionality.
+
+\section{\texttt{PhotoMapCollection}}
+\label{pmc}
+As with astrometry, our photometric models for a set of data / reference catalogs, will usually have a large number of ``building block'' magnitude shifts that are put together (summed) in different combinations to maps parts of individual exposures.  {\tt PhotoMapCollection} (PMC) is a class that serves as a warehouse for all these building blocks, puts them together into any specified chain to form the complete photometric calibrations, and facilitates bookkeeping of the parameters of these building blocks within a global parameter vector during a fitting process.  The {\tt SubMap} can wrap any chain of {\tt PhotoMap}s from a PMC and keep track of where their parameters live within the global parameter vector.  The {\tt PhotoMapCollection} also controls the creation and destruction, serialization and de-serialization of a full complement of {\tt PhotoMap} components needed to calibrate a set of images.
+
+Our client codes for \texttt{PhotoMaps} access them exclusively through the PMC mechanisms described below. 
+
+There is little difference between the \texttt{PhotoMapCollection} usage and the \texttt{PixelMapCollection} described in the astrometric documentation, aside from the fact that the former does not have to keep track of WCS's.  Therefore we refer the reader to that documentation.
+
+\end{document}
