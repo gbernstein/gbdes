@@ -3,8 +3,6 @@ cmake_minimum_required(VERSION 3.14)
 # set the project name
 project(gbdes)
 
-#configure_file(config.h.in config.h)
-
 include(CheckLibraryExists)
 
 # specify the C++ standard
@@ -37,15 +35,6 @@ find_package(gbfits REQUIRED)
 find_package(astrometry REQUIRED)
 find_package(photometry REQUIRED)
 
-#find_library(ASTROMETRY
-#             NAMES astrometry
-#            PATHS ${PROJECT_SOURCE_DIR}/../gb_packages/astrometry/
-#             PATH_SUFFIXES obj
-#             REQUIRED)
-
-#set(GB_PACKAGES ${PROJECT_SOURCE_DIR}/../gb_packages)
-#message(STATUS "GB_PACKAGES: "  ${GB_PACKAGES})
-#add_subdirectory(gbutil)
 add_subdirectory(src)
 add_subdirectory(src/subs)
 add_subdirectory(pydir)
