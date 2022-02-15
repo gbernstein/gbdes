@@ -1,0 +1,12 @@
+ToDo list for astrometry/photometry utilities
+------------------
+
+Sigma clipping does differential correction to alpha/beta.
+
+Problem in inverse PiecewiseMap?
+
+PhotoMatch gets moved into gbdes & matched with Match
+
+Have a WCSFit/PhotoFit flag for just dumping alpha structure?
+
+Make Eigen/TMV compatible, using new gbutils - DONE

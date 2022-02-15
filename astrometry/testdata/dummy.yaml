@@ -1,0 +1,15 @@
+# A dummy YAML file for testing YAMLCollector
+BAND/DEVICE:
+  Type: Composite
+  Elements:
+    - BAND/DEVICE/Poly
+    - Identity
+BAND/DEVICE/Poly:
+  Type: Poly
+  Order: 4
+Identity:
+  Type: Identity
+i/N4:
+  Type: Special
+  Parameter: 7.5
+...

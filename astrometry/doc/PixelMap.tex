@@ -1,0 +1,550 @@
+\documentclass[11pt,preprint,flushrt]{aastex}
+\usepackage{graphicx,amsmath,subfigure,xcolor}
+\def\eqq#1{Equation~(\ref{#1})}
+\newcommand{\vx}{\mbox{\bf x}}
+\newcommand{\bfu}{\mbox{\bf u}}
+\newcommand{\bfa}{\mbox{\boldmath $\alpha$}}
+\begin{document}
+
+\slugcomment{Revised 11 Apr 2017}
+
+\title{Documentation for PixelMap Classes}
+
+\author{G. M. Bernstein}
+\affil{Dept. of Physics \& Astronomy, University of Pennsylvania}
+\email{garyb@physics.upenn.edu}
+
+\section{Dependences}
+The {\tt PixelMap} classes are placed into the {\tt astrometry} namespace, and make use of the spherical coordinate classes in {\it Astrometry.h}.
+ The \textsc{astrometry} codes are dependent on the \textsc{gbutil} repository.
+ As with the {\it Astrometry.h} classes, linear algebra is done with either Mike Jarvis's {\sc TMV} package or the \textsc{Eigen} package.  The \textit{gbutil/LinearAlgebra.h} file defines wrappers that can have either of these classes underneath the hood, and {\it Astrometry.h} brings some of these typedefs into the \texttt{astrometry} namespace.  In particular, \texttt{PixelMap} codes make heavy use of  {\tt Vector2} and {\tt Matrix22} for 2-dimensional double-precision vectors/matrices; and {\tt DVector} for arbitrary-dimension double-precision vector. 
+
+See the \textit{Astrometry.tex} for further detail on external software dependencies.  Note that the code is written under the assumption of C++-11 (or higher) compliance by the compiler.
+
+\section{{\tt PixelMap}}
+{\tt PixelMap} is an abstract base clase representing a map from one
+2d coordinate space (``pixel'' coords) to another (``world'' coords).
+Methods {\tt toWorld()} and {\tt toPix()} execute the forward and inverse maps, respectively.  
+An additional \texttt{color} argument can be supplied to the transformation; a \texttt{PixelMap} that depends on the source color will return \texttt{true} from the \texttt{needsColor()} method, and will usually throw
+an exception if its transformation methods are called without a color supplied.
+
+Methods {\tt  dWorlddPix}  and {\tt dPixdWorld()} return a $2\times2$ matrix giving the partial derivatives of the forward and inverse maps, respectively, at the specified coordinates and color.
+{\tt pixelArea} returns the world-coordinate area of a unit square in pixel space, {\it i.e.} returns the (absolute value of the) Jacobian determinant of the forward map at a specified point.
+
+Each {\tt PixelMap} can depend upon a vector of controlling parameters.  The current values of the parameter vector are accessed with {\tt setParams()} and {\tt getParams()}.  The number of parameters of the map is returned by {\tt nParams()}. 
+
+One can call {\tt toWorldDerivs()}, supplying a reference to a $2\times{\tt nparams()}$ matrix that will be filled with the partial derivatives $\partial[x,y]_{\rm world} / \partial {\bf p}$, where ${\bf p}$ is the parameter vector, evaluated at the supplied values of $[x,y]_{\rm pix}$.  Method {\tt toPixDerivs()} also fills a supplied matrix with the derivatives of the {\em world} coordinates with respect to parameters (even though one is requesting the pixel coordinates).
+
+There are no constraints on the nature of the ``pixel'' and ``world'' coordinate systems, despite the names.  No units are assumed.  The only quality of the pixel space assumed is that an interval $\Delta [x,y]_{\rm pix}=1$ is an appropriate step size for calculating numerical derivatives of the map to world coordinates.  But you also have the option to change this default pixel-space step size with {\tt setPixelStep()} or read it with {\tt getPixelStep()}.  Some implementations may choose to ignore {\tt setPixelStep()} if they have some natural scale in pixel space.
+
+Every {\tt PixelMap} also has a name string that is accessed with {\tt getName()}.  If no (or null) {\tt name} string is provided, a name {\tt map\_NN} will be assigned, with a running index number  {\tt NN}.  This convention is implemented in the base class constructor and should be propagated by any derived classes.
+
+Other methods that each {\tt PixelMap} implemenation is expected to have, in order to enable complete serialization and deserialization of these classes:
+\begin{itemize}
+\item {\tt duplicate()} returns a {\tt PixelMap*} pointing to a deep copy of itself. An exception is that if you have a {\tt SubMap} or {\tt Wcs} that is created with {\tt shareMaps=true,} then the original and the copy both contain only pointers to component {\tt PixelMaps} that they do not own.
+\item A static method {\tt type()} returns a short string that identifies the derived class,  e.g. ``{\tt Poly}'' for the {\tt PolyMap} class. The virtual method \texttt{getType()} should return the relevant \texttt{type} of any \texttt{PixelMap} instance.
+\item {\tt  write(YAML::Emitter\& os)} serializes all information needed to construct the state of the map to a YAML stream.
+\item \texttt{create(const YAML::Node\& node,
+			    bool\& defaulted,
+			    string name} is a static member function that will return a pointer to a fresh
+instance of the class constructed from the serialized form stored in the YAML node.  The \texttt{defaulted} variable is returned as \texttt{true} if the parameters took defaults instead of being specified.  The caller provides a name for the resultant deserialized \texttt{PixelMap}.
+\end{itemize}
+
+\section{Derived classes of {\tt PixelMap}s}
+Several specific types of coordinate transformations are derived from the abstract \texttt{PixelMap} base class.  
+Most are ``atomic,'' representing a particular functional form.  The \texttt{SubMap} class is a (non-atomic) composition of zero or more atomic transformations applied serially to the coordinates.  This section provides a functional description of each.
+
+\subsection{{\tt IdentityMap}}
+When you want a map that does nothing.  There are no parameters, and the derivatives of the map are identity matrices.  {\tt type()=''Identity''}.
+
+\subsection{{\tt ReprojectionMap}}
+This is a {\tt PixelMap} that embodies any map of the celestial sphere from one coordinate system to another that are both represented by a class derived from {\tt SphericalCoords}.  The {\tt ReprojectionMap} is constructed with
+\begin{verbatim}
+ReprojectionMap(const SphericalCoords& pixCoords,
+                const SphericalCoords& worldCoords,
+                double scale_=1.,
+                string name="");
+\end{verbatim}
+The ``pix'' and ``world'' coordinate systems are defined by their respective {\tt SphericalCoords} instances.  The {\tt PixelMap} is then defined via
+\begin{equation}
+\begin{array}{cc}
+x_{\rm pix} = {\rm lon}_{\rm pix}/{\tt scale} & y_{\rm pix} = {\rm lat}_{\rm pix}/{\tt scale}  \\
+x_{\rm world} = {\rm lon}_{\rm world}/{\tt scale} & y_{\rm world} = {\rm lat}_{\rm world}/{\tt scale} 
+\end{array}
+\end{equation}
+where the (lon,lat) positions mark the same point on the celestial sphere.  
+
+The {\tt ReprojectionMap} class will store duplicates of the two input {\tt SphericalCoord} instances.  Be careful if the input coordinate systems have {\tt shareOrient=true.}  There are no free parameters and inversion is analytic.
+\texttt{type()=''Reprojection''}.
+
+\subsubsection{Example}
+Suppose you want a {\tt PixelMap} that treats ecliptic coordinates as the ``pixel'' coordinates and ICRS as the ``world'' system.  And you want the {\tt PixelMap} to work in degree units rather than the radians that are native to the {\tt SphericalCoords} classes.  Here is the code:
+\begin{verbatim}
+ReprojectionMap map(SphericalEcliptic,
+                    SphericalICRS,
+                    DEGREE);
+double eclipticLon=1.7, eclipticLat=-0.5;  // ecliptic coords in degrees
+double icrsRA, icrsDec;     // Want these (in degrees)
+// Do a conversion:
+map.toWorld(eclipticLon, eclipticLat,
+            icrsRA, icrsDec);
+\end{verbatim}
+There are no free parameters in a {\tt ReprojectionMap}.  Note that it does not matter what coordinates are stored in the initial {\tt SphericalEcliptic} or {\tt SphericalICRS} used in the constructor: all that matters is the coordinate system that they specify.
+
+\subsection{{\tt ConstantMap}}
+The \texttt{ConstantMap} offsets coordinates by the two parameters $(dx,dy)$:
+\begin{align}
+x_{\rm world} = x_{\rm pix} + dx, &
+y_{\rm world} = y_{\rm pix} + dy.
+\end{align}
+The default offsets are zero, i.e. the transformation defaults to the identity. Inversion is analytic, and \texttt{type()=''Constant''}.
+
+\subsection{{\tt LinearMap}}
+{\tt LinearMap} is defined by the six-element parameter vector ${\bf p}$ and the formulae:
+\begin{align}
+x_{\rm world} & =  p_0 + p_1 x_{\rm pix} + p_2 y_{\rm pix} \\
+y_{\rm world} & =  p_3 + p_4 x_{\rm pix} + p_5 y_{\rm pix}.
+\end{align}
+The derivatives are all analytic and the {\tt pixelStep} is irrelevant.  The parameters default to those of an identity transformation. Inversion is analytic, and \texttt{type()=''Linear''}
+
+\subsection{{\tt PolyMap}}
+A {\tt PolyMap} is initialized with references to two instances of the class {\tt Poly2d} from the \textsc{gbutil} repository, such that
+\begin{align}
+x_{\rm world} & = \sum_{i,j} a_{ij} x_s^i y_s^j, \\
+y_{\rm world} & = \sum_{i,j} b_{ij} x_s^i y_s^j, \\
+x_s & \equiv \frac{2x_{\rm pix} - \left(x_{\rm max}+x_{\rm min}\right)}{ x_{\rm max}-x_{\rm min}}\\
+y_s & \equiv \frac{2y_{\rm pix} - \left(y_{\rm max}+y_{\rm min}\right)}{ y_{\rm max}-y_{\rm min}}\\
+\end{align}
+The pixel coordinates in a specified rectangular region are mapped into the $(-1,1)$ interval to stabilize the polynomial solutions, although there is no checking or requirement that coordinates lie in this region.
+The summation can either run over either: $0\le i \le \texttt{orderX},$  $0 \le j \le \texttt{orderY}$ (for \texttt{sumOrder=false}); or $0\le i+j \le \texttt{orderX}$ (\texttt{sumOrder=true}).
+The parameters of a {\tt PolyMap} object are the concatenation of the coefficients of the two polynomials ($x$ first, then $y$).  
+See the {\tt Poly2d} class code for documentation of the storage order of the polynomial coefficients. 
+The {\tt setToIdentity()} method sets the coefficients to yield the identity transformation, and this is the default value for the polynomial. \texttt{type()=''Poly''}.
+
+{\tt PolyMap} makes internal copies of the two {\tt Poly2d} objects at initialization. 
+{\tt PolyMap::toPix()} uses the {\tt PixelMap::NewtonInverse()} method, and {\em always} uses the values of {\tt xpix} and {\tt ypix} on input as initial guesses for the Newton method.
+A third construction parameter is a tolerance, specifying how accurate the solutions for inverse mappings must be.  The default value is $0.001/3600$ such that a {\tt toWorld()} call will be accurate to 1 milliarcsecond if the units of the world coordinates are degrees.  The {\tt setWorldTolerance()} method changes this value. 
+
+
+\subsection{\tt TemplateMap}
+The {\tt TemplateMap} applies a displacement found in a lookup table.
+One has the option of x, y, or radial transformations:
+\begin{align}
+  x_{\rm world} & = x_{\rm pix} + s f(x_{\rm pix}), \\
+  y_{\rm world} & = y_{\rm pix} + s f(y_{\rm pix}), \text{or} \\
+  \vx_{\rm world} & = \vx_{\rm pix} + s \frac{\vx_{\rm pix}-\vx_c}{|\vx_{\rm pix}-\vx_c|} f\left(
+          |\vx_{\rm pix}-\vx_c| \right), \\
+  f(u) & = \begin{cases}
+0 & u < a_0 \\
+v_j + \frac{u-a_j}{\Delta a} & j\Delta a \le u-a_0 < (j+1)\Delta a, \; 0\le j < N \\
+0 & u > a_0 + N\Delta a
+\end{cases}
+\end{align}
+The first two cases each operate in only a single cartesian
+  direction.  In the third (radial)
+case, we define the vector $\vx=(x,y)$ and
+the center $\vx_c$ of the distortion is specified on construction.
+The fourth line indicates that the displacement is interpolated linearly between values $v_j$ specified at linearly spaced nodes $a_j = a_0+ j \Delta a$.  
+There is a single free parameter, the scaling parameter
+$s$.  The nodal values $\{v_j\},$ the starting argument $a_0$ and increment $\Delta a$, and the center coordinates $(x_c,y_c)$ (if radial) are provided at construction.
+Inversion is done iteratively under the assumption that the displacements $v_j$ are comparable to or smaller than $\Delta a$.  The default parameter is $s=1$ and \texttt{type()=''Template''}.
+
+\subsection{\tt PiecewiseMap}
+The {\tt PiecewiseMap} has the same functional form as the \texttt{TemplateMap}.  The difference is that the nodal values $v_1\ldots v_{N-1}$ are the free parameters of the transformation, and there is no scaling factor $s$. [We set $v_0=v_N=0.$] These parameters default to $v_i=0$, i.e. an identity transformation.  Note that if you do not provide the starting parameter vector, you must specify the number of nodes desired for the map.  Inversion is done iteratively as for \texttt{TemplateMap}, and \texttt{type()=''Piecewise''}.
+
+\subsection{\texttt{ColorTerm}}
+The \texttt{ColorTerm} allows construction of chromatic astrometric solutions wherein a displacement is linearly dependent on the color $c$ of the source.  It modifies any other \texttt{PixelMap} function ${\bf m}$ as
+\begin{equation}
+\vx_{\rm world}= \vx_{\rm pix} + \left(c-c_{\rm
+    ref}\right)\left[{\bf m}(\vx_{\rm pix})-\vx_{\rm pix}\right]
+\end{equation}
+It is assumed here that the modified \texttt{PixelMap} is only a small deviation from the identity map.  The constructor is
+\begin{verbatim}
+ColorTerm(PixelMap* pm_, double referenceColor=0., string name="");
+\end{verbatim}
+and the instance assumes ownership of the modified map \texttt{pm}, i.e. will delete it in the destructor.  The free parameters of the \texttt{ColorTerm} are those of its owned map, as are the defaults.  The serialization has \texttt{type()=''Color''}, but there is no \texttt{ColorTerm::create()} method since the class code cannot deserialize all the potential types of owned maps.  The \texttt{PixelMapCollection} class described below can (de)serialize color terms.
+
+\subsection{Composite {\tt PixelMap}s}
+The power of the \texttt{PixelMap} is in the ability to compound a series of transformations into new transformations.  Such a composite transformation is represented by the \texttt{SubMap} class, which is derived from \texttt{PixelMap}.  One constructs a \texttt{SubMap} by providing an ordered list of pointers to the transformations which it composites:
+\begin{verbatim}
+SubMap(const list<PixelMap*>& pixelMaps, string name="", bool shareMaps=false); 
+\end{verbatim}    
+If \texttt{shareMaps=false}, \texttt{SubMap} will \texttt{duplicate()} each input map and assume ownership of the copies.  Otherwise it will just copy the pointers and assume that the client code will destroy the objects when we are done using them.  The compounded maps are called the \emph{elements} of the \texttt{SubMap}, and can nest other \texttt{SubMaps}.
+
+Mathematically, the \texttt{SubMap.toWorld()} transformation simply passes the ``world'' coordinates of one of its elements as the ``pixel'' coordinates of the next.  Derivatives are appropriately compounded when requested.  Inversion is done in backwards sequence through the elements; there is some danger of solution accuracy degrading as we pile up the tolerances of a long chain of elements' inversions.  The parameters vector of a \texttt{SubMap} is the concatenation of those of its elements.
+
+For serialization, \texttt{SubMap::type()=''Composite''}, but calling \texttt{SubMap::create()} directly will throw an exception.  This is because deserialization requires existence of the elements, so a \texttt{SubMap} cannot be deserialized in isolation.  The \texttt{PixelMapCollection} class described below is designed to orchestrate the (de)serialization of entire families of maps, including composite ones.
+Getting or setting parameters of the {\tt SubMap} results in the operation being transmitted to all the relevant component {\tt PixelMaps}.
+
+
+\section{World coordinate systems}
+A \textit{world coordinate system (WCS)} is usually defined as a map from some pixel system into a position on the celestial sphere.  To make a \texttt{PixelMap} class serve this purpose, we need to augment it with some prescription for mapping its output world coordinates to a specific location on the celestial sphere.  The \texttt{Wcs} class does precisely this.  We construct one with
+\begin{verbatim}
+Wcs(PixelMap* pm_, const SphericalCoords& nativeCoords_, string name="", 
+    double wScale_=DEGREE, bool shareMap_=false);
+\end{verbatim}
+This composes a \texttt{PixelMap} instance with a \texttt{SphericalCoords} instance, the latter defining a projection from $(x,y)$ to position on the sphere as described in the documentation for the \texttt{Astrometry} coordinate classes.  The \texttt{wScale} argument gives a numerical factor applied to the world coordinates (which are typically in degrees) before they are fed into the (lon, lat) system of the \texttt{SphericalCoords}, which are typically in radians.  The \texttt{shareMap} argument specifies whether the \texttt{Wcs} should make and own a \texttt{duplicate()} of the input map, or use the one owned elsewhere.
+
+\subsection{Reprojection and {\tt Wcs} as a {\tt PixelMap}}
+The {\tt Wcs} class implements the {\tt PixelMap} interface (but has no \texttt{create()} deserialization method of its own). In the simplest case, this is just wrapping the {\tt PixelMap} behavior of the {\tt pm} given on construction of the {\tt Wcs}.  However a call to {\tt reprojectTo()} changes this behavior
+ by defining a {\em target coordinate system} which may differ from the {\em native} coordinate system.  The target system is defined by a new \texttt{SphericalCoords} projection.
+The {\tt toWorld()} transformation implemented by the {\tt Wcs} is then defined as follows:
+\begin{enumerate}
+\item The input pixel coordinates $(x_{\rm pix},y_{\rm pix})$ are transformed to coordinates $({\it lon},{\it lat})$ by the {\tt PixelMap} that is wrapped by the {\tt Wcs}.
+\item The $({\it lon},{\it lat})$ coordinates are mapped to a location ${\bf x}_{\rm sky}$ on the celestial sphere using the native coordinate system supplied at construction of the {\tt Wcs}.
+\item The sky location ${\bf x}_{\rm sky}$ is mapped to a new pair of coordinates using the projection specified in a call to {\tt reprojectTo()}.  The coordinates in this projection are rescaled by ${\tt wScale}$ to yield the ``world'' coordinates $(x_w,y_w)$.
+\end{enumerate}
+In other words, when the {\tt Wcs} is accessed through the {\tt PixelMap} interface, it behaves as the original {\tt pm} map followed by a reprojection from the native coordinate system to a new target coordinate system.  The free parameters of the {\tt Wcs} are the free parameters of {\tt pm}---the coordinate systems are taken as fixed, with no adjustable parameters.  Keep in mind that when you provide \texttt{SphericalCoords} as the native or target system of a \texttt{Wcs} instance, the values of these coordinates are irrelevant; it is just the projection that we take from these inputs.
+
+\subsection{Added Methods}
+\texttt{Wcs} extends the \texttt{PixelMap} interface with these methods:
+\begin{itemize}
+\item {\tt getMap(), getScale(), getNativeCoords()} are accessors to the internal {\tt PixelMap}, the coordinate scaling factor, and the projection to the celestial sphere.
+\item {\tt getTargetCoords()} returns (a pointer to) the current target coordinates, if any (else returns zero).
+\item {\tt reprojectTo(const SphericalCoords\& targetCoords)} is described above.  A duplicate of {\tt targetCoords} is produced and owned by the {\tt Wcs} class.
+\item {\tt useNativeProjection()} discards any specified target coordinate system, so that the {\tt PixelMap} interface returns to using world coordinates in the native projection.
+\item {\texttt{toSky()} and \texttt{fromSky}} provide maps between the pixel coordinate system and \texttt{SphericalCoords}.
+\end{itemize}
+
+\section{\texttt{PixelMapCollection}}
+\label{pmc}
+
+When reconciling world-coordinate maps for a set of data / reference catalogs, it is typical to have a large number of ``building block'' coordinate maps that are put together in different combinations to maps parts of individual exposures.  {\tt PixelMapCollection} (PMC) is a class that serves as a warehouse for all these building blocks, puts them together into any specified chain to form the complete WCS transformations, and facilitates bookkeeping of the parameters of these building blocks within a global parameter vector during a fitting process.  The {\tt SubMap} can wrap any chain of {\tt PixelMap}s from a PMC and keep track of where their parameters live within the global parameter vector.  The {\tt PixelMapCollection} also controls the creation and destruction, serialization and de-serialization of a full complement of {\tt PixelMap} and {\tt Wcs} components needed to describe a set of images.
+
+Our client codes for \texttt{PixelMaps} access them exclusively through the PMC mechanisms described below. 
+
+\subsection{Concepts}
+A PMC consists of the following kinds of objects:
+\begin{itemize}
+\item {\it Atomic maps:} these are irreducible {\tt PixelMap}s.  Each element of the PMC must have a unique name, by which it is accessed.  The PMC maintains a global parameter vector that is the concatentation of all the parameters of its atomic maps.
+\item {\it Chains:} A composited sequence of atomic maps can be assigned to a named chain.  The name of the chain must not duplicate the name of any other chain or atomic map.  The parameters of a chain are the union of its member atomic maps' parameters.
+\item {\it WCSs:} A map (either atomic or chain) associated with a projection of world coordinates back to the sky, as described above.  Duplication of WCS names is not allowed, but a WCS can have the same name as an atomic or chain map.
+\end{itemize}
+
+The PMC can {\em issue} a pointer to a {\tt SubMap} that wraps any atomic map or chain in the collection---you request this by the name of the map or chain that you want.  You can use this {\tt SubMap} for mapping and fitting coordinates.  The {\tt SubMap} knows where the parameters of its constituent maps live within the PMC's global parameter vector.  The PMC keeps track of all the {\tt SubMap}s it has issued, keeps their parameter indices up to date, and deletes them upon destruction of the PMC.
+
+You can tell the PMC to fix the parameters of any atomic map (or chain of them) to their current values.  These will then no longer appear as free parameters in the {\tt PixelMap} interfaces to the {\tt SubMap}s.  You can later free these parameters.
+
+You can also {\em issue} a pointer to a {\tt Wcs} object that realizes any of the WCS systems that the PMC knows about.  Again, the request is by name, and the PMC keeps track of and deletes all the {\tt Wcs}'s it issues.
+
+In addition to {\em issuing} a realization of any map or WCS, the PMC can {\em clone} them, producing for you a pointer to a new {\tt SubMap} or {\tt Wcs} object.  The difference is that a clone is a fresh deep copy, decoupled from the global parameter vector of the PMC.  Unlike issued objects, these remain valid after the PMC itself is deleted.
+
+There are multiple ways to add new maps, chains, and WCS's to the PMC.  
+The PMC can {\em learn} an existing map, essentially creating and storing its own duplicate that you can access by the name of the original object.  Composite maps ({\it e.g.\/} {\tt SubMaps}) can be learned as well---they define a new chain, and their atomic elements are learned.  The PMC can also learn a WCS by being handed an existing {\tt Wcs} object.  A PMC can also learn the entire contents of another PMC.
+
+Whenever a PMC is learning about some existing object, there is a flag {\tt duplicateNamesAreExceptions} for the operation which determines the action taken if the object to be learned has a name that duplicates a name already in the PMC.
+If this flag is {\tt false} (the default), the new object is ignored and we assume that the previous object of the same name can be used in its place.  This is the desired situation when we are for example learning the WCS systems of many exposures that share common distortion maps for a given CCD.  If the flag is {\tt true}, then duplicate names throw exceptions.
+
+A chain can also be {\em defined} by specifying the chain of maps that it is made of.  A new WCS can be defined from giving the name of its coordinate map and supplying a {\tt SphericalCoords} object defining the projection onto the sky.
+
+At any point the definitions and current parameter values of all these elements can be serialized to a YAML-format stream.  (Optionally you can serialize only those elements needed to build a particular map or WCS).  The PMC can also read (deserialize) maps and WCS's from a YAML-format stream.  Indeed it is only via the PMC class that one can deserialize the more complex \texttt{PixelMap} children: \texttt{SubMap, ColorTerm, Wcs}, since these inherently involve deserializing multiple maps in polymorphic fashion.  The serialized formats are described in Section~\ref{serialize}.
+
+
+\subsection{Methods}
+\subsubsection{Building the collection}
+The constructor for {\tt PixelMapCollection} creates an empty collection.  The following methods expand the collection (see also the serialization methods below).  Note that all of the {\tt learn} methods take a {\tt duplicateNamesAreExceptions} flag as described above.
+\begin{itemize}
+\item {\tt learn(PixelMapCollection\& source)}: duplicate the names, characteristics, and current parameters of everything in the {\tt source} collection.
+\item {\tt learnMap(const PixelMap\& pm)}: duplicate the name, characteristics, and current parameters of {\tt pm} into this collection.  Note that if {\tt pm} is a {\tt SubMap}, all its component maps are learned as well. 
+You can specify a chain by nesting other chains, but internally the PMC will always flatten the chain into a series of atomic maps.
+ If {\tt pm} is a {\tt Wcs}, it is learned as a new chain including a {\tt ReprojectionMap}, not as a new WCS.
+\item {\tt learnWcs(const Wcs\& pm)}: duplicate the name and projection of {\tt wcs} and learn its underlying {\tt PixelMap} as well. 
+\item {\tt defineChain(string chainName, const list<string>\& elements)}: Define a new map chain with the given name and compositeing the maps named by the strings in {\tt elements}.
+\item {\tt defineWcs(string wcsName, const SphericalCoords\& nativeCoords, string mapName,
+		   double wScale = DEGREE)}: define a WCS system to be the map described by {\tt mapName} followed by projection to the sky described by the {\tt nativeCoords} system. 
+               \end{itemize}
+
+A {\tt SubMap} that is issued by a {\tt PixelMapCollection}
+is aware of where the parameters of its elements live within a master parameter vector for all the maps in the collection.  The PMC also assigns each atomic map in its collection a serial number, and the \texttt{SubMap} can report the number of atomic maps it uses and their serial numbers.  The relevant calls for access to these kinds of information are
+\begin{verbatim}
+class SubMap: public PixelMap {
+    ...
+    const PixelMap* getMap(int i) const;
+    int nMaps() const;
+    int startIndex(int iMap) const;
+    int nSubParams(int iMap) const;
+    int mapNumber(int iMap) const;
+    ...
+};
+\end{verbatim}
+
+\subsubsection{Extracting collection elements}
+These methods produce pointers to {\tt SubMap}s or {\tt Wcs}'s realizing the maps and WCS's known to the collection.  The {\tt issue} methods give pointers to objects maintained by this {\tt PixelMapCollection} and linked to its global parameter vector.  The {\tt clone} methods return pointers to deep copies that are decoupled from this PMC.  All throw exceptions if an unknown name is requested.
+\begin{verbatim}
+SubMap* issueMap(string mapName);
+Wcs* issueWcs(string wcsName);
+PixelMap* cloneMap(string mapName);
+Wcs* cloneWcs(string wcsName);
+\end{verbatim}
+
+\subsubsection{Parameter manipulation and bookkeeping}
+\begin{itemize}
+\item {\tt  void setParams(const DVector\& p)}: set the global parameter vector from {\tt p}.
+\item {\tt  DVector getParams()}: return the global parameter vector.
+\item {\tt  int nParams():} return the size of the global parameter vector.
+\item {\tt void setFixed(list<string> nameList, bool isFixed)}: Declare that the parameters of all the maps with names in {\tt nameList} are to be fixed (freed) if {\tt isFixed=true} ({\tt false}).  If a map's parameters are fixed, then they are removed from the global parameter vector.  Any issued {\tt SubMap}s that refer to this map are updated to indicate appropriately smaller number of free parameters and index reference for all parameters are updated.  If any of the names is of a chain, then all members of the chain have their parameters fixed (or freed).
+\item {\tt void setFixed(string name, bool isFixed)}: same as above, just freeing/fixing a single map.
+\item {\tt bool getFixed(string name)}: report whether parameters of the map with {\tt name} are free or fixed.  Note that a chain is considered free if \emph{any} of its constituent atoms have free parameters.
+\item {\tt bool mapExists(string name)}: reports whether there is an atomic map or a chain with this {\tt name}.
+\item {\tt bool wcsExists(string name)}: reports whether there is a WCS with this {\tt name}.
+\item {\tt int nWcs()}: report number of WCS's known to this collection.
+\item {\tt int nMaps()}: report number of maps known to this collection (atomic maps plus defined chains).
+\item {\tt bool isAtomic(string name)}: returns \texttt{true} if the named map is atomic.
+\item {\tt int nAtomicMaps()}: report number of atomic maps known to this collection.
+\item {\tt int nFreeMaps()}: report number of atomic maps known to this collection that have free parameters.
+\end{itemize}
+
+There are a few other methods, see the code for documentation.
+
+\section{Serialization}
+\label{serialize}
+We choose the YAML format for serialization of the \texttt{PixelMap, Wcs,} and \texttt{Astrometry} classes because its concise and easy for humans to compose and parse.  YAML nodes can hold scalar values (integers, floats, strings), ordered lists of other nodes, or key/value maps (which we will call dictionaries to avoid confusion with our pixel maps).  We do not make use of any of the more complex capabilities of YAML, such as cross-referencing or variables.  For an introduction to YAML syntax, see \url{???}.  You'll figure it out as soon as you see the examples below.
+
+\subsection{Structure of the YAML file}
+The root node of a serialized PMC is always a dictionary.  The keys in the root dictionary are one of these three strings:
+\begin{enumerate}
+\item The string \texttt{PixelMapCollection}.  This is just a magic word that is present so you can tell that the YAML file is indeed a serialized PixelMapCollection.  The associated value is irrelevant.
+\item The string \texttt{WCS}.  The associated value is a nested dictionary, which specifies all of the \texttt{Wcs} members of the PMC.
+\item Any other key is taken as the name of a \texttt{PixelMap}.  The associated value will be a nested dictionary that specifies the \texttt{PixelMap}.
+\end{enumerate}
+
+The \texttt{WCS} dictionary is itself composed of key/value pairs where each key is the name of a \texttt{Wcs}  and the value is a dictionary describing the pixel maps and projections defining it.  The format for this is documented in Section~\ref{wcsserial}.
+
+\subsection{Deserialization factory}
+The deserialization code for \texttt{PixelMaps} is a little tricky because the resultant object may be any of the derived types.  The \texttt{PixelMapCollection} deserialization code follows a ``factory'' design.  As noted above, the map name is going to become the name of the \texttt{PixelMap}, and the value will be a dictionary.  This dictionary must have the key \texttt{Type} whose value is a string matching the output of the static \texttt{type()} method of one of the derived classes.  The PMC code maintains a register of the derived \texttt{Types} and the \texttt{create()} static methods for each such type.  PMC then hands off the YAML dictionary to the specified derived type's creator, which will return the constructed instance of appropriate type.  This is added to the collection.
+
+For the factory to work, it must be made aware of all possible derived \texttt{PixelMaps} that it may need to deserialize.  This is accomplished by calling the PMC's static method \texttt{registerMapType} with the desired derived type as a template.  For example, here is some code that is called automatically when the first \texttt{PixelMapCollection} is created:
+\begin{verbatim}
+  registerMapType<IdentityMap>();
+  registerMapType<ReprojectionMap>();
+  registerMapType<PolyMap>();
+  registerMapType<LinearMap>();
+  registerMapType<ConstantMap>();
+\end{verbatim}
+There is no need to register the \texttt{ColorTerm, Wcs,} or \texttt{SubMap} types, since \texttt{PixelMapCollection} already has code to handle these special cases.
+If you plan to use any other types of \texttt{PixelMap}, however, you will have to arrange for the registration to occur before you deserialize any files.
+
+The deserialization code recognizes the \texttt{Color} type and will use its factory mechanism to deserialize the map that the color term multiplies.  Likewise the deserialiation of a \texttt{WCS} and \texttt{Composite} types follow special branches in the deserialization codes.
+
+\subsection{Formats for \texttt{PixelMaps} elements}
+\label{pixmapserial}
+Every \texttt{PixelMap} is serialized as a dictionary node in the YAML hierarchy.  The only key common to all maps is the \texttt{Type} as described above.  The rest of the keys are specific to derived types.  The simplest way to describe them all is probably to just give an example of each.  
+
+\begin{verbatim}
+PixelMapCollection: This is the magic key to signal a PMC
+#
+# An Identity map, no keys except for type:
+map1:
+  type: Identity
+# 
+mapconst:
+  Type: Constant
+  # The parameters of the ConstantMap are the offsets,
+  # and will default if omitted.
+  Parameters: [-6.56e-06, 5.89e-06]
+#
+maplin:
+  Type: Linear
+  # The LinearMap has six parameters, defaults to [0,1,0,0,0,1]
+  Coefficients: [4.214e-05, 0.999, -0.00013, 5.680-06, 0.0001, 1.0]
+#
+mappoly:
+  Type: Poly
+  # PolyMap can specify the scaling region for x and y.  If omitted,
+  # defaults to range (-1,1) in each variable.
+  XMin: 0
+  XMax: 2048
+  YMin: 0
+  YMax: 4096
+  #
+  # Each coordinate's Poly2d serialization follows
+  XPoly:
+    # What max order term is X?
+    OrderX: 4
+    # This bool says whether we restrict sum of orders to OrderX, or 
+    # whether we will have an OrderY that gives independent max order of y
+    SumOrder: true
+    Coefficients: [-0.931... see gbutil/Poly2d.cpp for coefficient ordering...]
+  YPoly:
+    SumOrder: true
+    OrderX: 4
+    # if omitted or set to all zeros, coefficients set to identity 
+    Coefficients: [-0.082... ]
+  # Optionally give tolerance on inversion
+  Tolerance: 2.777777777777778e-07
+#
+mapcolor:
+  Type: Color
+  # The ColorTerm needs a reference color, which defaults to 0
+  Reference: 0.61
+  # The value associated with the Function key is a dictionary
+  # that serializes the PixelMap the ColorTerm modifies, in
+  # this case a constant shift:
+  Function:
+    Type: Constant
+    Parameters: [-4.36949-06, 6.0020e-06]
+\end{verbatim}
+
+The \texttt{TemplateMap} is a little different in that the lookup table it uses is assumed to be stored in yet another YAML file somewhere.  Thus the serialization just gives the name of this file and the key under which the desired table is stored in that table.  The code for (de)serializing the lookup tables is in the file \textit{gbutil/Lookup1d.cpp}.  This code will look for files in directories listed in the environment variable \texttt{CAL\_PATH}.  If this is not present in the environment, the current directory is searched.  The lookup-table file will specify whether this is an $x, y,$ or radial transformation, and if radial, what the center is. 
+\begin{verbatim}
+Y/N1/rings:
+  Type: Template
+  # The TemplateMap will read its lookup table from another file, given here:
+  Filename: astrorings4.yaml
+  # Give the key in that file for the desired lookup table:
+  LowTable: N1
+  # The free parameter is the scaling of the template.  If absent, defaults to 1
+  Parameter: -0.4336267550801242
+\end{verbatim}
+
+Composite maps take a simple form, just giving a ordered list of the names of the maps of which it is composed.  We see here how YAML has two different formats for lists.
+\begin{verbatim}
+0640-34:
+  Type: Composite
+  Elements:
+    - mappoly
+    - 0640/dcr
+Y/N1:
+  Type: Composite
+  Elements: [N1, N1color, Ypoly]
+\end{verbatim}
+
+Piecewise???
+
+\subsection{Formats for \texttt{Wcs} elements}
+\label{wcsserial}
+Under the \texttt{WCS} key of the YAML root-level dictionary we will find the serializations of any WCS's known to the PMC.  Again we illustrate the format with an example:
+\begin{verbatim}
+WCS:
+  C3:
+    Type: WCS
+    # All Wcs's have type WCS.  Then they must give the name
+    # of the PixelMap they modify.  This one is simple, it is
+    # the WCS for "pixel" coordinates that are already in ICRS RA/Dec:
+    #
+    MapName: Identity
+    # Next comes the project from world coordinates to the sphere.
+    # See the Astrometry documentation for serialization formats
+    # for SphericalCoords.
+    Projection:
+      Type: ICRS
+      RA: 0
+      Dec: 0
+    # This gives scaling between the world coordinates and the (radian-valued)
+    # lon,lat coordinates used by the SphericalCoors
+    Scale: 0.0174532925199433
+  D157528/N1:
+    Type: WCS
+    MapName: D157528/N1/base
+    # 
+    # This WCS uses a more complex coordinate system, a Gnomonic projection.
+    Projection:
+      Type: Gnomonic
+      Orientation:
+        RA: 52.64120833333333
+        Dec: -28.024055
+        PA: 0
+      Xi: 0
+      Eta: 0
+    Scale: 0.0174532925199433
+\end{verbatim}
+
+\section{Implementing a new {\tt PixelMap}}
+To derive a functioning class from {\tt PixelMap}, the minimal requirement is to implement the two point-mapping methods {\tt toPix()} and {\tt toWorld()}, and the {\tt duplicate()} method.  The (de-)serialization  routines must be implemented if this functionality is to be used. 
+All other {\tt PixelMap} methods have default implementations in the base class, if your map has no free parameters.  The parameter access routines and derivative routines must be defined if there are free parameters. 
+
+It would be common for the forward map {\tt toWorld(double xpix, double ypix, double\& xworld, double\& yworld)} to be defined by some formula for your map.  Sometimes the inverse map is easily expressed analytically, but if not, the base class defines the protected method
+\begin{verbatim}
+void NewtonInverse(double xworld, double yworld, 
+                   double& xpix, double& pix,
+  	           double worldTolerance,
+		   double color) const;
+\end{verbatim}
+which can be used to solve for the inverse map {\tt toPix()} by using the known forward map {\tt toWorld()} and its derivative.  The solution is done using Newton's iteration: the input values of ${\bf x}_p={\tt (xpix,ypix)}$ is taken as an initial guess of the inverse solution.  The initial guess is mapped to a world point $\hat {\bf x}_w$ using the forward map, and the iteration follows
+\begin{equation}
+{\bf x}_p \rightarrow {\bf x}_p + \left( \frac{\partial {\bf x}_w}{\partial {\bf x}_p}\right)^{-1} ({\bf x}_w - \hat{\bf x}_w).
+\end{equation}
+The iteration continues until $|{\bf x}_w - \hat{\bf x}_w|$ is below {\tt worldTolerance} or until more than {\tt PixelMap::NewtonInverse()::maxIterations} is exceeded (this is coded to 10).  Very simple, but unless your starting guess is in a region that is beyond some singularity of the map, it should do well.  {\em Note that it is advantageous to submit a starting {\tt xpix,ypix} that was the solution of a neighboring object.}  An {\tt AstrometryError} is thrown if the Newton iterations do not converge.
+
+The derivative method {\tt dWorlddPix()} is implemented in the base class by a finite-difference estimate using the {\tt getPixelStep()} value as a step size for the simple numerical derivatives.  {\tt dPixdWorld()} is implemented in the base class by taking the matrix inverse of {\tt dWorlddPix()},  and {\tt pixelArea()} is implemented as the determinant of the numerical forward derivatives.
+
+All of the routines related to map parameters are implemented in the base class to have the proper behavior for a map that has {\em no} free parameters.  If your map does have adjustable free parameters, you will have to implement {\tt nParams(), setParams(), getParams(),} and the {\tt toWorldDerivs()} and {\tt toPixDerivs()} that return derivatives with respect to parameters.
+
+\subsubsection{Serialization}
+All of the (de-)serialization of {\tt PixelMaps} and WCS's is intended to be done via the {\tt PixelMapCollection} methods.  Remember that if you will be deserializing any new kind of atomic map type, you will need to put this in your code before doing any deserializing:
+\begin{verbatim}
+PixelMapCollection::registerMapType<NewKindOfMap>()
+\end{verbatim}
+And of course you will need to have defined a unique \texttt{type()} for your class, and coded up \texttt{write()} and \texttt{create()} methods that serialize and restore your class.
+
+\section{TPV maps}
+
+The FITS WCS standard defines maps from pixel to sky coordinates that can be represented by keyword/value pairs in FITS headers.  These could all, in principle, be represented as \texttt{PixelMaps}.
+In practice we do not (yet) attempt to represent the full range of WCS maps sanctioned by the FITS standards.  We implement only the pseudo-standard {\tt TPV} map used by Emmanuel Bertin's {\it SCAMP} program (also sometimes labeled as a {\tt TAN} map).
+These maps follow a proposal for a FITS WCS standard that was never formally adopted, and has some oddities.  But it it widely used.  I have implemented a specific subset of the standard that is used by Emmanuel.
+This code is not in this \textsc{astrometry} repository, but can be found as the \texttt{TPVMap} functions in the \textsc{gbdes} repository.
+
+We provide a little bit of documentation of that standard here and how it can be translated into \texttt{PixelMap} language.
+
+
+\subsubsection{The FITS standard}
+The map from $(x_{\rm pix},y_{\rm pix})$ to celestial coordinates has three parts in the FITS WCS standard:
+\begin{enumerate}
+\item A linear mapping from pixel coordinates to ``intermediate world coordinates'' $(x_1,y_1)$ defined by
+\begin{eqnarray}
+x_1 & = & {\tt CD1\_1}(x_{\rm pix}-{\tt CRPIX1}) + {\tt CD1\_2}(y_{\rm pix}-{\tt CRPIX2}) \\
+y_1 & = & {\tt CD2\_1}(x_{\rm pix}-{\tt CRPIX1}) + {\tt CD2\_2}(y_{\rm pix}-{\tt CRPIX2}) .
+\end{eqnarray}
+Quantities in {\tt typewriter font} are FITS keywords.
+This map can clearly be implemented as a {\tt LinearMap}.  The output units are defined by {\tt CRUNIT[12]}, which are string-valued FITS fields that are supposed to have the value {\tt 'deg'}.  The {\it TPVMap} code currently assumes this is true, without checking.
+\item A polynomial map that transforms the $(x_1,y_1)$ coordinates into the $(\xi,\eta)$ coordinates in a projection of the celestial sphere.  The polynomial definition is as usual:
+\begin{eqnarray}
+\xi & = & \sum_{ij} a_{ij} x_1^i y_1^j \\
+\eta & = & \sum_{ij} b_{ij} x_1^i y_1^j.
+\end{eqnarray}
+The polynomial coefficients are assigned FITS keywords by a quirky convention:
+\begin{equation}
+\begin{array}{c|c}
+{\tt PV1\_0} = a_{00} & {\tt PV2\_0} = b_{00} \\
+{\tt PV1\_1} = a_{10} & {\tt PV2\_1} = b_{01} \\
+{\tt PV1\_2} = a_{01} & {\tt PV2\_2} = b_{10} \\
+{\tt PV1\_4} = a_{20} & {\tt PV2\_4} = b_{02} \\
+{\tt PV1\_5} = a_{11} & {\tt PV2\_5} = b_{11} \\
+{\tt PV1\_6} = a_{02} & {\tt PV2\_6} = b_{20} \\
+{\tt PV1\_7} = a_{30} & {\tt PV2\_7} = b_{03} \\
+{\tt PV1\_8} = a_{21} & {\tt PV2\_8} = b_{12} \\
+{\tt PV1\_9} = a_{12} & {\tt PV2\_9} = b_{21} \\
+{\tt PV1\_10} = a_{03} & {\tt PV2\_10} = b_{30} \\
+{\tt PV1\_12} = a_{40} & {\tt PV2\_12} = b_{04} \\
+{\tt PV1\_13} = a_{31} & {\tt PV2\_13} = b_{13} \\
+{\tt PV1\_14} = a_{22} & {\tt PV2\_14} = b_{22} \\
+{\tt PV1\_15} = a_{13} & {\tt PV2\_14} = b_{31} \\
+{\tt PV1\_16} = a_{04} & {\tt PV2\_14} = b_{40}
+\end{array}
+\end{equation}
+Note there are no {\tt PV[12]\_3} or {\tt PV[12]\_11} terms (according to the convention they are meant to be coefficients for radial $r$ and $r^3$ terms, which are not analytic at the origin and hence rarely useful).  The FITS convention is that any missing coefficient is zero, hence the order of the polynomial is determined by the largest ${\tt PV}x\_y$ that is present in the FITS header.
+\item A deprojection from the $(\xi,\eta)$ coordinates onto the celestial sphere.  Many projections are in principle possible and specified by the {\tt CTYPE[12]} keywords, but SCAMP always uses the gnomonic projection that is declared by setting {\tt CTYPE1}$=${\tt RA---TAN} and {\tt CTYPE2}$=${\tt DEC--TAN}, or {\tt RA---TPV} and {\tt DEC--TPV}.  Any other values for these keywords throw an {\tt AstrometryError}.  The projection pole RA and Dec in the ICRS system are given as degree values in the fields {\tt CRVAL1} and {\tt CRVAL2}, respectively.  The gnomonic projection is assumed to have its $\eta$ axis pointing along the north ICRS meridian, {\it i.e.} position angle zero.
+\end{enumerate}
+
+\subsubsection{Implementing {\tt TPV} as a {\tt Wcs}}
+The FITS {\tt TPV} standard is implemented as a {\tt Wcs} having its {\tt nativeCoords} equal to a {\tt Gnomonic} projection oriented to the ICRS meridian at the projection pole.  The {\tt Wcs} wraps a {\tt SubMap} consisting of a {\tt LinearMap} followed by a {\tt PolyMap}.  
+If no {\tt PV} terms are found in the header, the polynomial map is omitted and the linear map is used without it.
+
+We declare three functions that can be used to convert between FITS-standard headers and our {\tt astrometry} classes.
+\begin{itemize}
+\item {\tt Wcs* readTPV(const img::Header\& h, string name="")} can read a FITS header, extract all the keywords described above to specify a WCS, and return a pointer to a new {\tt Wcs} object implementing this transformation.  An optional name is assigned to the {\tt Wcs}.  It component {\tt SubMap} has the same name.
+\item {\tt img::Header writeTPV(const Wcs\& w)} writes a FITS header meeting the TPV pseudo-standard.  This will throw an exception if the input {\tt Wcs} is not in the form of a {\tt LinearMap} and/or {\tt PolyMap} in sequence.
+\item {\tt Wcs* fitTPV} is a function that will fit a TPV-form WCS to approximate the behavior of an arbitrary {\tt Wcs} provided as  input.  The full declaration is
+\begin{verbatim}
+Wcs* fitTPV(Bounds<double> b,
+           const Wcs& wcsIn,
+           const SphericalCoords& tpvPole,
+           string name="",
+           double color=0.,
+           double tolerance=0.0001*ARCSEC/DEGREE,
+           double order=-1);
+\end{verbatim}
+The polynomial coefficients of the output TPV-format map are solved to minimize the RMS deviation from the {\tt WcsIn} over the rectangular region {\tt b} (see {\it gbutil/Bounds.h} for info on this class).   The polynomial order is as given (should be $\le5$ to conform to TPV standard).  The default behavior is to try orders $3,4,5$ until the RMS residual is $<{\tt tolerance}$.  There are {\tt startOrder} and {\tt maxOrder} constants defined in {\it TPVMap.cpp}, currently 3 and 5, respectively.  If {\tt maxOrder} is exceeded, an {\tt AstrometryError} is thrown.  Note that the usual convention for FITS WCS systems is to express world coordinates in degrees, so the default {\tt tolerance} is 0.1 milliarcsec.  The output {\tt Wcs} is defined to have its projection be {\tt Gnomonic} about the {\tt tpvPole} position.
+\end{itemize}
+
+\end{document}
