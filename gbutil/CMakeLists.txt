@@ -1,31 +1,6 @@
-cmake_minimum_required(VERSION 3.14)
+add_library(gbutil src/BinomFact.cpp src/Expressions.cpp src/Lookup1d.cpp src/Poly2d.cpp src/Shear.cpp 
+            src/Table.cpp src/odeint.cpp src/Interpolant.cpp src/Poisson.cpp src/Pset.cpp src/StringStuff.cpp
+            src/fft.cpp)
 
-# specify the C++ standard
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-
-# set the project name
-project(gbutil)
-
-#configure_file(gbutil-config.cmake.in gbutil-config.cmake)
-
-find_package(yaml-cpp REQUIRED)
-add_compile_definitions(USE_YAML=TRUE)
-
-include(FindPkgConfig)
-pkg_search_module(FFTW3 REQUIRED fftw3)
-include_directories(${FFTW3_INCLUDES})
-
-# TMV or Eigen must be available, but TMV is preferred
-find_package(TMV QUIET)
-if(TMV_FOUND)
-    add_compile_definitions(USE_TMV=TRUE)
-else()
-    find_package(Eigen3 QUIET)
-    if(NOT Eigen3_FOUND)
-        message(FATAL_ERROR "Either TMV or Eigen3 must be available")
-    endif()
-    add_compile_definitions(USE_EIGEN=TRUE)
-endif()   
-
-add_subdirectory(src)
+target_include_directories(gbutil PUBLIC ${PROJECT_SOURCE_DIR}/gbutil/include)
+target_link_libraries(gbutil PUBLIC Eigen3::Eigen ${FFTW3_LIBRARIES} yaml-cpp)

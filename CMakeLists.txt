@@ -30,12 +30,12 @@ else()
     add_compile_definitions(USE_EIGEN=TRUE)
 endif()   
 
-find_package(gbutil REQUIRED)
-find_package(gbfits REQUIRED)
-find_package(astrometry REQUIRED)
-find_package(photometry REQUIRED)
+add_subdirectory(gbutil)
+add_subdirectory(gbfits)
+add_subdirectory(astrometry)
+add_subdirectory(photometry)
 
-add_subdirectory(src)
 add_subdirectory(src/subs)
+add_subdirectory(src)
 add_subdirectory(pydir)
 
