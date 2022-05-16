@@ -20,6 +20,8 @@ testbin/*
 
 # Standard stuff:
 build
+install
+build_cmake
 *.o
 .depend
 *.log

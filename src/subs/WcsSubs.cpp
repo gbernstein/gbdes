@@ -86,7 +86,6 @@ void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
         vector<int> vx(nGridPoints);
         for (int i = 0; i < vx.size(); i++) vx[i] = i;
         vector<int> vy = vx;
-        std::srand(123);
         std::random_shuffle(vy.begin(), vy.end());
         double xstep = (b.getXMax() - b.getXMin()) / nGridPoints;
         double ystep = (b.getYMax() - b.getYMin()) / nGridPoints;

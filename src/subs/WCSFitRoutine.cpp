@@ -228,7 +228,18 @@ void WCSFit::setupMaps(astrometry::YAMLCollector &inputYAML, std::string fixMaps
       // (the code will ignore those which already are Identity)
       std::set<std::string> exposureMapNames;
       for (auto const &expoPtr : exposures) {
-          if (expoPtr && !expoPtr->name.empty()) exposureMapNames.insert(expoPtr->name);
+          if (expoPtr && !expoPtr->name.empty()) {
+              // Check if the exposure maps are composite, and if so add the component elements
+              if (pmcInit->mapExists(expoPtr->name)) {
+                  std::set<string> dependentElements = pmcInit->dependencies(expoPtr->name);
+                  for (std::string depElem : dependentElements) {
+                      exposureMapNames.insert(depElem);
+                  }
+              }
+              else {
+                exposureMapNames.insert(expoPtr->name);
+              }
+          }
       }
 
       auto replaceThese = degen.replaceWithIdentity(exposureMapNames);
