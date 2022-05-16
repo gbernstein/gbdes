@@ -13,6 +13,10 @@ YAMLCollector::YAMLCollector(string specs, string magic_): magic(magic_) {
   // Split specs at commas
   auto speclist = split(specs, ',');
   for (auto spec : speclist) {
+    // Allow empty inputs:
+    if (spec.size() == 0) {
+      continue;
+    }
     // Split each spec at '@' sign
     auto regname = split(spec,'@');
     string expr = "";  // Default will be to match anything
