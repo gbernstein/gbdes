@@ -52,7 +52,11 @@ PYBIND11_MODULE(wcsfit, m) {
                 astrometry::SphericalICRS pole(ra, dec);
                 astrometry::Orientation orientIn(pole);
                 return astrometry::Gnomonic(orientIn.getPole(), orientIn);
-            }));
+            }))
+            .def("getOrientMatrix", [](astrometry::Gnomonic &self) {
+                const astrometry::Orientation* orient=self.getOrient();
+                return orient->m();
+            });
 
     py::class_<astrometry::LinearMap, astrometry::PixelMap>(m, "LinearMap")
             .def(py::init<astrometry::DVector::Base const &>());
@@ -78,6 +82,7 @@ PYBIND11_MODULE(wcsfit, m) {
                  py::arg("shareMap_") = false)
             .def("reprojectTo", &astrometry::Wcs::getTargetCoords)
             .def("getTargetCoords", &astrometry::Wcs::getTargetCoords)
+            .def("getNativeCoords", &astrometry::Wcs::getNativeCoords)
             .def("toWorld", [](astrometry::Wcs &self, double x, double y) {
                 double ra;
                 double dec;
@@ -123,6 +128,15 @@ PYBIND11_MODULE(wcsfit, m) {
 
     py::class_<ExtensionObjectSet>(m, "ExtensionObjectSet").def(py::init<std::string>());
 
+    py::class_<astrometry::PixelMapCollection>(m, "PixelMapCollection")
+            .def("allMapNames", &astrometry::PixelMapCollection::allMapNames)
+            .def("getMapType", &astrometry::PixelMapCollection::getMapType)
+            .def("dependencies", &astrometry::PixelMapCollection::dependencies)
+            .def("orderAtoms", &astrometry::PixelMapCollection::orderAtoms)
+            .def("getParamDict", &astrometry::PixelMapCollection::getParamDict)
+            .def("getWcsNativeCoords", &astrometry::PixelMapCollection::getWcsNativeCoords,
+                 py::arg("wcsName"), py::arg("degrees") = false);
+
     ////////////// WCS-fitting class ////////////////////////
     py::class_<WCSFit>(m, "WCSFit")
             .def(py::init<Fields &, std::vector<std::shared_ptr<Instrument>>, ExposuresHelper,
@@ -150,7 +164,8 @@ PYBIND11_MODULE(wcsfit, m) {
                  py::arg("chisqTolerance") = 0.001, py::arg("clipEntireMatch") = false,
                  py::arg("divideInPlace") = false, py::arg("purgeOutput") = false,
                  py::arg("minColor") = -10.0, py::arg("maxColor") = 10.0)
-            .def("saveResults", &WCSFit::saveResults);
+            .def("saveResults", &WCSFit::saveResults)
+            .def_readonly("mapCollection", &WCSFit::mapCollection);
 
     ///////////// Friends of Friends Fitting Class //////////////////
     py::class_<FoFClass>(m, "FoFClass")

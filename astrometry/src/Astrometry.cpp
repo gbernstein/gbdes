@@ -1106,16 +1106,12 @@ namespace astrometry {
   void
   Gnomonic::setLonLat(double xi, double eta) {
     x[2] = pow(1.+xi*xi+eta*eta , -0.5);
-    //if (x[2] < 0.5){
-    //   cerr << xi << "  " << eta << "  " << x[2] << endl;
-    //}
     x[0] = xi*x[2];
     x[1] = eta*x[2];
   }
   void
   Gnomonic::getLonLat(double& xi, double& eta) const {
     if (x[2]<=0.){ 
-      //cerr << x[0] << "  " << x[1] << "  " << x[2] << endl;
       throw AstrometryError("Gnomonic projection invalid for z<=0.");
     }
     xi = x[0]/x[2];
