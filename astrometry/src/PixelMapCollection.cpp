@@ -135,6 +135,61 @@ PixelMapCollection::getParams() const {
   return p;
 }
 
+std::map<std::string, astrometry::DVector>
+PixelMapCollection::getParamDict() const {
+  map<string, linalg::Vector<double>> outMap;
+  for (auto& melpair : mapElements) {
+    const MapElement& map = melpair.second;
+    if (map.isFixed) continue;
+    int nSub = map.nParams;
+    if (nSub<=0) continue;
+    if (!map.atom) 
+      cerr << "mapElement is not atomic: " << melpair.first << " params: " << nSub << endl;
+    Assert(map.atom);
+    DVector p = map.atom->getParams().subVector(0,nSub);
+    string mapName = melpair.first;
+    outMap.insert(std::pair<string, astrometry::DVector>(mapName, p));
+    }
+  return outMap;
+}
+
+std::string
+PixelMapCollection::getMapType(string mapName) const {
+  std::string mapType;
+  auto melpair = mapElements.find(mapName);
+  if (melpair == mapElements.end())
+    throw AstrometryError("Could not find mapName " + mapName);
+  
+  const MapElement& mel = melpair->second;
+  if (mel.atom) {
+    mapType = mel.atom->getType();
+  }
+  else {
+    mapType = SubMap::type();
+  }
+  return mapType;
+}
+
+DVector PixelMapCollection::getWcsNativeCoords(string wcsName, bool degrees) const {
+  auto wcspair = wcsElements.find(wcsName);
+  if (wcspair == wcsElements.end())
+    throw AstrometryError("Could not find wcsName " + wcsName);
+  
+  const WcsElement& wcs = wcspair->second;
+  const SphericalCustomBase *coords = dynamic_cast<const SphericalCustomBase*>(wcs.nativeCoords);
+  if (coords == nullptr) {
+    throw AstrometryError("NativeCoords subclass does not have 'orient' property");
+  }
+  SphericalICRS pole = coords->getOrient()->getPole();
+  DVector lonLat(2);
+  pole.getRADec(lonLat[0], lonLat[1]);
+  if (degrees) {
+    lonLat[0] /= DEGREE;
+    lonLat[1] /= DEGREE;
+  }
+  return lonLat;
+}
+
 void
 PixelMapCollection::copyParamsFrom(const PixelMap& pm) {
   auto melpair = mapElements.find(pm.getName());
@@ -873,12 +928,8 @@ PixelMapCollection::read(istream& is, string namePrefix) {
       if (keyName == magicKey) continue;
 
       string name = namePrefix + keyName;
-      //cerr << i->second << endl;
+      
       const YAML::Node& node=i->second;
-      //cerr << node["XMin"] << endl;
-      //cerr << node["XMin"].as<string>() << endl;
-      //string s = typeid(node["XMin"]).name();
-      //cerr << "XMin type: " << s << endl;
       // If there is a node named "WCS" it holds all of our WCS definitions
       if (keyName=="WCS") {
 	if (!node.IsMap()) 

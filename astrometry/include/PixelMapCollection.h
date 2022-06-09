@@ -204,6 +204,7 @@ namespace astrometry {
     // Set/get the master parameter vector for all PixelMaps
     void setParams(const DVector& p);
     DVector getParams() const;
+    std::map<std::string, astrometry::DVector> getParamDict() const;
     int nParams() const {return parameterCount;}
 
     // Set parameters of a member map by copying from
@@ -219,11 +220,14 @@ namespace astrometry {
     int nFreeMaps() const {return freeCount;}
     bool mapExists(string name) const {return mapElements.count(name);}
     vector<string> allMapNames() const;
+    string getMapType(string mapName) const;
 
     // And the WCS specified for this collection:
     int nWcs() const {return wcsElements.size();}
     bool wcsExists(string name) const {return wcsElements.count(name);}
     vector<string> allWcsNames() const;
+    // Get center orientation of a WCS element, default is in radians:
+    DVector getWcsNativeCoords(string wcsName, bool degrees=true) const;
 
     // Return whether the map given by first name depends on
     // a map of the second name.
@@ -233,6 +237,9 @@ namespace astrometry {
     // Includes self.  Assumes no dependence cycles.
     set<string> dependencies(string mapName) const;
 
+    // Produce a list giving the atomic transformation sequence needed to implement a
+    // specified map. Assumes no dependence cycles.
+    list<string> orderAtoms(string mapName) const;
 
     // This is a routine useful for debugging: return the name of the atomic
     // map that a certain parameter in the vector belongs to.
@@ -313,10 +320,6 @@ namespace astrometry {
 
     // Check that all referenced names exist, and that there are no circular dependences.
     void checkCompleteness() const;
-
-    // Produce a list giving the atomic transformation sequence needed to implement a
-    // specified map. Assumes no dependence cycles.
-    list<string> orderAtoms(string mapName) const;
 
     // **** Static structures / methods for serialization: ****
     // This routine will write a complete YAML key/value to emitter for this PhotoMap
