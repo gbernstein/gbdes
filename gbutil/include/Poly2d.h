@@ -52,6 +52,9 @@ namespace poly2d {
     void write(std::ostream& os, int precision=DEFAULT_PRECISION) const;  
     static Poly2d* create(std::istream& is);  // Build polynomial from serialized string
 
+    // Multiply by another polynomial:
+    Poly2d operator* (Poly2d polyB);
+
 #ifdef USE_YAML
     // Serialize to/from YAML
     void write(YAML::Emitter& os) const;

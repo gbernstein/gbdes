@@ -319,3 +319,23 @@ Poly2d::fillFromVector(const DVector& v) {
   }
 }
 
+Poly2d Poly2d::operator*(Poly2d polyB) {
+  int orderX = this->getOrderX() + polyB.getOrderX();
+  int orderY = this->getOrderY() + polyB.getOrderY();
+  DMatrix product(orderX + 1, orderY + 1);
+  int iA, iB, jA, jB;
+  DVector AVector = getC();
+  DVector BVector = polyB.getC();
+  for (int m = 0; m < AVector.size(); m++) {
+    for (int n = 0; n < BVector.size(); n++) {
+      this->powersOfIndex(m, iA, jA);
+      polyB.powersOfIndex(n, iB, jB);
+      int outOrderX = iA + iB;
+      int outOrderY = jA + jB;
+      if ((outOrderX > orderX) || (outOrderY > orderY)) continue;
+      product(outOrderX, outOrderY) = AVector[m] * BVector[n];
+    }
+  }
+  return Poly2d(product);
+}
+
