@@ -92,6 +92,7 @@ PYBIND11_MODULE(wcsfit, m) {
             });
 
     m.def("readWCSs", &readWCSs);
+    m.def("readTPVFromSIP", &astrometry::readTPVFromSIP, py::arg("header"), py::arg("name") = "");
 
     /////////// Data Classes /////////////////
     py::class_<Fields>(m, "Fields")
@@ -135,7 +136,8 @@ PYBIND11_MODULE(wcsfit, m) {
             .def("orderAtoms", &astrometry::PixelMapCollection::orderAtoms)
             .def("getParamDict", &astrometry::PixelMapCollection::getParamDict)
             .def("getWcsNativeCoords", &astrometry::PixelMapCollection::getWcsNativeCoords,
-                 py::arg("wcsName"), py::arg("degrees") = false);
+                 py::arg("wcsName"), py::arg("degrees") = false)
+            .def("dependencies", &astrometry::PixelMapCollection::dependencies);
 
     ////////////// WCS-fitting class ////////////////////////
     py::class_<WCSFit>(m, "WCSFit")

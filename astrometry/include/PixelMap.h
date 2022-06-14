@@ -257,6 +257,56 @@ namespace astrometry {
     virtual void write(YAML::Emitter& os) const;
 #endif
     virtual string getType() const {return type();}
+    Matrix33 getPixMatrix() {
+      cerr << "start get pix" << endl;
+      auto gnom = dynamic_cast<const astrometry::Gnomonic*>(pix);
+      cerr << "did dyn cast" << endl;
+      Matrix33 tmpMatrix;
+      tmpMatrix.setToIdentity();
+      if (!gnom) { 
+        cerr << "isn't gnom" << endl;
+        if (dynamic_cast<const astrometry::SphericalICRS*>(pix)) {
+          cerr << "is spher ICRS" << endl;
+          Vector2 lonlat = pix->getLonLat();
+          cerr << lonlat[0] << " " << lonlat[1] << endl;
+        }
+        return tmpMatrix;
+      }
+      return gnom->getOrient()->m();
+    }
+    Matrix33 getWorldMatrix() {
+      auto gnom = dynamic_cast<const astrometry::Gnomonic*>(world);
+      Matrix33 tmpMatrix;
+      tmpMatrix.setToIdentity();
+      if (!gnom) return tmpMatrix;
+      return gnom->getOrient()->m();
+    }
+    Vector2 getPixPole() {
+      auto gnom = dynamic_cast<const astrometry::Gnomonic*>(pix);
+      if (!gnom) {
+        auto icrs = dynamic_cast<const astrometry::SphericalICRS*>(pix);
+        if (!icrs) {
+          Vector2 lonlat;
+          cerr << "not gnom or icrs" << endl;
+          return lonlat;
+        }
+        return icrs->getLonLat();
+      }
+      SphericalICRS pole = gnom->getOrient()->getPole();
+      Vector2 lonlat = pole.getLonLat();
+      return lonlat;
+    }
+    Vector2 getWorldPole() {
+      auto gnom = dynamic_cast<const astrometry::Gnomonic*>(world);
+      if (!gnom) {
+        Vector2 lonlat;
+        cerr << "not gnom" << endl;
+        return lonlat;
+      }
+      SphericalICRS pole = gnom->getOrient()->getPole();
+      Vector2 lonlat = pole.getLonLat();
+      return lonlat;
+    }
   private:
     SphericalCoords* pix;
     SphericalCoords* world;

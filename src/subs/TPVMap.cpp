@@ -244,6 +244,159 @@ unique_ptr<Wcs> astrometry::readTPV(const img::Header &h, string name) {
     return unique_ptr<Wcs>(new Wcs(&sm, tp, name, DEGREE, false));
 }
 
+double astrometry::NChooseK(int n, int k) {
+    int num = 1;
+    int denom = 1;
+    for (int l=0; l < k; l++) {
+        num *= (n - l);
+        denom *= (k - l);
+    }
+    return num / denom;
+}
+
+DMatrix astrometry::binom(DVector xyTerm, int power) {
+    DMatrix outBinom(power + 1, power + 1, 0);
+    for (int k = 0; k <= power; k++) {
+        outBinom(power - k, k) = NChooseK(power, k) * pow(xyTerm(0), power - k) * pow(xyTerm(1), k);
+    }
+    return outBinom;
+}
+
+shared_ptr<Wcs> astrometry::readTPVFromSIP(const map<string, double> &header, string name) {
+    
+    double lon, lat;
+    double crpix1, crpix2;
+    double cd11, cd12, cd21, cd22;
+    // Get parameters of the linear map
+    crpix1 = header.find("CRPIX1")->second;
+    crpix2 = header.find("CRPIX2")->second;
+    cd11 = header.find("CD1_1")->second;
+    cd12 = header.find("CD1_2")->second;
+    cd21 = header.find("CD2_1")->second;
+    cd22 = header.find("CD2_2")->second;
+    DMatrix cd(2, 2);
+    cd(0, 0) = cd11;
+    cd(0, 1) = cd12;
+    cd(1, 0) = cd21;
+    cd(1, 1) = cd22;
+
+    DVector plin(6);
+    plin[0] = -cd11 * crpix1 - cd12 * crpix2;
+    plin[1] = cd11;
+    plin[2] = cd12;
+    plin[3] = -cd21 * crpix1 - cd22 * crpix2;
+    plin[4] = cd21;
+    plin[5] = cd22;
+    LinearMap lm = LinearMap(plin);
+
+    // Set up native coordinates
+    lon = header.find("CRVAL1")->second;
+    lat = header.find("CRVAL2")->second;
+    SphericalICRS pole(lon * DEGREE, lat * DEGREE);
+    Orientation orientIn;
+    orientIn.set(pole, 0.);
+    Gnomonic tp(orientIn.getPole(), orientIn);
+
+    int a_order = header.find("A_ORDER")->second;
+    int b_order = header.find("B_ORDER")->second;
+
+    DMatrix ac(b_order+1, a_order+1, 0.0);
+    DMatrix bc(b_order+1, b_order+1, 0.0);
+
+    // Fill ac and bc
+    for (int m = 0; m <= a_order; m++) {
+        for (int n = 0; n <= (a_order - m); n++) {
+            std::string keyString = "A_" + std::to_string(m) + "_" + std::to_string(n);
+            double val = header.find(keyString)->second;
+            ac(m, n) = val;
+        }
+    }
+    for (int m = 0; m <= b_order; m++) {
+        for (int n = 0; n <= (b_order - m); n++) {
+            std::string keyString = "B_" + std::to_string(m) + "_" + std::to_string(n);
+            bc(m, n) = header.find(keyString)->second;
+        }
+    }
+
+    //Get SIP expressions
+    DMatrix cdInv = cd.inverse();
+    DVector uSum(Poly2d(a_order).getC());
+    DVector vSum(Poly2d(b_order).getC());
+    DVector uPrime = cdInv.row(0);
+    DVector vPrime = cdInv.row(1);
+    uSum(1) = uPrime(0);
+    uSum(2) = uPrime(1);
+    vSum(1) = vPrime(0);
+    vSum(2) = vPrime(1);
+    for (int m = 0; m <= a_order; m++) {
+        for (int n = 0; n <= (a_order - m); n++) {
+            Poly2d term1(binom(uPrime, m));
+            Poly2d term2(binom(vPrime, n));
+            Poly2d polyTerm = term1 * term2;
+            DVector outPoly = polyTerm.getC();
+            uSum.head(outPoly.size()) += ac(m, n) * outPoly;
+        }
+    }
+
+    for (int m = 0; m <= b_order; m++) {
+        for (int n = 0; n <= (b_order - m); n++) {
+            Poly2d term1(binom(uPrime, m));
+            Poly2d term2(binom(vPrime, n));
+            Poly2d polyTerm = term1 * term2;
+            DVector outPoly = polyTerm.getC();
+            vSum.head(outPoly.size()) += bc(m, n) * outPoly;
+        }
+    }
+
+    DVector sipx = cd(0, 0) * uSum + cd(0, 1) * vSum;
+    DVector sipy = cd(1, 0) * uSum + cd(1, 1) * vSum;
+
+    Poly2d p1(a_order);
+    Poly2d p2(b_order);
+    p1.setC(sipx);
+    p2.setC(sipy);
+
+    // Build PolyMap with PV terms
+    PixelMap *pv = nullptr;
+    string polyName = name + polySuffix;
+
+    if (p1.nCoeffs() > 1) {
+        // Obtained a valid x polynomial.
+        if (p2.nCoeffs() > 1) {
+            // Also have valid y polynomial.  Make the map:
+            pv = new PolyMap(p1, p2, polyName, Bounds<double>(-1., 1., -1., 1.), POLYSTEP);
+        } else {
+            // Did not find PV2's.  Install default:
+            Poly2d p2Identity(1);
+            DVector coeffs = p2Identity.getC();
+            coeffs[p2Identity.vectorIndex(0, 1)] = 1.;
+            p2Identity.setC(coeffs);
+            pv = new PolyMap(p1, p2Identity, polyName, Bounds<double>(-1., 1., -1., 1.), POLYSTEP);
+        }
+    } else {
+        // Did not obtain any PV1's.  If there are PV2's, install
+        // identity map for x coeff:
+        if (p2.nCoeffs() > 1) {
+            Poly2d p1Identity(1);
+            DVector coeffs = p1Identity.getC();
+            coeffs[p1Identity.vectorIndex(1, 0)] = 1.;
+            p1Identity.setC(coeffs);
+            pv = new PolyMap(p1Identity, p2, polyName, Bounds<double>(-1., 1., -1., 1.), POLYSTEP);
+        }
+    }
+    list<PixelMap *> pmlist;
+    pmlist.push_back(&lm);
+    if (pv) pmlist.push_back(pv);
+    // Create a SubMap that owns a duplicate of these one or two maps (no sharing):
+    SubMap sm(pmlist, name, false);
+    // Delete the polymap if we made it:
+    delete pv;
+    // Return the Wcs, which again makes its own copy of the maps (no sharing):
+    
+    return shared_ptr<Wcs>(new Wcs(&sm, tp, name, DEGREE, false));
+    
+}
+
 Header astrometry::writeTPV(const Wcs &w) {
     Header h;
     const LinearMap *lm = nullptr;
