@@ -1,25 +1,35 @@
 
+#import numpy as np
+#import matplotlib.pyplot as plt
+#from glob import glob
+#from astropy.io import fits
+
 from lsst.daf.butler import Butler
-from lsst.daf.persistence import Butler as ButlerGen2
 import wcsfit
-#import wcsfit_test
+
+#from lsst.daf.persistence import Butler as ButlerGen2
+
 import numpy as np
 import sip_tpv
 from astropy.io import fits
 import astropy.time
+import os.path
+import copy
 
 useButler = False
 
 if useButler:
     butler = Butler('/repo/main', collections="HSC/runs/RC2/w_2021_34/DM-31524")
     #butler = ButlerGen2('/datasets/hsc/repo/rerun/DM-23243/SFM/DEEP')
-    
+    skyMap = butler.get('skyMap', skymap='hsc_rings_v1')
+    print("got skymap")
 #else:
 if True:
-    refactor_db_file = "/home/csaunder/stack_projects/gbdes_tests/refactor_tests/refactor.fof"
-    #refactor_db_file = "/home/csaunder/stack_projects/gbdes_tests/refactor_tests/gen3.fof"
+    #refactor_db_file = "/home/csaunder/stack_projects/gbdes_tests/refactor_tests/refactor.fof"
+    refactor_db_file = "/home/csaunder/stack_projects/gbdes_tests/refactor_tests/gen3.fof"
     refactor_db = fits.open(refactor_db_file)
 
+prefix = '/home/csaunder/stack_projects/gbdes_tests/refactor_tests/'
 
 # GBDES defaults:
 reserveFraction = 0.05
@@ -43,7 +53,7 @@ inputMaps = '/home/csaunder/stack_projects/gbdes_tests/polyExposure.astro'
 fixMaps = ''
 useInstruments = '.*'
 skipExposures = ''
-outCatalog = 'wcscat.fits'
+outCatalog = 'wcscat3.fits'
 outWcs = 'wcsfit.wcs'
 starCatalog = 'starcat.fits'
 colorExposures = ''
@@ -130,11 +140,16 @@ def convert_sip_to_tpv(butler_wcs, name=""):
     plin[5] = cd[1, 1]
     linearMap = wcsfit.LinearMap(plin)
 
-    pole = wcsfit.SphericalICRS(fits_metadata.get('CRVAL1') * wcsfit.DEGREE,
-                                fits_metadata.get('CRVAL2') * wcsfit.DEGREE)
-    orientIn = wcsfit.Orientation()
-    orientIn.set(pole, 0.0)
-    tp = wcsfit.Gnomonic(orientIn.getPole(), orientIn)
+    #pole = wcsfit.SphericalICRS(fits_metadata.get('CRVAL1') * wcsfit.DEGREE,
+    #                            fits_metadata.get('CRVAL2') * wcsfit.DEGREE)
+    #orientIn = wcsfit.Orientation()
+    #orientIn.set(pole, 0.0)
+    #tp = wcsfit.Gnomonic(orientIn.getPole(), orientIn)
+    print("starting gnomonic")
+    tp = wcsfit.Gnomonic(fits_metadata.get('CRVAL1') * wcsfit.DEGREE,
+                         fits_metadata.get('CRVAL2') * wcsfit.DEGREE)
+    print("gnomonic tested")
+
 
     a_order = int(fits_metadata.get('A_ORDER', 0))
     b_order = int(fits_metadata.get('B_ORDER', 0))
@@ -150,7 +165,7 @@ def convert_sip_to_tpv(butler_wcs, name=""):
     pv1, pv2 = pv_matrix_from_sip(sipx, sipy)
     p1 = wcsfit.Poly2d(pv1)
     p2 = wcsfit.Poly2d(pv2)
-
+    print('1')
     pmlist = [linearMap]
     polyName = name + "_pv"
     if p1.nCoeffs() > 1:
@@ -252,6 +267,7 @@ def readExposuresExtensions(fields, band, visits, visitsCcds, ccds, fieldNumber=
                                              (airmasses),
                                              (exposureTimes),
                                              (mjds))
+    import ipdb; ipdb.set_trace()
     """
     for v, visitSummaryRef in enumerate(refs):
         print(visitSummaryRef)        
@@ -511,13 +527,22 @@ def readObjects(wcsf):
             ff.addColumnDouble(objects['coord_ra'], 'coord_ra')
             ff.addColumnDouble(objects['coord_dec'], 'coord_dec')
             ff.addColumnDouble(objects['coord_err'] * np.pi / 180, 'coord_err')
-            wcsf.setObjects(i, ff, 'coord_ra', 'coord_dec', '', '', ['coord_err'], '',
-                            0, '', 0, '', '', '')
+            #wcsf.setObjects(i, ff, objects['coord_ra'], 'coord_ra', 'coord_dec', '', '', ['coord_err'], '',
+            #                0, '', 0, '', '', '')
+            d = {'ra': objects['coord_ra'],
+                 'dec': objects['coord_dec'],
+                 'err': objects['coord_err'] * np.pi / 180}
+            wcsf.setObjects(i, d, 'ra', 'dec', ['err'])
+            
         else:
             ff.addColumnDouble(objects['base_SdssCentroid_x'], 'x')
             ff.addColumnDouble(objects['base_SdssCentroid_y'], 'y')
             ff.addColumnDouble(objects['base_SdssCentroid_Err'], 'err')
-            wcsf.setObjects(i, ff, 'x', 'y', '', '', ['err'], '', 0, '', 0, '', '', '')
+            d = {"x": objects['base_SdssCentroid_x'],
+                 "y": objects['base_SdssCentroid_y'],
+                 "err": objects['base_SdssCentroid_Err'],}
+            #wcsf.setObjects(i, ff, objects['base_SdssCentroid_x'], 'x', 'y', '', '', ['err'], '', 0, '', 0, '', '', '')
+            wcsf.setObjects(i, d, 'x', 'y', ['err'])
         
         print("one added")
             
@@ -577,19 +602,25 @@ epochs = []
 fieldNames = []
 #fieldProjections = []
 #fieldObjects = []
+print("2")
 for f, field in enumerate(fields):
     #fieldNames.append(wcsfit.spaceReplace(str(field)))
     fieldNames.append(str(field))
     # TODO: does tractinfo have a center?
-    
+    print("2.1")
     if useButler:
-        skyMap = butler.get('skyMap')
+        print("2.2")
+        skyMap = butler.get('skyMap', skymap='hsc_rings_v1')
+        print("2.21")
         tractInfo = skyMap.generateTract(field)    
+        print("2.22")
         skyOrigin = tractInfo.ctr_coord
+        print("2.3")
         ra = skyOrigin.getRa().asDegrees()
         dec = skyOrigin.getDec().asDegrees()
         print(skyOrigin.getRa(), skyOrigin.getDec())
     else:
+        print("2.4")
         ind = refactor_db[1].data['NAME'] == str(field)
         ra = refactor_db[1].data['RA'][ind][0]
         dec = refactor_db[1].data['DEC'][ind][0]
@@ -598,6 +629,7 @@ for f, field in enumerate(fields):
     ras.append(ra)
     decs.append(dec)
     epochs.append(2015.5)
+    
     #fieldProjection = wcsfit.Gnomonic(wcsfit.Orientation(wcsfit.SphericalICRS(ra, dec)))
     #fieldProjections.append(fieldProjection)
     
@@ -684,9 +716,13 @@ for f, field in enumerate(fields):
     #wcs_list = readExposures_wcsfof(visitSummaryRefs[:2])
     # TODO wcs - reprojectTo(fields[field].projection)
     """
-    
+print("3")
 ## WCSFit setup:
 fh = wcsfit.Fields(fieldNames, ras, decs, epochs)
+print("made fields")
+
+fieldMatchRadius = 1 * wcsfit.ARCSEC / wcsfit.DEGREE
+fieldExtents = [3.0]  # TODO: set something more intelligent here
 
 # Get instrument info:
 if False:#useButler:
@@ -697,6 +733,7 @@ if False:#useButler:
 else:
     instrumentName = 'HSC'
     instruments = readInstruments_fits(refactor_db[3])
+print("made instruments")
 
 if useButler:
     visitSummaryRefs = list(butler.registry.queryDatasets('visitSummary', band=altbands[0], tract=fields[0],
@@ -714,6 +751,7 @@ if useButler:
     visitCcds = []
     ccds = []
     all_wcss = []
+    all_wcss2 = []
     #butler_wcs = butler.get('calexp', visit=95066, ccd=103).getWcs()
     #for visitSummaryRef in visitSummaryRefs:
     #    visitSummary = butler.get(visitSummaryRef)
@@ -725,7 +763,10 @@ if useButler:
         if extn['DEVICE'] == -1: 
             identity = wcsfit.IdentityMap()
             icrs = wcsfit.SphericalICRS()
-            wcs = wcsfit.Wcs(identity, icrs, "ICRS_degrees", np.pi / 180.)
+            #wcs = wcsfit.Wcs(identity, icrs, "ICRS_degrees", np.pi / 180.)
+            wcs = wcsfit.Wcs(identity, icrs, "Identity", np.pi / 180.)
+            #wcs2 = wcsfit.Wcs(identity, icrs, "ICRS_degrees", np.pi / 180.)
+            wcs2 = wcsfit.Wcs(identity, icrs, "Identity", np.pi / 180.)
         else:
             visit = int(float(refactor_db[2].data[extn['EXPOSURE']]['NAME'][4:]) / 100)
             ccd = int(refactor_db[3].data[extn['DEVICE']]['NAME'])
@@ -734,7 +775,9 @@ if useButler:
             print(refactor_db[2].data[extn['EXPOSURE']]['NAME'], visit, ccd)
             butler_wcs = butler.get('calexp.wcs', visit=visit, detector=ccd)
             wcs = convert_sip_to_tpv(butler_wcs)
+            wcs2 = convert_sip_to_tpv(butler_wcs)
         all_wcss.append(wcs)
+        all_wcss2.append(wcs2)
                 
     print(len(all_wcss))
             
@@ -743,6 +786,8 @@ else:
     ff.addColumnStr(list(refactor_db[4].data["WCSIn"]), "WCSIn")
     print('reading WCSs')
     all_wcss = wcsfit.readWCSs(ff)
+    all_wcss2 = wcsfit.readWCSs(ff)
+print("made wcss")
 
 print("reading exposures")
 
@@ -761,18 +806,68 @@ if False:#useButler:
 else:
     #exposures, extensions, wcss = readExposuresExtensions_fits(refactor_db, inputYAML, wcsf.instruments, fieldNumber=f, instrumentNumber=0)
     extExps, extDevices, exposuresHelper = readExposuresExtensions_fits(refactor_db, inputYAML, instruments, fieldNumber=f, instrumentNumber=0)
+print("made exps, exts")
 
+#fh2 = copy.copy(fh)
+#instruments2 = copy.copy(instruments)
+#exposures2 = copy.copy(exposuresHelper)
+#fofFit = wcsfit.FoFClass(fh2, instruments2, exposuresHelper2, fieldExtents, fieldMatchRadius)
+
+fofFit = wcsfit.FoFClass(fh, instruments, exposuresHelper, fieldExtents, fieldMatchRadius)
+print("fof built")
+
+# Add catalogs to FoF algorithm:
+for i, extn in enumerate(refactor_db[4].data):
+    if extn['DEVICE'] == -1: 
+        print('do ref')
+        
+    else:
+        visit = int(float(refactor_db[2].data[extn['EXPOSURE']]['NAME'][4:]) / 100)
+        ccd = int(refactor_db[3].data[extn['DEVICE']]['NAME'])
+        # TODO:  add butler call here
+    src_file = extn['FILENAME']
+    deviceNumber = extn['DEVICE']
+    exposureNumber = extn['EXPOSURE']
+    fieldNumber = exposuresHelper.fieldNumbers[exposureNumber]
+    instrumentNumber = exposuresHelper.instrumentNumbers[exposureNumber]
+    print(src_file)
+    print(fieldNumber, instrumentNumber)
+    srcs = fits.open('/home/csaunder/stack_projects/gbdes_tests/' + src_file)
+    if extn['DEVICE'] == -1: 
+        vx = srcs[1].data['coord_ra'] - ras[0]
+        vy = srcs[1].data['coord_dec'] - decs[0]
+    else:
+        vx = srcs[1].data['base_SdssCentroid_x']
+        vy = srcs[1].data['base_SdssCentroid_y']
+    vid = np.arange(len(vx))
+    isStar = np.ones(len(vx))
+    wcs = all_wcss2[i]
+    if extn['DEVICE'] >= 0:
+        fofFit.reprojectWCS(wcs, fieldNumber)
+    
+    # TODO: need to reproject wcs to fields->projection
+    fofFit.addCatalog(wcs, extn['AFFINITY'], exposureNumber, fieldNumber, instrumentNumber, deviceNumber,
+                      i, isStar, vx, vy, vid)
+
+    # TODO: replace `i` with unique extn + visit number?
+
+fofFit.sortMatches(0, minMatches=minMatches)
 
 sequence = refactor_db[5].data['SequenceNumber']
 extn = refactor_db[5].data['Extension']
 obj = refactor_db[5].data['Object']
+
 skipSet = wcsfit.ExtensionObjectSet("")
 print(len(all_wcss), len(extExps))
-wcsf = wcsfit.FitClass(fh, instruments, exposuresHelper, 
+
+print("start WCSFit")
+import ipdb
+ipdb.set_trace()
+wcsf = wcsfit.WCSFit(fh, instruments, exposuresHelper, 
                        extExps, extDevices, inputYAML, all_wcss, list(sequence.astype(int)),
                        list(extn.astype(int)), list(obj.astype(int)),
                        sysErr=sysError, refSysErr=referenceSysError, usePM=False, verbose=2)
-
+print("wcsfit built")
 
 
 #readObjects(wcsf)
@@ -821,9 +916,8 @@ readObjects(wcsf)
 
 print("starting fit")
 wcsf.fit()
-
-# Return fit
-
-#fitter = wcsfit_test.WCSFit(exposures, extensions, fieldNames, fieldEpochs, fieldProjections, 
-#                            instruments, matches, fixMapsList=[1, 2])
-#print(fitter.exposures)
+print("fit finished")
+wcsf.saveResults(os.path.join(prefix, outWcs),
+                 os.path.join(prefix, outCatalog),
+                 os.path.join(prefix, starCatalog))
+print("save finished")

@@ -19,9 +19,9 @@ WCSFit::WCSFit(Fields &fields_, std::vector<std::shared_ptr<Instrument>> instrum
         std::unique_ptr<Instrument> inst(new Instrument(*instruments_[i]));
         instruments.emplace_back(std::move(inst));
     }
-
+    std::cerr << "made instruments" << std::endl;
     setExposures(exposures_.getExposuresVector(), sysErr, refSysErr);
-
+    std::cerr << "made expos" << std::endl;
     // Set Extensions:
     extensions.reserve(extensionExposureNumbers.size());
     colorExtensions = vector<unique_ptr<typename Astro::ColorExtension>>(extensionExposureNumbers.size());
@@ -65,13 +65,13 @@ WCSFit::WCSFit(Fields &fields_, std::vector<std::shared_ptr<Instrument>> instrum
             }
         }
     }
-
+    std::cerr << "made extens" << std::endl;
     loadPixelMapParser();
 
     setRefWCSNames();
-
+    std::cerr << "start setupMaps" << std::endl;
     setupMaps(inputYAML, fixMaps);
-
+    std::cerr << "setup maps" << std::endl;
     ExtensionObjectSet matchSkipSet(skipObjectsFile);
     readMatches<Astro>(sequence, extns, objects, matches, extensions, colorExtensions, matchSkipSet,
                        minMatches, usePM);
