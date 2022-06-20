@@ -1,5 +1,5 @@
 # gbdes
-Gary's DECam instrumental signature fitting and processing programs
+This is a significantly modified fork of Gary Bernstein's DECam instrumental signature fitting and processing programs.  The algorithms and the C++ user interface are unchanged, but the code has been refactored to allow for wrapping in python and to improve the memory-safety.  A python wrapper has been added using [pybind11](https://pybind11.readthedocs.io).  Finally, a Cmake build and an EUPS build (which just runs the cmake build) have been added.
 
 ## Description
 This repo contains code for deriving photometric and astrometric calibration solutions for complex multi-detector astronomical imagers.  The methods and uses of these codes are quite complex and currently poorly documented.  It's coming along.  My apologies in advance for the unprofessional nature of this repository!
@@ -31,6 +31,8 @@ The repository is structured as follows:
 
 
 ## Installation
+
+#### Original method using `make`
 You of course need to install the external libraries FFTW, yaml-cpp, CFITSIO, TMV/Eigen, and (optionally) MKL.  The Makefile for `gbdes` will call the Makefiles for the other gbernstein repos as needed, so you don't need to build them explicitly, and they do not (yet) have library files to keep track of.
 The Makefile requires these environment variables to be set:
 * `CXX`: path to the C++-11-compliant compiler/linker.
@@ -45,6 +47,19 @@ The Makefile requires these environment variables to be set:
 * `GBUTIL_DIR`, `GBFITS_DIR`, `ASTROMETRY_DIR`, and `PHOTOMETRY_DIR` are the directories where you've cloned these repos.
 
 Once these are all set you should be able to just run `make cpp` to build the C++ programs.  `make python` will copy over the Python executables into the bin/ directory.  `make` should do both.  You will also need to `make python` in the `GBUTIL_DIR` to install packages that the `gbdes` python routines use.
+
+#### Using `cmake`
+```
+mkdir build
+cd build
+cmake -S .. -B .
+cmake --build .
+cmake --install .
+# For python, update PYTHONPATH (or do something more sophisticated):
+export PYTHONPATH=<path to gbdes director>/pydir:$PYTHONPATH
+```
+#### Using `eups`
+Just run `scons` from the command line.
 
 ## Use
 When the codes are built, the executables of the C++, as well as copies of Python executables, are in the `bin/` directory.  Put this in your path or move them where you please - there is no `make install` yet.
