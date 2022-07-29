@@ -58,8 +58,6 @@ cmake --install .
 # For python, update PYTHONPATH (or do something more sophisticated):
 export PYTHONPATH=<path to gbdes director>/pydir:$PYTHONPATH
 ```
-#### Using `eups`
-Just run `scons` from the command line.
 
 ## Use
 When the codes are built, the executables of the C++, as well as copies of Python executables, are in the `bin/` directory.  Put this in your path or move them where you please - there is no `make install` yet.
