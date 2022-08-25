@@ -11,8 +11,12 @@ WCSFit::WCSFit(Fields &fields_, std::vector<std::shared_ptr<Instrument>> instrum
                std::vector<std::shared_ptr<astrometry::Wcs>> wcss, const std::vector<int> &sequence,
                const std::vector<LONGLONG> &extns, const std::vector<LONGLONG> &objects,
                const std::vector<int> &exposureColorPriorities, double sysErr, double refSysErr,
-               int minMatches, std::string skipObjectsFile, std::string fixMaps, bool usePM, int verbose)
+               int minMatches, std::string skipObjectsFile, std::string fixMaps, bool usePM, double pmPrior,
+               double parallaxPrior, int verbose)
         : minMatches(minMatches), verbose(verbose), fields(std::move(fields_)) {
+
+    if (usePM) astrometry::PMMatch::setPrior(pmPrior, parallaxPrior);
+
     // Set Instruments:
     instruments.reserve(instruments_.size());
     for (int i = 0; i < instruments_.size(); i++) {
@@ -363,11 +367,15 @@ void WCSFit::setObjects(int i, const map<std::string, std::vector<double>> &tabl
                         const std::string &idKey, const std::string &pmCovKey, const std::string &magKey,
                         const int &magKeyElement, const std::string &magErrKey, const int &magErrKeyElement,
                         const std::string &pmRaKey, const std::string &pmDecKey,
-                        const std::string &parallaxKey) {
+                        const std::string &parallaxKey, const std::vector<std::vector<double>> &pmCov) {
     img::FTable ff;
     for (auto x : tableMap) {
         ff.addColumn<double>(x.second, x.first);
     }
+    if (pmCovKey != "") {
+        ff.addColumn<vector<double>>(pmCov, pmCovKey);
+    }
+
     readObjects_oneExtension<Astro>(exposures, i, ff, xKey, yKey, idKey, pmCovKey, xyErrKeys, magKey,
                                     magKeyElement, magErrKey, magErrKeyElement, pmRaKey, pmDecKey,
                                     parallaxKey, extensions, fields.projections(), verbose, true);
@@ -518,6 +526,42 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
     } catch (std::runtime_error &m) {
         quit(m, 1);
     }
+}
+
+std::map<std::string, vector<float>> WCSFit::getOutputCatalog() {
+    std::map<std::string, vector<float>> outputDict;
+    // Save the pointwise fitting results
+    outputDict = Astro::getOutputCatalog(matches);
+    return outputDict;
+}
+
+std::map<std::string, vector<float>> WCSFit::getPMCatalog(vector<vector<float>> &PMMean,
+                                                          vector<vector<float>> &PMInvCov) {
+    std::map<std::string, vector<float>> outputPM;
+    // Save the pointwise fitting results
+    outputPM = Astro::getPMCatalog(matches, PMMean, PMInvCov); 
+    return outputPM;
+}
+
+std::map<std::string, vector<float>> WCSFit::getStarCatalog(vector<vector<float>> &starInvCov) {
+    std::map<std::string, vector<float>> starCatalog;
+    // Save the pointwise fitting results
+    {
+        // This routine needs an array of field projections for each extension
+        std::vector<astrometry::SphericalCoords *> extensionProjections(extensions.size());
+        for (int i = 0; i < extensions.size(); i++) {
+            if (!extensions[i]) continue;
+            int iExposure = extensions[i]->exposure;
+            if (iExposure < 0 || !exposures[iExposure]) continue;
+            int iField = exposures[iExposure]->field;
+            extensionProjections[i] = fields.projections()[iField].get();
+        }
+        PROGRESS(2, extensionProjections completed);
+        
+        starCatalog = Astro::getStarCatalog(matches, extensionProjections, starInvCov); 
+    }
+    
+    return starCatalog;
 }
 
 void WCSFit::saveResults(std::string outWcs, std::string outCatalog, std::string starCatalog) {

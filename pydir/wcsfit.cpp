@@ -145,19 +145,19 @@ PYBIND11_MODULE(wcsfit, m) {
                           std::vector<int>, std::vector<int>, astrometry::YAMLCollector,
                           std::vector<std::shared_ptr<astrometry::Wcs>>, std::vector<int>,
                           std::vector<LONGLONG>, std::vector<LONGLONG>, std::vector<int>, double, double, int,
-                          std::string, std::string, bool, int>(),
+                          std::string, std::string, bool, double, double, int>(),
                  py::arg("fields"), py::arg("instruments"), py::arg("exposures"),
                  py::arg("extensionExposureNumbers"), py::arg("extensionDevices"), py::arg("inputYAML"),
                  py::arg("wcss"), py::arg("sequence"), py::arg("extns"), py::arg("objects"),
                  py::arg("exposureColorPriorities") = std::vector<int>(), py::arg("sysErr") = 2.0,
                  py::arg("refSysErr") = 2.0, py::arg("minMatches") = 2, py::arg("skipObjectsFile") = "",
-                 py::arg("fixMaps") = "", py::arg("usePM") = true, py::arg("verbose") = 0)
+                 py::arg("fixMaps") = "", py::arg("usePM") = true, py::arg("pmPrior") = 100.0,
+                 py::arg("parallaxPrior") = 10.0, py::arg("verbose") = 0)
             .def("setObjects", &WCSFit::setObjects, py::arg("i"), py::arg("tableMap"), py::arg("xKey"),
                  py::arg("yKey"), py::arg("xyErrKeys"), py::arg("idKey") = "", py::arg("pmCovKey") = "",
                  py::arg("magKey") = "", py::arg("magKeyElement") = 0, py::arg("magErrKey") = "",
                  py::arg("magErrKeyElement") = 0, py::arg("pmRaKey") = "", py::arg("pmDecKey") = "",
-                 py::arg("parallaxKey") = "")
-
+                 py::arg("parallaxKey") = "", py::arg("pmCov") = std::vector<std::vector<double>>(0.0))
             .def_readwrite("verbose", &WCSFit::verbose)
             .def("setMatches", &WCSFit::setMatches)
             .def("fit", &WCSFit::fit, py::arg("maxError") = 100., py::arg("minFitExposures") = 200,
@@ -167,6 +167,9 @@ PYBIND11_MODULE(wcsfit, m) {
                  py::arg("divideInPlace") = false, py::arg("purgeOutput") = false,
                  py::arg("minColor") = -10.0, py::arg("maxColor") = 10.0)
             .def("saveResults", &WCSFit::saveResults)
+            .def("getOutputCatalog", &WCSFit::getOutputCatalog)
+            .def("getPMCatalog", &WCSFit::getPMCatalog)
+            .def("getStarCatalog", &WCSFit::getStarCatalog)
             .def_readonly("mapCollection", &WCSFit::mapCollection);
 
     ///////////// Friends of Friends Fitting Class //////////////////

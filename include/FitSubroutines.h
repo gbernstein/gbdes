@@ -69,6 +69,14 @@ struct Astro {
     // saving results wants an array giving the field projection to use for each catalog.
     static void saveResults(const astrometry::MCat &matches, string outCatalog, string starCatalog,
                             vector<astrometry::SphericalCoords *> catalogProjections);
+    // writes out the final catalog as in `saveResults`, but returns results as a map
+    static std::map<std::string, vector<float>> getOutputCatalog(const astrometry::MCat &matches);
+    static std::map<std::string, vector<float>> getPMCatalog(const astrometry::MCat &matches,
+                                                             vector<vector<float>> &pmMean,
+                                                             vector<vector<float>> &pmInvCov);
+    static std::map<std::string, vector<float>> getStarCatalog(const astrometry::MCat &matches,
+                                                               vector<astrometry::SphericalCoords *> catalogProjections,
+                                                               vector<vector<float>> &starInvCov);
 
     static void reportStatistics(const astrometry::MCat &matches,
                                  const vector<unique_ptr<Exposure>> &exposures,

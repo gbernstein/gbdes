@@ -31,7 +31,7 @@ public:
            const std::vector<int> &sequence, const std::vector<LONGLONG> &extns, const std::vector<LONGLONG> &objects,
            const std::vector<int> &exposureColorPriorities = std::vector<int>(), double sysErr = 2.0, double refSysErr = 2.0,
            int minMatches = 2, std::string skipObjectsFile = "", std::string fixMaps = "", bool usePM = true,
-           int verbose = 0);
+           double pmPrior=100.0, double parallaxPrior=10.0, int verbose = 0);
 
     int minMatches;
     int verbose;
@@ -72,7 +72,8 @@ public:
                     const std::string &pmCovKey = "", const std::string &magKey = "",
                     const int &magKeyElement = 0, const std::string &magErrKey = "",
                     const int &magErrKeyElement = 0, const std::string &pmRaKey = "",
-                    const std::string &pmDecKey = "", const std::string &parallaxKey = "");
+                    const std::string &pmDecKey = "", const std::string &parallaxKey = "",
+                    const std::vector<std::vector<double>> &fullCov = std::vector<std::vector<double>>(0.0));
 
     void reprojectWCSs();
 
@@ -80,6 +81,11 @@ public:
              int randomNumberSeed = 1234, double minimumImprovement = 0.02, double clipThresh = 5.0,
              double chisqTolerance = 0.001, bool clipEntireMatch = false, bool divideInPlace = false,
              bool purgeOutput = false, double minColor = -10.0, double maxColor = 10.0);
+
+    std::map<std::string, vector<float>> getOutputCatalog();
+    std::map<std::string, vector<float>> getPMCatalog(vector<vector<float>> &PMMean,
+                                                      vector<vector<float>> &PMInvCov);
+    std::map<std::string, vector<float>> getStarCatalog(vector<vector<float>> &starInvCov);
 
     void saveResults(std::string outWcs, std::string outCatalog, std::string starCatalog);
 };
