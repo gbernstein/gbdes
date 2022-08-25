@@ -567,7 +567,6 @@ void PMMatch::prepare() const {
             nFit++;
             if (i->fitWeight == 1.) {
                 pmFisher += m.transpose() * i->invCov * m;
-                //**/cerr << "Detection for Fisher:\n" << pmFisher << endl;
             } else {
                 trivialWeights = false;
                 pmFisher += m.transpose() * i->invCov * (i->fitWeight * m);
@@ -721,13 +720,11 @@ double PMMatch::chisq(int &dofAccum, double &maxDeviateSq, bool dump) const {
     double cc;
     int j = 0;
     for (auto const &i : elist) {
-        if (dump) cerr << " Det " << j << " weight " << i->fitWeight << endl;
         j++;
         if (!isFit(*i)) continue;
         if (auto ii = dynamic_cast<const PMDetection *>(i.get())) {
             dpm = ii->pmMean - pm;
             cc = dpm.transpose() * ii->pmInvCov * dpm;
-            if (dump) cerr << "   PM cc " << cc << endl;
         } else {
             // Regular single-epoch detection
             dxy[0] = i->xw;
@@ -735,10 +732,6 @@ double PMMatch::chisq(int &dofAccum, double &maxDeviateSq, bool dump) const {
             m = i->getProjector();
             dxy -= m * pm;
             cc = dxy.transpose() * i->invCov * dxy;
-            if (dump)
-                cerr << "      cc " << cc << " dxy " << dxy[0] * WCS_UNIT / RESIDUAL_UNIT << " "
-                     << dxy[1] * WCS_UNIT / RESIDUAL_UNIT << endl;
-            if (dump) cerr << "m:  " << m << endl;
         }
         chi += cc * i->fitWeight;
         maxDeviateSq = MAX(cc / i->expectedTrueChisq, maxDeviateSq);

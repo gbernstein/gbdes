@@ -81,7 +81,7 @@ class ExposuresHelper {
 public:
     ExposuresHelper(vector<string> expNames_, vector<int> fieldNumbers_, vector<int> instrumentNumbers_,
                     vector<double> ras_, vector<double> decs_, vector<double> airmasses_,
-                    vector<double> exposureTimes_, vector<double> mjds_)
+                    vector<double> exposureTimes_, vector<double> mjds_, vector<vector<double>> observatories_)
             : expNames(expNames_),
               fieldNumbers(fieldNumbers_),
               instrumentNumbers(instrumentNumbers_),
@@ -89,7 +89,8 @@ public:
               decs(decs_),
               airmasses(airmasses_),
               exposureTimes(exposureTimes_),
-              mjds(mjds_){};
+              mjds(mjds_),
+              observatories(observatories_){};
     vector<string> expNames;
     // Index of the exposures' fields:
     vector<int> fieldNumbers;
@@ -100,8 +101,9 @@ public:
     vector<double> airmasses;
     vector<double> exposureTimes;
     vector<double> mjds;
+    vector<vector<double>> observatories;
 
-    std::vector<std::unique_ptr<Exposure>> getExposuresVector() {
+    std::vector<std::unique_ptr<Exposure>> getExposuresVector(const vector<double> &fieldEpochs = std::vector<double>()) {
         std::vector<std::unique_ptr<Exposure>> tmpExposures;
         tmpExposures.reserve(expNames.size());
         for (int i = 0; i < expNames.size(); i++) {
@@ -113,6 +115,14 @@ public:
             expo->airmass = airmasses[i];
             expo->exptime = exposureTimes[i];
             expo->mjd = mjds[i];
+            if (fieldEpochs.size() > 0) {
+                // Also calculate time in years after field's reference epoch
+                astrometry::UT ut;
+                ut.setMJD(expo->mjd);
+                // Note that getTTyr returns years since J2000.
+                expo->pmTDB = ut.getTTyr() - (fieldEpochs[expo->field] - 2000.);
+            }
+            for (int j = 0; j < 3; ++j) expo->observatory[j] = observatories[i][j];
             tmpExposures.emplace_back(std::move(expo));
         }
         return tmpExposures;
