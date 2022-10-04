@@ -293,20 +293,13 @@ namespace img {
     int	yMax() const {return D->getBounds().getYMax();}
 
     // Image/scalar arithmetic operations
-    void  operator+=(T x) {transform_pixel(*this, bind2nd(plus<T>(),x));}
-    void  operator-=(T x) {transform_pixel(*this, bind2nd(minus<T>(),x));}
-    void  operator*=(T x) {transform_pixel(*this, bind2nd(multiplies<T>(),x));}
-    void  operator/=(T x) {transform_pixel(*this, bind2nd(divides<T>(),x));}
-    void  operator-() {transform_pixel(*this, negate<T>());}
+    void  operator+=(T x) {transform_pixel(*this, [x](T y){return y + x;});}
+    void  operator-=(T x) {transform_pixel(*this, [x](T y){return y - x;});}
+    void  operator*=(T x) {transform_pixel(*this, [x](T y){return y * x;});}
+    void  operator/=(T x) {transform_pixel(*this, [x](T y){return y / x;});}
+    void  operator-() {transform_pixel(*this, [](T y){return -y;});}
 
-    class ConstReturn {
-    public: 
-      ConstReturn(const T v): val(v) {}
-      T operator()(const T dummy) const {return val;}
-    private:
-      T val;
-    };
-    void  operator=(const T val) {transform_pixel(*this, ConstReturn(val));}
+    void  operator=(const T val) {transform_pixel(*this, [val](T y){return val;});}
   
     // Image/Image arithmetic ops: rhs must be subset of this
     void  operator+=(const Image<T> rhs);

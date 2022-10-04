@@ -14,9 +14,7 @@ find_library(CFITSIO cfitsio REQUIRED)
 find_package(YAML-CPP REQUIRED)
 add_compile_definitions(USE_YAML=TRUE)
 
-include(FindPkgConfig)
-pkg_search_module(FFTW3 REQUIRED fftw3)
-include_directories(${FFTW3_INCLUDES})
+find_library(FFTW3 fftw3 REQUIRED)
 
 # TMV or Eigen must be available, but TMV is preferred
 find_package(TMV QUIET)

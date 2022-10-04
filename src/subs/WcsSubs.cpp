@@ -6,7 +6,7 @@
 #include "WcsSubs.h"
 #include "Units.h"
 #include "FitSubroutines.h"
-
+#include <random>
 using namespace astrometry;
 
 void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
@@ -86,8 +86,9 @@ void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
         vector<int> vx(nGridPoints);
         for (int i = 0; i < vx.size(); i++) vx[i] = i;
         vector<int> vy = vx;
-        std::srand(123);
-        std::random_shuffle(vy.begin(), vy.end());
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(vy.begin(), vy.end(), g);
         double xstep = (b.getXMax() - b.getXMin()) / nGridPoints;
         double ystep = (b.getYMax() - b.getYMin()) / nGridPoints;
         for (int i = 0; i < vx.size(); i++) {
