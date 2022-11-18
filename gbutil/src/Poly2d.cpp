@@ -319,7 +319,8 @@ Poly2d::fillFromVector(const DVector& v) {
   }
 }
 
-Poly2d Poly2d::operator*(Poly2d polyB) {
+Poly2d
+Poly2d::operator*(Poly2d polyB) {
   int orderX = this->getOrderX() + polyB.getOrderX();
   int orderY = this->getOrderY() + polyB.getOrderY();
   DMatrix product(orderX + 1, orderY + 1);
@@ -332,7 +333,9 @@ Poly2d Poly2d::operator*(Poly2d polyB) {
       polyB.powersOfIndex(n, iB, jB);
       int outOrderX = iA + iB;
       int outOrderY = jA + jB;
-      if ((outOrderX > orderX) || (outOrderY > orderY)) continue;
+      if ((outOrderX > orderX) || (outOrderY > orderY)) {
+        throw Poly2dError("Poly coefficients don't correspond to poly order");
+      }
       product(outOrderX, outOrderY) = AVector[m] * BVector[n];
     }
   }

@@ -79,6 +79,9 @@ PYBIND11_MODULE(wcsfit, m) {
             }))
             .def("getOrientMatrix", [](astrometry::Gnomonic &self) {
                 const astrometry::Orientation* orient=self.getOrient();
+                if (orient == nullptr) {
+                    throw std::runtime_error("Gnomonic projection does not have orientation set");
+                }
                 return orient->m();
             });
 

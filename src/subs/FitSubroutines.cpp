@@ -2769,15 +2769,16 @@ Astro::StarCatalog Astro::getStarCatalog(const astrometry::MCat &matches,
             astrometry::SphericalCoords *projection;
             for (auto const &detptr : *m) {
                 projection = catalogProjections[detptr->catalogNumber];
-                if (projection) break;
-            }
-            if (projection) {
-                projection->setLonLat(matchCentroid[astrometry::X0] * WCS_UNIT, matchCentroid[astrometry::Y0] * WCS_UNIT);
-                double ra, dec;
-                astrometry::SphericalICRS icrs(*projection);
-                icrs.getRADec(ra, dec);
-                starX.push_back(ra / WCS_UNIT);
-                starY.push_back(dec / WCS_UNIT);
+                if (projection) {
+                    projection->setLonLat(matchCentroid[astrometry::X0] * WCS_UNIT,
+                                          matchCentroid[astrometry::Y0] * WCS_UNIT);
+                    double ra, dec;
+                    astrometry::SphericalICRS icrs(*projection);
+                    icrs.getRADec(ra, dec);
+                    starX.push_back(ra / WCS_UNIT);
+                    starY.push_back(dec / WCS_UNIT);
+                    break;
+                }
             }
         }
         if (pmm) {

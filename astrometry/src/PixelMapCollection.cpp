@@ -170,7 +170,8 @@ PixelMapCollection::getMapType(string mapName) const {
   return mapType;
 }
 
-DVector PixelMapCollection::getWcsNativeCoords(string wcsName, bool degrees) const {
+DVector
+PixelMapCollection::getWcsNativeCoords(string wcsName, bool degrees) const {
   auto wcspair = wcsElements.find(wcsName);
   if (wcspair == wcsElements.end())
     throw AstrometryError("Could not find wcsName " + wcsName);
