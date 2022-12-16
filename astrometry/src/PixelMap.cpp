@@ -210,6 +210,42 @@ ReprojectionMap::write(YAML::Emitter& os) const {
 }
 #endif
 
+Matrix33
+ReprojectionMap::getPixMatrix() const {
+  auto gnom = dynamic_cast<const astrometry::Gnomonic*>(pix);
+  if (gnom == nullptr) { 
+    if (dynamic_cast<const astrometry::SphericalICRS*>(pix)) {
+      Vector2 lonlat = pix->getLonLat();
+    }
+    Matrix33 tmpMatrix;
+    tmpMatrix.setToIdentity();
+    return tmpMatrix;
+  }
+  return gnom->getOrient()->m();
+}
+
+Matrix33
+ReprojectionMap::getWorldMatrix() const {
+  auto gnom = dynamic_cast<const astrometry::Gnomonic*>(world);
+  if (gnom == nullptr) {
+    Matrix33 tmpMatrix;
+    tmpMatrix.setToIdentity();
+    return tmpMatrix;
+  }
+  return gnom->getOrient()->m();
+}
+
+Vector2
+ReprojectionMap::getWorldPole() const {
+  auto gnom = dynamic_cast<const astrometry::Gnomonic*>(world);
+  if (gnom == nullptr) {
+    Vector2 lonlat;
+    return lonlat;
+  }
+  SphericalICRS pole = gnom->getOrient()->getPole();
+  Vector2 lonlat = pole.getLonLat();
+  return lonlat;
+}
 ///////////////////////////////////////////////////////////////////
 // Color term calculations
 ///////////////////////////////////////////////////////////////////

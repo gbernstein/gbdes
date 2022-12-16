@@ -11,17 +11,19 @@ WCSFit::WCSFit(Fields &fields_, std::vector<std::shared_ptr<Instrument>> instrum
                std::vector<std::shared_ptr<astrometry::Wcs>> wcss, const std::vector<int> &sequence,
                const std::vector<LONGLONG> &extns, const std::vector<LONGLONG> &objects,
                const std::vector<int> &exposureColorPriorities, double sysErr, double refSysErr,
-               int minMatches, std::string skipObjectsFile, std::string fixMaps, bool usePM, int verbose)
+               int minMatches, std::string skipObjectsFile, std::string fixMaps, bool usePM, double pmPrior,
+               double parallaxPrior, int verbose)
         : minMatches(minMatches), verbose(verbose), fields(std::move(fields_)) {
+
+    if (usePM) astrometry::PMMatch::setPrior(pmPrior, parallaxPrior);
+
     // Set Instruments:
     instruments.reserve(instruments_.size());
     for (int i = 0; i < instruments_.size(); i++) {
         std::unique_ptr<Instrument> inst(new Instrument(*instruments_[i]));
         instruments.emplace_back(std::move(inst));
     }
-
-    setExposures(exposures_.getExposuresVector(), sysErr, refSysErr);
-
+    setExposures(exposures_.getExposuresVector(fields.epochs()), sysErr, refSysErr);
     // Set Extensions:
     extensions.reserve(extensionExposureNumbers.size());
     colorExtensions = vector<unique_ptr<typename Astro::ColorExtension>>(extensionExposureNumbers.size());
@@ -228,7 +230,18 @@ void WCSFit::setupMaps(astrometry::YAMLCollector &inputYAML, std::string fixMaps
       // (the code will ignore those which already are Identity)
       std::set<std::string> exposureMapNames;
       for (auto const &expoPtr : exposures) {
-          if (expoPtr && !expoPtr->name.empty()) exposureMapNames.insert(expoPtr->name);
+          if (expoPtr && !expoPtr->name.empty()) {
+              // Check if the exposure maps are composite, and if so add the component elements
+              if (pmcInit->mapExists(expoPtr->name)) {
+                  std::set<string> dependentElements = pmcInit->dependencies(expoPtr->name);
+                  for (std::string depElem : dependentElements) {
+                      exposureMapNames.insert(depElem);
+                  }
+              }
+              else {
+                exposureMapNames.insert(expoPtr->name);
+              }
+          }
       }
 
       auto replaceThese = degen.replaceWithIdentity(exposureMapNames);
@@ -352,11 +365,15 @@ void WCSFit::setObjects(int i, const map<std::string, std::vector<double>> &tabl
                         const std::string &idKey, const std::string &pmCovKey, const std::string &magKey,
                         const int &magKeyElement, const std::string &magErrKey, const int &magErrKeyElement,
                         const std::string &pmRaKey, const std::string &pmDecKey,
-                        const std::string &parallaxKey) {
+                        const std::string &parallaxKey, const std::vector<std::vector<double>> &pmCov) {
     img::FTable ff;
     for (auto x : tableMap) {
         ff.addColumn<double>(x.second, x.first);
     }
+    if (pmCovKey != "") {
+        ff.addColumn<vector<double>>(pmCov, pmCovKey);
+    }
+
     readObjects_oneExtension<Astro>(exposures, i, ff, xKey, yKey, idKey, pmCovKey, xyErrKeys, magKey,
                                     magKeyElement, magErrKey, magErrKeyElement, pmRaKey, pmDecKey,
                                     parallaxKey, extensions, fields.projections(), verbose, true);
@@ -507,6 +524,29 @@ void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, i
     } catch (std::runtime_error &m) {
         quit(m, 1);
     }
+}
+
+Astro::outputCatalog WCSFit::getOutputCatalog() {
+    return Astro::getOutputCatalog(matches);
+}
+
+Astro::PMCatalog WCSFit::getPMCatalog() {
+    return Astro::getPMCatalog(matches);
+}
+
+Astro::StarCatalog WCSFit::getStarCatalog() {
+    // This routine needs an array of field projections for each extension
+    std::vector<astrometry::SphericalCoords *> extensionProjections(extensions.size());
+    for (int i = 0; i < extensions.size(); i++) {
+        if (!extensions[i]) continue;
+        int iExposure = extensions[i]->exposure;
+        if (iExposure < 0 || !exposures[iExposure]) continue;
+        int iField = exposures[iExposure]->field;
+        extensionProjections[i] = fields.projections()[iField].get();
+    }
+    PROGRESS(2, extensionProjections completed);
+
+    return Astro::getStarCatalog(matches, extensionProjections); 
 }
 
 void WCSFit::saveResults(std::string outWcs, std::string outCatalog, std::string starCatalog) {

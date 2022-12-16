@@ -1,10 +1,6 @@
 # Stuff I've stashed away:
 OLD
 
-# CMS additions:
-delete_prob
-*.fits
-
 # The pdfs for the paper:
 doc/WCSFit.pdf
 doc/WCSFoF.pdf
@@ -20,6 +16,8 @@ testbin/*
 
 # Standard stuff:
 build
+install
+build_cmake
 *.o
 .depend
 *.log

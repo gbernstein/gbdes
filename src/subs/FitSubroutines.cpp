@@ -1540,7 +1540,8 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
     // Get fieldProjection for this catalog
     astrometry::SphericalCoords *fieldProjection = fieldProjections[expo.field]->duplicate();
     if (S::isAstro) {
-        errorColumnIsDouble = isDouble(ff, pmCatalog ? pmCovKey : xyErrKeys[0], -1);
+        if (pmCatalog) errorColumnIsDouble = isDouble(ff, pmCovKey, 0);
+        else errorColumnIsDouble = isDouble(ff, xyErrKeys[0], -1);
     } else {
         magColumnIsDouble = isDouble(ff, magKey, magKeyElement);
         magErrColumnIsDouble = isDouble(ff, magErrKey, magErrKeyElement);
@@ -2234,17 +2235,17 @@ void Astro::saveResults(const astrometry::MCat &matches, string outCatalog, stri
             pmClip[i] = pmDetPtr->isClipped;
             pmReserve[i] = pmDetPtr->itsMatch->getReserved();
             vector<float> vv(5);
-            for (int i = 0; i < 5; i++) vv[i] = pmDetPtr->pmMean[i];
+            for (int ii = 0; ii < 5; ii++) vv[ii] = pmDetPtr->pmMean[ii];
             // Keep position in WCS_UNITS (degrees), put others into RESIDUAL_UNITS
-            vv[astrometry::VX] *= units[i];
-            vv[astrometry::VY] *= units[i];
-            vv[astrometry::PAR] *= units[i];
+            vv[astrometry::VX] *= units[astrometry::VX];
+            vv[astrometry::VY] *= units[astrometry::VY];
+            vv[astrometry::PAR] *= units[astrometry::PAR];
 
             pmMean[i] = vv;
             vv.resize(25);
             int k = 0;
-            for (int i = 0; i < 5; i++)
-                for (int j = 0; j < 5; j++, k++) vv[k] = pmDetPtr->pmInvCov(i, j) / (units[i] * units[j]);
+            for (int ii = 0; ii < 5; ii++)
+                for (int j = 0; j < 5; j++, k++) vv[k] = pmDetPtr->pmInvCov(ii, j) / (units[ii] * units[j]);
             pmInvCov[i] = vv;
             pmChisq[i] = pmDetPtr->trueChisq();
             pmChisqExpected[i] = pmDetPtr->expectedTrueChisq;
@@ -2394,6 +2395,419 @@ void Astro::saveResults(const astrometry::MCat &matches, string outCatalog, stri
             starTable.addColumn(starInvCov, "pmInvCov", 25);
         }  // End scope of starCatalog
     }      // End starCatalog making
+}
+
+Astro::outputCatalog Astro::getOutputCatalog(const astrometry::MCat &matches) {
+
+    // TODO: probably don't need vmatches
+    // Make a vector of match pointers so we can use OpenMP
+    vector<Match *> vmatches;
+    vmatches.reserve(matches.size());
+    for (auto const &m : matches) vmatches.push_back(m.get());
+
+    vector<int> matchID;
+    vector<long> catalogNumber;
+    vector<long> objectNumber;
+    vector<bool> clip;
+    vector<bool> reserve;
+    vector<bool> hasPM;  // Was this input a full PM estimate?
+    vector<double> color;
+
+    vector<double> xresw;
+    vector<double> yresw;
+    vector<double> xpix;
+    vector<double> ypix;
+    vector<double> sigpix;  // Circularized total error in pixels
+    vector<double> xrespix;
+    vector<double> yrespix;
+    vector<double> xworld;
+    vector<double> yworld;
+
+    // The full error ellipse
+    vector<double> covTotalW_00;
+    vector<double> covTotalW_11;
+    vector<double> covTotalW_01;
+    // The true chisq for this detection, and the expected value
+    vector<double> chisq;
+    vector<double> chisqExpected;
+    for (int iMatch = 0; iMatch < vmatches.size(); iMatch++) {
+        const Match *m = vmatches[iMatch];
+
+        // Update all world coords and mean solutions
+        m->remap(true);  // include remapping of clipped detections
+        m->solve();
+
+        // Don't report results for matches with no results
+        if (m->getDOF() < 0) continue;
+
+        // Create a pointer to PMMatch if this is one:
+        auto pmm = dynamic_cast<const astrometry::PMMatch *>(m);
+
+        astrometry::Vector2 xyMean;  // Match's mean position, in world coords
+        if (!pmm) {
+            // We can use the same best-fit position for all detections
+            xyMean = m->predict();
+        }
+
+        double matchColor = astrometry::NODATA;
+        for (auto const &detptr : *m) {
+            // Get a pointer to a PMDetection if this is one:
+            auto pmDetPtr = dynamic_cast<const PMDetection *>(detptr.get());
+
+            // Set color if this is the first detection to have one
+            if (matchColor == astrometry::NODATA && detptr->color != astrometry::NODATA)
+                matchColor = detptr->color;
+            // Save some basics:
+            matchID.push_back(iMatch);
+            catalogNumber.push_back(detptr->catalogNumber);
+            objectNumber.push_back(detptr->objectNumber);
+            clip.push_back(detptr->isClipped);
+            reserve.push_back(m->getReserved());
+            hasPM.push_back((bool)pmDetPtr);
+            color.push_back(detptr->color);
+            xpix.push_back(detptr->xpix);
+            ypix.push_back(detptr->ypix);
+            xworld.push_back(detptr->xw);
+            yworld.push_back(detptr->yw);
+
+            // Let's get the model prediction
+            if (pmm) xyMean = pmm->predict(detptr.get());
+
+            // Get world residuals (returned RESIDUAL_UNIT)
+            astrometry::Vector2 residW = detptr->residWorld();
+            xresw.push_back(residW[0]);
+            yresw.push_back(residW[1]);
+            // Get pixel residuals
+            astrometry::Vector2 residP;
+            try {
+                residP = detptr->residPix();
+            } catch (AstrometryError &e) {
+                // Do not want program to crash if an inverse fails.
+                // Just move along
+    #ifdef _OPENMP
+    #pragma omp critical(io)
+    #endif
+                cerr << "WARNING: Astrometry failure for catalog " << detptr->catalogNumber
+                        << " object " << detptr->objectNumber << " world " << detptr->xw << ","
+                        << detptr->yw << " pix " << detptr->xpix << "," << detptr->ypix << endl;
+                residP[0] = astrometry::NODATA;
+                residP[1] = astrometry::NODATA;
+            }
+            xrespix.push_back(residP[0]);
+            yrespix.push_back(residP[1]);
+            astrometry::Matrix22 cov(0.);
+            // Get error covariances, if we have any
+            double chisqThis;
+            if (detptr->invCov(0, 0) > 0.) {
+                // Save cov in RESIDUAL_UNIT, it's stored in WCS_UNIT
+                cov = detptr->invCov.inverse() * pow(WCS_UNIT / RESIDUAL_UNIT, 2.);
+                covTotalW_00.push_back(cov(0,0));
+                covTotalW_11.push_back(cov(1,1));
+                covTotalW_01.push_back(cov(0,1));
+
+                // Transform back to pixel errors to get circularized pixel error
+                double sig = 0.;
+                try {
+                    cov /= pow(WCS_UNIT / RESIDUAL_UNIT, 2.);  // Back to wcs units
+                    auto dpdw = detptr->map->dPixdWorld(xyMean[0], xyMean[1], detptr->color);
+                    astrometry::Matrix22 covPix = dpdw * cov * dpdw.transpose();
+                    double detCov = covPix(0, 0) * covPix(1, 1) - covPix(1, 0) * covPix(0, 1);
+                    sig = detCov > 0. ? pow(detCov, 0.25) : 0.;
+                } catch (AstrometryError &e) {
+                    // Problem here getting toPix to work in dPixdWorld
+    #ifdef _OPENMP
+    #pragma omp critical(io)
+    #endif
+                    cerr << "WARNING: Astrometry failure for catalog " << detptr->catalogNumber
+                            << " object " << detptr->objectNumber << " world " << detptr->xw << ","
+                            << detptr->yw << " pix " << detptr->xpix << "," << detptr->ypix << endl;
+                }
+                sigpix.push_back(sig);
+
+                // Chisq and expected
+                chisq.push_back(detptr->trueChisq());
+                chisqExpected.push_back(detptr->expectedTrueChisq);
+            } else {
+                // Did not have a usable error matrix
+                chisqThis = 0.;
+                covTotalW_00.push_back(0);
+                covTotalW_11.push_back(0);
+                covTotalW_01.push_back(0);
+                sigpix.push_back(0.);
+                chisq.push_back(chisqThis);
+                chisqExpected.push_back(detptr->expectedTrueChisq);
+            }
+        }  // End detection loop
+    }     // End match loop
+
+    Astro::outputCatalog outCat;
+    outCat.matchID = matchID;
+    outCat.catalogNumber = catalogNumber;
+    outCat.objectNumber = objectNumber;
+    outCat.clip = clip;
+    outCat.reserve = reserve;
+    outCat.hasPM = hasPM;
+    outCat.color = color;
+    outCat.xresw = xresw;
+    outCat.yresw = yresw;
+    outCat.xpix = xpix;
+    outCat.ypix = ypix;
+    outCat.sigpix = sigpix;
+    outCat.xrespix = xrespix;
+    outCat.yrespix = yrespix;
+    outCat.xworld = xworld;
+    outCat.yworld = yworld;
+    outCat.chisq = chisq;
+    outCat.chisqExpected = chisqExpected;
+    outCat.covTotalW_00 = covTotalW_00;
+    outCat.covTotalW_11 = covTotalW_11;
+    outCat.covTotalW_01 = covTotalW_01;
+    return outCat;
+}
+
+Astro::PMCatalog Astro::getPMCatalog(const astrometry::MCat &matches) {
+
+    // TODO: probably don't need vmatches
+    vector<Match *> vmatches;
+    vmatches.reserve(matches.size());
+
+    // Make a global of PMDetections to output
+    vector<const PMDetection *> pmdets;
+    // And the id's of matches they belong to
+    vector<int> pmDetMatchID;
+
+    // Make vector of units conversions to I/O units
+    vector<float> units(5);
+    units[astrometry::X0] = WCS_UNIT / RESIDUAL_UNIT;
+    units[astrometry::Y0] = WCS_UNIT / RESIDUAL_UNIT;
+    units[astrometry::PAR] = WCS_UNIT / RESIDUAL_UNIT;
+    units[astrometry::VX] = WCS_UNIT / (RESIDUAL_UNIT / TDB_UNIT);
+    units[astrometry::VY] = WCS_UNIT / (RESIDUAL_UNIT / TDB_UNIT);
+
+    for (auto const &m : matches) vmatches.push_back(m.get());
+
+    for (int iMatch = 0; iMatch < vmatches.size(); iMatch++) {
+        const Match *m = vmatches[iMatch];
+        for (auto const &detptr : *m) {
+            // Get a pointer to a PMDetection if this is one:
+            auto pmDetPtr = dynamic_cast<const PMDetection *>(detptr.get());
+            if (pmDetPtr) {
+                pmdets.push_back(pmDetPtr);
+                pmDetMatchID.push_back(iMatch);
+            }
+        }
+    }
+
+    // Now write an extension to the output table for quality of PM detections
+    // These are quantities we will want for PMDetections
+    Assert(pmdets.size() == pmDetMatchID.size());
+    vector<int> pmMatchID(pmdets.size());
+    vector<long> pmCatalogNumber(pmdets.size());
+    vector<long> pmObjectNumber(pmdets.size());
+    vector<bool> pmClip(pmdets.size());
+    vector<bool> pmReserve(pmdets.size());
+    vector<vector<double>> pmMean(pmdets.size());
+    vector<vector<double>> pmInvCov(pmdets.size());
+    vector<double> pmChisq(pmdets.size());
+    vector<double> pmChisqExpected(pmdets.size());
+    pmMean.reserve(pmdets.size());
+    pmInvCov.reserve(pmdets.size());
+
+    // (Not putting residuals here since PM's will be findable
+    //  by matchID in the star table)
+    for (int i = 0; i < pmdets.size(); i++) {
+        auto pmDetPtr = pmdets[i];
+        pmMatchID[i] = pmDetMatchID[i];
+        pmCatalogNumber[i] = pmDetPtr->catalogNumber;
+        pmObjectNumber[i] = pmDetPtr->objectNumber;
+        pmClip[i] = pmDetPtr->isClipped;
+        pmReserve[i] = pmDetPtr->itsMatch->getReserved();
+        vector<double> vv(5);
+        for (int ii = 0; ii < 5; ii++) vv[ii] = pmDetPtr->pmMean[ii];
+        // Keep position in WCS_UNITS (degrees), put others into RESIDUAL_UNITS
+        vv[astrometry::VX] *= units[i];
+        vv[astrometry::VY] *= units[i];
+        vv[astrometry::PAR] *= units[i];
+
+        pmMean[i] = vv;
+        vv.resize(25);
+        int k = 0;
+        for (int ii = 0; ii < 5; ii++)
+            for (int j = 0; j < 5; j++, k++) vv[k] = pmDetPtr->pmInvCov(ii, j) / (units[ii] * units[j]);
+        pmInvCov[i] = vv;
+        pmChisq[i] = pmDetPtr->trueChisq();
+        pmChisqExpected[i] = pmDetPtr->expectedTrueChisq;
+    }  // End PMDetection loop
+
+    Astro::PMCatalog pmCat;
+    pmCat.pmMatchID = pmMatchID;
+    pmCat.pmCatalogNumber = pmCatalogNumber;
+    pmCat.pmObjectNumber = pmObjectNumber;
+    pmCat.pmClip = pmClip;
+    pmCat.pmReserve = pmReserve;
+    pmCat.pmMean = pmMean;
+    pmCat.pmInvCov = pmInvCov;
+    pmCat.pmChisq = pmChisq;
+    pmCat.pmChisqExpected = pmChisqExpected;
+    return pmCat;
+}
+
+Astro::StarCatalog Astro::getStarCatalog(const astrometry::MCat &matches,
+                                         vector<astrometry::SphericalCoords *> catalogProjections) {
+    // Make a map holding the stellar catalog info for all PM matches
+    // Sweep through all matches recording info for the PM ones.
+    // These are quantities we will want to put into our output PM catalog
+    vector<int> starMatchID;
+    vector<bool> starReserve;   // Is this star reserved from fit?
+    vector<double> starColor;    // Color for this star
+    vector<int> starPMCount;    // How many PMDetections in it were fit?
+    vector<int> starDetCount;   // How many non-PM Detections in it were fit?
+    vector<int> starClipCount;  // How many detections were clipped?
+    vector<int> starDOF;        // Number of DOF in PM fit
+    vector<double> starChisq;    // Total chisq
+    vector<double> starX;        // The solution
+    vector<double> starY;
+    vector<double> starPMx;
+    vector<double> starPMy;
+    vector<double> starParallax;
+    vector<vector<double>> starInvCov;  // flattened Fisher matrix of PM
+
+    // Make vector of units conversions to I/O units
+    vector<float> units(5);
+    units[astrometry::X0] = WCS_UNIT / RESIDUAL_UNIT;
+    units[astrometry::Y0] = WCS_UNIT / RESIDUAL_UNIT;
+    units[astrometry::PAR] = WCS_UNIT / RESIDUAL_UNIT;
+    units[astrometry::VX] = WCS_UNIT / (RESIDUAL_UNIT / TDB_UNIT);
+    units[astrometry::VY] = WCS_UNIT / (RESIDUAL_UNIT / TDB_UNIT);
+
+    // TODO: don't need vmatches probably
+    // Make a vector of match pointers so we can use OpenMP
+    vector<Match *> vmatches;
+    vmatches.reserve(matches.size());
+    for (auto const &m : matches) vmatches.push_back(m.get());
+
+    for (int iMatch = 0; iMatch < vmatches.size(); iMatch++) {
+        const Match *m = vmatches[iMatch];
+
+        // Every match has already been remapped and solved.
+        // Don't report results for matches with no results
+        if (m->getDOF() < 0) continue;
+        // Create a pointer to PMMatch if this is one:
+        auto pmm = dynamic_cast<const astrometry::PMMatch *>(m);
+
+        // Make an entry.  First count types of data going in
+        int detCount = 0;
+        int pmDetCount = 0;
+        int clipCount = 0;
+        double matchColor = astrometry::NODATA;
+
+        for (auto const &detptr : *m) {
+            // Get a pointer to a PMDetection if this is one:
+            auto pmDetPtr = dynamic_cast<const PMDetection *>(detptr.get());
+
+            if (m->isFit(*detptr)) {
+                if (pmDetPtr) {
+                    pmDetCount++;
+                } else {
+                    detCount++;
+                }
+            } else {
+                clipCount++;
+            }
+
+            // Set color if this is the first detection to have one
+            if (matchColor == astrometry::NODATA && detptr->color != astrometry::NODATA)
+                matchColor = detptr->color;
+
+        }  // End detection loop
+
+        // Add this object to the PM output catalog
+        starMatchID.push_back(iMatch);
+        starReserve.push_back(m->getReserved());
+        starColor.push_back(matchColor);
+        starPMCount.push_back(pmDetCount);
+        starDetCount.push_back(detCount);
+        starClipCount.push_back(clipCount);
+        int dof = 0.;
+        double dummy;
+        double chisqThis;
+        if (pmm) {
+            chisqThis = pmm->chisq(dof, dummy);
+        }
+        else {
+            chisqThis = m->chisq(dof, dummy);
+        }
+        starDOF.push_back(dof);
+        starChisq.push_back(chisqThis);
+        if (pmm) {
+            // Save the solution in a table
+            auto pm = pmm->getPM();
+            // Convert xW, yW to RA/Dec for this table, in WCS_UNITS
+            astrometry::SphericalCoords *projection;
+            for (auto const &detptr : *m) {
+                projection = catalogProjections[detptr->catalogNumber];
+                if (projection) break;
+            }
+            if (projection) {
+                projection->setLonLat(pm[astrometry::X0] * WCS_UNIT, pm[astrometry::Y0] * WCS_UNIT);
+                double ra, dec;
+                astrometry::SphericalICRS icrs(*projection);
+                icrs.getRADec(ra, dec);
+                starX.push_back(ra / WCS_UNIT);
+                starY.push_back(dec / WCS_UNIT);
+            } else {
+                cerr << "WARNING:  No projection available for matchID " << iMatch << endl;
+                starX.push_back(pm[astrometry::X0] / WCS_UNIT);
+                starY.push_back(pm[astrometry::Y0] / WCS_UNIT);
+            }
+            starPMx.push_back(pm[astrometry::VX] * units[astrometry::VX]);
+            starPMy.push_back(pm[astrometry::VY] * units[astrometry::VY]);
+            starParallax.push_back(pm[astrometry::PAR] * units[astrometry::PAR]);
+        }
+        else {
+            astrometry::Vector2 matchCentroid = m->predict();
+            astrometry::SphericalCoords *projection;
+            for (auto const &detptr : *m) {
+                projection = catalogProjections[detptr->catalogNumber];
+                if (projection) {
+                    projection->setLonLat(matchCentroid[astrometry::X0] * WCS_UNIT,
+                                          matchCentroid[astrometry::Y0] * WCS_UNIT);
+                    double ra, dec;
+                    astrometry::SphericalICRS icrs(*projection);
+                    icrs.getRADec(ra, dec);
+                    starX.push_back(ra / WCS_UNIT);
+                    starY.push_back(dec / WCS_UNIT);
+                    break;
+                }
+            }
+        }
+        if (pmm) {
+            // And the inverse covariance
+            auto fisher = pmm->getInvCovPM();
+            vector<double> vv(25);
+            int k = 0;
+            for (int i = 0; i < 5; i++)
+                for (int j = 0; j < 5; j++, k++) vv[k] = fisher(i, j) / (units[i] * units[j]);
+            starInvCov.push_back(vv);
+        }
+    }  // end of match loop for the star catalog.
+
+    Astro::StarCatalog starCat;
+    starCat.starMatchID = starMatchID;
+    starCat.starReserve = starReserve;
+    starCat.starColor = starColor;
+    starCat.starPMCount = starPMCount;
+    starCat.starDetCount = starDetCount;
+    starCat.starClipCount = starClipCount;
+    starCat.starDOF = starDOF;
+    starCat.starChisq = starChisq;
+    starCat.starX = starX;
+    starCat.starY = starY;
+    starCat.starPMx = starPMx;
+    starCat.starPMy = starPMy;
+    starCat.starParallax = starParallax;
+    starCat.starInvCov = starInvCov;
+    return starCat;
 }
 
 void Photo::reportStatistics(const MCat &matches, const vector<unique_ptr<Exposure>> &exposures,

@@ -69,6 +69,66 @@ struct Astro {
     // saving results wants an array giving the field projection to use for each catalog.
     static void saveResults(const astrometry::MCat &matches, string outCatalog, string starCatalog,
                             vector<astrometry::SphericalCoords *> catalogProjections);
+    // writes out the final residuals catalog as in `saveResults`, but returns results as a map
+    struct outputCatalog {
+        vector<int> matchID;
+        vector<long> catalogNumber;
+        vector<long> objectNumber;
+        vector<bool> clip;
+        vector<bool> reserve;
+        vector<bool> hasPM;
+        vector<double> color;
+        vector<double> xresw;
+        vector<double> yresw;
+        vector<double> xpix;
+        vector<double> ypix;
+        vector<double> sigpix;
+        vector<double> xrespix;
+        vector<double> yrespix;
+        vector<double> xworld;
+        vector<double> yworld;
+        vector<double> covTotalW_00;
+        vector<double> covTotalW_11;
+        vector<double> covTotalW_01;
+        vector<double> chisq;
+        vector<double> chisqExpected;
+    };
+    static outputCatalog getOutputCatalog(const astrometry::MCat &matches);
+
+    struct PMCatalog {
+        vector<int> pmMatchID;
+        vector<long> pmCatalogNumber;
+        vector<long> pmObjectNumber;
+        vector<bool> pmClip;
+        vector<bool> pmReserve;
+        vector<vector<double>> pmMean;
+        vector<vector<double>> pmInvCov;
+        vector<double> pmChisq;
+        vector<double> pmChisqExpected;
+    };
+    // writes out the residuals for PMDetections as in `saveResults`, but returns results as a map
+    static PMCatalog getPMCatalog(const astrometry::MCat &matches);
+
+    struct StarCatalog {
+        vector<int> starMatchID;
+        vector<bool> starReserve;
+        vector<double> starColor;
+        vector<int> starPMCount;
+        vector<int> starDetCount;
+        vector<int> starClipCount;
+        vector<int> starDOF;
+        vector<double> starChisq;
+        vector<double> starX;
+        vector<double> starY;
+        vector<double> starPMx;
+        vector<double> starPMy;
+        vector<double> starParallax;
+        vector<vector<double>> starInvCov;
+    };
+    // writes out the catalog of fit star positions (and proper motions if fit) as in `saveResults`, but
+    // returns results as a map
+    static StarCatalog getStarCatalog(const astrometry::MCat &matches,
+                                      vector<astrometry::SphericalCoords *> catalogProjections);
 
     static void reportStatistics(const astrometry::MCat &matches,
                                  const vector<unique_ptr<Exposure>> &exposures,

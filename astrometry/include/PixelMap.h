@@ -118,6 +118,7 @@ namespace astrometry {
     IdentityMap(string name_="Identity"): PixelMap(name_) {}
     virtual PixelMap* duplicate() const {return new IdentityMap(*this);}
     static string type() {return "Identity";}
+    virtual string getType() const {return type();}
     void toWorld(double xpix, double ypix,
 		 double& xworld, double& yworld,
 		 double color=astrometry::NODATA) const;
@@ -256,6 +257,9 @@ namespace astrometry {
     virtual void write(YAML::Emitter& os) const;
 #endif
     virtual string getType() const {return type();}
+    Matrix33 getPixMatrix() const;
+    Matrix33 getWorldMatrix() const;
+    Vector2 getWorldPole() const;
   private:
     SphericalCoords* pix;
     SphericalCoords* world;

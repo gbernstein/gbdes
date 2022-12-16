@@ -68,7 +68,6 @@ void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
         if (logging) {
             cerr << "instrument, device: " << expo.instrument << " " << extnptr->device
                  << endl;
-            cerr << "bounds: " << b.getXMin() << " " << b.getXMax() << endl;
             double txw, tyw;
             extnptr->startWcs->toWorld(b.getXMin(), b.getYMin(), txw, tyw);
             cerr << "check p1 " << txw << " " << tyw << endl;
