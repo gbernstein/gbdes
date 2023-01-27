@@ -9,6 +9,8 @@
 #include <random>
 using namespace astrometry;
 
+std::mt19937 g(12345);
+
 void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
                   const vector<unique_ptr<Instrument>> &instruments,
                   const vector<unique_ptr<Exposure>> &exposures, bool logging) {
@@ -85,8 +87,6 @@ void fitDefaulted(PixelMapCollection &pmc, set<Extension *> extensions,
         vector<int> vx(nGridPoints);
         for (int i = 0; i < vx.size(); i++) vx[i] = i;
         vector<int> vy = vx;
-        std::random_device rd;
-        std::mt19937 g(rd());
         std::shuffle(vy.begin(), vy.end(), g);
         double xstep = (b.getXMax() - b.getXMin()) / nGridPoints;
         double ystep = (b.getYMax() - b.getYMin()) / nGridPoints;
