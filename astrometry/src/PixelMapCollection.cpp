@@ -135,6 +135,25 @@ PixelMapCollection::getParams() const {
   return p;
 }
 
+DVector
+PixelMapCollection::getParams(string mapName) const {
+  auto melpair = mapElements.find(mapName);
+  const MapElement& mel = melpair->second;
+  // Return an empty vector if the map is fixed
+  if (mel.isFixed) {
+    return DVector();
+  }
+  if (mel.atom) {
+    int nSub = mel.nParams;
+    DVector mparams = mel.atom->getParams().subVector(0, nSub);
+    return mparams;
+  }
+  // Map is not atomic and doesn't have its own parameters; return an empty vector
+  else {
+    return DVector();
+  }
+}
+
 std::map<std::string, astrometry::DVector>
 PixelMapCollection::getParamDict() const {
   map<string, linalg::Vector<double>> outMap;

@@ -204,6 +204,8 @@ namespace astrometry {
     // Set/get the master parameter vector for all PixelMaps
     void setParams(const DVector& p);
     DVector getParams() const;
+    // Get the parameter vector for one map, or return an empty DVector if there are no parameters
+    DVector getParams(string mapName) const;
     std::map<std::string, astrometry::DVector> getParamDict() const;
     int nParams() const {return parameterCount;}
 
