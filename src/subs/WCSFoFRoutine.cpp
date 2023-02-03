@@ -346,8 +346,19 @@ void FoFClass::sortMatches(int fieldNumber, int minMatches, bool allowSelfMatche
         if (pcat.empty()) continue;
 
         long matches = 0;
+
+        // Copy Matches into a vector to facilitate sorting
+        std::vector<fof::Match<Point, 2> *> matchVector(pcat.size());
+        matchVector.assign(pcat.begin(), pcat.end());
+
+        // Sort the matches by their ra position to ensure deterministic behavior downstream.
+        const auto matchSort = [](fof::Match<Point, 2> *a, fof::Match<Point, 2> *b) {
+            return a->calculateAverage()[0] < b->calculateAverage()[0];
+        };
+        std::sort(matchVector.begin(), matchVector.end(), matchSort);
+
         // Now loop through matches in this catalog
-        for (PointCat::const_iterator j = pcat.begin(); j != pcat.end(); ++j) {
+        for (auto j = matchVector.cbegin(); j != matchVector.cend(); ++j) {
             // Skip any Match that is below minimum match size
 
             if ((*j)->size() < minMatches) continue;

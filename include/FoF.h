@@ -10,6 +10,7 @@
 #include <set>
 #include <vector>
 #include <algorithm>
+#include <numeric>
 
 #include <iostream>
 
@@ -81,6 +82,24 @@ public:
         // add new point and its cells
         this->push_back(&point);
         cells.insert(cellsContainingPoint.begin(), cellsContainingPoint.end());
+    }
+    const std::array<double, DIM> calculateAverage() {
+        // Calculate the average of the x values for the points in Match
+
+        // Return zero if there are no points in the match
+        if (this->size() == 0) {
+            std::array<double, DIM> average = std::array<double, DIM>{0};
+            return std::array<double, DIM>{0};
+        } 
+        // Calculate the average along each dimension
+        std::array<double, DIM> average;
+        for (int d=0; d < DIM; d++) {
+            double d_average = std::accumulate(this->begin(), this->end(), 0.0,
+                                               [d](double a, P const *p) { return a + p->getX()[d]; });
+            d_average /= this->size();
+            average[d] = d_average;
+        }
+        return average;
     }
 
 private:
