@@ -94,9 +94,9 @@ public:
     virtual double trueChisq() const;
     // Report 2d residual of this Detection to itsMatch prediction in world coordinates
     // using the RESIDUAL_UNIT from Units.h
-    Vector2 residWorld() const;
+    virtual Vector2 residWorld() const;
     // Or the residual mapped back to pixel coordinates
-    Vector2 residPix() const;
+    virtual Vector2 residPix() const;
 
     // Get a rough estimate of a 1-dimensional world-coordinate error
     double getSigma() const {
@@ -123,6 +123,8 @@ public:
     // Calculate full *5d* chisq relative to best prediction of itsMatch,
     // using full fitting covariance but *before* any weighting factor is applied.
     double trueChisq() const override;
+    Vector2 residWorld() const override;
+    Vector2 residPix() const override;
 };
 
 class Match {

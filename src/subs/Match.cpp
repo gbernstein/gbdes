@@ -109,6 +109,41 @@ Vector2 Detection::residPix() const {
     return out;
 }
 
+Vector2 PMDetection::residWorld() const {
+    Vector2 out;
+    auto pmMatch = dynamic_cast<const PMMatch *>(itsMatch);
+    Assert(pmMatch);
+    pmMatch->solve();
+    PMSolution dpm = pmMean - pmMatch->getPM();
+    out[0] = dpm[0];
+    out[1] = dpm[1];
+    return out;
+}
+
+Vector2 PMDetection::residPix() const {
+    // Proper motion detections are assumed to come from the reference catalog,
+    // so the "pixel" values are actually ra/dec coordinates.
+    auto pmMatch = dynamic_cast<const PMMatch *>(itsMatch);
+    Assert(pmMatch);
+    pmMatch->solve();
+    PMSolution pmFit = pmMatch->getPM();
+    double xMeanPix = xpix, yMeanPix = ypix;
+    Assert(map);
+    try {
+        map->toPix(pmFit[0], pmFit[1], xMeanPix, yMeanPix, color);
+    } catch (astrometry::AstrometryError &e) {
+        std::cerr << "WARNING: toPix failure in map " << map->getName() << " at world coordinates ("
+                  << pmFit[0] << "," << pmFit[1] << ")"
+                  << " approx pixel coordinates (" << xpix << "," << ypix << ")" << endl;
+        // Just return zero residual
+        return Vector2(0.);
+    }
+    Vector2 out;
+    out[0] = xpix - xMeanPix;
+    out[1] = ypix - yMeanPix;
+    return out;
+}
+
 double Detection::trueChisq() const {
     // Calculate chisq relative to best prediction of itsMatch,
     // using full fitting covariance but *before* any weighting factor is applied.
