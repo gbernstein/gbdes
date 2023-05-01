@@ -2780,6 +2780,9 @@ Astro::StarCatalog Astro::getStarCatalog(const astrometry::MCat &matches,
                     break;
                 }
             }
+            starPMx.push_back(0);
+            starPMy.push_back(0);
+            starParallax.push_back(0);
         }
         if (pmm) {
             // And the inverse covariance
@@ -2788,6 +2791,15 @@ Astro::StarCatalog Astro::getStarCatalog(const astrometry::MCat &matches,
             int k = 0;
             for (int i = 0; i < 5; i++)
                 for (int j = 0; j < 5; j++, k++) vv[k] = fisher(i, j) / (units[i] * units[j]);
+            starInvCov.push_back(vv);
+        }
+        else {
+            auto centroidCovariance = m->getCentroidCov();
+            auto fisher = centroidCovariance.inverse();
+            vector<double> vv(4);
+            int k = 0;
+            for (int i = 0; i < 2; i++)
+                for (int j = 0; j < 2; j++, k++) vv[k] = fisher(i, j) / (units[i] * units[j]);
             starInvCov.push_back(vv);
         }
     }  // end of match loop for the star catalog.
