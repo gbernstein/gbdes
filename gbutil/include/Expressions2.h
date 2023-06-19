@@ -285,6 +285,7 @@ public:
 // Example of a unary math function:
 class SinFunction {
 public:
+  using result_type = double;
   double operator()(double x) const {return std::sin(x);}
 };
 
