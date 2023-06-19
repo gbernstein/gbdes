@@ -283,7 +283,7 @@ public:
     return new GenericUnaryEvaluableV<OP, Type>(right); 
 
 // Example of a unary math function:
-class SinFunction: public std::unary_function<double,double> {
+class SinFunction {
 public:
   double operator()(double x) const {return std::sin(x);}
 };
