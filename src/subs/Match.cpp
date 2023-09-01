@@ -1197,7 +1197,8 @@ double CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
             for (int i = 0; i < N; i++) {
                 if (alpha(i, i) < 0.) {
                     cerr << "Negative alpha diagonal " << alpha(i, i) << " at " << i << endl;
-                    exit(1);
+                    throw std::runtime_error("Negative alpha diagonal " + std::to_string(alpha(i, i))
+                                             + " at " + std::to_string(i));
                 }
                 if (alpha(i, i) > 0.) ss[i] = 1. / sqrt(alpha(i, i));
                 // Scale row / col of lower triangle, hitting diagonal twice
@@ -1241,8 +1242,7 @@ double CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
         if (choleskyFails) {
             cerr << "Caught exception during Cholesky" << endl;
             if (inPlace) {
-                cerr << "Cannot describe degeneracies while dividing in place" << endl;
-                exit(1);
+                throw std::runtime_error("Cannot describe degeneracies while dividing in place");
             }
             int N = alpha.cols();
             set<int> degen;
@@ -1308,7 +1308,7 @@ double CoordAlign::fitOnce(bool reportToCerr, bool inPlace) {
                          << j - startIndex << " of " << nParams << endl;
                 }
             }
-            exit(1);
+            throw std::runtime_error("Cholesky decomposition failed");
         }
 
         // Now attempt Newton iterations to solution, with fixed alpha

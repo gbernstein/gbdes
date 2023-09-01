@@ -116,7 +116,7 @@ list<set<int>> MapDegeneracies<S>::initializationOrder() {
             // We have maps with no clear degeneracy breaking path.
             cerr << "ERROR: no path to initialize these maps without degeneracies:" << endl;
             for (auto &m : maps) cerr << "  " << m.first << endl;
-            exit(1);
+            throw std::runtime_error("Maps cannot be initialized due to degeneracies.");
         }
 
         // Do everything that can be done - for a given choose all relevant exposures in

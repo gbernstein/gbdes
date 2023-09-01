@@ -382,148 +382,145 @@ void WCSFit::setObjects(int i, const map<std::string, std::vector<double>> &tabl
 void WCSFit::fit(double maxError, int minFitExposures, double reserveFraction, int randomNumberSeed,
                  double minimumImprovement, double clipThresh, double chisqTolerance, bool clipEntireMatch,
                  bool divideInPlace, bool purgeOutput, double minColor, double maxColor) {
-    try {
-        PROGRESS(2, Purging defective detections and matches);
+    
+    PROGRESS(2, Purging defective detections and matches);
 
-        // Get rid of Detections with errors too high
-        maxError *= astrometry::RESIDUAL_UNIT / astrometry::WCS_UNIT;
-        purgeNoisyDetections<Astro>(maxError, matches, exposures, extensions);
-        std::cerr << "Matches size after purgeNoisyDetections: " << matches.size()
-                  << std::endl;
+    // Get rid of Detections with errors too high
+    maxError *= astrometry::RESIDUAL_UNIT / astrometry::WCS_UNIT;
+    purgeNoisyDetections<Astro>(maxError, matches, exposures, extensions);
+    std::cerr << "Matches size after purgeNoisyDetections: " << matches.size()
+                << std::endl;
 
-        PROGRESS(2, Purging sparse matches);
-        // Get rid of Matches with too few detections
-        purgeSparseMatches<Astro>(minMatches, matches);
-        std::cerr << "Matches size after purgeSparseMatches: " << matches.size() << std::endl;
+    PROGRESS(2, Purging sparse matches);
+    // Get rid of Matches with too few detections
+    purgeSparseMatches<Astro>(minMatches, matches);
+    std::cerr << "Matches size after purgeSparseMatches: " << matches.size() << std::endl;
 
-        PROGRESS(2, Purging out - of - range colors);
-        // Get rid of Matches with color out of range (note that default color is 0).
-        purgeBadColor<Astro>(minColor, maxColor, matches);
-        std::cerr << "Matches size after purgeBadColor: " << matches.size() << std::endl;
+    PROGRESS(2, Purging out - of - range colors);
+    // Get rid of Matches with color out of range (note that default color is 0).
+    purgeBadColor<Astro>(minColor, maxColor, matches);
+    std::cerr << "Matches size after purgeBadColor: " << matches.size() << std::endl;
 
-        PROGRESS(2, Reserving matches);
-        // Reserve desired fraction of matches
-        if (reserveFraction > 0.) {
-            reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);
-        }
+    PROGRESS(2, Reserving matches);
+    // Reserve desired fraction of matches
+    if (reserveFraction > 0.) {
+        reserveMatches<Astro>(matches, reserveFraction, randomNumberSeed);
+    }
 
-        PROGRESS(2, Purging underpopulated exposures);
-        // Find exposures whose parameters are free but have too few
-        // Detections being fit to the exposure model.
-        auto badExposures = findUnderpopulatedExposures<Astro>(minFitExposures, matches, exposures,
-                                                               extensions, mapCollection);
+    PROGRESS(2, Purging underpopulated exposures);
+    // Find exposures whose parameters are free but have too few
+    // Detections being fit to the exposure model.
+    auto badExposures = findUnderpopulatedExposures<Astro>(minFitExposures, matches, exposures,
+                                                            extensions, mapCollection);
 
-        PROGRESS(2, Purging bad exposure parameters and Detections);
-        // Freeze parameters of an exposure model and clip all
-        // Detections that were going to use it.
-        for (auto i : badExposures) {
-            cout << "WARNING: Shutting down exposure map " << i.first << " with only "
-                 << i.second << " fitted detections " << std::endl;
-            freezeMap<Astro>(i.first, matches, extensions, mapCollection);
-        }
+    PROGRESS(2, Purging bad exposure parameters and Detections);
+    // Freeze parameters of an exposure model and clip all
+    // Detections that were going to use it.
+    for (auto i : badExposures) {
+        cout << "WARNING: Shutting down exposure map " << i.first << " with only "
+                << i.second << " fitted detections " << std::endl;
+        freezeMap<Astro>(i.first, matches, extensions, mapCollection);
+    }
 
-        if (purgeOutput) {
-            PROGRESS(2, Purging unfittable maps);
-            mapCollection.purgeInvalid();
-        }
+    if (purgeOutput) {
+        PROGRESS(2, Purging unfittable maps);
+        mapCollection.purgeInvalid();
+    }
 
-        PROGRESS(2, Match census);
-        matchCensus<Astro>(matches, cout);
+    PROGRESS(2, Match census);
+    matchCensus<Astro>(matches, cout);
 
-        ///////////////////////////////////////////////////////////
-        // Now do the re-fitting
-        ///////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////////
+    // Now do the re-fitting
+    ///////////////////////////////////////////////////////////
 
-        PROGRESS(1, Begin fitting process);
+    PROGRESS(1, Begin fitting process);
 
-        // make CoordAlign class
-        astrometry::CoordAlign ca(mapCollection, matches);
+    // make CoordAlign class
+    astrometry::CoordAlign ca(mapCollection, matches);
 
-        int nclip;
-        double oldthresh = 0.;
+    int nclip;
+    double oldthresh = 0.;
 
-        // Start off in a "coarse" mode so we are not fine-tuning the solution
-        // until most of the outliers have been rejected:
-        bool coarsePasses = true;
+    // Start off in a "coarse" mode so we are not fine-tuning the solution
+    // until most of the outliers have been rejected:
+    bool coarsePasses = true;
 
-        ca.setRelTolerance(10. * chisqTolerance);
-        // Here is the actual fitting loop
-        do {
-            // Report number of active Matches / Detections in each iteration:
-            {
-                std::cerr << "Matches size: " << matches.size() << std::endl;
-                long int mcount = 0;
-                long int dcount = 0;
-                ca.count(mcount, dcount, false, 2);
-                double maxdev = 0.;
-                int dof = 0;
-                double chi = ca.chisqDOF(dof, maxdev, false);
-                if (verbose >= 1)
-                    std::cerr << "Fitting " << mcount << " matches with "
-                              << dcount << " detections "
-                              << " chisq " << chi << " / " << dof
-                              << " dof,  maxdev " << maxdev << " sigma" << std::endl;
-            }
-
-            // Do the fit here!!
-            double chisq = ca.fitOnce(verbose >= 1, divideInPlace);  // save space if selected
-            // Note that fitOnce() remaps *all* the matches, including reserved ones.
-            double max;
-            int dof;
-            ca.chisqDOF(dof, max, false);                    // Exclude reserved Matches
-            double thresh = sqrt(chisq / dof) * clipThresh;  // ??? change dof to expectedChisq?
+    ca.setRelTolerance(10. * chisqTolerance);
+    // Here is the actual fitting loop
+    do {
+        // Report number of active Matches / Detections in each iteration:
+        {
+            std::cerr << "Matches size: " << matches.size() << std::endl;
+            long int mcount = 0;
+            long int dcount = 0;
+            ca.count(mcount, dcount, false, 2);
+            double maxdev = 0.;
+            int dof = 0;
+            double chi = ca.chisqDOF(dof, maxdev, false);
             if (verbose >= 1)
-                std::cerr << "After iteration: chisq " << chisq << " / "
-                          << dof << " dof, max deviation " << max
-                          << "  new clip threshold at: " << thresh << " sigma" << std::endl;
-            if (thresh >= max || (oldthresh > 0. && (1 - thresh / oldthresh) < minimumImprovement)) {
-                // Sigma clipping is no longer doing much.  Quit if we are at full precision,
-                // else require full target precision and initiate another pass.
-                if (coarsePasses) {
-                    coarsePasses = false;
-                    ca.setRelTolerance(chisqTolerance);
-                    PROGRESS(1, Starting strict tolerance passes);
-                    if (clipEntireMatch && verbose >= 1) std::cerr << "-->clipping full matches" << std::endl;
-                    oldthresh = thresh;
-                    nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses, verbose >= 1);
-                    if (verbose >= 0)
-                        std::cerr << "# Clipped " << nclip << " matches " << std::endl;
-                    continue;
-                } else {
-                    // Done!
-                    break;
-                }
-            }
-            oldthresh = thresh;
-            // Clip entire matches on final passes if clipEntireMatch=true
-            nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses, verbose >= 1);
-            if (nclip == 0 && coarsePasses) {
-                // Nothing being clipped; tighten tolerances and re-fit
+                std::cerr << "Fitting " << mcount << " matches with "
+                            << dcount << " detections "
+                            << " chisq " << chi << " / " << dof
+                            << " dof,  maxdev " << maxdev << " sigma" << std::endl;
+        }
+
+        // Do the fit here!!
+        double chisq = ca.fitOnce(verbose >= 1, divideInPlace);  // save space if selected
+        // Note that fitOnce() remaps *all* the matches, including reserved ones.
+        double max;
+        int dof;
+        ca.chisqDOF(dof, max, false);                    // Exclude reserved Matches
+        double thresh = sqrt(chisq / dof) * clipThresh;  // ??? change dof to expectedChisq?
+        if (verbose >= 1)
+            std::cerr << "After iteration: chisq " << chisq << " / "
+                        << dof << " dof, max deviation " << max
+                        << "  new clip threshold at: " << thresh << " sigma" << std::endl;
+        if (thresh >= max || (oldthresh > 0. && (1 - thresh / oldthresh) < minimumImprovement)) {
+            // Sigma clipping is no longer doing much.  Quit if we are at full precision,
+            // else require full target precision and initiate another pass.
+            if (coarsePasses) {
                 coarsePasses = false;
                 ca.setRelTolerance(chisqTolerance);
                 PROGRESS(1, Starting strict tolerance passes);
                 if (clipEntireMatch && verbose >= 1) std::cerr << "-->clipping full matches" << std::endl;
+                oldthresh = thresh;
+                nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses, verbose >= 1);
+                if (verbose >= 0)
+                    std::cerr << "# Clipped " << nclip << " matches " << std::endl;
                 continue;
+            } else {
+                // Done!
+                break;
             }
-            if (verbose >= 0) std::cerr << "# Clipped " << nclip << " matches " << std::endl;
-
-        } while (coarsePasses || nclip > 0);
-
-        // If there are reserved Matches, run sigma-clipping on them now.
-        if (reserveFraction > 0.) {
-            PROGRESS(1, Clipping reserved matches);
-            clipReserved<Astro>(ca, clipThresh, minimumImprovement, false, verbose >= 1);
         }
+        oldthresh = thresh;
+        // Clip entire matches on final passes if clipEntireMatch=true
+        nclip = ca.sigmaClip(thresh, false, clipEntireMatch && !coarsePasses, verbose >= 1);
+        if (nclip == 0 && coarsePasses) {
+            // Nothing being clipped; tighten tolerances and re-fit
+            coarsePasses = false;
+            ca.setRelTolerance(chisqTolerance);
+            PROGRESS(1, Starting strict tolerance passes);
+            if (clipEntireMatch && verbose >= 1) std::cerr << "-->clipping full matches" << std::endl;
+            continue;
+        }
+        if (verbose >= 0) std::cerr << "# Clipped " << nclip << " matches " << std::endl;
 
-        //////////////////////////////////////
-        // Output data and calculate some statistics
-        //////////////////////////////////////
+    } while (coarsePasses || nclip > 0);
 
-        // Report summary of residuals to stdout
-        Astro::reportStatistics(matches, exposures, extensions, cout);
-    } catch (std::runtime_error &m) {
-        quit(m, 1);
+    // If there are reserved Matches, run sigma-clipping on them now.
+    if (reserveFraction > 0.) {
+        PROGRESS(1, Clipping reserved matches);
+        clipReserved<Astro>(ca, clipThresh, minimumImprovement, false, verbose >= 1);
     }
+
+    //////////////////////////////////////
+    // Output data and calculate some statistics
+    //////////////////////////////////////
+
+    // Report summary of residuals to stdout
+    Astro::reportStatistics(matches, exposures, extensions, cout);
 }
 
 Astro::outputCatalog WCSFit::getOutputCatalog() {

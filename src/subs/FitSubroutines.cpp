@@ -1577,7 +1577,7 @@ void readObjects_oneExtension(const vector<unique_ptr<Exposure>> &exposures, int
     if (fieldProjection) delete fieldProjection;
 
     if (!extn.keepers.empty()) {
-        throw std::runtime_error("Did not find all desired objects extension " + iext);
+        throw std::runtime_error("Did not find all desired objects extension " + std::to_string(iext));
     }
 }
 
