@@ -253,9 +253,8 @@ list<int> pickExposuresToInitialize(const vector<unique_ptr<Instrument>> &instru
                     // maps, then enter this dependence into our sets
                     exposuresUsingDevice[iDev].insert(iExpo);
                     if (unusedExposures.count(iExpo) > 0 || unusedDevices.count(iDev) > 0) {
-                        cerr << "Logic problem: extension map " << extnptr->mapName
-                             << " is using allegedly unused exposure or device map" << endl;
-                        exit(1);
+                        throw std::runtime_error("Logic problem: extension map " + extnptr->mapName
+                                                 + " is using allegedly unused exposure or device map");
                     }
                 }
             }
@@ -280,11 +279,11 @@ list<int> pickExposuresToInitialize(const vector<unique_ptr<Instrument>> &instru
         }
 
         if (exposureForInitializing < 0) {
-            cerr << "Could not find an exposure that can initialize defaulted devices \n"
-                 << "for instrument " << instr.name << endl;
-            cerr << "Write more code if you want to exploit more complex situations \n"
-                 << "where some non-defaulted devices can initialize a defaulted exposure." << endl;
-            exit(1);
+            std::string error_message = ("Could not find an exposure that can initialize defaulted devices \n"
+                                         "for instrument " + instr.name + "\nWrite more code if you want to"
+                                         " exploit more complex situations where some non-defaulted devices"
+                                         " can initialize a defaulted exposure.");
+            throw std::runtime_error(error_message);
         } else {
             exposuresToInitialize.push_back(exposureForInitializing);
             cerr << "Using exposure " << exposures[exposureForInitializing]->name
