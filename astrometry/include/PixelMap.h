@@ -17,6 +17,8 @@
 #ifdef USE_YAML
 #include "yaml-cpp/yaml.h"
 #endif
+#include "astshim.h"
+
 #include "Std.h"
 #include "LinearAlgebra.h"
 #include "Astrometry.h"
@@ -331,6 +333,38 @@ private:
     ColorTerm(const ColorTerm& rhs) = delete;
     void operator=(const ColorTerm& rhs) = delete;
   
+  };
+
+  class ASTMap: public PixelMap {
+    // Class representing a constant shift of position
+  public:
+    ASTMap(const ast::Mapping& mapping_, string name_=""):
+      PixelMap(name_), mapping(mapping_) {}
+
+    virtual PixelMap* duplicate() const;
+
+    ~ASTMap() {}
+    
+    static string type() {return "AST";}
+
+    ast::Mapping mapping;
+
+    void toWorld(double xpix, double ypix,
+                 double &xworld, double &yworld,
+                 double color=astrometry::NODATA) const;
+    void toPix(double xworld, double yworld,
+               double &xpix, double &ypix,
+               double color = astrometry::NODATA) const;
+
+#ifdef USE_YAML
+    // AST maps are not expected to be used for output, so we do not
+    // attempt to write a full description to yaml.
+    virtual void write(YAML::Emitter &os) const
+    {
+      os << YAML::BeginMap << YAML::Key << "Type" << YAML::Value << type()
+         << YAML::EndMap;
+    }
+#endif
   };
 } // namespace astrometry
 #endif //PIXMAP_H
