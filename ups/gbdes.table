@@ -1,1 +1,2 @@
+setupRequired(astshim)
 envPrepend(PYTHONPATH, ${PRODUCT_DIR}/build/pydir)

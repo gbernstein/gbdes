@@ -16,6 +16,18 @@ add_compile_definitions(USE_YAML=TRUE)
 
 find_library(FFTW3 fftw3 REQUIRED)
 
+# find astshim library using EUPS package environent variable as hint
+find_library(ASTSHIM_LIBRARIES
+astshim REQUIRED
+HINTS $ENV{ASTSHIM_DIR}/lib
+)
+#find astshim include directory
+find_path(
+ASTSHIM_INCLUDES
+astshim.h REQUIRED
+HINTS $ENV{ASTSHIM_DIR}/include
+)
+
 # TMV or Eigen must be available, but TMV is preferred
 find_package(TMV QUIET)
 if(TMV_FOUND)
