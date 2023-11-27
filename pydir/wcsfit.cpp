@@ -13,6 +13,7 @@
 #include "TPVMap.h"
 #include "WCSFoFRoutine.h"
 #include "WCSFitRoutine.h"
+#include "astshim.h"
 
 using namespace pybind11::literals;
 namespace py = pybind11;
