@@ -44,8 +44,9 @@ add_subdirectory(gbutil)
 add_subdirectory(gbfits)
 add_subdirectory(astrometry)
 add_subdirectory(photometry)
-
+# Linking the executable is not compatible with astshim for macos builds.
+# Uncomment the line below if the executable is needed for a linux build.
+# add_subdirectory(src)
 add_subdirectory(src/subs)
-#add_subdirectory(src)
 add_subdirectory(pydir)
 
