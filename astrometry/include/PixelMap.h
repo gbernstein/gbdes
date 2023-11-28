@@ -338,12 +338,12 @@ private:
   class ASTMap: public PixelMap {
     // Class representing a constant shift of position
   public:
-    ASTMap(const ast::Mapping& mapping_, string name_=""):
+    ASTMap(const ast::Mapping& mapping_, std::string name_=""):
       PixelMap(name_), mapping(mapping_) {}
 
     virtual PixelMap* duplicate() const;
 
-    ~ASTMap() {}
+    ~ASTMap() = default;
     
     static string type() {return "AST";}
 

@@ -46,6 +46,6 @@ add_subdirectory(astrometry)
 add_subdirectory(photometry)
 
 add_subdirectory(src/subs)
-add_subdirectory(src)
+#add_subdirectory(src)
 add_subdirectory(pydir)
 
