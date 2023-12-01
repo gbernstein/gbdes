@@ -353,8 +353,7 @@ ConstantMap::create(const YAML::Node& node,
 
 PixelMap*
 ASTMap::duplicate() const {
-  std::shared_ptr<ast::Mapping> newMapping = mapping.copy();
-  return new ASTMap(*newMapping);
+  return new ASTMap(*mapping);
 }
 
 void 
@@ -363,7 +362,7 @@ ASTMap::toWorld(double xpix, double ypix,
      double color) const {
 
   std::vector<double> pixCoords{xpix, ypix};
-  std::vector<double> worldCoord = mapping.applyForward(pixCoords);
+  std::vector<double> worldCoord = mapping->applyForward(pixCoords);
   xworld = worldCoord[0];
   yworld = worldCoord[1];
 }
@@ -373,7 +372,7 @@ ASTMap::toPix( double xworld, double yworld,
 		double &xpix, double &ypix,
     double color) const {
   std::vector<double> worldCoords(xworld, yworld);
-  std::vector<double> pixCoord = mapping.applyInverse(worldCoords);
+  std::vector<double> pixCoord = mapping->applyInverse(worldCoords);
   xpix = pixCoord[0];
   ypix = pixCoord[1];
 }

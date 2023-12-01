@@ -336,18 +336,16 @@ private:
   };
 
   class ASTMap: public PixelMap {
-    // Class representing a constant shift of position
+    // Class for using AST maps (via astshim)
   public:
     ASTMap(const ast::Mapping& mapping_, std::string name_=""):
-      PixelMap(name_), mapping(mapping_) {}
+      PixelMap(name_), mapping(mapping_.copy()) {}
 
     virtual PixelMap* duplicate() const;
 
     ~ASTMap() = default;
     
     static string type() {return "AST";}
-
-    ast::Mapping mapping;
 
     void toWorld(double xpix, double ypix,
                  double &xworld, double &yworld,
@@ -365,6 +363,8 @@ private:
          << YAML::EndMap;
     }
 #endif
+  private:
+    std::shared_ptr<ast::Mapping> mapping;
   };
 } // namespace astrometry
 #endif //PIXMAP_H
