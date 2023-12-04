@@ -13,6 +13,7 @@
 #include "TPVMap.h"
 #include "WCSFoFRoutine.h"
 #include "WCSFitRoutine.h"
+#include "astshim.h"
 
 using namespace pybind11::literals;
 namespace py = pybind11;
@@ -101,6 +102,10 @@ PYBIND11_MODULE(wcsfit, m) {
 
     py::class_<astrometry::SubMap, astrometry::PixelMap>(m, "SubMap")
             .def(py::init<list<astrometry::PixelMap *> const &, std::string, bool>());
+
+    py::class_<astrometry::ASTMap, astrometry::PixelMap>(m, "ASTMap")
+            .def(py::init<ast::Mapping const &, std::string>(),
+                 py::arg("mapping_"), py::arg("name_") = "");
 
     py::class_<astrometry::Wcs, std::shared_ptr<astrometry::Wcs>>(m, "Wcs")
             .def(py::init<astrometry::PixelMap *, astrometry::SphericalCoords const &, std::string, double,

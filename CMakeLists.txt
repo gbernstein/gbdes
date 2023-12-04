@@ -16,6 +16,18 @@ add_compile_definitions(USE_YAML=TRUE)
 
 find_library(FFTW3 fftw3 REQUIRED)
 
+# find astshim library using EUPS package environent variable as hint
+find_library(ASTSHIM_LIBRARIES
+astshim REQUIRED
+HINTS $ENV{ASTSHIM_DIR}/lib
+)
+#find astshim include directory
+find_path(
+ASTSHIM_INCLUDES
+astshim.h REQUIRED
+HINTS $ENV{ASTSHIM_DIR}/include
+)
+
 # TMV or Eigen must be available, but TMV is preferred
 find_package(TMV QUIET)
 if(TMV_FOUND)
@@ -32,8 +44,9 @@ add_subdirectory(gbutil)
 add_subdirectory(gbfits)
 add_subdirectory(astrometry)
 add_subdirectory(photometry)
-
+# Linking the executable is not compatible with astshim for macos builds.
+# Uncomment the line below if the executable is needed for a linux build.
+# add_subdirectory(src)
 add_subdirectory(src/subs)
-add_subdirectory(src)
 add_subdirectory(pydir)
 
