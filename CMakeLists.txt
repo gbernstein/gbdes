@@ -66,7 +66,7 @@ target_include_directories(gbdes PUBLIC
         ${PROJECT_SOURCE_DIR}/include
         )
 
-target_link_libraries(gbdes PUBLIC Eigen3::Eigen ${FFTW3_LIBRARIES} yaml-cpp cfitsio)
+target_link_libraries(gbdes PUBLIC Eigen3::Eigen ${ASTSHIM_LIBRARIES} ${FFTW3_LIBRARIES} yaml-cpp cfitsio )
 
 add_executable(WCSFit src/WCSFit.cpp)
 target_link_libraries(WCSFit PUBLIC gbdes)
