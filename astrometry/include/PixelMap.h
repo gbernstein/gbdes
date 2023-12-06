@@ -17,8 +17,8 @@
 #ifdef USE_YAML
 #include "yaml-cpp/yaml.h"
 #endif
-#include "astshim.h"
-
+#include "astshim/Object.h"
+#include "astshim/Mapping.h"
 #include "Std.h"
 #include "LinearAlgebra.h"
 #include "Astrometry.h"
