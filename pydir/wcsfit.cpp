@@ -51,6 +51,7 @@ py::array_t<T> vectorToNumpy(std::vector<std::vector<T>> const &vect) {
 PYBIND11_MODULE(wcsfit, m) {
     m.attr("DEGREE") = DEGREE;
     m.attr("ARCSEC") = ARCSEC;
+    m.attr("EclipticInclination") = EclipticInclination;
 
     declareBounds<double>(m);
 
